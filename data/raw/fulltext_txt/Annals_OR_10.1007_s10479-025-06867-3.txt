@@ -1,0 +1,2321 @@
+TITLE: Data-driven hedging with generative models
+JOURNAL: Annals_OR
+YEAR: 2025
+DOI: https://doi.org/10.1007/s10479-025-06867-3
+---
+
+ORIGINAL RESEARCH
+Received: 4 June 2025 / Accepted: 18 September 2025
+© The Author(s) 2025
+This paper appears in a special issue of the Annals of Operations Research honoring Professor John 
+M. Mulvey (Princeton), on the occasion of his 80th birthday, for his many contributions to large-scale 
+optimization modeling and its applications to support decision-making by businesses and governments.
+ 
+ Rama Cont
+Rama.Cont@maths.ox.ac.uk
+1 
+Mathematical Institute, University of Oxford, Oxford, UK
+Data-driven hedging with generative models
+Rama Cont1
+ · Milena Vuletić1
+Annals of Operations Research
+https://doi.org/10.1007/s10479-025-06867-3
+Abstract
+We propose a nonparametric data-driven methodology for hedging using generative mod­
+els. In contrast with model-based hedging approaches relying on sensitivity analysis of 
+model pricing functions, our approach uses a conditional generative model trained on 
+market data to simulate realistic market scenarios given current market conditions and 
+computes hedge ratios which minimize risk across these scenarios. The approach incorpo­
+rates transaction costs, leads to an optimal selection of hedging instruments, and adapts to 
+market conditions. We illustrate the effectiveness of this methodology for hedging option 
+portfolios using VolGAN, a generative model for implied volatility surfaces. The out-of-
+sample performance of the method matches and improves over delta and delta-vega hedg­
+ing, without retraining the model for more than 4 years after the training period.
+Mathematics Subject Classification  Primary 26A16 · 26A30 · 26A33 · 60L99 · 60H10 · 
+60H50
+1  Introduction
+Generative models are a class of machine learning models trained to simulate samples with 
+statistical features similar to a given data set. When properly trained, generative models can be 
+powerful tools for non-parametric, model-free simulation, and have been deployed in this set­
+ting for financial applications such as portfolio loss simulation (Cont et al., 2025), forecasting 
+(Vuletić et al., 2024), backtesting of hedging strategies (Vuletić & Cont, 2024), and portfolio 
+construction (Chen et al., 2025). These studies have demonstrated the usefulness of genera­
+1 3
+
+Annals of Operations Research
+tive models for learning complex features of market data and generating forward-looking 
+scenarios.
+We propose a methodology which leverages these features of generative models for the 
+design of hedging strategies and portfolio risk management. By combining a conditional 
+generative model trained on market data with an optimization layer, we introduce a com­
+putationally tractable framework for data-driven hedging. In contrast with commonly used 
+model-based approaches for hedging, our method derives a data-driven hedging strategy 
+which exploits information in the training data. Furthermore, it has the ability to perform 
+automatic selection of hedging instruments and incorporate transaction costs and market 
+impact.
+1.1  Contribution
+We propose a nonparametric data-driven methodology for hedging using generative models. 
+The key idea is to learn the co-movements of potential hedging instruments and the target 
+portfolio from the market data, and then use this information to compute hedging strategies.
+In contrast with model-based hedging approaches relying on sensitivity analysis of 
+model-based pricing functions, our approach uses a conditional generative model trained 
+on market data to simulate realistic market scenarios given current market conditions, and 
+computes hedge ratios that minimize risk across these scenarios. This optimization proce­
+dure enables the automated selection of hedging instruments, and allows for the incorpora­
+tion of transaction costs and market impact.
+The result is a fully data-driven method for implementing hedging strategies: market data 
+is used to train a generative model, which is then employed to compute hedge ratios. Opting 
+for conditional variance minimization, as opposed to more general risk measures, leads to 
+linear hedge ratios which are easily computable via linear regression. We illustrate the effec­
+tiveness of this methodology for hedging option portfolios using VolGAN (Vuletić & Cont, 
+2024), a customized conditional generative adversarial network (GAN) (Goodfellow et al., 
+2014; Mirza & Osindero, 2014) for implied volatility surfaces, and compare its performance 
+with delta and delta-vega hedging.
+1.2  Relation with previous literature
+The dominant paradigm in the design of hedging strategies is model-based hedging, which 
+requires full specification of the dynamics of all risk factors affecting a portfolio over the 
+risk horizon. Hedging is then formulated as an intertemporal optimization or stochastic con­
+trol problem, which is typically solved using dynamic programming or backward induction. 
+Hedging strategies obtained in this manner are exposed to model uncertainty and may exhibit 
+a significant level of ’model risk’ (Cont, 2006).
+Regression-based hedging is arguably the simplest form of ’data-driven’ hedging: the 
+idea is to perform a least squares regression of the daily changes of the target portfolio 
+with respect to the daily changes of the hedging instruments and use the coefficients as 
+hedge ratios (Sercu & Wu, 2000; Cont & Kan, 2011). As shown by Cont and Kan (2011), 
+regression-based hedging can exhibit superior performance when compared to model-based 
+sensitivity hedging, especially in situations where models are arguably miss-specified. 
+However, historical regression-based hedge ratios are backward-looking, assume stationar­
+1 3
+
+Annals of Operations Research
+ity of covariance structure in comovements, and may not properly account for changes in 
+market conditions.
+Starting with the pioneering work of Hutchinson et al. (1994), who demonstrated that a 
+simple one-layer neural network with four neurons could learn to hedge S& P500 options, 
+neural networks have been used in various ways to calculate hedging strategies (see survey 
+by Ruf and Wang (2020) and references therein). As noted by Ruf and Wang (2020), in most 
+of these studies neural networks are used to learn a pricing function and hedging is either not 
+discussed or it is addressed using a sensitivity-based approach (Cohen et al., 2022; Fan & 
+Sirignano, 2024). In some cases, a neural network is trained to learn the hedge ratios directly 
+from market data (Chen & Sutcliffe, 2012; Carverhill & Cheuk, 2003; Ruf & W. W., 2022).
+(Buehler et al., 2019) used deep neural networks to learn optimal hedge ratios within a 
+parametric model via reinforcement learning. This approach is able to incorporate transac­
+tion costs, alternative risk measures, and trading constraints but is not data-driven: training 
+is done via deep reinforcement learning using (millions of) simulated scenarios based on a 
+parametric model. Similar (model-based) approaches were explored by Cao et al. (2023); 
+Lütkebohmert et al. (2022); Limmer and Horvath (2024). These approaches are based on 
+neuro-dynamic programming (Bertsekas & Tsitsiklis, 1996), i.e., on the parameterization 
+of hedging strategies via a neural network, which is then trained using reinforcement learn­
+ing. In contrast, our approach uses neural networks for the generation of market scenarios, 
+while the computation of hedge ratios is done through direct optimization, a much sim­
+pler approach which results in greater computational efficiency. Also, importantly, these 
+approaches are model-based, not data-driven: training is done using scenarios simulated 
+from a reference model, not on market data.
+As explained in Sect. 3, given the one-step ahead scenarios generated by the conditional 
+generative model, we compute hedge ratios by solving a local risk minimization approach 
+which is a convex optimization problem. Our optimization criterion combines a conditional 
+variance term with a ℓ1 penalty for transaction costs. A similar approach was studied by Lam­
+berton et al. (1998), extending work of Föllmer and Schweizer (1988); Schweizer (1995) 
+on quadratic hedging to include transaction costs. However, differently from these refer­
+ences which focus on (not necessarily self-financing) replication strategies computed by 
+backward induction, our hedging strategy is self-financing and computed sequentially using 
+one-step ahead scenarios, provided by the generative model. In particular, our approach 
+does not require knowledge of the full price dynamics up to expiry and is thus applicable in 
+sequential setting to conditional generative models based taking current market conditions 
+as input. Our approach is similar in spirit to the model-predictive control approach (Bem­
+porad et al., 2014) and the progressive hedging approach (Rockafellar & Wets, 1991; Rock­
+afellar, 2018), both of which employ scenario-based optimization and proceed forward, not 
+backward, in time. In contrast to multi-stage stochastic programs (Mulvey & Ruszczyński, 
+1995), we solve a sequence of one-period stochastic programs, leading to a fast and scalable 
+approach applicable to large-scale problems.
+Outline. Section 2 reviews commonly used approaches for computing hedging strate­
+gies. Section 3 describes our proposed methodology for data-driven hedging using gen­
+erative models. Section 4 illustrates how our approach can be used to hedge volatility risk 
+with VolGAN, a conditional scenario generator for implied volatility dynamics. Section 5 
+summarizes our contributions. The appendix contains a coordinate descent algorithm for 
+1 3
+
+Annals of Operations Research
+data-driven hedging with transaction costs, further performance tests, and robustness tests 
+for the VolGAN example.
+2  Sensitivity-based hedging vs optimization-based hedging
+We consider the problem of hedging a portfolio exposed to a set of risk factors using a set of 
+hedging instruments. We distinguish two sets of risk factors:
+ 
+●
+market prices S1
+t , ..., Sn
+t of tradable primitive/underlying assets;
+ 
+●
+other (non-price) risk factors denoted Xt = (X1
+t , ..., Xd
+t ). Examples of such risk factors 
+may be: implied volatilities, interest rates, credit spreads, etc.
+Primitive assets are tradable, while risk factors X1
+t , ..., Xd
+t are not directly traded, i.e., do not 
+represent prices of tradable instruments. Examples of such non-price risk factors are yields 
+(for bonds) or implied volatilities for options.
+We wish to hedge a portfolio whose value at time t is Vt, using a set (Hi, i ∈H) of hedg­
+ing instruments whose values Hi
+t are sensitive to these risk factors. We assume a rebalanc­
+ing frequency ∆t (for example, one day).
+Our risk management framework requires the following ingredients: 
+1. A pricing function f which computes the value of the portfolio as a function of the risk 
+factors 
+ 
+Vt = f(t, St, Xt) = f(t, S1
+t , ..., Sn
+t , X1
+t , ..., Xd
+t );
+(1)
+2. Pricing functions for the hedging instruments: 
+ 
+Hj
+t = hj(t, St, Xt) = hj(t, S1
+t , ..., Sn
+t , X1
+t , ..., Xd
+t );
+(2)
+3. A generative model capable of generating one-step ahead (e.g. one-day ahead) sce­
+narios for co-movements of prices St and risk factors Xt
+ Inputs : (St, Xt, St−∆t, Xt−∆t, ...), noise term ω
+G
+−→
+Output : (St+∆t(ω), Xt+∆t(ω)).
+(3)
+We consider a self-financing tracking portfolio with positions ϕi
+t in the hedging instruments 
+(Hi
+t, i ∈H), and ψt in a money market account earning interest at rate rt. The value Πt of 
+this tracking portfolio satisfies:
+ 
+Πt+∆t −Πt = ∆Πt = ψt rt∆t +
+∑
+i∈H
+ϕi
+t(Hi
+t+∆t −Hi
+t),
+Π0 = V0.
+(4)
+The self-financing condition implies
+ 
+ψt = Πt −
+∑
+i∈H
+ϕi
+tHi
+t −
+∑
+i∈H
+ci
+t|ϕi
+t −ϕi
+t−∆t|,
+(5)
+1 3
+
+Annals of Operations Research
+where ci
+t is the cost of trading one unit of Hi at time t. The tracking error Zt is the value 
+of the hedged position:
+ 
+Zt = Vt −Πt,
+Z0 = 0.
+(6)
+The two main approaches to determine the hedging strategies ϕt are sensitivity-based hedg­
+ing and conditional risk minimization, with (local) quadratic hedging being a special case of 
+the latter. We now describe these two approaches in some detail.
+2.1  Sensitivity-based hedging
+The most common approach for constructing hedging strategies is based on sensitivities to risk 
+factors. Given a ’standard’ shift ϵi for risk factor i, we define the sensitivity to a risk factor i 
+as the change in portfolio value under a "standardized shift" Xi →Xi + ϵi to the risk factor 
+i ∈{1, . . . , d}. Denote the sensitivity to risk factor Xi at time t by
+ 
+ζi
+t(f) = f(t, St, X0
+t , . . . , Xi−1
+t
+, Xi
+t + ϵi, Xi+1
+t
+, . . . , Xd
+t ) −f(t, St, Xt)
+ϵi
+.
+(7)
+Similarly, denote sensitivities to market prices Si, for i ∈{1, . . . , n} by
+ 
+∆i
+t(f) = f(t, S0
+t , . . . , , Si−1
+t
+, Si
+t + ϵj, Si+1
+t
+, . . . , Sn
+t , Xt) −f(t, St, Xt)
+ϵj
+.
+(8)
+If the pricing function f is differentiable in St, Xt, then
+ 
+lim
+ϵi→0 ζi
+t(f) = ∂f
+∂Xi (t, St, Xt),
+lim
+ϵi→0 ∆i
+t(f) = ∂f
+∂Si (t, St, Xt),
+Analogously, we define sensitivities of the hedging instruments Hj to risk factors Xi and 
+market prices Si, which we denote by ζi
+t(hj) and ∆i
+t(hj), respectively. In cases where 
+neural networks represent the pricing functions, sensitivities are readily computable using 
+Automatic Differentiation (AD) techniques (Fries, 2019; Capriotti & Giles, 2024).
+The sensitivity of the portfolio value Πt to a risk factor Xi is obtained by summing over 
+positions:
+ 
+ζi
+t(h) =
+∑
+j∈H
+ϕi
+tζi
+t(hj),
+and its sensitivity to Si is
+ 
+∆i
+t(h) =
+∑
+j∈H
+ϕi
+t∆i
+t(hj).
+The idea of sensitivity-based hedging is to choose the positions in the hedging instruments 
+to achieve zero/low overall sensitivity to risk factors (St, Xt). The hedged portfolio is 
+1 3
+
+Annals of Operations Research
+immunized to small movements in the risk factor Xi for i = 1, . . . , d if the sensitivity of the 
+hedged position Zt = Vt −Πt is zero:
+ 
+ζi
+t(f) = ζi
+t(h).
+(9)
+Similarly, the hedged portfolio is immunized to small changes in market prices Si
+t for 
+i = 1, . . . , n if
+ 
+∆i
+t(f) = ∆i
+t(h).
+(10)
+Examples of commonly used sensitivity-based hedging strategies include delta hedging and 
+delta-vega hedging of option portfolios, and immunization strategies of bond portfolios.
+Hedging via risk immunization requires the user to pre-specify both the risk factors and 
+the hedging instruments, a choice that is not necessarily unique. For instance, in delta-vega 
+hedging, volatility risk can be mitigated by holding a position in any option on the same 
+underlying asset; sensitivity considerations alone do not guide us in the choice of the hedg­
+ing instrument.
+Additionally, risk immunization typically accounts for only small perturbations in risk 
+factors. Extensions of this approach consider inclusion of higher order sensitivities, for 
+example gamma hedging for options or duration-convexity immunization for bond port­
+folios (De La Peña et al., 2021). However, even these extensions cannot account for tail 
+events.
+Finally, these shifts are applied to individual risk factors in isolation, disregarding their 
+co-movements. If risk factors are correlated, this may mean that the scenarios underlying 
+these sensitivity computations are unrealistic.
+2.2  Hedging by local risk minimization
+Another approach for computing hedging strategies is based on the idea of local riskminimiza­
+tion (Föllmer & Schweizer, 1988; Lamberton et al., 1998; Mercurio & Vorst, 1996; Schweizer, 
+1995). In this approach, one sequentially computes hedge ratios to minimize a one step-ahead 
+risk criterion, based on current information in market variables.
+Denote by {Ft}t≥0 the filtration representing the information contained in the history 
+of market prices and risk factors up to time t. For a hedging strategy to be implementable, 
+the hedge ratios ϕt have to be Ft-measurable. The idea of local risk minimization is to 
+compute ϕt by minimizing a risk measure ρ of the portfolio conditional on current market 
+information
+ 
+inf
+ϕt ρ(Zt+∆t|Ft).
+A tractable class is given by conditional risk measures expressible in the form
+ 
+ρ(Zt+∆t|Ft) = E 
+L(Zt+∆t, Yt)
+Ft
+
+.
+(11)
+where L is a loss function and Yt is observable at t i.e. {Ft}-adapted. In particular, (11) is 
+amenable to computation by simulation.
+1 3
+
+Annals of Operations Research
+An important example of conditional risk measure expressible in the form (11) is the 
+conditional variance:
+ 
+ρ(Zt+∆t|Ft) = E
+
+(Zt+∆t −E[Zt+∆t|Ft])2 Ft
+
+,
+(12)
+where
+ 
+L(Z, Y ) = (Z −Y )2 ,
+Yt = E[Zt+∆t|Ft].
+Remark 2.1  One may of course consider other risk measures, such as Value-at-Risk (VaR), 
+Expected Shortfall etc. However, among these examples the only risk measure expressible 
+in the form (11) is conditional variance.
+Minimizing the conditional variance of the hedging error (conditional on market variables 
+Ft) leads to a (local) regression problem. The objective is to solve
+ 
+min
+ϕt
+var 
+Zt+∆t
+Ft
+
+.
+(13)
+Proposition 2.2  The hedge ratios which minimize the variance of the tracking error Zt+∆t 
+conditional on Ft are given as regression coefficients of ∆Vt on {∆H i
+t }i∈H:
+ 
+min
+ϕt
+var 
+Zt+∆t
+Ft
+
+= min
+At,ϕt E
+
+
+
+Vt+∆t −Vt −At −
+
+i∈H
+ϕi
+t(Hi
+t+∆t −Hi
+t)
+2 Ft
+
+. (14)
+Proof  Since ψt, Vt, and ϕi
+t, Ht
+i are Ft-measurable, we have
+ 
+var 
+Zt+∆t
+Ft
+
+= var 
+Zt+∆t −Zt
+Ft
+
+= var 
+∆Vt −∆Πt
+Ft
+
+= var
+
+∆Vt −
+
+i∈H
+ϕi
+t∆Hi
+t −ψtrt∆t
+Ft
+
+= var
+
+∆Vt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
+.
+In fact, for any Ft-measurable At, the following holds:
+ 
+var
+
+∆Vt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
+= var
+
+∆Vt −At −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
+.
+Hence, we can choose At such that
+1 3
+
+Annals of Operations Research
+ 
+E
+
+∆Vt −At −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
+= 0,
+i.e.
+At = E
+
+∆Vt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
+. (15)
+Furthermore, for any Ft-measurable αt:
+ 
+E
+
+
+
+∆Vt −αt −
+
+i∈H
+ϕi
+t∆Hi
+t
+2 Ft
+
+= var
+
+∆Vt −αt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
++ E
+
+∆Vt −αt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+2
+= var
+
+∆Vt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
++ E
+
+∆Vt −αt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+2
+.
+
+(16)
+Hence, the value of αt which minimizes the conditional second moment (16) of 
+∆Vt −αt −∑
+i∈H ϕi
+t∆Hi
+t is precisely the conditional expectation At given by (15):
+ 
+α∗
+t = argminαE
+
+
+
+∆Vt −α −
+
+i∈H
+ϕi
+t∆Hi
+t
+2 Ft
+
+,
+i.e.
+α∗
+t = E
+
+∆Vt −
+
+i∈H
+ϕi
+t∆Hi
+t
+Ft
+
+= At.
+This implies that
+ 
+var 
+Zt+∆t
+Ft
+
+= minαtE
+
+
+
+∆Vt −αt −
+
+i∈H
+ϕi
+t∆Hi
+t
+2 Ft
+
+.
+This is an Ordinary Least Squares (OLS) regression, conditional on the information avail­
+able at time t:
+ 
+∆Vt = At +
+∑
+i∈H
+ϕt∆Hi
+t + ϵt,
+where ϵt is uncorrelated with the P &Ls of the hedging instruments and E 
+ϵt
+Ft
+
+= 0.
+So, finally, we have shown that minimizing the conditional variance of the hedging error 
+(conditional on market variables Ft) leads to a least squares regression problem:
+ 
+min
+ϕt
+var 
+Zt+∆t
+Ft
+
+= min
+At,ϕt E
+
+
+
+Vt+∆t −Vt −At −
+
+i∈H
+ϕi
+t(Hi
+t+∆t −Hi
+t)
+2 Ft
+
+. (17)
+1 3
+
+Annals of Operations Research
+
+□
+Remark 2.3  Equation (14), determines the hedge ratios which minimize the conditional 
+variance of the tracking error. The hedging strategy requires to specify as well the cash/
+money market component ψt. This is determined by the self-financing condition (5). Any 
+other choice for ψt would lead to a non self-financing hedging strategy. For example (Sch­
+weizer, 1995; Föllmer & Schweizer, 1988; Lamberton et al., 1998) choose ψt = At given 
+by (15), which yields the martingale property for the tracking error but results in the loss of 
+self-financing property.
+Remark 2.4  Note that we are not operating under a ’risk-neutral’ measure and there is no 
+martingale assumption on price dynamics.
+Remark 2.5  The conditional variance minimization problem (13) is a regression of the 
+change in portfolio value ∆Vt on the changes ∆Hi
+t in values of the hedging instruments, 
+conditional on the information available at time t. Using the Ft-measurability of Vt, Πt, and 
+Ht, we can also express (13) as a regression of values, rather than changes, of these same 
+instruments:
+ 
+min
+ϕt
+var 
+Zt+∆t
+Ft
+
+= min
+At,ϕt E
+
+
+
+Vt+∆t −At −
+
+i∈H
+ϕi
+tHi
+t+∆t
+2 Ft
+
+.
+(18)
+2.3  Accounting for transaction costs
+Since the transaction cost term ∑
+i∈H ci
+t|ϕi
+t −ϕi
+t−∆t| is Ft−measurable, it contributes to the 
+conditional mean but not to the conditional variance. The optimization problem (14) therefore 
+does not penalize transaction costs. In order to account for transaction costs one may proceed 
+in different ways. A common approach is to minimize the conditional second moment (instead 
+of variance) (Schweizer, 1995; Mercurio & Vorst, 1996, 1997). This leads to an objective 
+function with quadratic penalties for transaction costs, but also cross-terms of the type
+ 
+ci
+t|ϕi
+t −ϕi
+t−∆t| ϕj
+t∆Hj
+t ,
+i ̸= j,
+which lacks a financial interpretation and leads to numerical difficulties. Another approach is 
+to use conditional variance, but incorporate transaction costs for the next period as in Lamber­
+ton et al. (1998). This leads to a variance contribution, but breaks down the analytical tracta­
+bility of the quadratic problem (14). Furthermore, in this case we lose the interpretation of the 
+objective as variance of the tracking error.
+We propose instead a different formulation, which is to include transaction costs as a 
+penalty in the objective function, leading to:
+ 
+min
+At,ϕt E
+
+
+
+Vt+∆t −Vt −At −
+
+i∈H
+ϕi
+t(Hi
+t+∆t −Hi
+t)
+2 Ft
+
++ λ
+
+i∈H
+ci
+t|ϕi
+t −ϕi
+t−∆t|, (19)
+1 3
+
+Annals of Operations Research
+where λ > 0 is a regularization parameter. A similar approach has been considered by Li et 
+al. (2022) but in a global risk minimization setting. In (19), each term has a clear financial 
+interpretation. Since At does not appear in the second term, by Proposition 2.2, the first 
+term is still the conditional variance of the tracking error, while the second term is propor­
+tional to the transaction cost. As the transaction cost is naturally expressed as a (weighted) 
+ℓ1 norm, (19) is in fact a LASSO regression (Tibshirani, 1996). This leads to the desirable 
+property of sparsity which, in financial terms, corresponds to selecting a sparse set of hedg­
+ing instruments.
+3  Dynamic data-driven hedging with generative models
+An important feature of local risk minimization problem (19) is that it only requires knowl­
+edge of the one step-ahead conditional distribution. However, this conditional distribution 
+remains inaccessible, rendering the local risk minimization problem analytically intractable 
+even in simple models. On the other hand, we will demonstrate that this problem may be 
+efficiently solved using conditional generative models. We will now show how to sequen­
+tially compute locally risk-minimizing hedging strategies using a conditional generative 
+model.
+A conditional generative model G for (St, Xt) allows to generate samples 
+(St+∆t(ω), Xt+∆t(ω)) whose distribution approximates the conditional distribution of 
+(St+∆t, Xt+∆t) given Ft. These generated samples are forward-looking one step-ahead 
+scenarios, which may be used to estimate the conditional mean and variance of the tracking 
+error via
+ 
+
+At = 1
+N
+N
+
+k=1
+
+∆Vt(ωk) −
+
+i∈H
+ϕi
+t∆Hi
+t(ωk)
+
+,
+
+var(∆Zt|Ft) = 1
+N
+N
+
+k=1
+
+∆Vt(ωk) −
+At −
+
+i∈H
+ϕi
+t∆Hi
+t(ωk)
+2
+,
+where {ωk}k=1,..,N are N i.i.d. scenarios from the generator G. We can then compute an 
+estimator of (19), and compute hedge ratios by optimizing this estimator.
+This leads to the following sequential optimization problem: at each step t, given previ­
+ous hedge ratios ϕt−∆t we solve the following LASSO regression problem:
+ 
+inf
+At∈R,ϕt∈Rd+1
+1
+N
+N
+
+k=1
+
+∆Vt(ωk) −At −
+
+i∈H
+ϕi
+t∆Hi
+t(ωk)
+2
+
+
+
+Hedging error variance
++αg0
+
+i∈H
+ci
+t
+ϕi
+t −ϕi
+t−∆t
+
+
+
+
+Rebalancing cost
+, (20)
+where
+ 
+●
+ci
+t is the cost of trading one unit of Hi at time t (we use the half the bid-ask spread for 
+instrument Hi as a proxy);
+ 
+●
+g0 is the initial gross position, and α > 0 is a dimensionless regularization parameter.
+The solution to (20) can be computed via coordinate descent with soft thresholding (Hastie 
+et al., 2009), details of which are available in the Appendix.
+1 3
+
+Annals of Operations Research
+The regularization term in (20) favors lower turnover and hedging instruments Hi with 
+lower transaction costs. Transaction costs lead to an ℓ1-penalty which is known to induce 
+sparsity in regression: it leads to the "minimal" (sub)set of rebalancing transactions. Spar­
+sity means that not all potential hedging instruments are selected, leading to an automatic 
+selection of hedging instruments.
+Given that hedging instruments in H might have highly correlated returns (especially if 
+|H| = J is large), regularization is useful in (20). Furthermore, other (position, sensitivity) 
+constraints can be easily incorporated in the optimization.
+The resulting procedure for data-driven hedging is described in Algorithm 1. Steps to 
+implement efficient coordinate descent for generalized LASSO regression are available in 
+Algorithm 2 in the Appendix.
+Algorithm 1  Data-driven hedging with no market impact
+Incorporating market impact
+The proportional transaction assumption takes into account the bid-ask spread but not the 
+market impact of rebalancing which manifests itself for large portfolios (Webster, 2023). Mar­
+ket impact depends on the size of the rebalacing relative to a measure of market depth, such as 
+average daily traded volume (ADV), volatility of the hedging instrument and possibly other 
+variables such as order flow imbalance. It may be modeled by stating that a trade of size 
+|ϕi
+t −ϕi
+t−∆t| in instrument Hi gets executed at a price Hi
+t + si
+t|ϕi
+t −ϕi
+t−∆t|δ where δ ≥0, 
+and si
+t is a measure, expressed in USD, of market depth for instrument i. This leads to a modi­
+fied expression of profit/loss:
+1 3
+
+Annals of Operations Research
+ 
+∆Πt =
+
+i∈H
+ϕi
+t∆Hi
+t + rt
+
+
+Πt −
+
+i∈H
+ϕi
+tHi
+t −
+Rebalancing cost
+
+
+
+
+i∈H
+|ϕi
+t −ϕi
+t−∆t|1+δsi
+t
+
+
+∆t.
+(21)
+For options, impact should be measured in terms of implied volatility. Incorporation of mar­
+ket impact as in (21) leads to an additional term in the optimisation problem:
+ 
+inf
+At∈R,ϕt∈Rd+1
+1
+N
+N
+
+k=1
+
+∆Vt(ωk) −At −
+
+i∈H
+ϕi
+t∆Hi
+t(ωk)
+2
++ λg0
+
+i∈H
+si
+t
+ϕi
+t −ϕi
+t−∆t
+1+δ . (22)
+Empirical evidence supports the assumption of linear impact (δ = 1) across a wide range 
+of trading volumes and frequencies (Cont et al., 2014). In this case (22) leads to a “ridge 
+regression" problem (Hoerl & Kennard, 1981) which has a closed-form solution. However, 
+the values of δ > 0 do not lead to sparsity in (22). Automatic hedging instrument selection 
+can be implemented by first performing a LASSO regression as in (20) at time t = 0 in order 
+to determine the hedging instruments, and then using the selected instruments to solve (22). 
+Alternatively, for δ > 0, one could consider an "Elastic Net" regression (Hastie et al., 2009):
+ 
+inf
+At∈R,ϕt∈Rd+1
+1
+N
+N
+
+k=1
+
+∆Vt(ωk) −At −
+
+i∈H
+ϕi
+t∆Hi
+t(ωk)
+2
+
+
+
+Hedging error variance
++ λg0
+
+i∈H
+si
+t
+ϕi
+t −ϕi
+t−∆t
+1+δ
+
+
+
+Market impact
++αg0
+
+i∈H
+ci
+t
+ϕi
+t −ϕi
+t−∆t
+
+
+
+
+Rebalancing cost
+.
+
+(23)
+4  Example: hedging volatility risk with VolGAN
+The above methodology is general, but we will illustrate it with an example: hedging of 
+option portfolios using VolGAN (Vuletić & Cont, 2024), a generative model for arbitrage-
+free implied volatility surfaces. The model is trained on time series of implied volatility 
+surfaces and underlying prices and is capable of generating realistic scenarios for joint 
+dynamics of the implied volatility surface and the underlying asset. We utilize raw Vol­
+GAN outputs, without scenario re-weighting (Cont and Vuletić, 2023).
+The portfolio we wish to hedge is a one-month long straddle with strikes K = m0S0, 
+for m0 ∈{0.75, 0.8, 0.9, 1.1, 1.2, 1.25}. The initial portfolio instrument set indexed by P 
+consists of a Call(K, T) and a Put(K, T), with K = m0S0 and T = 1/12.
+In addition to data-driven hedging through VolGAN, we also consider delta hedging and 
+delta-vega hedging. The hedging experiment is performed over non-overlapping periods. 
+That is, a long straddle is entered and hedged until expiry, after which the new long straddle 
+1 3
+
+Annals of Operations Research
+is entered and the exercise is repeated. This results in 52 non-overlapping one-month peri­
+ods. One day is taken to be ∆t = 1/252.
+The initial hedging set indexed by H0 consists of one-month calls and puts whose initial 
+moneyness values are in the set {0.9, 0.95, 0.975, 1, 1.025, 1.05, 1.1}, where m < 1 corre­
+spond to puts and m ≥1 to calls. The hedging set indexed by H consists of all of the options 
+in the initial hedging set that are not in the portfolio we wish to hedge, that is H = H0 \ P. 
+The values α used for regularization are obtained through validation on new independent 
+samples from VolGAN, as discussed in the next subsection.
+Delta-vega hedging The hedging instruments are the underlying and an option. Denot­
+ing by κi
+t the vega of the option i ∈P in the initial portfolio we wish to hedge (long strad­
+dle) at time t, the overall vega of the portfolio is
+ 
+κV
+t =
+∑
+i∈P
+ψiκi
+t.
+In order to obtain vega-neutrality, it is necessary to include an option H1
+t with a vega of κH
+t 
+whose hedge ratio is determined by the ratio of sensitivities:
+ 
+ϕ1
+t = κV
+t
+κH
+t
+.
+Delta-neutrality is obtained by adjusting the position in the underlying. Denoting by ∆V
+t 
+and ∆H
+t the deltas of the portfolio and the option used for hedging, the hedge ratio ϕ0 cor­
+responding to the underlying is therefore:
+ 
+ϕ0
+t = ∆V
+t −ϕ1
+t∆H
+t .
+We opt to hedge with an option initiated at-the-money, i.e. with a strike K = S0. However, 
+the choice of the hedging instrument is not unique. Opting for options with moneyness far 
+away from one, or in general with low vega, may result in unstable hedge ratios ϕ1
+t.
+Delta hedging The only hedging instrument is the underlying. The hedge ratio is the 
+portfolio delta:
+ 
+ϕ0
+t = ∆V
+t .
+4.1  Data
+We use data on SPX options extracted from OptionMetrics for the period Jan 2000-28 Feb 
+2023. The data from 3rd Jan 2000 to 16th Jun 2018 is used for training the generative model, 
+and the subsequent time period for out-of-sample testing. We construct smooth implied vola­
+tility surfaces and bid-ask spread surfaces for calls and puts by applying kernel smoothing 
+to market data (Cont & da Fonseca, 2002; Vuletić & Cont, 2024). More precisely, we use a 
+vega-weighted Nadaraya-Watson kernel estimator with a 2D Gaussian kernel, using the same 
+bandwidth hyperparameters for the implied volatility and for the bid-ask spread surfaces as 
+for VolGAN data pre-processing (Vuletić & Cont, 2024). The grid (m, τ) is the one used for 
+1 3
+
+Annals of Operations Research
+VolGAN training, with 0.6 ≤m ≤1.4 and times to maturity τ ranging from one day to one 
+year. Interpolation is performed linearly first in moneyness, and then in time to maturity. When 
+extrapolation is necessary, it is linear. The average bid-ask spread surfaces for calls and puts 
+after smoothing are shown in Fig. 1. On average, longer-dated in-the-money options have a 
+higher bid-ask spread than out-of-the-money options with shorter times to expiry. We observe 
+a skew in both the moneyness and time to maturity variables.
+We compare the average at-the-money bid-ask spread with the arbitrage penalty (Cont 
+and Vuletić, 2023) in Fig. 2, and note that the instances of non-zero arbitrage penalty coin­
+Fig. 2  Average at-the-money bid-ask spread and the arbitrage penalty (Cont and Vuletić, 2023)
+ 
+Fig. 1  Average bid-ask spread for calls and puts
+ 
+1 3
+
+Annals of Operations Research
+cide with high bid-ask spread values. This observation is consistent with the notion of no-
+arbitrage, since the arbitrage penalty is calculated using implied volatilities of mid-prices.
+4.2  Choosing the regularization parameter
+High values of the regularization parameter α would result in low rebalancing due to the 
+high influence of the transaction costs, whereas low values of α would not provide suffi­
+cient regularization and would lead to high transaction costs. That is, low values of α might 
+result in overfitting, and high values of α in underfitting. In order to set the appropriate 
+value of α, in each one-month experiment, we perform a search at time t = 0 consider­
+ing the potential α values in {0.01, 0.02, . . . , 0.2}, which is a scale similar to that of the 
+transaction-free hedging analysis of Vuletić and Cont (2024). Let ˆA0(α), (ˆϕi
+0(α))i∈H be 
+the solutions of (20) given α, and let {∆V0(ωj), (∆Hi
+0(ωj))i∈H}j=1,...,1000 i.i.d. samples 
+from VolGAN for each starting time t = 0, used for regression fitting. We choose α min­
+imizing the Akaike Information Criterion (AIC) (Akaike, 1974) for the day on which a 
+new position is entered (t = 0), calculated on new M = 100 i.i.d. samples from VolGAN 
+{∆V0(ωj), (∆Hi
+0(ωj))i∈H}j=N+1,...,N+M, independent of the N = 1000 simulations on 
+which the regression coefficients were estimated. The (relative) AIC value in the case of 
+linear regression is:
+ 
+AIC(α) = M log
+(RSS(α)
+M
+)
++ 2
+(
+1 +
+∑
+i∈H
+1 ˆϕi
+0(α)̸=0
+)
+,
+(24)
+where 1 + ∑
+i∈H 1 ˆϕi
+0(α)̸=0 is the number of parameters of the regression fit (1 ˆϕi
+0(α)̸=0 is 
+zero if ˆϕi
+0(α) = 0 and one otherwise), and the residual sum of squares RSS(α) is estimated 
+on the new M samples from VolGAN:
+ 
+RSS(α) =
+N+M
+∑
+j=N+1
+(
+∆Vt(ωj) −ˆA0(α) −
+∑
+i∈H
+ˆϕi
+0(α)∆Hi
+t(ωj)
+)2
+.
+That is, at each starting time t = 0 we choose α by minimizing an AIC criterion, where 
+the set of possible α is A = {0.01, 0.02, . . . , 0.2}. Estimating the AIC on independent 
+VolGAN simulations prevents overfitting and provides more accurate estimates of regres­
+sion fits. Since only VolGAN simulations are used at time t = 0, the choice of α is not 
+anticipative, i.e. there is no look-ahead bias. Figure 3 shows that during periods of market 
+turbulence, higher regularization is preferred. The most common choice is α = 0.01. Fur­
+thermore, we note that the values of m0 closer to one result in more frequent recalibra­
+tion of the regularization parameter α. The fact that the highest value of the regularization 
+parameter is selected during periods of market turbulence suggests that a higher value of 
+α would be more suitable than in those instances. However, a reduced search grid for α of 
+{0.01, 0.05, 0.1, 0.5, 1} results in a similar performance, as demonstrated in the Appendix. 
+We also note that fixing α = 0.25 does not significantly alter the performance either.
+The value of Vt is the same as the gross value of the position since Vt is made up of a long 
+call and a long put. Figure 4 shows that Vt is higher for values of m0 further away from one. 
+1 3
+
+Annals of Operations Research
+Fig. 4  Value Vt of the long straddle position for different values of m0
+ 
+Fig. 3  Choice of regularization parameter α minimizing the AIC (24) for each starting date t = 0 and for 
+different values of m0
+ 
+1 3
+
+Annals of Operations Research
+That is, the same value of α would result in a lower value of the regularization term αg0 in 
+(20) for m0 ∈{0.9, 1.1} compared to m0 ∈{0.75, 0.8, 1.2, 1.25}.
+4.3  Number of hedging instruments
+Since incorporating transaction cost via an ℓ1-penalty (20) leads to sparsity, we investigate 
+the number of hedging instruments selected throughout the testing period. Unsurprisingly, the 
+underlying is always selected. A breakdown of the number of times that each possible hedg­
+ing instrument count was used for each starting value m0 is available in Table 1. Data-driven 
+hedging with VolGAN predominantly selected only the underlying as the hedging instru­
+ments for the straddles with m0 further away from one. When m0 ∈{0.9, 1.1} (the values 
+closest to 1), options were selected alongside the underlying most of the time.
+Figure 5 shows the number of hedging instruments used for different starting values m0. 
+We note a spike in the number of selected hedging instruments at the start of 2019, during 
+the start of the Covid-19 pandemic, and in the second half of 2022.
+4.4  Tracking error statistics
+We first compare the performance during the entire test set, and then without the initial Covid-
+19 shock. To exclude the Covid-19 pandemic effect, we remove 5 one-month periods starting 
+from the position entered on the 13th Feb 2020. This results in exclusion of the dates 13th Feb 
+2020-21st Jul 2020.
+Tracking error Zt statistics under consideration are the mean, median, standard devia­
+tion, and Value-at-Risk, defined as
+ 
+V aRq(Zt) = −F −1
+Zt (q),
+for q = 5%, 2.5%, and 1%, where F −1
+Zt is the quantile function of Zt.
+The tracking error statistics (for all values of m0 pooled together) for delta hedging, 
+delta-vega hedging, and VolGAN are given in Table 2. Outside of the Covid-19 pandemic, 
+VolGAN results in the lowest standard deviation and 1% VaR. The corresponding track­
+ing error distributions over the entire test set are shown in Fig. 6. . We also note a signifi­
+cant reduction in standard deviation, and Value-at-risk metrics compared to the unhedged 
+position.
+Table 1  Frequency of the number of hedging instruments selected for different m0 values
+Number of instruments
+m0
+1
+2
+3
+4
+5
+6
+7
+8
+0.75
+1058
+3
+11
+20
+0
+0
+0
+0
+0.80
+788
+156
+46
+88
+3
+11
+0
+0
+0.90
+193
+279
+168
+277
+93
+67
+15
+0
+1.10
+565
+40
+72
+110
+219
+69
+17
+0
+1.20
+1077
+2
+7
+0
+0
+1
+3
+2
+1.25
+1087
+0
+0
+2
+3
+0
+0
+0
+The total number of days is 21 × 52 = 1092, with an additional day for unwinding. Position expiry dates 
+are not included since the only adjustments in the hedging portfolio happen on days 0, . . . , 20
+1 3
+
+Annals of Operations Research
+Comparing VolGAN hedge with delta hedge in Fig. 7, and with delta-vega hedge in Fig. 
+8, with the Covid-19 pandemic data excluded for better visualization, we observe that all 
+methods result in similar performance in the bulk of the experiments. In most cases where 
+delta hedging results in a positive PnL, the same holds for VolGAN, and the points in 
+the first quadrant appear to scatter symmetrically around x = y. However, there are many 
+instances in which VolGAN results in a positive PnL, while delta hedging does not. In the 
+scenarios in which both approaches result in a negative PnL, the loss is usually more severe 
+for delta-hedging. There is a bit more symmetry when comparing VolGAN with delta-
+vega hedging in Fig. 8. This observation aligns with the statistics in Table 2, where outside 
+of the Covid-19 pandemic, data-driven hedging leads to tracking errors statistics closer to 
+delta-vega hedging than to delta hedging. As m0 moves away from 1, differences in hedging 
+approaches are less prominent: the points are tightly concentrated around x = y.
+A detailed breakdown of performance for each individual value of m0 is available in the 
+Appendix.
+Table 2  Tracking error statistics in USD for all values of m0 over the entire test period
+ Covid-19 period
+Method
+Statistics
+Mean
+Median
+Std
+5% VaR
+2.5% VaR
+1% VaR
+ Included
+Unhedged position
+0.16
+0.29
+60.58
+78.95
+102.07
+155.29
+Delta hedging
+−1.23
+−0.44
+32.70
+19.49
+36.33
+58.63
+Delta-vega hedging
+0.98
+0.00
+29.70
+10.90
+19.70
+43.72
+Data-driven hedging
+0.55
+−0.16
+32.98
+12.79
+23.42
+50.79
+Excluded
+Delta hedging
+−1.46
+−0.36
+8.40
+13.22
+22.84
+36.66
+Delta-vega hedging
+−0.37
+0.00
+9.34
+9.58
+16.67
+34.81
+Data-driven hedging
+−1.05
+−0.18
+8.15
+10.55
+17.32
+33.85
+Fig. 5  Number of hedging instruments selected for different values of m0
+ 
+1 3
+
+Annals of Operations Research
+Fig. 7  Tracking error: delta hedge versus VolGAN hedge. Solid black line: x = y. Covid-19 data 
+excluded
+ 
+Fig. 6  Distribution of tracking error Zt for all values of m0 pooled together, over the entire test set
+ 
+1 3
+
+Annals of Operations Research
+Figures 9 and 10 compare the performance of the data-driven hedging strategy with delta 
+hedging and delta-vega hedging, with the Covid-19 period included.
+4.5  Sensitivity analysis of the hedging strategy
+In order to better understand the nature of the hedging strategy resulting from our method 
+(20), we compare the vega and delta of the straddle Vt with the total vega and delta of the 
+hedged position Zt. As shown in Table 3, the delta exposure of the position is almost com­
+pletely hedged by data-driven hedging. On the other hand, Table 4 shows that although the 
+total vega of the hedged position Zt is reduced compared to that of the unhedged position 
+Vt, it is not zero. These observations show that our data-driven hedging approach (20) is not 
+equivalent to delta-vega hedging. So, unlike what has been suggested in the recent literature 
+(Ludkovski, 2023), there is more to data-driven hedging than just "learning the Greeks".
+5  Summary
+We consider hedging as a conditional risk minimization problem and use a forward-looking 
+data-driven generative model in order to choose hedging instruments and compute hedge 
+ratios for a given portfolio. We simulate joint scenarios for the portfolio and from the hedging 
+instruments, conditional on the current market conditions, via a generative model. In the case 
+of variance minimization, we perform regression of the simulated portfolio increments onto 
+the simulated increments of the hedging instruments. Incorporating transaction costs leads to 
+an ℓ1-regularized regression problem, which induces sparsity and leads to the minimal subset 
+of rebalancing transactions. We illustrated how our approach can be applied to hedge volatility 
+Fig. 8  Tracking error: delta-vega hedge versus VolGAN hedge. Solid black line: x = y. Covid-19 data 
+excluded
+ 
+1 3
+
+Annals of Operations Research
+risk through hedging long straddle positions using VolGAN (Vuletić & Cont, 2024). How­
+ever, our approach is not restricted to the use of a particular generative model or architecture, 
+and can be combined with other generative models and applied to other asset classes.
+Our methodology combines the benefits of regression-based hedging, such as linear­
+ity, interpretability, and incorporation of covariance between different instruments, with the 
+Fig. 10  Tracking error: delta-vega hedge versus VolGAN hedge. Solid black line: x = y
+ 
+Fig. 9  Tracking error: delta hedge versus VolGAN hedge. Solid black line: x = y
+ 
+1 3
+
+Annals of Operations Research
+flexibility of generative models for scenario simulation. We have applied this approach to 
+dynamic hedging, but it may also be deployed for the design of trading strategies, by replac­
+ing for instance the variance minimization step with a mean-variance tradeoff involving a 
+target return.
+Appendix
+Coordinate descent for data-driven hedging with transaction costs
+We wish to solve
+ 
+inf
+At∈R,ϕt∈Rd+1
+1
+N
+N
+
+k=1
+
+∆Vt(ωk) −At −
+
+i∈H
+ϕi
+t∆Hi
+t(ωk)
+2
+
+
+
+Quadratic hedging error
++αg0
+
+i∈H
+ci
+t
+ϕi
+t −ϕi
+t−∆t
+
+
+
+
+Rebalancing cost
+, (25)
+Equivalently, by decomposing ϕt = ϕt−∆t + ∆ϕt−∆t, the problem can be expressed as
+ 
+inf
+At∈R,∆ϕt−∆t∈Rd+1
+1
+N
+N
+
+k=1
+
+
+
+
+
+
+∆Vt(ωk) −
+
+i∈H
+ϕi
+t−∆t∆Hi
+t(ωk)
+
+−
+At −
+
+i∈H
+∆ϕi
+t−∆t∆Hi
+t(ωk)
+
+
+
+
+
+2
++ αg0
+
+i∈H
+ci
+t
+∆ϕi
+t−∆t
+ . (26)
+Table 3  Delta statistics
+Mean
+Median
+95% Quantile
+5% Quantile
+Std Dev
+m0
+Zt
+Vt
+Zt
+Vt
+Zt
+Vt
+Zt
+Vt
+Zt
+Vt
+0.75
+0.003
+0.994
+0.000
+1.000
+0.005
+1.000
+−0.001
+0.986
+0.023
+0.067
+0.8
+0.003
+0.986
+0.000
+1.000
+0.009
+1.000
+−0.016
+0.958
+0.040
+0.097
+0.9
+−0.011
+0.905
+−0.011
+0.979
+0.051
+1.000
+−0.111
+0.618
+0.100
+0.214
+1.1
+−0.006
+−0.940
+0.000
+−0.997
+0.035
+−0.760
+−0.049
+−1.000
+0.066
+0.174
+1.2
+−0.000
+−0.996
+−0.000
+−1.000
+0.000
+−0.998
+−0.001
+−1.000
+0.016
+0.039
+1.25
+0.000
+−0.999
+−0.000
+−1.000
+0.000
+−1.000
+−0.001
+−1.000
+0.006
+0.009
+Table 4  Vega statistics
+Mean
+Median
+95% Quantile
+Std Dev
+m0
+Zt
+Vt
+Zt
+Vt
+Zt
+Vt
+Zt
+Vt
+0.75
+5.828
+6.889
+0.078
+0.102
+32.904
+35.288
+21.269
+22.073
+0.8
+9.546
+17.136
+0.170
+0.805
+66.971
+91.581
+36.314
+40.845
+0.9
+0.096
+111.500
+−4.397
+37.221
+179.155
+452.507
+89.315
+150.315
+1.1
+26.165
+66.529
+2.807
+7.817
+170.733
+326.120
+68.777
+108.969
+1.2
+3.302
+3.637
+0.000
+0.000
+5.399
+5.637
+23.437
+25.145
+1.25
+1.076
+1.079
+0.000
+0.000
+0.239
+0.239
+10.013
+10.022
+1 3
+
+Annals of Operations Research
+With J = |H|, this is a generalized LASSO regression (Tibshirani, 1996) of the form
+ 
+inf
+β∈RJ+1
+1
+N
+N
+∑
+k=1
+(
+yk −β0 −
+J
+∑
+j=1
+βixi
+k
+)2
++
+J
+∑
+j=1
+αj |βj| .
+(27)
+To solve it, we apply coordinate descent with soft thresholding, as outlined in Chapter 
+3.8.6 of Hastie et al. (2009). Denote the loss by
+ 
+J(β0, β) = 1
+N ||y −β01 −Xβ||2
+2 +
+J
+∑
+j=1
+αj|βj|,
+where y = (y1, . . . , yn)T , and Xi,j = xi
+j. There is no penalty on the intercept, hence the 
+optimal β∗
+0 will be the solution to ∂J
+∂β0
+= 0 :
+ 
+β0 = 1
+N
+n
+∑
+i=1
+(
+yi −xT
+i β)
+.
+(28)
+Since the regularization term in (27) is co-ordinate separable, we can focus on each 
+j > 0 separately. Define the partial residual as
+ 
+r(−j) = y −β0 −
+∑
+k̸=j
+Xkβk,
+(29)
+where Xk is the k-th column of the N × J design matrix X. We are now interested in 
+solving the sub-problem for βj:
+ 
+min
+βj
+1
+N ||Xjβj −r(−j)||2
+2 + αj|βj|.
+(30)
+A subgradient at zero is
+ 
+2
+N XT
+j
+(
+Xjβj −r(−j))
++ αjsign(βj).
+(31)
+Defining the soft-thresholding map S as
+ 
+S(z, γ) = sign(z) (|z| −γ)+ ,
+we derive a closed-form solution for the βj update:
+ 
+˜βj =
+S(XT
+j r(−j), Nαj
+2
+)
+XT
+j Xj
+.
+(32)
+1 3
+
+Annals of Operations Research
+Hence, we may iterate over each j = 0, . . . , J, until convergence, or until the maximum 
+number of iterations, as outlined in Algorithm 2.
+At each time step t, we use the Algorithm 2 by applying the steps below. 
+1. Construct yi as the adjusted portfolio changes: yi = ∆Vt(ωi) −∑
+j∈H ϕj
+t−∆t∆H(ωi).
+2. Define Xi,j as the instrument price changes: Xi,j = ∆Hj
+t (ωi).
+3. Set αj proportional to transaction costs: αj = αg0cj
+t.
+4. Find the optimal β values via the Algorithm 2.
+5. Set ϕt = ϕt−∆t + β and At = β0.
+Algorithm 2  Coordinate Descent for Generalized Lasso
+1 3
+
+Annals of Operations Research
+Hedging with VolGAN: robustness checks
+Performance for different values of m0
+Table 5 contains tracking error statistics over the entire dataset, for each value of m0. Most 
+of the time, for m0 < 1, data-driven hedging results in all tracking error statistics of interest 
+between those corresponding to delta hedging and delta-vega hedging. The higher standard 
+deviation in m0 = 0.75 is due to the options selected as hedging instruments at the begin­
+ning of the Covid-19 pandemic, which, as illustrated in Fig. 11, results in a more prominent 
+volatility of the tracking error. As more options are selected for hedging, the performance 
+of data-driven hedging is closer to that of delta-vega hedging than to pure delta hedging.
+When m0 = 1.1, hedging with options brings about a very clear reduction in all risk 
+measures being considered. In this instance, delta hedging has the worst performance, delta-
+vega hedging has the lowest tracking error variance, but data-driven hedging results in the 
+lowest Value-at-Risk. For m0 ∈{1.2, 1.25}, data-driven hedging produces tracking error 
+of the lowest Variance, with Value-at-Risk statistics that are usually in between those cor­
+responding to the Black-Scholes benchmarks.
+Table 5  Performance metrics for different m0 values over the entire test set (rounded to two decimal places)
+m0
+Method
+Statistics
+Mean
+Median
+Std
+5% VaR
+2.5% VaR
+1% VaR
+0.75
+Delta hedging
+0.17
+−0.06
+2.81
+6.10
+7.32
+12.37
+Delta-vega hedging
+1.38
+0.11
+12.89
+5.07
+6.54
+9.09
+Data-driven hedging
+1.48
+0.00
+19.23
+5.66
+7.01
+9.04
+ 0.80
+Delta hedging
+0.39
+−0.32
+27.20
+8.69
+12.23
+18.39
+Delta-vega hedging
+2.43
+0.23
+26.65
+6.31
+8.82
+17.05
+Data-driven hedging
+2.49
+−0.16
+32.66
+7.78
+10.31
+15.30
+0.90
+Delta hedging
+−0.35
+−1.95
+70.56
+40.24
+53.71
+81.30
+Delta-vega hedging
+4.90
+0.55
+63.76
+26.88
+56.35
+81.00
+Data-driven hedging
+4.02
+−0.32
+68.66
+34.48
+55.92
+80.78
+1.10
+Delta hedging
+−5.17
+−0.98
+17.00
+33.66
+46.66
+76.69
+Delta-vega hedging
+−1.20
+−0.13
+11.88
+19.59
+31.40
+51.36
+Data-driven hedging
+−2.82
+−0.74
+13.79
+19.17
+31.41
+47.58
+1.20
+Delta hedging
+−1.41
+0.00
+11.90
+8.59
+13.36
+73.09
+Delta-vega hedging
+−0.87
+0.00
+10.49
+8.07
+12.79
+31.22
+Data-driven hedging
+−1.04
+−0.01
+9.26
+8.45
+13.39
+56.66
+1.25
+Delta hedging
+−1.02
+−0.001
+9.33
+8.61
+13.88
+54.51
+Delta-vega hedging
+−0.79
+0.00
+8.47
+8.42
+13.88
+37.12
+Data-driven hedging
+−0.82
+−0.01
+8.04
+8.60
+13.87
+48.52
+The initial positions Z0 = 0 are included in the statistics
+Table 6  Proportion of observations on which the tracking portfolio Πt was within 1% of the initial straddle 
+portfolio value Vt for different methods and m0 values
+Method/m0
+0.75
+0.80
+0.90
+1.10
+1.20
+1.25
+Delta-hedging
+95.98%
+88.11%
+43.62%
+50.61%
+84.53%
+89.34%
+Delta-vega hedging
+94.49%
+88.02%
+49.04%
+51.57%
+85.05%
+89.42%
+VolGAN-based hedging
+95.37%
+89.25%
+51.92%
+54.63%
+84.53%
+89.34%
+1 3
+
+Annals of Operations Research
+The tracking errors Zt that come from different hedging approaches as functions of time 
+are shown in Fig. 11, for various values of m0. For better visualization, Fig. 12 displays the 
+tracking values on a scale that is linear in the interval [−50, 50] and logarithmic away from 
+it. All three methods track the initial portfolio satisfactorily well, aside from the Covid-19 
+pandemic. The three methods are difficult to differentiate from each other during periods of 
+calm. Table 6 highlights that the absolute value of the tracking error is usually less than 1% 
+of the portfolio value, that is, the tracking portfolio and the portfolio we wish to hedge are 
+usually within 1% of each other. Furthermore, Table 6 indicates that all methods perform 
+worse for values of m0 closer to one. The most volatility is visible during March-June 2020, 
+and during 2022. The corresponding tracking error distributions are available in Fig. 13. The 
+bulk of the tracking error distribution is usually the tightest for data-driven hedging.
+Given that we considered all 52 one-month intervals jointly, and that the start of the 
+Covid-19 pandemic resulted in high tracking error variance, as well as that the tracking error 
+was mainly positive during this period (as evidenced in Fig. 11), it is important to repeat the 
+analysis with 13th Feb 2020-21st Jul 2020 excluded. Once again, when m0 < 0 data-driven 
+hedging results in tracking error statistics in between of that corresponding to the Black-
+Scholes benchmark. As fewer options are selected for hedging, data-driven hedging results 
+in performance more similar to that of delta hedging. All three methods obtain very similar 
+performance to each other for values of m0 ∈{0.75, 1.2, 1.25}, which have the lowest total 
+vega exposure (Table 4). Interestingly, all three examples result in the underlying being 
+selected by data-driven hedging during the analysis period (Fig. 5). The most significant 
+difference is visible in the m0 = 1.1 example, when data-driven hedging outperforms the 
+benchmarks in both variance and Value-at-Risk statistics. Outside of the Covid-19 pan­
+Table 7  Performance metrics for different m0 values without the start of the Covid-19 pandemic (rounded 
+to two decimal places)
+m0
+Method
+Statistics
+Mean
+Median
+Std
+5% VaR
+2.5% VaR
+1% VaR
+0.75
+Delta hedging
+−0.23
+0.00
+2.81
+4.99
+6.27
+7.15
+Delta-vega hedging
+0.09
+0.04
+2.92
+4.89
+6.47
+8.57
+Data-driven hedging
+−0.29
+0.00
+2.87
+5.24
+6.28
+7.56
+0.80
+Delta hedging
+−0.73
+−0.17
+3.45
+6.60
+8.01
+11.09
+Delta-vega hedging
+0.002
+0.11
+4.34
+6.19
+8.58
+17.35
+Data-driven hedging
+−0.71
+−0.19
+3.83
+7.01
+9.13
+13.22
+0.90
+Delta hedging
+−4.35
+−1.77
+15.58
+34.46
+42.10
+51.00
+Delta-vega hedging
+−0.88
+0.40
+18.52
+27.61
+56.87
+81.74
+Data-driven hedging
+−2.87
+−0.39
+16.30
+32.88
+51.28
+73.20
+1.10
+Delta hedging
+−3.15
+−0.82
+10.09
+24.34
+32.93
+43.12
+Delta-vega hedging
+−1.19
+−0.17
+10.47
+17.59
+27.81
+40.52
+Data-driven hedging
+−2.13
+−0.72
+7.84
+16.40
+24.08
+33.99
+1.20
+Delta hedging
+−0.17
+−0.02
+4.49
+7.17
+9.48
+12.79
+Delta-vega hedging
+−0.12
+−0.003
+4.50
+7.22
+9.38
+12.80
+Data-driven hedging
+−0.17
+−0.07
+4.49
+7.14
+9.46
+12.78
+1.25
+Delta hedging
+−0.14
+−0.06
+4.67
+7.42
+9.77
+13.34
+Delta-vega hedging
+−0.14
+−0.05
+4.67
+7.42
+9.78
+13.36
+Data-driven hedging
+−0.14
+−0.07
+4.67
+7.41
+9.78
+13.32
+The initial positions Z0 = 0 are included in the statistics
+1 3
+
+Annals of Operations Research
+demic, data-driven hedging always results in lower variance and 1% Value-at-Risk than 
+delta-vega hedging, even when more options are selected for hedging, resulting in higher 
+rebalancing costs (Table 7).
+Figure 11 indicates that the majority of the tracking error variance after 2020 is due to 
+the behavior in 2022. During this time VolGAN combined with (20) results in much more 
+stable hedging performance compared to the Black-Scholes benchmarks.
+Robustness with respect to regularization parameter
+We investigate how the results of the data-driven hedging change with the change of the 
+search grid A for the regularization parameter α. Furthermore, we compare the perfor­
+mance for fixed α on three different scales. From Fig. 14, we conclude that for α = 0.001 
+Fig. 11  Tracking error Zt as a function of time for different values of m0. Once an initial one-month 
+straddle is expired, a new one is entered
+ 
+1 3
+
+Annals of Operations Research
+overfitting occurs, whereas α = 5 results in underfitting. However, α = 0.25 leads to a 
+similar tracking error to that corresponding to a dynamic choice of α via the AIC criterion.
+Table 8 contains the information from Table 2, in addition to the results for 
+data-driven hedging with potential values of the regularization parameter in 
+A1 = {0.01, 0.05, 0.1, 0.5, 1}. The tracking error statistics are very similar for both the 
+search grids A1 and A2 = {0.01, 0.02, . . . , 0.2}, indicating robustness to the regularization 
+parameter. However, it is important to note that much lower or higher values of α may result 
+in overfitting and underfitting, as demonstrated with α = 0.001 and α = 5.
+Acknowledgements  We thank Peter Bank, Lorenzo Bergomi, Nathan De Carvalho, Fang Rui Lim, Chris­
+toph Reisinger, Eric Schaanning, Justin Sirignano, Gabriel Tucci, and seminar participants at QuantMinds 
+Fig. 12  Tracking error Zt as a function of time for different values of m0 on a scale which is linear in 
+[−50, 50], and logarithmic away from this interval. Once an initial one-month straddle is expired, a new 
+one is entered
+ 
+1 3
+
+Annals of Operations Research
+Table 8  Performance metrics for all values of m0 over the entire test set (rounded to two decimal places)
+Covid-19 period
+Method
+Statistics
+Mean
+Median Std
+5% VaR
+2.5% VaR
+1% VaR
+Included
+Delta hedging
+−1.23
+−0.44
+32.70
+19.49
+36.33
+58.63
+Delta-vega hedging
+0.98
+0.00
+29.70
+10.90
+19.70
+43.72
+Data-driven hedging (A1)
+0.58
+−0.13
+33.01
+13.01
+24.44
+50.45
+Data-driven hedging (A2)
+0.55
+−0.16
+32.98
+12.79
+23.42
+50.79
+Excluded
+Delta hedging
+−1.46
+−0.36
+8.40
+13.22
+22.84
+36.66
+Delta-vega hedging
+−0.37
+0.00
+9.34
+9.58
+16.67
+34.81
+Data-driven hedging (A1)
+−1.02
+−0.18
+8.16
+10.80
+18.08
+35.35
+Data-driven hedging (A2)
+−1.05
+−0.18
+8.15
+10.55
+17.32
+33.85
+The initial positions Z0 = 0 are included in the statistics. Grid searches for α: A1 = {0.01, 0.05, 0.1, 0.5, 1} 
+and A2 = {0.01, 0.02, . . . , 0.2}
+Fig. 13  Histogram of the tracking error Zt for different values of m0. Once an initial one-month straddle 
+is expired, a new one is entered
+ 
+1 3
+
+Annals of Operations Research
+2024, the 18th Financial Risks International Forum, UBS Quant, EL & HOLT Converence 2025, and the 
+5th Oxford-ETH Workshop on Mathematical & Computational Finance for helpful comments and remarks.
+Funding  Milena Vuletić’s research is supported by BNP Paribas through the EPSRC Centre for Doctoral 
+Training in Mathematics of Random Systems: Analysis, Modelling and Simulation (ESPRC Grant EP/
+S023925/1).
+Data availability  SPX options data is available from OptionMetrics.
+Code Availability  VolGAN code is available on GitHub: https://github.com/milenavuletic/VolGAN/.
+Open Access  This article is licensed under a Creative Commons Attribution 4.0 International License, 
+which permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as 
+you give appropriate credit to the original author(s) and the source, provide a link to the Creative Commons 
+licence, and indicate if changes were made. The images or other third party material in this article are 
+included in the article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. 
+If material is not included in the article’s Creative Commons licence and your intended use is not permitted 
+by statutory regulation or exceeds the permitted use, you will need to obtain permission directly from the 
+copyright holder. To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Akaike, H. (1974). A new look at the statistical model identification. IEEE Transactions on Automatic Con­
+trol, 19(6), 716–723.
+Bemporad, A., Bellucci, L., & Gabbriellini, T. (2014). Dynamic option hedging via stochastic model predic­
+tive control based on scenario simulation. Quantitative Finance, 14(10), 1739–1751.
+Bertsekas, D. P., & Tsitsiklis, J. N. (1996). Neuro-dynamic programming. Athena Scientific.
+Fig. 14  Tracking error as a function of time, m0 = 0.75. Comparison between different values of α. Opt­
+ing for very low or very high values of α results in overfitting and underfitting, respectively. Opting for 
+fixed α = 0.25 results in a similar performance to performing a grid search over A1 or A2. The "AIC 
+selected" refers to searching over A2 = {0.01, 0.02, . . . , 0.2}
+ 
+1 3
+
+Annals of Operations Research
+Buehler, H., Gonon, L., Teichmann, J., & Wood, B. (2019). Deep hedging. Quantitative Finance, 19(8), 
+1271–1291.
+Cao, J., Chen, J., Farghadani, S., Hull, J., Poulos, Z., Wang, Z., & Yuan, J. (2023). Gamma and Vega hedging 
+using deep distributional reinforcement learning. Frontiers in Artificial Intelligence, 6, 1129370. 
+Capriotti, L., & Giles, M. (2024). 15 years of adjoint algorithmic differentiation (AAD) in finance. Quantita­
+tive Finance, 24(9), 1353–1379.
+Carverhill, A. P., & Cheuk, T. H. (2003). Alternative neural network approach for option pricing and hedging. 
+Available at SSRN 480562.
+Chen, F., & Sutcliffe, C. (2012). Pricing and hedging short sterling options using neural networks. Intelligent 
+Systems in Accounting, Finance and Management, 19(2), 128–149.
+Chen, M., Xu, R., Xu, Y., & Zhang, R. (2025). Diffusion factor models: Generating high-dimensional returns 
+with factor structure.
+Cohen, S. N., Reisinger, C., & Wang, S. (2022). Hedging option books using neural-SDE market models. 
+Applied Mathematical Finance, 29(5), 366–401.
+Cont, R. (2006). Model uncertainty and its impact on the pricing of derivative instruments. Mathematical 
+Finance, 16(3), 519–547.
+Cont, R., Cucuringu, M., Xu, R., & Zhang, C. (2025). Tail-GAN: Learning to Simulate Tail Risk Scenarios. 
+Management Science.
+Cont, R., & da Fonseca, J. (2002). Dynamics of implied volatility surfaces. Quantitative Finance, 2(1), 
+45–60.
+Cont, R., & Kan, Y. H. (2011). Dynamic hedging of portfolio credit derivatives. SIAM Journal on Financial 
+Mathematics, 2(1), 112–140.
+Cont, R., Kukanov, A., & Stoikov, S. (2014). The price impact of order book events. Journal of Financial 
+Econometrics, 12(1), 47–88.
+Cont, R., & Vuletić, M. (2023). Simulation of arbitrage-free implied volatility surfaces. Applied Mathemati­
+cal Finance, 30, 94–121.
+De La Peña, J. I., Iturricastillo, I., Moreno, R., Román, F., & Trigo, E. (2021). Towards an immunization 
+perfect model? International Journal of Finance & Economics, 26(1), 1181–1196.
+Fan, L., & Sirignano, J. (2024). Machine learning methods for pricing financial derivatives. arXiv preprint 
+arXiv:2406.00459.
+Föllmer, H., & Schweizer, M. (1988). Hedging by sequential regression: an introduction to the mathematics 
+of option trading. ASTIN Bulletin, 18(2), 147–160.
+Fries, C. P. (2019). Stochastic automatic differentiation: Automatic differentiation for Monte-Carlo simula­
+tions. Quantitative Finance, 19(6), 1043–1059.
+Goodfellow, I., Pouget-Abadie, J., Mirza, M., Xu, B., Warde-Farley, D., Ozair, S., Courville, A., & Bengio, Y. 
+(2014). Generative adversarial nets. In Z. Ghahramani, M. Welling, C. Cortes, N. Lawrence, & K. Wein­
+berger (Eds.), Advances in neural information processing systems. (Vol. 27). Curran Associates Inc.
+Hastie, T., Tibshirani, R., & Friedman, J. (2009). The elements of statistical learning: Data mining, inference, 
+and prediction (2nd ed.). Springer.
+Hoerl, A. E., & Kennard, R. W. (1981). Ridge regression-1980: advances, algorithms, and applications. 
+American Journal of Mathematical and Management Sciences, 1(1), 5–83.
+Hutchinson, J. M., Lo, A. W., & Poggio, T. (1994). A nonparametric approach to pricing and hedging deriva­
+tive securities via learning networks. Journal of Finance, 49(3), 851–889.
+Lamberton, D., Pham, H., & Schweizer, M. (1998). Local risk-minimization under transaction costs. Math­
+ematical Operations Research, 23(3), 585–612.
+Limmer, Y., & Horvath, B. (2024). Robust hedging GANs: Towards automated robustification of hedging 
+strategies. Applied Mathematical Finance, 1–38.
+Li, X., Uysal, A. S., & Mulvey, J. M. (2022). Multi-period portfolio optimization using model predictive 
+control with mean-variance and risk parity frameworks. European Journal of Operational Research, 
+299(3), 1158–1176.
+Lütkebohmert, E., Schmidt, T., & Sester, J. (2022). Robust deep hedging. Quantitative Finance, 22(8), 
+1465–1480.
+Ludkovski, M. (2023). Statistical machine learning for quantitative finance. Annual Review of Statistics and 
+Its Application, 10(1), 271–295.
+Mercurio, F., & Vorst, T. (1996). Option pricing with hedging at fixed trading dates. Applied Mathematical 
+Finance, 3(2), 135–158.
+Mercurio, F., & Vorst, T. C. F. (1997). Option pricing and hedging in discrete time with transaction costs and 
+incomplete markets. In M. A. H. Dempster & S. R. Pliska (Eds.), Mathematics of derivative securities 
+(pp. 190–215). Cambridge, UK: Cambridge University Press.
+Mirza, M., & Osindero, S. (2014). Conditional Generative Adversarial Nets.
+1 3
+
+Annals of Operations Research
+Mulvey, J. M., & Ruszczyński, A. (1995). A new scenario decomposition method for large-scale stochastic 
+optimization. Operations Research, 43(3), 477–490.
+Rockafellar, R. T. (2018). Solving stochastic programming problems with risk measures by progressive hedg­
+ing. Set-Valued and Variational Analysis, 26, 759–768.
+Rockafellar, R. T., & Wets, R.J.-B. (1991). Scenarios and policy aggregation in optimization under uncer­
+tainty. Mathematical Operations Research, 16, 119–147.
+Ruf, J., & Wang, W. (2020). Neural networks for option pricing and hedging: A literature review. Journal of 
+Computational Finance, 24, 1–46.
+Ruf, J., & Wang, W. (2022). Hedging with linear regressions and neural networks. Journal of Business & 
+Economic Statistics, 40(4), 1442–1454.
+Schweizer, M. (1995). Variance-optimal hedging in discrete time. Mathematical Operations Research, 20(1), 
+1–32.
+Sercu, P., & Wu, X. (2000). Cross-and delta-hedges: Regression-versus price-based hedge ratios. Journal of 
+Banking & Finance, 24(5), 735–757.
+Tibshirani, R. (1996). Regression shrinkage and selection via the LASSO . Journal of the Royal Statistical 
+Society, Series B: Statistical Methodology, 58(1), 267–288. 
+Vuletić, M., & Cont, R. (2024). Volgan: A generative model for arbitrage-free implied volatility surfaces. 
+Applied Mathematical Finance, 31(4), 203–238.
+Vuletić, M., Prenzel, F., & Cucuringu, M. (2024). Fin-GAN: forecasting and classifying financial time series 
+via generative adversarial networks. Quantitative Finance, 24(2), 175–199.
+Webster, K. T. (2023). Handbook of price impact modeling. Chapman and Hall/CRC.
+Publisher's Note  Springer Nature remains neutral with regard to jurisdictional claims in published maps and 
+institutional affiliations.
+1 3

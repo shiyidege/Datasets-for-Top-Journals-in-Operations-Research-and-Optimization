@@ -1,0 +1,1808 @@
+TITLE: Branch-and-Bound for Bi-objective Integer Programming
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2019
+DOI: https://doi.org/10.1287/ijoc.2018.0856
+---
+
+Branch-and-bound for bi-objective integer programming ∗
+Sophie N. Parragh
+Fabien Tricoire
+Institute of Production and Logistics Management
+Johannes Kepler University, Linz, Austria
+{sophie.parragh,fabien.tricoire}@univie.ac.at
+September 19, 2018
+Abstract
+In bi-objective integer optimization the optimal result corresponds to a set of non-dominated solu-
+tions. We propose a generic bi-objective branch-and-bound algorithm that uses a problem-independent
+branching rule exploiting available integer solutions and takes advantage of integer objective coeﬃcients.
+The developed algorithm is applied to bi-objective facility location problems, to the bi-objective set cov-
+ering problem, as well as to the bi-objective team orienteering problem with time windows. In the latter
+case, lower bound sets are computed by means of column generation. Comparison to state-of-the-art
+exact algorithms shows the eﬀectiveness of the proposed branch-and-bound algorithm.
+1
+Introduction
+We live in a world full of trade-oﬀs. In almost every problem situation we encounter, it is diﬃcult to deﬁne
+the one and only goal to aim for, especially whenever more than one decision maker or stakeholder is involved.
+Thus, many if not all practical problems involve several and often conﬂicting objectives. Prominent examples
+are proﬁtability or cost versus environmental concerns (Ramos et al. 2014) or customer satisfaction (Braekers
+et al. 2016). Whenever it is not possible to aggregate these conﬂicting objectives in a meaningful way, it is
+recommendable to produce the set of trade-oﬀsolutions in order to elucidate their trade-oﬀrelationship.
+In this paper, we propose a branch-and-bound framework which produces the optimal set of trade-oﬀso-
+lutions for optimization problems with two objectives which can be modeled as integer linear programs. The
+main contributions are a new problem-independent branching rule for bi-objective optimization, building
+up on the Pareto branching idea of Stidsen et al. (2014), and several improvements exploiting the integral-
+ity of objective function values. We compare our framework to existing general purpose state-of-the-art
+frameworks, such as the ϵ-constraint framework and the balanced box method, and to results obtained by
+means of another branch-and-bound algorithm developed by Belotti et al. (2013). Furthermore, we apply
+it to a bi-objective orienteering problem for which lower bound sets are produced using column generation.
+Although column generation has been used in the context of bi-objective optimization, e.g. in the context of
+robust airline crew scheduling (Tam et al. 2011), vehicle routing (Sarpong et al. 2013), and bi-objective linear
+programming (Raith et al. 2012), this is, to the best of our knowledge, the ﬁrst time column generation is
+used in a bi-objective branch-and-bound algorithm, resulting in a bi-objective branch-and-price algorithm.
+The paper is organized as follows. In Sections 2 and 3, we give preliminaries and we review related
+work. In Section 4, we present the key ingredients to our branch-and-bound framework and in Section 5 we
+discuss the proposed enhancements. Experimental results and how we embed column generation into our
+branch-and-bound framework are presented in Section 6. Section 7 concludes the paper.
+∗Accepted for publication in INFORMS Journal On Computing; doi: 10.1287/ijoc.2018.0856
+1
+arXiv:1809.06823v1 [cs.DS] 18 Sep 2018
+
+2
+Preliminaries
+The aim of this paper is to solve bi-objective integer linear programs of the following form:
+min
+x
+f(x) = (f1(x), f2(x))
+s.t.
+Ax = b
+(1)
+xi
+integer
+∀i = 1, . . . . , n
+where f(x) is the vector of objective functions, A is the constraint matrix of size m×n, b the right hand side
+vector of size m, and xi the decision variables which are restricted to integer values. An important subclass
+are binary (combinatorial) problems.
+In formulation (1) we strive for identifying the set of Pareto optimal solutions according to the given
+objectives. A feasible solution is Pareto optimal if there does not exist any feasible solution which dominates
+it, i.e. which is better in one objective and not worse in any other objective. The image of a Pareto optimal
+solution in criterion space is referred to as non-dominated point. Each non-dominated point may represent
+more than one Pareto optimal solution. We aim at generating all non-dominated points, i.e. at least one
+Pareto optimal or eﬃcient solution per non-dominated point.
+Depending on the structure of the objective functions and the feasible domains of the variables, the set of
+all non-dominated points may take diﬀerent shapes. In the case where all variables assume continuous values,
+it corresponds to the boundary of the convex hull of the image of all feasible solutions in criterion space. It can
+be characterized by the extreme points of the boundary. These extreme points can be computed eﬃciently,
+e.g. by the weighted sum method of Aneja and Nair (1979). It combines the two objectives into a single one,
+resulting in (w1f1(x) + w2f2(x)), with w1 and w2 giving the weights of objective one and two, respectively.
+These weights are changed systematically so as to obtain the entire set of extreme points. In the case where
+all variables may only take integer values, which we look at, the set of non-dominated points is composed
+of points which may or may not lie on the boundary of the convex hull in criterion space. Solutions whose
+images in criterion space correspond to extreme points are called extreme (supported) eﬃcient solutions,
+those that correspond to points that lie on the boundary are called supported eﬃcient solutions and those
+that correspond to points that lie in the interior of the convex hull but are still non-dominated are called
+non-supported eﬃcient solutions. In the integer case, the set of extreme points can also be computed by
+means of the weighted sum method.
+Additional important notions in multi-objective optimization are ideal point and nadir point. The ideal
+point is constructed by combining the best possible values for each objective function. It dominates all
+non-dominated points. The nadir point is its opposite, a point that is dominated by all non-dominated
+points. It is constructed by combining the worst possible values for each objective function of all eﬃcient
+solutions. Both notions have been used in the context of branch-and-bound algorithms for multi-objective
+optimization. For a more detailed introduction to multicriteria decision making, we refer to Ehrgott (2005).
+3
+Related work
+Exact approaches in multi-objective (mixed) integer programming can be divided into two classes: those that
+work in the space of objective function values (referred to as criterion space search methods, e.g. by Boland
+et al. (2015a)) and those that work in the space of decision variables (generalizations of branch-and-bound
+algorithms).
+Criterion space search methods solve a succession of single-objective problems in order to compute the set
+of Pareto optimal solutions. Therefore, they exploit the power of state-of-the-art mixed integer programming
+solvers. This appears to be one of their main advantages in comparison to generalizations of branch-and-
+bound algorithms (Boland et al. 2015b). However, many combinatorial single-objective problems cannot be
+solved eﬃciently by commercial solvers, e.g. the most eﬃcient exact algorithms in the ﬁeld of vehicle routing
+rely on column generation based techniques (see e.g. Baldacci et al. 2012). Thus, especially in this context
+but also in general, it is not clear whether a criterion space search method or a bi-objective branch-and-bound
+algorithm is more eﬃcient.
+2
+
+One of the most popular criterion space search methods is the ϵ-constraint method, ﬁrst introduced
+by Haimes et al. (1971). It consists in iteratively solving single-objective versions of a bi-objective problem.
+In every step, the ﬁrst objective is optimized, but a constraint is updated in order to improve the quality
+of the solution with regards to the second objective. Thus all non-dominated points are enumerated. The
+ϵ-constraint method is generic and simple to implement and it is among the best performing criterion space
+search algorithms when applied, e.g. to the bi-objective prize-collecting Steiner tree problem (Leitner et al.
+2014).
+Recently, the balanced box method for bi-objective integer programs has been introduced by Boland et al.
+(2015a). Optimal solutions are computed for each objective and they deﬁne a rectangle. This rectangle is
+then split in half and in each half, the objective which has not been optimized yet in this half of the rectangle
+is then optimized. At this stage there are two non-overlapping rectangles. The same procedure is repeated
+recursively on these rectangles.
+Generalizations of branch-and-bound to multiple objectives for mixed 0-1 integer programs are provided
+by Mavrotas and Diakoulaki (1998). Their bounding procedure considers an ideal point for the upper bound
+(they work on a maximization problem), consisting of the best possible value for each objective at this
+node, and keeps branching until this ideal point is dominated by the lower bound set. Vincent et al. (2013)
+improve the algorithm by Mavrotas and Diakoulaki (1998), most notably by comparing bound sets instead
+of ideal points in the bounding procedure. Masin and Bukchin (2008) propose a branch-and-bound method
+that uses a surrogate objective function returning a single numerical value. This value can be treated like a
+lower bound in the context of single objective minimization and conveys information on whether the node
+can be fathomed or not. They illustrate their method using a three-objective scheduling problem example
+but no computational study is provided. Sourd and Spanjaard (2008) use separating hyperplanes between
+upper and lower bound sets in order to discard nodes in a general branch-and-bound framework for integer
+programs. The concept is in fact similar to the lower bound sets deﬁned by Ehrgott and Gandibleux (2006).
+Jozefowiez et al. (2012) introduce a branch-and-cut algorithm for integer programs in which discrete sets are
+used for lower bounds, so nodes can be pruned if every point in the lower bound set is dominated by a point
+in the upper bound set. Partial pruning is used in order to discard parts of the solutions represented by a
+given node of the search tree, thus speeding up the whole tree search. Belotti et al. (2013) are the ﬁrst to
+introduce a general-purpose branch-and-bound algorithm for bi-objective mixed integer linear programming,
+where the continuous variables may appear in both objective functions. They build up on the previous work
+by Vis´ee et al. (1998), Mavrotas and Diakoulaki (1998), Sourd and Spanjaard (2008) and Vincent et al.
+(2013) and like them, they use a binary branching scheme. Improved fathoming rules are introduced in
+order to discard more nodes during tree search. Adelgren et al. (2014) propose an eﬃcient data structure to
+store and update upper bound sets in the context of mixed integer programming and illustrate its eﬃciency
+using the algorithms of Belotti et al. (2013) and of Adelgren and Gupte (2016).
+Ideas most related to ours are presented by Stidsen et al. (2014). They provide a branch-and-bound
+algorithm to deal with a certain class of bi-objective mixed integer linear programs.
+They propose two
+binary branching schemes that exploit partial dominance of already visited integer solutions and the current
+upper bound set, respectively. Our approach relies on bound sets to represent the lower bound, in contrast
+to Stidsen et al. (2014) who solve one scalarized single objective problem in each node of their branch-and-
+bound tree. In addition, in our scheme, the number of child nodes depends on the number of currently
+non-dominated portions which are obtained after applying what we call ﬁltering of the lower bound set by
+the current upper bound set. Ideas similar to the Pareto branching concept of Stidsen et al. (2014) and its
+extension to bound sets presented in this paper, which we name objective space branching, are also being
+explored by Adelgren and Gupte (2016) in the context of a branch-and-bound method for multi-objective
+mixed integer programming and by Gadegaard et al. (2016a) in the context of a bi-objective branch-and-cut
+algorithm.
+Furthermore, we also propose several improvements exploiting the integrality of objective functions.
+These improvements, which we call segment tightening, lower bound lifting, and integer dominance allow to
+disregard even larger regions of the objective space. We illustrate their impact on the overall performance
+of the algorithm in the experimental results section.
+3
+
+4
+A branch-and-bound framework for bi-objective integer opti-
+mization
+Branch-and-bound is a general purpose tree search method to solve (mixed) integer linear programs. As
+its name suggests, it has two main ingredients: branching and bounding. Branching refers to the way the
+search space is partitioned, while bounding refers to the process of using valid bounds to discard subsets of
+the search space without compromising optimality. In the following, we ﬁrst describe the general framework
+of our bi-objective branch-and-bound (BIOBAB). We then describe its diﬀerent ingredients in further detail.
+4.1
+General idea
+Our BIOBAB is similar to a traditional single-objective branch-and-bound algorithm, except for the fact
+that we compare bound sets, instead of single numerical values.
+In the beginning the upper bound (UB) set is empty. It is updated every time an integer solution x is
+obtained. One of three things can happen:
+1. if x is dominated by at least one solution from the UB set, then x is discarded,
+2. if some solutions from the UB set are dominated by x, then these solutions are discarded and x is
+added to the UB set,
+3. if x neither dominates nor is dominated by any solution from the UB set, x is directly added to the
+UB set.
+These conditions can be tested in linear time. If the UB set is sorted according to the values of one objective,
+it is possible to check dominance in logarithmic time using binary search.
+In each branch-and-bound node, lower bound (LB) sets are computed by means of an algorithm similar to
+the weighted sum method of Aneja and Nair (1979), described in detail in Section 5.2, with either the linear
+relaxation or the original integer program (IP), since both yield valid bound sets (Ehrgott and Gandibleux
+2006).
+A branch-and-bound node contains information on branching decisions as usual, but also a bound for
+each objective. This is used to partition the objective space. The objective bounds at the root node can be
+known valid bounds, or inﬁnite values.
+Once the LB set at a given node has been calculated, we apply what we call ﬁltering (see Section 4.3):
+the current UB set and the current LB set are compared and a set of non-dominated portions of the current
+LB set are returned. In the case where this set is empty, the node can be fathomed. Otherwise branching
+may be required; the ﬁltered LB set is then used as input for the branching procedure (see Section 4.4). If
+the LB set corresponds to a leaf (i.e. the node corresponds to a unique integer feasible solution), or if it
+is completely dominated following ﬁltering, then the node can be fathomed and branching is not necessary.
+Otherwise a number of child nodes are generated, which are added to the list of branch-and-bound nodes
+to be processed. Once all nodes have been explored, the search is over and the complete Pareto set for the
+original problem is contained in the UB set.
+We now present the concept of lower bound segment which is used in the bounding, ﬁltering and branching
+procedures and which is also key to the proposed improvements discussed in Section 5.
+4.2
+Lower bound segments
+In the following we assume that a LB set has been produced. As mentioned above, it is described by the
+extreme points of the convex hull (of the image of the feasible set in objective space) for the linear relaxation
+of the problem (or the original IP).
+To any two consecutive extreme points p = (p1, p2) and q = (q1, q2) we can associate the subset of
+objective space that is covered or dominated and that represents the possibility to ﬁnd feasible solutions to
+the integer problem. To deﬁne this covered space, we associate to each pair of extreme points a top-right
+4
+
+Obj. 1
+Obj. 2
+p
+q
+c
+Figure 1: Lower bound segment deﬁned by the two extreme points p and q, and local nadir point c.
+corner (or local nadir) point c = (c1, c2) of which coordinates are valid single-objective upper bounds, one
+per objective, on the space dominated by the two extreme points and the line connecting them.
+Let Ξ be the set of all points in the objective space which are associated to feasible solutions to the
+bi-objective integer problem at hand. We now formally introduce the concept of lower bound segment that
+we use to represent LB sets.
+Deﬁnition 1 Three points p = (p1, p2), q = (q1, q2), and c = (c1, c2), such that p1 < q1 ∧p2 > q2, deﬁne a
+lower bound segment s iﬀ{(z1, z2) ∈Ξ|z2 < az1 + b} = ∅, where a = (q2 −p2)/(q1 −p1) is the slope of the
+line deﬁned by the two points and b = p2 −a · p1 is the y-intercept of this same line; c is a valid local nadir
+point, such that c1 ≥q1 and c2 ≥p2.
+Thus, any point z = (z1, z2) ∈Ξ is on or above the line deﬁned by p and q. Note that we do not include the
+case where p = q into our deﬁnition. For convenience, we extend the deﬁnition of segments to allow equal
+points:
+Deﬁnition 2 Two points p = (p1, p2) and c = (c1, c2) deﬁne a lower bound segment s iﬀthere does not
+exist a feasible point z that dominates p; c is a valid local nadir point, such that c1 ≥p1 and c2 ≥p2
+Figure 1 depicts such a lower bound segment (shaded). In the following we use object-oriented notation
+to refer to the attributes deﬁning a given segment: if extreme points u, v and local nadir point w deﬁne a
+segment s, then, s.p = u, s.q = v and s.c = w. Additionally, s.a is the slope of the line going through s.p
+and s.q, while s.b is its y-intercept. Graphically, a segment s is a convex polygon deﬁned by the points s.p,
+s.q, (s.c1, s.q2), s.c, (s.p1, s.c2).
+In the most basic case the coordinates of the local nadir point can be arbitrarily large values. If the
+two extreme points of the set of non-dominated points are known, we can deduce a tighter valid local nadir
+point from them. Similarly, we can associate to any LB set a valid local nadir point by considering, for each
+objective, the maximum value among all local nadir points.
+Here we note that we can partition the objective space, using values for any of the two objectives, or any
+linear combination of both with positive weights (as is done in Stidsen et al. 2014). In our BIOBAB, we
+partition the objective space using diﬀerent intervals for the ﬁrst objective to split the LB set into vertical
+stripes.
+5
+
+Obj. 1
+Obj. 2
+p
+q
+c
+c′
+u
+Figure 2: Space dominated by the segment between points p and q can be reduced by removing from it the
+space dominated by upper bound point u. Therefore local nadir point c can be improved to c′
+In practice, this allows us to improve the initial local nadir point for segments of a connected sequence
+of segments: for any two segments connected by point u = (u1, u2), we can cut from the space covered by
+the left segment all points z = (z1, z2) such that z1 ≥u1, since these points are also covered by the right
+segment. By doing so, we partition the objective space covered by the LB set into diﬀerent LB segments
+with associated local nadir points.
+UB sets can also be used to provide better local nadir points. For instance, following our previous example
+from Figure 1, consider point u, being the image of a feasible solution in objective space, such that u1 ≥q1
+and u2 < q2, then u1 deﬁnes a valid bound on the ﬁrst objective of the nadir point, since any point v such
+that v1 ≥u1 and v2 ≥q2 is dominated by u. This example is described graphically in Figure 2: for the
+depicted segment, using UB point u, the initial local nadir point c can be improved to c′.
+The fact that LB sets can be reduced using UB sets is the basis for a bi-objective branching rule that is
+presented in Section 4.4.
+4.3
+Bound set ﬁltering and node fathoming
+One major diﬃculty in previous bi-objective branch-and-bound approaches lies in the evaluation of the
+dominance of a given LB set by a given UB set. Multiple fathoming rules have been developed over the
+years (see Belotti et al. 2016, for the current state of the art). We now introduce the fathoming rule used in
+BIOBAB.
+As seen above, it is possible to split a LB set into LB segments (with associated local nadir points). If
+we establish that each segment of a current LB set is dominated by the UB set, then we also establish that
+the whole LB set is dominated, therefore the current node of the branch-and-bound tree can be fathomed.
+In order to determine if a LB segment is dominated by an UB set, we simply subtract the space dominated
+by the UB set from the LB segment: if the remaining space is empty then the LB segment is dominated,
+otherwise this segment may be tightened (as shown for example in Figure 2).
+Algorithm 1 details how to subtract the space covered by an UB point u = (u1, u2) from a LB segment s.
+It shares some similarities with the dominance rules used by Vincent et al. (2013), but considers more cases.
+Notably, it updates the local nadir point even in cases where u does not dominate any point on the line
+connecting s.p and s.q. We use the object-oriented notation deﬁned above. A pair (z1, z2) represents a point
+6
+
+and Segment(p, q, c) is used to create a segment out of points p, q and c. Lines 2-7 deal with the case where
+u does not dominate any point on the line connecting s.p and s.q. In that case, u may still be above s.p or
+to the right of s.q, in which cases there is potential for improving s.c. If u is to the right of s.q and below s.q
+(Lines 5-7), we are in the situation depicted in Figure 2 and s.c1 can be reduced to min(s.c1, u1). Similarly,
+if u is above s.p and to the left of s.p (Lines 3-4), s.c2 can then be reduced to min(s.c2, u2). Lines 8-15 deal
+with all the cases when at least one part of the line connecting s.p and s.q is dominated by u. There are
+four diﬀerent cases: (i) u does not dominate s.p (Lines 9-11), (ii) u does not dominate s.q (Lines 12-14),
+(iii) u dominates neither s.p nor s.q, resulting in two new segments (both clauses in Lines 9-11 and 12-14
+are matched), and (iv) u dominates both s.p and s.q. In case (iv) no clause is matched in the algorithm,
+therefore an empty set is returned.
+Algorithm 1 filterSegment(s, u): ﬁlter LB segment s using UB point u = (u1, u2)
+1: S ←∅
+2: if u2 ≥s.a · u1 + s.b ∨u2 ≥s.p2 ∨u1 ≥s.q1 then
+3:
+if u1 ≤s.p1 then
+4:
+S ←S ∪{Segment(p, q, (c1, min(c2, u2)))}
+5:
+else if u2 ≤s.q2 then
+6:
+S ←S ∪{Segment(p, q, (min(c1, u1), c2))}
+7:
+end if
+8: else
+9:
+if u1 > s.p1 then
+10:
+S ←S ∪{Segment(p, (u1, s.a · u1 + s.b), (u1, c2))}
+11:
+end if
+12:
+if u2 > q2 then
+13:
+S ←S ∪{Segment(((u2 −s.b)/s.a, u2), q, (c1, u2))}
+14:
+end if
+15: end if
+16: return S
+Now in order to ﬁlter a whole LB set using an UB set, we ﬁlter each segment in the LB set with each
+point in the UB set. If the remaining LB set is empty then the node can be fathomed, otherwise branching
+is required.
+4.4
+Branching procedure
+When dealing with bi-objective bound sets, a major challenge is that the LB set at a given node of the branch-
+and-bound tree may be partially dominated but not completely, therefore the node cannot be fathomed. This
+is illustrated in Figure 3.
+In order to disregard those portions of the objective space which are dominated by the UB set, we use the
+following branching rule which we name objective space branching: each contiguous subset of the ﬁltered LB
+set gives rise to a new branch and the objective space between those parts is simply ignored. To generate the
+branch for a given subset, we consider its local nadir point c = (c1, c2) and add two cutting planes so that
+both objectives are better than the value at this local nadir point: f1(x) ≤c1 and f2(x) ≤c2. In practice,
+this is achieved by setting the objective bounds of the corresponding child nodes using c.
+Branching on objective space has no impact on decision space, i.e. computing lower bounds for these child
+nodes will generate the same LB set, albeit in several pieces, one per branch in objective space. Therefore,
+objective space branching (OSB) never happens alone; branching on decision space is systematically also
+performed at the same time. The end result is that each node in the search tree contains at least one new
+branching decision on decision space, and optionally a branching decision on objective space.
+In general, decision-space branching is problem speciﬁc. However, we can still make the general remark
+that there is no reason to systematically use the same variable for decision-space branching in every OSB
+child node: each OSB child has its own separate LB set, and there is no reason to branch on the same
+7
+
+Obj. 1
+Obj. 2
+Obj. 1
+Obj. 2
+Figure 3: LB set is partially dominated by UB set, the node cannot be fathomed.
+Algorithm 2 branch(c, ∆, LB)
+1: N ←∅
+2: for all S ∈disjointPortions(LB) do
+3:
+c′ = (max
+s∈S (s.c1), max
+s∈S (s.c2))
+4:
+D ←decisionSpaceBranches(S)
+5:
+for all d ∈D do
+6:
+N ←N ∪(c′, ∆∪{d})
+7:
+end for
+8: end for
+9: return N
+decision variables when considering diﬀerent disjoint LB sets. For this reason, OSB is always applied ﬁrst
+in order to reduce the search space; for each OSB child and associated LB set, decision-space branching is
+conducted independently. The end result might still be that each OSB child branches on the same variable,
+depending on the branching rule.
+Algorithm 2 gives the branch function of our branch-and-bound framework.
+It takes a node of the
+branch-and-bound tree and an LB set as input and returns a set of nodes. A node is represented as a pair
+(c, ∆) where c represents the objective bounds (local nadir point) for this node and ∆is the set of branching
+decisions for this node.
+In the example of Figure 3, function branch considers four disjoint regions, each of them generating their
+own set of branching decisions.
+We note here that even if an IP is used to compute the LB set, any given variable may take diﬀerent
+values over a same LB set; therefore branching on decision space is still necessary.
+5
+Improvements based on the integrality of objective functions
+When solving integer programs, in many cases, objective values of feasible integer solutions only take integer
+values. For pure integer programs, it is in practice almost always possible to use integer coeﬃcients. The
+8
+
+Obj. 1
+Obj. 2
+s.p
+s.q
+s.c
+Obj. 1
+Obj. 2
+s.p
+s.q
+s.c
+s′.p
+s′.q
+s′.c
+Figure 4: The space covered by a LB segment contains contiguous regions which do not contain any point
+with integer coordinates; these parts are irrelevant to the search. Tightened segment s′ contains all the
+integer solutions contained by original segment s.
+reasons include the fact that LP solvers have precision limitations, and that time-eﬃcient ﬂoating-point
+numbers representations also have precision limitations. So rounding ﬂoating-point numbers is almost always
+inevitable, and if numbers are rounded to d decimals then they may as well be multiplied by 10d and
+considered integers. We note that this property is exploited by other methods as well. For instance, the
+ϵ-constraint framework uses a known ϵ value which in our case would be 1. The balanced box method also
+relies on similar ϵ values. In some cases, it is even possible to use values higher than 1, as long as these
+values are valid: for instance if every coeﬃcient for a given objective function is integer, then the greatest
+common divisor of these coeﬃcients can be used as a valid value. For the sake of simplicity and without
+loss of generality, we consider in the following that this valid value is 1. We now explore possibilities to
+enhance our bi-objective branch-and-bound by exploiting the fact that objective values of feasible solutions
+are always integer.
+Any given LB segment covers a part of the objective space, but also includes subsets not containing any
+point with integer coordinates. Such subsets can be disregarded during the search. This is illustrated in
+Figure 4, where dashed lines represent integer values for each objective. This general idea can be exploited
+in several ways in order to speed up the search.
+5.1
+Segment tightening
+First, any LB segment which does not cover any integer vector can be discarded. This can be tested in O(1).
+We ﬁrst investigate the case where s.p ̸= s.q, then s.a and s.b are deﬁned:
+Proposition 1 Segment s with s.p ̸= s.q covers integer vectors iﬀ⌊s.c2⌋≥s.a⌊s.c1⌋+ s.b ∧⌊s.c2⌋≥
+s.q2 ∧⌊s.c1⌋≥s.p1.
+Proof 1 A segment s is a polygon deﬁned by the points s.p, s.q, (s.c1, s.q2), s.c, (s.p1, s.c2). The coordinates
+of any integer point z = (z1, z2) within this polygon have to satisfy s.p1 ≤z1 ≤s.c1 and s.q2 ≤z2 ≤s.c2 and
+z2 ≥s.a · z1 + s.b. The integer point closest to the local nadir point s.c which has the potential to lie within
+the polygon has coordinates (⌊s.c1⌋, ⌊s.c2⌋). Any other integer point z = (z1, z2) contained within the region
+9
+
+Obj. 1
+Obj. 2
+p
+q
+(p1, q2)
+Figure 5: Segment between points p = (p1, p2) and q = (q1, q2) deﬁnes a valid LB segment because there is
+no vector of integer coordinates in the triangle deﬁned by p, q and (p1, q2).
+of the segment must have coordinates z1 ≤⌊s.c1⌋and z2 ≤⌊s.c2⌋. Therefore, if (⌊s.c1⌋, ⌊s.c2⌋) is contained
+within s, s covers at least one integer point. □
+The special case of segments deﬁned by two points only (see Deﬁnition 2) is even simpler, as the space
+covered by such a segment is a rectangle. Consider the segment deﬁned by point p = (p1, p2) and local nadir
+point c = (c1, c2), then this segment contains integer points iﬀ⌊c1⌋≥z1 ∧⌊c2⌋≥z2.
+This is tested right after ﬁltering: only the segments in the LB set that cover an integer point are kept.
+This enhancement is called segment tightening.
+5.2
+Lower bound lifting
+Second, we can use the fact that feasible integer solutions have integer objective values in order to speed up
+our LB set computation procedure. We call this procedure bound (it is given in Algorithm 3).
+As in the original algorithm of Aneja and Nair (1979), procedure bound successively computes supported
+points, starting with the two points at the two ends of the eﬃcient frontier, using lexicographic minimum
+objective functions lexmin(f1, f2) and lexmin(f2, f1).
+This is similar to what is done by Boland et al.
+(2015a) in the context of the balanced box method.
+For any two given points, solving a certain weighted-sum problem determines whether there exists another
+supported solution “between” these two. However, it can happen that these two points already describe a
+valid LB segment (given an appropriate nadir point), regardless of any other extreme supported point between
+them. If there is no point with integer coordinates in the triangle deﬁned by p = (p1, p2), q = (q1, q2) and
+(p1, q2), then p and q already deﬁne a valid LB segment and there is no need to investigate these two points
+further. We note that point (p1, q2) can also be disregarded because it dominates both p and q, although it
+is already established that they are both non-dominated. Moreover, if the line connecting p and q is not a
+part of the convex hull boundary then it deﬁnes a tighter lower bound than the one induced by the actual
+convex hull boundary between p and q. This situation is illustrated in Figure 5, where p and q deﬁne a valid
+lower bound segment (given an appropriate local nadir point).
+As previously, testing for the existence of an integer vector in the given triangle can be achieved in O(1)
+and sometimes allows to skip some stages of the algorithm while providing a tighter LB set. In the notation
+10
+
+Algorithm 3 bound(node, UB)
+1: C ←∅, E ←∅
+2: ¯x1 ←solve(lexmin(f1, f2), node, UB)
+3: if ¯x1 = infeasible then
+4:
+return E
+5: end if
+6: ¯x2 ←solve(lexmin(f2, f1), node, UB)
+7: p ←(f1(¯x1), f2(¯x1)), q ←(f1(¯x2), f2(¯x2))
+8: push(C, (p, q))
+9: while C ̸= ∅do
+10:
+(p, q) ←pop(C)
+11:
+s ←Segment(p, q, (∞, ∞))
+12:
+if ⌈q2⌉≥s.b + s.a⌈p1⌉then
+13:
+E ←E ∪{(p, q)}
+14:
+else
+15:
+w2 ←q1 −p1
+16:
+w1 ←p2 −q2
+17:
+¯x ←solve(w1f1 + w2f2, node, UB)
+18:
+if w1f1(¯x) + w2f2(¯x) < w1p1 + w2p2 then
+19:
+u ←(f1(¯x), f2(¯x))
+20:
+push(C, (p, u))
+21:
+push(C, (u, q))
+22:
+else
+23:
+E ←E ∪{(p, q)}
+24:
+end if
+25:
+end if
+26: end while
+27: return E
+11
+
+of Algorithm 3, this means that after retrieving (p, q) from C (line 10, Algorithm 3), we check if the triangle
+derived from (p, q) does not contain any integer point.
+Proposition 2 If the point (⌈p1⌉, ⌈q2⌉) is above the line connecting p and q, i.e. ⌈q2⌉≥s.a⌈p1⌉+ s.b, then
+the triangle derived from (p, q) does not contain any integer point.
+Proof 2 Since p and q are extreme points of the boundary of the convex hull, an additional LB point may
+only be found in the right triangle deﬁned by the points p, (p1, q2), q, with p1 ≤q1 and q2 ≤p2. Let us call
+(p1, q2) the local ideal point. Since ⌈p1⌉≥p1 and ⌈q2⌉≥q2, (⌈p1⌉, ⌈q2⌉) must either lie within the triangle
+or it is above the line connecting p and q. Since any other integer point z = (z1, z2) must have coordinates
+satisfying z1 ≥⌈p1⌉and z2 ≥⌈q2⌉, if (⌈p1⌉, ⌈q2⌉) lies above the line connecting p and q, no other integer
+point within this triangle exists.□
+In this case, the segment derived from (p, q) is appended to E in Algorithm 3 and lines 13–21 are skipped.
+Otherwise a weighted sum problem (w1f1+w2f2) is solved, where w1 and w2 are determined by the algorithm.
+In the case where the resulting point u lies below the line connecting p and q, (p, u) and (u, q) are stored in
+C for further processing, as in the algorithm by Aneja and Nair (1979). This enhancement is called lower
+bound lifting.
+5.3
+Integer dominance
+Third, it is also possible to exploit the integrality of objective values for feasible integer solutions when
+branching on objective space.
+If we are in the situation of branching on objective space, it is typically
+because part of the LB set has been dominated by the UB set. In that case, we already know that the given
+local nadir point of any LB segment is in fact also dominated by the UB set (this is actually how this local
+nadir point is calculated, see Algorithm 1). So this local nadir point can be tightened. Figure 6 illustrates
+this principle: after ﬁltering the LB segment s with points from the upper bound set, u and v (Figures 6(a)
+and 6(b)), we obtain a reduced segment s′. The new local nadir point s′.c is actually dominated by both
+u and v (Figure 6(c)). Moreover, each point in the area which is in a darker shade (Figure 6(d)) is either
+(i) dominated by u and/or v or (ii) not integer. Therefore we can disregard the whole area. This can be
+achieved by subtracting any value ρ such that 0 ≤ρ < 1 from both coordinates of the local nadir point s′.c
+after ﬁltering, thus producing an improved segment s′′. In order to implement this idea in our algorithm, we
+simply subtract ρ from both coordinates of each upper bound point u used in Algorithm 1. This enhancement
+is called integer dominance. It is in fact similar to using an ϵ value of 1 in the ϵ-constraint framework, or in
+the balanced box method.
+6
+Computational study
+We investigate the eﬃciency of the proposed algorithm and enhancements through experimentation.
+A generic version of BIOBAB is developed in Python 2.7 and Gurobi 6.5.0 is used to solve LPs and
+MIPs. Algorithms are run on an Intel Xeon E5-2650v2 CPU at 2.6 GHz, with a 4 GB memory limit and
+a two-hour CPU time limit. Except when explicitly stated otherwise, BIOBAB uses the linear relaxation
+of the original IP to compute lower bound sets. In terms of tree exploration, BIOBAB always performs a
+breadth-ﬁrst search. Like in Boland et al. (2015a), we use performance proﬁles to compare the performances
+of diﬀerent algorithms (Dolan and Mor´e (2002)). The performance of an algorithm for a certain instance
+is the ratio of the CPU time required by that algorithm for that instance to the best CPU time for that
+instance. The x-axis represents performance, while the y-axis represents the fraction of instances solved at
+a certain performance or better. If an algorithm does not terminate (i.e. ﬁnd the Pareto set) for a certain
+instance, then it does not oﬀer a performance for that instance. If no algorithm terminates for a given
+instance, then this instance is discarded.
+In the following, we ﬁrst describe the considered problems and benchmark instances for the ﬁrst set of
+experiments, where we evaluate the diﬀerent components of the algorithm and the impact of the integrality-
+based improvements.
+We then compare the results of our method with those of criterion space search
+12
+
+Obj. 1
+Obj. 2
+s.p
+s.q
+u
+v
+(a)
+Obj. 1
+Obj. 2
+s.p
+s.q
+u
+v
+(b)
+Obj. 1
+Obj. 2
+s′.p
+s′.q
+s′.c
+u
+v
+(c)
+Obj. 1
+Obj. 2
+s′.p
+s′.q
+s′.c
+s′′.p
+s′′.q
+s′′.c
+u
+v
+(d)
+Figure 6: Part of a LB segment s is either still dominated by the UB (represented by u and v) or not
+containing any integer vector (darker shaded area in the fourth picture).
+13
+
+algorithms and to an existing branch-and-bound method. Thereafter, we formally introduce the bi-objective
+team orienteering problem with time windows (BITOPTW), whose linear relaxation is solved by means of
+column generation, we explain the diﬀerent components tailored to this problem, and we report the obtained
+results.
+6.1
+Considered problems and benchmark instances
+For our ﬁrst set of experiments, we apply BIOBAB to two diﬀerent uncapacitated bi-objective facility location
+problems. The ﬁrst uncapacitated facility location problem, which we call uncapacitated bi-objective facility
+location problem (UBOFLP), considers the cost of opening facilities as ﬁrst objective and the coverage of the
+population as second objective. Population from a certain node can only be covered by an open facility if
+the distance between the two is below a threshold. For the UBOFLP, we use the data that was also used to
+generate instances from the bi-objective stochastic covering tour problem presented in Tricoire et al. (2012).
+The following simpliﬁcations are performed: (i) the transportation costs are ignored, (ii) the stochastic aspect
+is ignored and (iii) the distance aspect is simpliﬁed so that a node is either entirely covered or not covered
+at all by an open facility. In order to produce instances with various levels of diﬃculty, we concatenate
+the original instances: the kth UBOFLP instance consists of the data of the ﬁrst k covering tour problem
+instances. In total there are 36 UBOFLP instances, including 21 to 500 locations. The second uncapacitated
+facility location problem we consider is a simpliﬁcation of the single-source capacitated facility location
+problem, where the capacity constraints are relaxed. The ﬁrst objective is to minimize the cost of opening
+facilities, while the second objective is to minimize assignment costs. We name this problem SSUFLP from
+now on. We use the 120 instances publicly available from Gadegaard et al. (2016b). For both UBOFLP
+and SSUFLP, decision space branching is performed in a generic way.
+First, the average value of each
+binary variable over the whole LB set (or rather subset, see Section 4.4) is computed. Then, the variable
+with average value closest to 1 is selected for binary branching on that subset. We provide mathematical
+formulations for UBOFLP and SSUFLP in Appendices B and C. For each of these problems, we compute
+the greatest common divisor for each objective and use it as valid ϵ value in the various methods. Since all
+costs are integer, ϵ is always at least 1.
+We provide information on the cardinality of eﬃcient sets for UBOFLP and SSUFLP instances in Figure 7.
+6.2
+Impact of integrality-based improvements
+In a ﬁrst series of experiment, we assess the eﬃciency of the improvements described in Section 5, using the
+UBOFLP and SSUFLP data set. We run a version of BIOBAB with no improvement at all, a version with
+objective space branching only, a version with segment tightening only, a version with lower bound lifting
+only, and a version with all three improvements. Performance proﬁles are displayed in Figure 8. On UBOFLP
+instances, full BIOBAB as well as segment tightening clearly outperform the other variants. Whether full
+BIOBAB outperforms the version with segment tightening only is unclear, because the whole chart is scaled
+to also include the performance proﬁles of poorly performing variants. For the same reason, it is also unclear
+whether lower bound lifting brings a signiﬁcant improvement over bare BIOBAB. On SSUFLP instances,
+the diﬀerences are smaller but still clearly marked; full BIOBAB is still the best, but this time it appears
+that objective-space branching is working better on its own than segment tightening. Again, it is unclear
+whether lower bound lifting brings any improvement.
+We further investigate the individual contributions of the various BIOBAB components, by comparing
+full BIOBAB to full BIOBAB minus individual improvements. We ﬁrst look at segment tightening, which
+appears to be crucial in certain cases, as shown in Figure 8.
+Figure 9 presents the performance of full
+BIOBAB with and without segment tightening. Approximately 70% of UBOFLP instances cannot be solved
+within two hours when segment tightening is disabled, which makes it a crucial component. All SSUFLP
+Instances can be solved, but the proﬁle of full BIOBAB is still consistently better than the proﬁle without
+segment tightening. Full BIOBAB is up to 56% faster.
+We now also look at the performance proﬁle of full BIOBAB, versus full BIOBAB minus lower bound
+14
+
+0
+50
+100
+150
+200
+SSUFLP
+UBOFLP
+Instance set
+# nondominated points
+Figure 7: Number of non-dominated points for SSUFLP and UBOFLP instance sets.
+SSUFLP: 120 instances.
+UBOFLP: 36 instances.
+0
+200
+400
+600
+800
+1000
+1200
+1400
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (segment tightening)
+BIOBAB (obj. space branching)
+BIOBAB (lower bound lifting)
+BIOBAB (no improvement)
+(a) UBOFLP
+1.0
+1.2
+1.4
+1.6
+1.8
+2.0
+2.2
+2.4
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (segment tightening)
+BIOBAB (obj. space branching)
+BIOBAB (lower bound lifting)
+BIOBAB (no improvement)
+(b) SSUFLP
+Figure 8: BIOBAB: individual contribution of various improvements
+15
+
+50
+100
+150
+200
+250
+300
+350
+400
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (no segment tightening)
+(a) UBOFLP
+1.0
+1.1
+1.2
+1.3
+1.4
+1.5
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (no segment tightening)
+(b) SSUFLP
+Figure 9: Full BIOBAB vs no segment tightening
+1.00
+1.05
+1.10
+1.15
+1.20
+1.25
+1.30
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (no lower bound lifting)
+(a) UBOFLP
+1.0
+1.1
+1.2
+1.3
+1.4
+1.5
+1.6
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (no lower bound lifting)
+(b) SSUFLP
+Figure 10: Full BIOBAB vs no lower bound lifting
+lifting, depicted in Figure 10. The impact of lower bound lifting is less spectacular, but still signiﬁcant. In rare
+cases not using lower bound lifting actually improves performance, but only very slightly (less than 5%, on
+some UBOFLP instances). Lower bound lifting speeds up the algorithm by up to 34% on UBOFLP instances
+and by up to 60% on SSUFLP instances. As mentioned earlier, lower bound lifting only involves constant
+time operations, so the overhead is minimal and will never cause an important decrease in performance, even
+when it is entirely useless. Therefore it is safe to use it in general.
+Full BIOBAB is compared to the variant without OSB in Figure 11. The impact of objective space
+branching is important: using it speeds up BIOBAB by a factor up to 14.7 for UBOFLP instances and up
+to 2.06 for SSUFLP instances. We note here that it is not surprising that objective space branching works
+well when combined with segment tightening, since segment tightening creates discontinuities in LB sets,
+thus allowing objective space branching to be applied.
+These performance proﬁles clearly show that every algorithmic improvement brings added value, with
+rare exceptions for lower bound lifting. In order to provide additional insight on the use of objective space
+branching, we consider additional information related to full BIOBAB and full BIOBAB minus OSB: we
+analyze CPU time, number of nodes explored during tree search and number of linear programs solved
+during the whole search. Table 1 shows the per-instance diﬀerence between the two versions of BIOBAB,
+on UBOFLP instances. We note that the total number of nodes explored does not vary that much between
+both methods, but the number of LPs solved does: the version without objective space branching solves
+more than ten times more LPs in some cases. We believe this validates the idea that branching on objective
+space avoids visiting several times regions that have already been established to be dominated by the UB
+set; apparently visiting these regions requires solving many LPs.
+16
+
+2
+4
+6
+8
+10
+12
+14
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (no obj. space branching)
+(a) UBOFLP
+1.0
+1.2
+1.4
+1.6
+1.8
+2.0
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (all improvements)
+BIOBAB (no obj. space branching)
+(b) SSUFLP
+Figure 11: Full BIOBAB vs no objective space branching
+Full BIOBAB
+No obj. space branching
+Instance
+# LPs
+# nodes
+CPU (s)
+# LPs
+# nodes
+CPU (s)
+021
+23
+1
+0.30
+23
+1
+0.28
+044
+59
+3
+0.57
+59
+3
+0.61
+055
+73
+3
+0.89
+73
+3
+0.85
+072
+95
+3
+1.59
+95
+3
+1.56
+090
+135
+7
+3.04
+197
+7
+4.18
+106
+157
+7
+5.07
+235
+7
+6.33
+120
+173
+7
+6.44
+267
+7
+8.88
+132
+193
+9
+8.30
+335
+9
+13.52
+134
+197
+9
+8.58
+339
+9
+15.16
+135
+199
+9
+8.41
+333
+7
+14.72
+162
+263
+11
+16.78
+401
+9
+26.39
+182
+466
+17
+32.53
+699
+13
+51.58
+203
+478
+17
+41.57
+697
+11
+66.53
+226
+255
+9
+31.41
+319
+9
+44.19
+254
+259
+9
+41.72
+335
+9
+53.46
+264
+269
+9
+47.21
+345
+9
+58.12
+266
+271
+9
+49.48
+347
+9
+63.44
+275
+277
+9
+53.35
+303
+7
+56.18
+294
+285
+9
+64.19
+361
+9
+84.88
+295
+277
+7
+71.97
+363
+9
+88.12
+296
+289
+9
+74.64
+365
+9
+94.16
+326
+361
+15
+112.16
+1459
+29
+467.91
+342
+399
+19
+137.47
+1125
+15
+397.68
+355
+473
+31
+165.05
+3509
+61
+1379.35
+370
+455
+25
+195.29
+983
+19
+386.76
+388
+461
+21
+204.75
+3159
+39
+1494.41
+399
+531
+35
+236.88
+1449
+33
+630.14
+410
+595
+45
+297.69
+1061
+17
+551.82
+428
+645
+51
+342.32
+7453
+89
+3885.49
+436
+609
+43
+351.86
+1585
+31
+919.27
+449
+679
+53
+400.70
+10586
+183
+5891.94
+458
+713
+57
+432.92
+5387
+85
+3241.36
+472
+719
+59
+462.29
+4681
+113
+2790.82
+482
+821
+75
+591.75
+5511
+81
+3456.99
+499
+773
+67
+542.06
+4209
+97
+2912.71
+500
+759
+65
+583.60
+9003
+135
+6927.28
+Table 1: Eﬀect of objective space branching on tree search (UBOFLP instances).
+17
+
+Problem
+# root
+# other
+max. depth
+SSUFLP
+23.84
+2.07
+12.24
+UBOFLP
+5.37
+0
+0
+Table 2: Additional information on objective-space branching: average values.
+# root: number of OSB branches at the root node
+# other: number of OSB branches at other nodes
+max. depth: maximum depth at which OSB occurred
+We now look closer at the number of branches generated by OSB. For that purpose we count, for each
+instance solved, how many branches are generated by OSB. We diﬀerentiate the number of branches generated
+at the root node and in the remainder of the branch-and-bound tree. We report average values for these
+two indicators, as well as the maximum tree depth at which OSB happened, in Table 2. Instances that are
+entirely solved without branching are disregarded. For both problem classes, OSB generates more branches
+at the root node, thus indicating that integer solutions are already found while solving the root node. For
+UBOFLP, OSB actually only happens at the root node; for SSUFLP, the average number of branches at
+nodes other than the root node is very close to 2, which suggests that it typically happens when one new
+eﬃcient point is found. We also observe that a lower number of branches at a given node does not necessarily
+indicate that fewer integer solutions are found at this node, since segment tightening can also eliminate the
+objective space between two integer points, thus reducing the number of branches. But if there are k OSB
+branches following the bounding procedure at a given node, then we know that at least k−1 integer solutions
+were found during this bounding procedure.
+6.3
+Comparison with criterion space search algorithms
+We implemented a generic balanced box method as described in Boland et al. (2015a) (it is sketched in
+Algorithm 5 in the Appendix), including solution harvesting and other enhancements, within the same
+Python code base as BIOBAB. The frequency with which solution harvesting is called is controlled using
+parameter β. Like in the original paper, we set β = 0.15 following preliminary experiments. Also like in the
+original paper, we ﬁnd that in order to produce lexicographic minima, solving explicitly two successive IPs
+is more eﬃcient than solving one weighted-sum IP. Previously found integer solutions that are valid for the
+problem at hand (i.e. within the same rectangle) are used to provide a cutoﬀvalue to the MIP solver.
+Within the same code base we also develop generic versions of the ϵ-constraint framework (see Algorithm 4
+in the Appendix) as well as the bi-directional ϵ-constraint framework described in Boland et al. (2015a). We
+note here that there are always two ways to run the single-directional ϵ-constraint algorithm, either starting
+with objective 1 or with objective 2. For a given problem class, one of these two ways is typically faster than
+the other, sometimes much faster. In these cases, it is likely that the bi-directional version will not be as
+fast since it has to solve IPs in the slower direction for 50% of these IPs. All ϵ-constraint methods beneﬁt
+from the applicable enhancements developed for the balanced box method.
+We ﬁrst compare BIOBAB and other criterion space search methods on the UBOFLP. We note here
+that BIOBAB solves the linear relaxation of the UBOFLP to compute LB sets, whereas criterion space
+search methods call the MIP solver directly. Performance proﬁles are given in Figure 12. BIOBAB appears
+to perform better than criterion space search methods on the UBOFLP. It is however not overwhelming,
+as all methods always converge within a factor 3 of the best performance overall, i.e.
+within the same
+order of magnitude. Nonetheless, BIOBAB is deﬁnitely competitive on these instances. We also note that
+single-directional ϵ-constraint performs better than its bi-directional counterpart.
+We now look at the performance proﬁles of the same methods, this time on SSUFLP instances. These
+proﬁles are represented in Figure 13. The picture is now diﬀerent: BIOBAB is the worst of all compared
+methods. It is however, still in the same order of magnitude (7 times slower than the best method in the
+worst case). In this comparison, all criterion space search methods beneﬁt from the power of commercial
+MIP solvers, which are especially eﬃcient at tree exploration and branching on decision variables. Even
+18
+
+1.0
+1.5
+2.0
+2.5
+3.0
+3.5
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (LP)
+balanced box (MIP)
+-constraint (obj. 1) (MIP)
+-constraint (obj. 2) (MIP)
+-constraint (bi-directional) (MIP)
+Figure 12: UBOFLP: BIOBAB vs criterion space search methods
+1
+2
+3
+4
+5
+6
+7
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (LP)
+balanced box (MIP)
+-constraint (obj. 1) (MIP)
+-constraint (obj. 2) (MIP)
+-constraint (bi-directional) (MIP)
+Figure 13: SSUFLP: BIOBAB vs criterion space search methods
+though we show above that objective space branching signiﬁcantly improves the performance of BIOBAB,
+branching on decision variables is still performed in a somewhat naive way (fractional variable with value
+closest to 1, breadth-ﬁrst tree exploration). In the next experiment we do not relax integrality constraints
+when computing LB sets for the SSUFLP: IPs are solved within the bounding procedure of BIOBAB. An
+expectation is that LB sets will be of better quality, at the cost of extra CPU time. Better LB sets should
+reduce the size of the branch-and-bound tree of BIOBAB, thus delegating part of the task of tree search to
+the commercial MIP solver. Another expectation is that more integer solutions will be obtained earlier in
+the search, which in turn will allow OSB and integer dominance to speed up the search. We now compare
+this version of BIOBAB to the same criterion space search methods, in Figure 14. The performance proﬁles
+clearly show that using an IP instead of its linear relaxation can be beneﬁcial: BIOBAB is now performing
+much better, actually slightly better than all criterion space search methods.
+Additionally, we display in Figure 15 the total number of linear programs (LPs) solved by each algorithm
+to generate the whole set of non-dominated points. It is clear that the poor performance of BIOBAB using
+LPs is correlated with the unusually high amount of LPs it requires to solve, while BIOBAB using MIPs
+requires to solve a number of LPs comparable with that of other algorithms. This strengthens the idea that
+eﬃcient branching on decision variables is the issue here.
+6.4
+Comparison with bi-objective branch-and-bound
+We now compare BIOBAB with the branch-and-bound algorithm for bi-objective mixed-integer programs
+from Belotti et al. (2013). Their algorithm is for mixed-integer programs, but they also provide results on the
+bi-objective set covering problem, which only uses binary variables. We run BIOBAB on the same instances
+and can therefore compare the CPU time required for solving these instances. We present results using the
+same format as in their article. Their computer is a 3.2 GHz workstation with 4 GB of RAM. We observe
+19
+
+1.00
+1.25
+1.50
+1.75
+2.00
+2.25
+2.50
+2.75
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB (MIP)
+balanced box (MIP)
+-constraint (obj. 1) (MIP)
+-constraint (obj. 2) (MIP)
+-constraint (bi-directional) (MIP)
+Figure 14: SSUFLP: BIOBAB (MIP) vs criterion space search methods
+G
+G
+G
+G
+0
+5000
+10000
+15000
+balanced box 
+BIOBAB (LP)
+BIOBAB (MIP)
+epsilon constraint (bi−directional) 
+epsilon constraint (obj. 1) 
+epsilon constraint (obj. 2) 
+Algorithm
+# LPs solved
+Figure 15: SSUFLP: number of LPs solved by each algorithm.
+20
+
+Instance size (m × n)
+# instances
+CPU (s) Belotti et al.
+CPU (s) BIOBAB
+5 × 25
+1
+0.1
+0.01
+10 × 50
+1
+2.1
+0.73
+10 × 100
+4
+49.3
+3.76
+Table 3: Comparison of BIOBAB and bi-objective branch and bound from Belotti et al. (2013) on bi-
+objective set covering problem instances: average CPU time. Instances have m variables and n constraints.
+Belotti et al.: 3.2 GHz workstation with 4 GB of RAM.
+BIOBAB: 2.6 GHz Xeon CPU with a 4 GB RAM limit.
+that BIOBAB is always faster, more than 10 times faster for the largest instances. Even if it is not clear
+how much has to attributed to diﬀerences in CPU, we can safely conclude that BIOBAB can compete with
+a state-of-the-art branch-and-bound method on these instances.
+6.5
+Application to cases which cannot beneﬁt from the power of MIP solvers
+A major strength of state-of-the-art MIP solvers lies in their ability to conduct eﬃcient branch-and-bound or
+branch-and-cut tree search, through involved tree exploration heuristics that are industrial secrets. However,
+it is not always possible to beneﬁt from these advanced methods. Sometimes even the single objective problem
+version is too hard to solve with a MIP solver. We want to assess how BIOBAB fares in such cases. For that
+purpose, we use the BITOPTW as test case. The BITOPTW is formally described in Appendix D. Such a
+model is challenging for current state-of-the-art MIP solvers.
+6.5.1
+Lower bound set: column generation
+Since state-of-the-art exact methods for single-objective routing problems mostly rely on column generation
+based techniques (see, e.g. Baldacci et al. 2012), we also generate lower bound sets for the BITOPTW by
+means of column generation.
+Let Pr denote the total score or proﬁt achieved by route r, Cr the total travel cost of route r, and let air
+indicate whether location i is visited by route r (air = 1) or not (air = 0). Using binary variables xr equal
+to 1 if route r is selected from the set Ωof all feasible routes, the BITOPTW can also be formulated as a
+path-based model:
+f1(x) = min
+X
+r∈Ω
+Crxr
+(2)
+f2(x) = max
+X
+r∈Ω
+Prxr
+(3)
+X
+r∈Ω
+airxr ≤1
+∀i ∈N
+(4)
+X
+r∈Ω
+xr = m
+(5)
+xr ∈{0, 1}
+∀r ∈Ω.
+(6)
+Relaxing integrality requirements on the xr variables, we replace constraints (6) with:
+xr ≥0
+∀r ∈Ω
+(7)
+We also combine the two objective functions into a weighted sum (w1 and w2 giving the respective non-
+negative weights determined by our LB set computation procedure bound):
+min
+X
+r∈Ω
+(w1Cr −w2Pr)xr
+(8)
+21
+
+We thus obtain a single objective linear problem that can be solved by means of column generation, which
+allows us to compute LB sets using Algorithm 3. In column generation (see, e.g. Desrosiers and L¨ubbecke
+2005), in each iteration a subset of promising columns is generated and appended to the restricted set of
+columns Ω′ and the single objective linear program is re-solved on Ω′. Column generation continues as long
+as new promising columns exist. Otherwise, an optimal solution has been found (i.e. in that case, an optimal
+solution of the single objective linear program on Ω′ is also an optimal solution of the single objective linear
+program on Ω). Promising columns are identiﬁed using dual information. Let πi denote the dual variable
+associated with constraint (4) for a given i and α the dual variable associated with constraint (5), the pricing
+subproblem we have to solve corresponds to:
+min w1Cr −w2Pr −
+X
+i∈N
+airπi −α
+(9)
+subject to constraints (27)–(34) given in Appendix D, omitting subscript k. It is an elementary shortest
+path problem with resource constraints that can be solved by means of a labeling algorithm (cf. Feillet et al.
+2004). In our labeling algorithm, a label carries the following information: the node the label is associated
+with, the time consumption until that node, the reduced cost so far, which nodes have been visited along
+the path leading to the node, and a pointer to the parent label. In order to compute the reduced cost of
+the path associated with a given label, we use a reduced cost matrix that is generated before the labeling
+algorithm is called. The reduced cost of arc (i, j) is ¯cij = w1cij −w2Si −πi, where if i = 0, πi is replaced by
+α and cij gives the costs for traversing arc (i, j) and Si the score for visiting location i. Since the aim of this
+paper is not to investigate the most eﬃcient pricing algorithm, we refrain from adopting all enhancements
+proposed in the literature (e.g. Righini and Salani 2009).
+Note that during the execution of BIOBAB we keep all previously generated columns in the column pool.
+We only temporarily deactivate those columns that are incompatible with current branching decisions. When
+branching on objective space, it can happen that the current pool of columns does not allow to produce a
+feasible solution. This can be due to two reasons: either (i) because there exists no feasible solution to the
+current problem or (ii) because there exists a feasible solution but it cannot be reached with the currently
+available columns.
+In order to ﬁx this issue and guarantee feasibility, we use a dummy column which
+allows to satisfy every constraint from the current problem, including the branching decisions described in
+Section 6.5.2. These include branching on control points. Therefore, some control points may be mandatory
+and others may be forbidden.
+Thus, the dummy column covers all mandatory control points, does not
+cover any forbidden control point, uses all the available vehicles, has a cost inferior to the maximum allowed
+cost and a proﬁt superior to the minimum allowed proﬁt. Using this column is penalized in the objective
+function, so that the column generation procedure converges to feasible solutions that do not use the dummy
+column. Assuming the variable associated to this dummy column is xD, the objective function described in
+Equation (8) is modiﬁed as follows:
+min
+X
+r∈Ω
+(w1Cr −w2Pr)xr + MxD,
+(10)
+where M is an arbitrarily large number. The dummy column is only activated when no feasible solution can
+be found, and it is systematically deactivated after column generation converges. At this point, if xD has a
+strictly positive value then there does not exist a feasible solution that satisﬁes all the branching decisions.
+6.5.2
+Branching scheme
+Objective space branching is performed as usual (see Section 4.4). Since objective space branching involves
+setting bounds on both objectives, we include these constraints right from the start (initially setting the
+22
+
+respective bounds to inﬁnity) and later update them according to the branching decisions:
+X
+r∈Ω
+Crxr ≤c1,
+(11)
+X
+r∈Ω
+−Prxr ≤c2,
+(12)
+where c = (c1, c2) is the local nadir point. In order to properly incorporate dual information from these
+two constraints into the subproblem, we modify the reduced cost matrix. Let λ1 be the dual variable value
+associated with constraint (11) and λ2 the value associated with constraint (12), then the reduced cost of
+a given arc (i, j) is given by ¯c′
+ij = (w1 −λ1)cij −(w2 + λ2)Si −πi. Regarding decision-space branching,
+we either branch on control points or on arcs (Line 4 in Algorithm 2). First, we check if a control point is
+visited a fractional number of times. Since each lower bound represents a set of solutions, the number of
+times a control point is visited may take diﬀerent values within the same LB set. In order to select a control
+point to branch on, we consider the supported (fractional) solutions deﬁning the current LB set. We then
+average the number of visits for each control point over this set of solutions. The control point with the
+average number of visits closest to 0.5 is then selected for branching. In the case where each control point is
+visited 0 or 1 time on average, we check for arcs that are traversed a fractional number of times on average,
+following the same procedure. Branching on control points can be achieved by modifying constraint (4) in
+the master problem. In order to force the visit of control point i, this constraint becomes P
+r∈Ω
+airxr ≥1.
+In order to forbid the visit of i, this constraint becomes P
+r∈Ω
+airxr ≤0. As is usual in branch-and-price for
+routing, branching on arcs involves adding constraints to the subproblem.
+6.5.3
+Applying the ϵ-constraint method
+In order to asses the quality of our BIOBAB on the BITOPTW, we compare it to the ϵ-constraint method,
+using the faster direction. In this case, the function solveMIP (Line 4 of Algorithm 4 in the Appendix)
+uses the same tree search algorithm as BIOBAB, i.e. the same rules for branching are applied, with the
+exception of objective space branching, since a single-objective problem is solved. The bounding procedure
+is similar to the one used in BIOBAB, i.e. the same column generation code is used. However, instead of
+solving a succession of LPs to compute a LB set, a single solution is produced in each call to the procedure.
+Other than that, the code is exactly the same for both methods.
+This means that in the ϵ-constraint
+framework, previously generated columns are reused. Additionally, a single-objective solution to the linear
+relaxation yields a LB segment ; therefore, the existing UB set can be used to fathom subtrees using the
+ﬁltering procedure described in Section 4.3. This works in combination with the fact that all produced
+integer solutions are stored, thus enhancing the ϵ-constraint implementation with improvements developed
+for BIOBAB.
+6.5.4
+BITOPTW Benchmark instances
+We use the TOPTW instances by Righini and Salani (2009) and we reduce their size by considering the
+ﬁrst 15, 20, 25, 30 and 35 customers only. Using instances c101 100, r101 100, rc101 100 and pr01 and the
+number of customers mentioned above, we generate test instances for 1, 2, 3 and 4 vehicles. In total there
+are 80 BITOPTW instances.
+6.5.5
+Computational results
+We now compare BIOBAB with the ϵ-constraint method.
+Column generation can be time-intensive, so
+in this case all procedures are implemented in C++. The same column generation code is used by both
+BIOBAB and ϵ-constraint. We run both algorithms on the same computer as mentioned above, and produce
+the performance proﬁle depicted in Figure 16. As we can see, BIOBAB oﬀers a better performance overall.
+Although the ϵ-constraint method is within the same order of magnitude for almost 90% of the instances,
+23
+
+2.5
+5.0
+7.5
+10.0
+12.5
+15.0
+17.5
+20.0
+22.5
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+BIOBAB
+-constraint
+Figure 16: BIOBAB vs ϵ-constraint when using column generation to solve the underlying linear program.
+which is good, it can get up to 20 times slower in some rare cases. More strikingly, there are instances solved
+by BIOBAB that cannot be solved within the allotted CPU budget by the ϵ-constraint method.
+7
+Conclusion
+We have introduced a new algorithm for bi-objective integer optimization. The algorithm is a generalization
+of single-objective branch-and-bound to the bi-objective context. Our algorithm is generic and uses a branch-
+ing rule exploiting the bi-objective nature of the underlying optimization problem. We have also developed
+several enhancements based on the integrality of the objective values of eﬃcient solutions. Experiments show
+that these enhancements signiﬁcantly improve the performance of BIOBAB, and make it competitive with
+state-of-the-art generic methods for bi-objective optimization for integer programs. In order to demonstrate
+the versatility of our framework, we have also applied it to a routing problem where the lower bound linear
+program is solved by means of column generation, thus providing, to the best of our knowledge, the ﬁrst
+bi-objective branch-and-price algorithm. Standard criterion space search methods rely on the eﬃciency of
+MIP solvers and show their limitations in such cases: the proposed branch-and-bound algorithm outperforms
+the ϵ-constraint method, which is a standard benchmark for multi-objective optimization.
+One research perspective lies in generalizing the concept of lower bound set to more than two objectives,
+thus allowing exact approaches relying on this notion for more than two objectives. However this will raise
+the issue of the cardinality of the eﬃcient set, which typically increases exponentially with the number of
+objectives. Therefore another research perspective lies in deriving approximation methods for multi-objective
+optimization based on exact procedures, with the goal of sacriﬁcing neither the quality of solutions nor the
+readability of the produced set of solutions.
+Acknowledgments
+We wish two thank four anonymous referees for their valuable comments. Furthermore, ﬁnancial support
+from the Austrian Science Fund (FWF): P23589-N13 is gratefully acknowledged.
+A
+Algorithms for criterion space search methods
+Algorithms 4 and 5 outline the ϵ-constraint method and the balanced box method, respectively. The set P
+denotes the set of Pareto optimal solutions. Function solveMIP can either be a call to Gurobi or CPLEX
+or to a tailor-made branch-and-bound algorithm. The value of ϵ is supposed to be valid for the problem at
+hand; for instance with pure integer problems with integer coeﬃcients for the objective function, ϵ = 1 is
+such a valid value.
+24
+
+Algorithm 4 ϵ-constraint algorithm
+P ←∅
+ϵ-constraint ←f2 ≤∞
+while MIP is feasible do
+x ←solveMIP(lexmin(f1, f2), ϵ-constraint)
+P ←P ∪x
+ϵ-constraint ←f2 ≤f2(x) −ϵ
+end while
+return P
+Algorithm 5 Balanced box method
+P ←∅, Rectangles ←∅
+xT ←solveMIP(lexmin(f1, f2))
+xB ←solveMIP(lexmin(f2, f1))
+P ←P ∪{xT , xB}
+Rectangles ←Rectangles ∪{rectangle zT = (f1(xT ), f2(xT )), zB = (f1(xB), f2(xB))}
+while Rectangles ̸= ∅do
+Rectangles.pop(rectangle(z1, z2))
+rectangleB ←rectangle((z1
+1, (z1
+2 + z2
+2)/2), z2)
+¯x1 ←solveMIP(lexmin(f1, f2), rectangleBconstraints)
+¯z1 = (f1(¯x1), f2(¯x1))
+if ¯z1 ̸= z2 then
+P ←P ∪{¯x1}
+Rectangles ←Rectangles ∪rectangle(¯z1, z2)
+end if
+rectangleT ←rectangle(z1, (¯z1
+1 −ϵ, (z1
+2 + z2
+2)/2))
+¯x2 ←solveMIP(lexmin(f2, f1), rectangleT constraints)
+¯z2 = (f1(¯x2), f2(¯x2))
+if ¯z2 ̸= z1 then
+P ←P ∪{¯x2}
+Rectangles ←Rectangles ∪rectangle(z1, ¯z2)
+end if
+end while
+return P
+25
+
+B
+UBOFLP: Model formulation
+In the UBOFLP, we are given a set V of potential facilities and a set N of locations. Furthermore, we
+denote by Ni the set of locations that can be covered by facility i because they are within a certain radius.
+Each facility has opening costs Fi and each location has a weight or demand Wj. The considered objectives
+simultaneously minimize the opening costs of facilities and maximize the total covered demand.
+Using binary decision variables yi ∈{0, 1} equal to 1 if facility i is opened and 0 otherwise, and xij ∈{0, 1}
+equal to 1 if location j is assigned to facility i, we formally deﬁne the UBOFLP as follows:
+min
+X
+i∈V
+Fiyi
+(13)
+max
+X
+i∈V
+X
+j∈Ni
+Wjxij
+(14)
+subject to:
+xij ≤yi
+∀i ∈V, j ∈N,
+(15)
+X
+i∈V
+xij = 1
+∀j ∈N,
+(16)
+yi ∈{0, 1}
+∀i ∈V,
+(17)
+xij ∈{0, 1}
+∀i ∈V, j ∈N.
+(18)
+C
+SSUFLP: Model formulation
+In the SSUFLP, we are given a set V of potential facilities and a set N of locations that have to be assigned
+to one of the facilities each.
+Each facility has opening costs Fi and it costs cij to assign location j to
+facility i. The considered objectives simultaneously minimize the total opening costs of facilities and the
+total assignment costs.
+Using binary decision variables yi ∈{0, 1} equal to 1 if facility i is opened and 0 otherwise, and xij ∈{0, 1}
+equal to 1 if location j is assigned to facility i, we formally deﬁne the SSUFLP as follows:
+min
+X
+i∈V
+Fiyi
+(19)
+min
+X
+i∈V
+X
+j∈N
+cijxij
+(20)
+subject to:
+xij ≤yi
+∀i ∈V, j ∈N,
+(21)
+X
+i∈V
+xij = 1
+∀j ∈N,
+(22)
+yi ∈{0, 1}
+∀i ∈V,
+(23)
+xij ∈{0, 1}
+∀i ∈V, j ∈N.
+(24)
+D
+BITOPTW: Model formulation
+The BITOPTW is deﬁned on a directed graph G = (V, A), where A is the set of arcs and V the set of vertices,
+representing the starting location (vertex 0), the ending location (vertex n + 1) and n control points. Each
+control point i is associated with a score Si, a service time di and a time window [ei, li]. Each route k ∈K,
+with |K| = m, has to start at location 0 and end at location n+1 and each arc (i, j) is associated with travel
+26
+
+cost cij and travel time tij. The aim is to maximize the total collected score and to simultaneously minimize
+the total travel cost. Using binary decision variables zi ∈{0, 1} equal to 1 if location i is visited and 0
+otherwise, and yijk ∈{0, 1} equal to 1 if arc (i, j) is traversed by route k and 0 otherwise, and continuous
+variables Bik, denoting the beginning of service at i by route k, we formally deﬁne the BITOPTW as follows:
+min
+X
+k∈K
+X
+(i,j)∈A
+cijyijk
+(25)
+max
+X
+i∈V \{0,n+1}
+Sizi
+(26)
+subject to:
+X
+j∈V \{0}
+y0jk = 1
+∀k ∈K
+(27)
+X
+i∈V \{n+1}
+yi,n+1,k = 1
+∀k ∈K
+(28)
+X
+k∈K
+X
+j∈V \{n+1}
+yjik = zi
+∀i ∈V \ {0, n + 1}
+(29)
+X
+j∈V \{n+1}
+yjik −
+X
+j∈V \{0}
+yijk = 0
+∀k ∈K, i ∈V \ {0, n + 1}
+(30)
+(Bik + di + tij)yijk ≤Bjk
+∀k ∈K, (i, j) ∈A
+(31)
+ei ≤Bik ≤li
+∀k ∈K, i ∈V
+(32)
+yijk ∈{0, 1}
+∀k ∈K, (i, j) ∈A
+(33)
+zi ∈{0, 1}
+∀i ∈V \ {0, n + 1}
+(34)
+Objective function (25) minimizes the total routing costs while objective function (26) maximizes the total
+collected proﬁt. Constraints (27) and (28) make sure that each route starts at the deﬁned starting point
+and ends at the correct ending point. Constraints (29) link the binary decision variables and (30) ensure
+connectivity for visited nodes. Constraints (31) set the time variables and (32) make sure that time windows
+are respected. We note that constraints (31) are not linear but they can easily be linearized using big M
+terms.
+References
+Adelgren, N., Belotti, P., and Gupte, A. (2014).
+Eﬃcient storage of pareto points in biobjective mixed integer
+programming. arXiv:1411.6538 [cs.DS].
+Adelgren, N. and Gupte, A. (2016). A branch-and-bound method for multiobjective mixed integer linear programs
+and its implementation for biobjective problems. Working paper, Clemson University.
+Aneja, Y. P. and Nair, K. P. K. (1979). Bicriteria transportation problem. Management Science, 25:73–78.
+Baldacci, R., Mingozzi, A., and Roberti, R. (2012). Recent exact algorithms for solving the vehicle routing problem
+under capacity and time window constraints. European Journal of Operational Research, 218(1):1 – 6.
+Belotti, P., Soylu, B., and Wiecek, M. M. (2013).
+A branch-and-bound algorithm for biobjective mixed-integer
+programs. available online at http://www.optimization-online.org/DB HTML/2013/01/3719.html.
+Belotti, P., Soylu, B., and Wiecek, M. M. (2016). Fathoming rules for biobjective mixed integer linear programs:
+Review and extensions. Discrete Optimization, 22:341–363.
+Boland, N., Charkhgard, H., and Savelsbergh, M. (2015a). A criterion space search algorithm for biobjective integer
+programming: The balanced box method. INFORMS Journal on Computing, 27:735–754.
+Boland, N., Charkhgard, H., and Savelsbergh, M. (2015b). A criterion space search algorithm for biobjective mixed
+integer programming: The triangle splitting method. INFORMS Journal on Computing, 27(4):597–618.
+27
+
+Braekers, K., Hartl, R. F., Parragh, S. N., and Tricoire, F. (2016). A bi-objective home care scheduling problem:
+Analyzing the trade-oﬀbetween costs and client inconvenience. European Journal of Operational Research,
+248:428–443.
+Desrosiers, J. and L¨ubbecke, M. E. (2005). A primer in column generation. In Desaulniers, G., Desrosiers, J., and
+Solomon, M. M., editors, Column Generation, pages 1–32. Springer US.
+Dolan, E. D. and Mor´e, J. J. (2002). Benchmarking optimization software with performance proﬁles. Mathematical
+Programming, 91(2):201–213.
+Ehrgott, M. (2005). Multicriteria optimization, volume 2. Springer.
+Ehrgott, M. and Gandibleux, X. (2006). Bound sets for biobjective combinatorial optimization problems. Computers
+& Operations Research, 34:2674–2694.
+Feillet, D., Dejax, P., Gendreau, M., and Gueguen, C. (2004). An exact algorithm for the elementary shortest path
+problem with resource constraints: Application to some vehicle routing problems. Networks, 44(3):216–229.
+Gadegaard, S., Ehrgott, M., and Nielsen, L. (2016a). Bi-objective branch-and-cut algorithms: Applications to the
+single source capacitated facility location problem. Working paper, Aarhus Universitet.
+Gadegaard, S., Nielsen, L., and Ehrgott, M. (2016b). An instance generator for the capacitated facility location
+problem. github, source code (v1.0.0).
+Haimes, Y., Lasdon, L., and Wismer, D. (1971). On a bicriterion formulation of the problems of integrated system
+identiﬁcation and system optimization. IEEE Transactions on systems, man and cybernetics, 1:296–297.
+Jozefowiez, N., Laporte, G., and Semet, F. (2012). A generic branch-and-cut algorithm for multiobjective optimization
+problems: application to the multilabel traveling salesman problem. INFORMS Journal on Computing, 24:554–
+564.
+Leitner, M., Ljubi´c, I., and Sinnl, M. (2014). A computational study of exact approaches for the bi-objective prize-
+collecting steiner tree problem. INFORMS Journal on Computing, 27(1):118–134.
+Masin, M. and Bukchin, Y. (2008). Diversity maximization approach for multiobjective optimization. Operations
+Research, 56(2):411–424.
+Mavrotas, G. and Diakoulaki, D. (1998). A branch and bound algorithm for mixed zero-one multiple objective linear
+programming. European Journal of Operational Research, 107:530–541.
+Raith, A., Moradi, S., Ehrgott, M., and Stiglmayr, M. (2012). Exploring bi-objective column generation. In Proceed-
+ings of the 46th Annual ORSNZ Conference, pages 288–296.
+Ramos, T. R. P., Gomes, M. I., and Barbosa-P´ovoa, A. P. (2014). Planning a sustainable reverse logistics system:
+Balancing costs with environmental and social concerns. Omega, 48:60–74.
+Righini, G. and Salani, M. (2009). Decremental state space relaxation strategies and initialization heuristics for
+solving the orienteering problem with time windows with dynamic programming. Computers & Operations
+Research, 36(4):1191–1203.
+Sarpong, B. M., Artigues, C., and Jozefowiez, N. (2013). Column generation for bi-objective vehicle routing prob-
+lems with a min-max objective. In 13th Workshop on Algorithmic Approaches for Transportation Modelling,
+Optimization, and Systems, ATMOS 2013, September 5, 2013, Sophia Antipolis, France, pages 137–149.
+Sourd, F. and Spanjaard, O. (2008). A multi-objective branch-and-bound framework: application to the biobjective
+spanning tree problem. INFORMS Journal on Computing, 20:472–484.
+Stidsen, T., Andersen, K. A., and Dammann, B. (2014). A branch and bound algorithm for a class of biobjective
+mixed integer programs. Management Science, 60(4):1009–1032.
+Tam, B., Ehrgott, M., Ryan, D., and Zakeri, G. (2011). A comparison of stochastic programming and bi-objective
+optimisation approaches to robust airline crew scheduling. OR Spectrum, 33(1):49–75.
+Tricoire, F., Graf, A., and Gutjahr, W. J. (2012). The bi-objective stochastic covering tour problem. Computers &
+OR, 39(7):1582–1592.
+Vincent, T., Seipp, F., Ruzika, S., Przybylski, A., and Gandibleux, X. (2013). Multiple objective branch and bound
+for mixed 0-1 linear programming: Corrections and improvements for the biobjective case.
+Computers &
+Operations Research, 40:498–509.
+Vis´ee, M., Teghem, J., Pirlot, M., and Ulungu, E. L. (1998). Two-phases method and branch and bound procedures
+to solve the bi–objective knapsack problem. J. of Global Optimization, 12(2):139–155.
+28

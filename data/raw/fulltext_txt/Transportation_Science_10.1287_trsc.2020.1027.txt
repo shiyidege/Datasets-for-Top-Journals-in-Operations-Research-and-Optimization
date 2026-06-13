@@ -1,0 +1,2482 @@
+TITLE: Fast Calibration of Car-Following Models to Trajectory Data Using the Adjoint Method
+JOURNAL: Transportation_Science
+YEAR: 2021
+DOI: https://doi.org/10.1287/trsc.2020.1027
+---
+
+Fast Calibration of Car Following models to Trajectory data using the
+Adjoint Method
+Ronan Keane
+Systems Engineering, Cornell University, Email: (rlk268@cornell.edu)
+H. Oliver Gao
+Civil and Environmental Engineering, Cornell University, Email: (hg55@cornell.edu)
+September 22, 2020
+Abstract
+Before a car-following model can be applied in practice, it must ﬁrst be validated against real data in a process
+known as calibration. This paper discusses the formulation of calibration as an optimization problem, and compares
+diﬀerent algorithms for its solution. The optimization consists of an arbitrary car following model, posed as either an
+ordinary or delay diﬀerential equation, being calibrated to an arbitrary source of trajectory data which may include
+lane changes.
+Typically, the calibration problem is solved using gradient free optimization. In this work, the gradient of the
+optimization problem is derived analytically using the adjoint method. The computational cost of the adjoint method
+does not scale with the number of model parameters, which makes it more eﬃcient than evaluating the gradient
+numerically using ﬁnite diﬀerences. Numerical results are presented which show that quasi-newton algorithms using
+the adjoint method are signiﬁcantly faster than a genetic algorithm, and also achieve slightly better accuracy of the
+calibrated model.
+1
+arXiv:1901.06452v3 [cs.SY] 21 Sep 2020
+
+1
+Introduction
+1.1
+The Case for Car Following and Trajectory Data
+A complete traﬃc simulator consists of many diﬀerent modules, including algorithms to determine the demand for
+diﬀerent road sections, complex rules to govern lane changes, mergers, and diverges, a model to describe traﬃc ﬂow
+and driving behaviors, and more. Out of all these modules, the description of traﬃc ﬂow is the most fundamental.
+The decision of what model is used to describe traﬃc ﬂow has impacts on the simulator’s strengths, weaknesses,
+and overall performance.
+In particular, one important distinction is whether to simulate at the macroscopic or
+microscopic level.
+At the microscopic level, car following models are often used. Car following models describe how a vehicle behaves
+as a function of its surroundings; typically they are expressed as diﬀerential equations where any vehicle is coupled
+to the vehicle directly ahead (i.e. its lead vehicle). Many car following models are based on common sense rules
+of driving. Some simple examples are adopting a speed based on the distance between you and your leader, or
+accelerating based on the diﬀerence in speeds between you and your leader.
+Whereas microscopic traﬃc models describe the motions of individual vehicles, their macroscopic counterparts
+treat traﬃc as a ﬂuid. At the macroscopic level, there are no vehicles, only traﬃc densities. Congested road sections
+with high densities slowly trickle forward, while uncongested traﬃc at low densities ﬂow freely. This connection
+to ﬂuid dynamics was originally made by [1], and the inﬂuence of the resulting traﬃc ﬂow theory can hardly be
+overstated. In the more than six decades since, numerous works have attempted to improve upon the so-called
+Lighthill-Whitham-Richards (LWR) model in order to better describe various complex elements of traﬃc ﬂow. Among
+those, [2], [3], [4], [5], [6] are perhaps some of the most notable. Nonetheless, when it comes to macrosimulation, the
+LWR model, and its discrete numerical formulation ([7]), is still widely used today.
+For all its merits, the LWR model is not without its limitations. A key relationship between ﬂow and density
+known as the “fundamental diagram”, must be supplied. More importantly, it is assumed vehicles are homogeneous
+and exhibit static behavior. In real traﬃc, drivers behave diﬀerently; vehicles have varying performances; traﬃc
+demand ﬂuctuates; controlled intersections and lane changes have complex eﬀects. Traﬃc ﬂow is incredibly dynamic
+and inhomogeneous.
+The shortcomings of the LWR model become apparent in practice (see [4, 8, 9]).
+In the
+fundamental diagram, instead of equilibrium curves, one ﬁnds a wide scattering of points. The time evolution of
+real traﬃc ﬂow shows a much richer picture than what the LWR model predicts. Examining the evolution of a
+vehicle trajectory in the speed-spacing plane, one sees complex hysteresis loops which are inconsistent with current
+macroscopic theory ([10], [11] or Fig. 2 are examples of such plots). Given these limitations, one would hope for
+some car following model that could explain all these phenomena.
+However, existing works are not prepared to oﬀer guidelines as to which car following models are best. It is also
+not clear as to how much more accurate car following models are compared to macro-models (like LWR). Answering
+either of these pressing questions is diﬃcult: the traﬃc microsimulation literature consists of literally hundreds of
+diﬀerent models, many of which have never actually been thoroughly validated ([12]). Works such as [13], [14], [15],
+and [16] have attempted to address this long-standing problem of car following models but have had varying results
+as to which models are best.
+Drawing conclusions on the eﬃcacy of diﬀerent car following models requires both a large vehicle trajectory
+dataset (e.g.
+[17] or [18]) to facilitate comparison, as well as a reliable methodology for model calibration and
+validation. The aim of this work is to develop new methodology to improve the calibration of car following models.
+However, one should keep in mind that this only addresses one half of the challenge; equally important is the creation
+of new datasets and new approaches for collecting accurate and meaningful traﬃc data.
+There is a need for an increased use of trajectory data to study traﬃc ﬂow. This need goes far beyond the
+validation of existing car following models. As new technologies like autonomous vehicles, connected cities and on-
+demand mobility become fully realized, the LWR model assumption of homogeneous drivers exhibiting static behavior
+becomes increasingly unrealistic. The limitations of macrosimulation and the uncertainty of new technology are both
+good reasons to suspect a growing demand for microsimulation. At the same time, vehicle trajectory data (which is
+needed for microsimulation/car following) is easier to get than ever before because of new technologies like computer
+vision, lidar/radar, and GPS. Compared to the more commonly used loop detector data, trajectory data describes
+traﬃc ﬂow at much higher temporal and spatial resolutions. These new sources of data, still largely unexploited, can
+help advance both micro- and macro- theory.
+1.2
+Calibration Using Trajectory Data
+It is relatively simple to write down some mathematical equations and call them a traﬃc model. Far more diﬃcult is
+applying this model in practice. In order to validate a model against real data, one must ﬁnd the model parameters
+2
+
+Figure 1: On the left, an excerpt of a single lane from the NGSim data.
+“Incomplete” trajectories are due to
+vehicles changing to/out of the lane pictured. One can observe many of the important features of traﬃc ﬂow such
+as shockwaves, lane changing events, and individual driver behaviors. Compared to macroscopic data, these features
+are captured at higher temporal/spatial resolutions and without aggregation. On the right, a car following model
+(the OVM) has been calibrated to the trajectory data.
+that best explain the data: this is known as calibration. Solving the calibration problem requires both a dataset
+describing the quantity of interest, as well as a mathematical model that explains the data. This paper deals with
+car-following models that are posed as diﬀerential equations, and may include elements such as delays, bounds on
+acceleration/speed, and multiple driving regimes. The car-following model is to be calibrated against trajectory data,
+time series data that describes the motion of individual vehicles.
+Existing literature has covered various aspects of the trajectory data calibration problem: the use of meta-models,
+sensitivity analysis, optimization algorithms, measures of performance (e.g. speed or spacing data), and goodness-
+of-ﬁt function (i.e. loss function). [19], [20], and [21] are good works focused primarily on methodology. [22], [23],
+[15] and [16] are good works focused on both calibration and the benchmarking of various models.
+In this paper calibration is posed as an optimization problem. For a wide class of models, being calibrated to
+trajectory data gathered from any source, the gradient of the optimization problem has been derived in an eﬃcient
+way using the adjoint method. This enables the calibration problem to be solved by more eﬃcient optimization
+routines which use gradient information. Several state of the art algorithms are benchmarked in order to determine
+both the accuracy of the ﬁt they can achieve, as well as the computational eﬀort required to apply the algorithm.
+The paper is organized as follows. Section 2 introduces car following models and discusses current research directions
+for improving car following models. Section 3 describes the optimization problem and discusses some issues arising in
+its solution. Section 4 applies the adjoint method to the optimization problem and compares it to ﬁnite diﬀerences.
+Section 5 compares diﬀerent algorithms for solving the calibration problem.
+2
+Car-Following Models
+We will consider any car-following model that can be expressed as either an ordinary or delay diﬀerential equation.
+This describes the majority of models in the literature, as well as the majority of models used in commercial
+microsimulation packages ([24]). We deal with models of the following form
+¨xn(t) = h( ˙xn−1(t −τ), xn−1(t −τ), ˙xn(t −τ), xn(t −τ), p)
+(1)
+where xn(t) is the position of vehicle n at time t. h is the car-following model, which depends on parameters p, the
+“following” vehicle xn and “lead” vehicle xn−1. τ is a time-delay parameter which represents human reaction time.
+Eq. (1) states that a driver’s behavior (how they choose to accelerate) is determined from the speed and position of
+their own car, the speed and position of the leading car, and parameters p. Given a lead vehicle trajectory xn−1(t),
+3
+
+parameters p, and initial condition xn(tn), the car following model (1) will produce the follower trajectory xn(t).
+The presence of nonzero τ leads to a delay diﬀerential equation (DDE). Many car-following models (including most
+of those used in commercial software) treat reaction time explicitly by using a DDE.
+Besides ODEs and DDEs, some car-following models are formulated as stochastic diﬀerential equations or derived
+using nonparametric techniques. We brieﬂy discuss these types of models in section 2.3 but the current methodology
+does not address their calibration.
+2.1
+Ordinary Diﬀerential Equations
+Eq. (1) gives a general form for car-following models. The simplest type of model is a ﬁrst-order ODE where the
+speed of the following vehicle n is completely determined by the space headway (xn−1 −xn). In this type of model,
+each driver adopts a speed based on the distance between their car and the leading car.
+This simple kind of model is important because of its connection to macroscopic theory and the LWR model.
+Speciﬁcally, if one assumes all vehicles are identical, and interprets the reciprocal of density as headway, then a
+functional relationship between traﬃc ﬂow and density can be recast as a relationship between vehicle speed and
+headway ([25]). Under these assumptions, the fundamental diagram can be thought of as describing a ﬁrst-order
+car-following model. Consider the Newell car following model an example
+˙xn(t) = min{vf, xn−1(t) −xn(t) −sjam
+α
+}.
+(2)
+vf, α and sjam are parameters describing a triangular fundamental diagram ([22]). Namely vf is the speed of a vehicle
+during free ﬂow, sjam is the distance between two completely stopped vehicles, and −sjam/α is the shockwave speed.
+The Newell model can also be written as a trajectory translation model, where the trajectory of a following vehicle
+is equivalent to the lead vehicle trajectory, translated over both space and time.
+xn(t) = xn−1(t −α) −sjam
+(3)
+We refer to Eq. (3) as Newell (TT) and Eq. (2) as Newell (DE), where the acronyms stand for trajectory translation
+and diﬀerential equation, respectively. In the special case where the TT and DE models both use a numerical time
+step equal to α, and vehicles are always in the congested regime (i.e. not moving at their free ﬂow speeds), the two
+models become equivalent ([25]). In this special case, either model gives trajectories that exactly obey the LWR
+model with a triangular fundamental diagram. In general however, the two models are diﬀerent (see for example
+Fig. 2). The advantages of the Newell (TT) or (DE) models are that they contain a small number of parameters,
+and those parameters are easily interpretable under macroscopic theory.
+More complicated car-following models (compared to those of Newell) are sometimes criticized for two main
+reasons: ﬁrst, for not having enough empirical support for their validity, and second, for having too many parameters.
+Despite these criticisms, more complicated models have behaviors that attract researchers. For example, the optimal
+velocity model (OVM) proposed by [26] exhibits a spontaneous phase transition between free ﬂow and congested
+states, which may describe “phantom” traﬃc jams ([27]). Another example is the intelligent driver model (IDM)
+proposed by [28], which can qualitatively reproduce a number of complex (empirical) traﬃc states. Besides more
+recent models like OVM or IDM, there are also a plethora of older models to complicate the mix ([12]). The default
+models in most modern traﬃc simulator packages (for example, VISSIM or AIMSUN) are still older car-following
+models ([24]), presumably because it is unclear if the newer car-following models oﬀer any beneﬁts.
+Fig. 2 compares each of the four models just mentioned by calibrating them to a single vehicle trajectory from
+the reconstructed NGSim data ([29]). The calibration minimized the root mean square error (RMSE) between the
+simulation and measurements. The vehicle (ID 1013) was recorded for only 55 seconds, but even in that time many
+hysteresis loops were recorded in the speed-headway plane. For the NGSim data, which was recorded on the freeway
+in congested conditions, trajectories that qualitatively resemble this one are the rule rather than the exception. The
+diﬀerent models all give a diﬀerent caricature of the oscillatory behavior observed. In particular, the Newell (TT)
+model (with a simulation time step of .1 s) appears to better capture the seemingly chaotic nature of the oscillations,
+whereas the more complicated (and computationally expensive to calibrate) IDM or OVM models result in a lower
+RMSE and better capture the width of the hysteresis (the diﬀerences in speeds at a given headway). The point of
+this ﬁgure is not to make a case for one model over the other, but rather to point out the interesting behavior shown
+even in a single short trajectory. It also raises an important question which existing research seems unprepared to
+answer.
+With so many diﬀerent models, each of varying complexities, which ones best describe traﬃc ﬂow? Our work on
+calibration is motivated by this question.
+4
+
+Figure 2: Four diﬀerent car following models are calibrated to a single empirical vehicle trajectory by minimizing the
+root mean square error between simulation and measurements. The trajectories are plotted in the speed - headway
+plane.
+2.2
+Delay-Diﬀerential Equations
+Compared to ODEs, DDEs are more complicated to analyze and solve. Car-following models typically only consider
+the simplest case, where time delay (reaction time) is a constant. It seems the distinction between ODEs and DDEs
+has been given limited importance in the calibration literature, even though the addition of time delay as a parameter
+causes extra complications. As for the literature as a whole, the eﬀect of nonzero time delay on car-following models
+is still not fully understood.
+When studying the behavior of car-following models, one common approach is to consider a line of cars with
+identical model parameters on a closed loop. In this special setting, one can ﬁnd an “equilibrium” solution where all
+vehicles have the same speed and same headway, with zero acceleration. The equilibrium solution is contrasted with
+an oscillatory/periodic solution, where the speed of a vehicle can oscillate in a manner reminiscent of stop-and-go
+or congested traﬃc. Since most analytic (i.e. not numerical) results come from studying the behavior around the
+equilibrium solution, the stability of the equilibrium solution is particularly important. Adjusting parameters in
+a model can be said to have a stabilizing (destabilizing) eﬀect if the equilibrium solution will persist (degenerate)
+under a wider variety of conditions. Intuitively, one expects that drivers having slower reaction times will have a
+destabilizing eﬀect, and this seems to be generally correct.
+It has been shown for both the optimal velocity model (OVM) and intelligent driver model (IDM) that the
+inclusion of time delays has a destabilizing eﬀect (see [30], [31], [32]). But time delay is not the only model parameter
+5
+
+that can have such eﬀects. For example, [33] showed that increasing (decreasing) the OVM’s “sensitivity parameter”
+has stabilizing (destabilizing) eﬀects (the sensitivity parameter is proportional to how strongly the driver accelerates).
+Time delay can also have more subtle eﬀects: [31] found the inclusion of time delays for OVM caused bistability
+between equilibrium and oscillatory solutions.
+In [34] the OVM is considered with diﬀerent reaction times ≤0.3 seconds. In this range, no qualitative changes
+to the model are observed. The authors state that changing the sensitivity parameter can account for the eﬀects of
+reaction time. [23] and [30] have done experiments on OVM with larger reaction times (≈1 seconds) and found that
+while it is true that reaction time is not especially important at low values, once increased past some threshold it
+will start to cause unstable behavior leading to vehicle collisions. A similar behavior was found in [35] for the Gipps
+car-following model. These ﬁndings show the inclusion of reaction time will have a destabilizing eﬀect, but large
+reaction times seem to have especially unstable eﬀects, perhaps owing to some sort of phase transition.
+In practice, one can observe that calibrated values for reaction time greatly vary across the literature, even for
+the same model. Consider that [36],[15], and [16] all calibrate the Gipps model, but all ﬁnd very diﬀerent means and
+variances for drivers’ reaction times. One found the mean to be 0.57 s with a variance of 0.02 s. Another found the
+mean to be 1.73 s with variance 1.35 s.
+Besides reaction time, another interesting extension to a model is the inclusion of “anticipation” eﬀects. Examples
+of anticipation are a driver estimating the future speed/position of a leading vehicle, or a following vehicle reacting
+to multiple vehicles instead of just its leader. [32] showed that anticipation has a stabilizing eﬀect for IDM, and
+[37] showed the same for OVM. Of course, due to nonlinearities, stabilizing and destabilizing eﬀects will not simply
+cancel out.
+2.3
+Stochastic and Data-Driven Models
+In this paper we consider the calibration of car following models formulated as ODEs or DDEs. This section dis-
+cusses some recent research directions in which car following models are formulated as stochastic diﬀerential equations
+(SDEs), or derived from data using nonparametric models.
+Papers using SDEs to model traﬃc ﬂow typically argue that the stochastic models are better able to describe the
+formation and growth of congestion.
+Besides being able to achieve a closer ﬁt to data, authors have concluded
+that deterministic models cannot reproduce some qualitative features of congestion. In particular, some recent ﬁeld
+experiments involving 25 and 51 human driven vehicles on a straight road ([38]) showed that the standard deviation
+of traﬃc speeds initially grow in a concave way, whereas deterministic models seem to only be able to show convex
+growth.
+SDEs in the literature are usually based on modifying an existing deterministic ODE model rather than created as an
+entirely novel model. Two common stochastic mechanisms are acceleration noise, and action points. For acceleration
+noise, white noise is added to the output of the deterministic model. The white noise may be sampled from either a
+uniform or normal distribution. Closely related to acceleration noise, is the case where the noise is added to a model
+parameter instead of directly to the output of the model. In [39] and [40] gaussian acceleration noise was added to
+the Newell model and IDM respectively. In 2D-IDM from [41] uniform noise is added to a model parameter (in that
+case, the desired time headway parameter).
+Action points are implemented by creating a model regime where the driver is insensitive to changes in the headway
+and/or lead vehicle velocity. Thus when inside the regime, a driver will maintain their current behavior until a suﬃ-
+ciently large diﬀerence in the state is achieved, at which point the driver will react to the now signiﬁcantly diﬀerent
+driving situation. The reader is referred to [42] or [43] for speciﬁc details on implementing action points.
+The motivation for including white noise is to model random human behavior and reﬂect the fact that humans can-
+not perfectly control their vehicles, whereas the motivation for action points is that drivers are not able to perceive
+minute changes to the traﬃc situation and thus a suﬃciently large diﬀerence is required before they can start to
+react. [42] shows that action points and white noise have similar eﬀects on traﬃc simulations, and suggests that both
+mechanisms should be included.
+Data-driven car following models are based on machine learning models and algorithms, and as a result their formula-
+tion is signiﬁcantly diﬀerent than the ODE/DDE/SDE discussed so far. However, despite their diﬀerent formulation,
+the inputs (current headway, follower and leader velocities) and output (current follower acceleration) are typically
+very similar. Papers in the literature have reported that data-driven models can achieve better ﬁts to empirical
+data compared to parametric models such as OVM or IDM. The discussion of these machine learning techniques is
+outside the scope of this paper but we mention the diﬀerent approaches which have been successfully applied. In
+[44] k-nearest neighbor (knn) is used, and [45] uses locally weighted regression (loess), which can be thought of as a
+generalization of knn. [46] discuss using feedforward neural networks with a single hidden layer and ReLU nonlinear-
+6
+
+ity. That paper also uses recurrent neural networks (RNNs) to overcome some diﬃculties of the feedforward neural
+networks. [47] uses long short-term memory neural networks, a special kind of RNN. [48] use deep reinforcement
+learning (deep RL) and policy gradients, and do a comparison between deep RL, IDM, RNN, loess, and feedforward
+neural networks.
+3
+Calibration
+It is useful to rewrite the second order diﬀerential equation Eq. (1) as a system of ﬁrst order equations:
+˙xn(t) =
+ ˙x∗
+n(t)
+˙vn(t)
+
+=
+
+vn(t)
+h∗(xn−1(t −τn), xn(t −τn), pn)
+
+= hn(xn(t), xn(t −τn), xL(n)(t −τn), pn)
+(4)
+where xn is now a vector consisting of the position and velocity of vehicle n at time t. x∗
+n and vn refer to the position
+and speed for vehicle n. pn denotes the parameters for vehicle n. L(n, t) refers to the leader of vehicle n at time t, and
+we denote the lead trajectory as xL(n) (time dependence suppressed) to reﬂect the fact that the index corresponding
+to the lead vehicle may change due to lane changing. Eq. (4) is what we refer to when we say “car-following model”
+and its solution xi(t) is a “simulated trajectory”.
+The calibration is done for some arbitrarily sized platoon of n vehicles, indexed as 1, . . . , n. Each vehicle has some
+individual parameters pi and a corresponding car following model hi, so all vehicles have their own set of parameters,
+and pi only describes vehicle i.
+Let p be a concatenated vector of all the parameters, so p = [p1, p2, . . . , pn].
+Calibration ﬁnds the parameters p which minimize the total loss between the simulated trajectories xi(t) and the
+corresponding measured vehicle trajectories, which are denoted ˆxi(t). The loss function is denoted as f(xi, ˆxi, t) and
+represents the goodness of ﬁt of the simulated trajectory xi at time t. The measurements ˆxi(t) are known in the
+interval [ti, Ti] for each i.
+In order to compute the simulated trajectories for each vehicle i, we require a lead vehicle trajectory xL(i)(t) as well
+as an initial condition xi(ti). The time interval that the lead vehicle trajectory is known is denoted [ti, Ti−1]. xi(ti)
+is the initial condition, which is speciﬁed as xi(ti) = ˆxi(ti) for an ODE model.
+For an ODE, the optimization problem is
+min
+p
+F =
+n
+X
+i=1
+Z Ti−1
+ti
+f(xi, ˆxi, t)dt
+(5)
+s.t.
+˙xi(t) −hi(xi(t), xL(i)(t), pi) = 0,
+t ∈[ti, Ti−1],
+i = 1, . . . , n
+xi(ti) −ˆxi(ti) = 0
+i = 1, . . . , n
+blow ≤p ≤bhigh
+The objective function F is deﬁned as the integral of the loss function f over time, summed over each simulated
+vehicle.
+The constraints are that the simulated trajectories xi obey the car-following model hi from time ti to
+Ti−1, with the initial conditions xi(ti) = ˆxi(ti). There may also be some box constraints blow, bhigh which prevent
+parameters from reaching unrealistic values.
+The DDE case is similarly deﬁned:
+min
+p
+F =
+n
+X
+i=1
+Z T ∗
+i−1
+ti+τi
+f(xi, ˆxi, t)dt
+(6)
+s.t.
+˙xi(t) −hi(xi(t), xi(t −τi), xL(i)(t −τi), pi) = 0,
+t ∈[ti + τi, T ∗
+i−1],
+i = 1, . . . , n
+xi(t) −ˆxi(t) = 0
+t ∈[ti, ti + τi],
+i = 1, . . . , n
+blow ≤p ≤bhigh
+where T ∗
+i−1 = min{Ti−1 + τi, Ti}, and the reaction time for vehicle i, τi, is assumed to be a model parameter.
+xi(t) −ˆxi(t) = 0 deﬁnes the history function for xi (DDEs have history functions as their initial conditions).
+3.1
+Downstream Boundary Conditions for Car Following Models
+In Eqs. (5) and (6) we have speciﬁed the initial conditions, which give the times vehicles enter the simulation and their
+position/speed upon entering. These conditions might also be referred to as upstream boundary conditions since they
+state how vehicles enter the simulation. For video data such as NGSim, which is recorded on a ﬁxed section of road,
+downstream boundary conditions also need to be speciﬁed. Video data has staggered observation times (Ti−1 < Ti)
+7
+
+meaning that a vehicle’s leader leaves the study area before the vehicle itself. Figure 3 gives a visual depiction of this.
+2
+𝐿(1)
+1
+Direction of travel 
+End of simulation
+2
+1
+Direction of travel 
+End of simulation
+Figure 3: Boxes represent vehicles; vehicle 2 follows 1, and 1 follows L(1). In top panel, the leader L(1) is still in
+the simulation and so the car following model can be used to update vehicle 1. In bottom panel, L(1) is no longer
+in the simulation, and so a downstream boundary condition is used to update vehicle 1.
+Car following models require a lead vehicle trajectory as input, therefore once the lead vehicle leaves the simulation,
+the car following model can no longer be used. Downstream boundary conditions then give a rule for the dynamics
+a vehicle follows once its lead vehicle leaves the simulation (i.e. they specify the dynamics for xi(t),
+t ∈[Ti−1, Ti]).
+The the boundary conditions we implement in this paper are
+˙xi(t) = ˙ˆxi(t),
+t ∈[Ti−1, Ti]
+(7)
+meaning that when a vehicle’s leader is no longer available, the vehicle will move with whatever speed was recorded
+in the data. Under these boundary conditions, the velocity vi(t) and acceleration ˙vi(t) will be piecewise continuous
+(they will have a jump discontinuity at Ti−1). The objective F and gradient dF/dp are still continuous under this
+boundary condition (see sections 3.3 and 4.1.2 for the relevant discussion on discontinuities in car following models
+and how they impact the calibration problem). Note that for a DDE, the time T ∗
+i−1 is used instead of Ti−1.
+It is necessary to specify the downstream boundary conditions for two reasons. First, it allows vehicles to exit the
+simulation area. Second, it allows congestion to propogate into the simulation area from downstream. This happens
+when the boundary conditions specify a reduction in speed.
+3.2
+Reaction Time as a Parameter
+Simulated trajectories are computed numerically with a speciﬁed time discretization. Since we want to compare
+the simulated trajectories with the actual measurements, it makes sense for the simulation to use the same time
+discretization as the data. For example, if the data is recorded every 0.1 seconds, the simulated trajectories should
+use a time step of 0.1 seconds. If the simulation used a diﬀerent time step (e.g. 0.09), then the loss can only be
+calculated at a few points (e.g. 0.9, 1.8) unless we deﬁne some interpolation procedure.
+For a DDE, the time discretization and reaction time need to be multiples of each other. If the simulation uses
+a time step of 0.1 seconds, then the reaction time will have to be an integer multiple of 0.1 (e.g. 0.1, 0.2). We can
+either:
+1. Enforce that every vehicle’s reaction time is a integer multiple of 0.1
+2. Allow reaction time to be a continuous variable and deﬁne the loss function through interpolation.
+If we choose 1, it leads to a mixed integer nonlinear programming problem (MINLP). This is a much harder problem
+than the original nonlinear program. One approach used in [16] would be to split up all vehicles into small platoons
+(either pairs or triplets) and use a brute force search for reaction time.
+However, even when the platoons are
+small, using brute force vastly increases computation because the calibration has to be repeated for every possible
+combination of reaction times.
+8
+
+The other option is to use an approach similar to [23] where reaction time is a continuous variable and interpolation
+is used on the simulated trajectories. In general, any sort of interpolation could be used, but linear interpolation is
+the most common. In this approach, interpolation needs to be used on the lead trajectory and initial history function
+in order to deﬁne the model. Assuming the numerical time step is not equal to the delay, interpolation will need to
+be used on the simulated trajectory as well.
+One issue with interpolation is how to compute the loss function. Speciﬁcally, assuming the simulation is deﬁned
+on a diﬀerent set of times than the measurements, should the simulation be interpolated onto the measurement’s
+times or vice versa? We suggest doing both. This avoids the possibility of error cancelation occurring during the
+interpolation and causing the loss function to be erroneously small. In this scenario it would be preferable to reweight
+the loss function as well since the loss will be computed over more points.
+3.3
+Multiple Regimes, Lane Changing, and Discontinuities in Car Following Models
+We say a model has multiple regimes when the model is expressed either as a piecewise function, or by using min
+and max functions. These types of modiﬁcations are frequently applied in practice. Perhaps the most common are
+examples like Eq. (2), where the maximum speed is explicitly constrained by some constant vf. For second order
+models, often the acceleration will be constrained between minimum and maximum accelerations amin, amax. Besides
+these simpler regimes which implement bounds on the acceleration and/or velocity, there are also models which use
+diﬀerent regimes to describe diﬀerent car following behavior. The Gipps model ([49]) is one such example, which
+has one regime to describe normal car following behavior, and a second regime which implements an emergency
+braking behavior. Other examples of multi-regime models are the constant acceleration heuristic proposed in [50],
+the follower stopper controller proposed in [51], or any model implementing action points. We consider
+hi(xi, xL(i), pi) =
+(
+hi,2
+gi,2(xi, xL(i), pi) ≥0
+hi,1
+otherwise
+(8)
+as a general form of a two regime car following model, with the two regimes hi,1 and hi,2. The condition for the
+associated regime to become activated is gi,2 (which is possibly a vector valued function). For example with Eq. (2):
+hi,1 = (xL(n) −xn −sjam)/α, hi,2 = vf and gi,2 = hi,1 −hi,2. There must always be m −1 such conditions for a
+model with m regimes, so a model with more regimes will simply have hi,2, . . . , hi,m and gi,2, . . . , gi,m.
+In the case of a ﬁrst order model’s velocity being bounded, or a second order model’s acceleration being bounded,
+the resulting model hi is everywhere continuous (because both regimes will be equal when the switching condition
+gi,2 is met). In general a multi-regime model need not be everywhere continuous. Gipps and follower stopper are
+both examples of a multi-regime model being everywhere continuous; the constant acceleration heuristic or a model
+implementing action points are examples not guarenteed to be continuous when switching between regimes.
+Of
+course, even for a multi-regime model which is everywhere continuous, its derivatives will have discontinuities when
+switching between regimes. Note that a multi-regime model written using min and max will always be continuous.
+The reason why we prefer using the form Eq. (8) is because 1) it is more general, 2) we can explicitly refer to the
+switching condition gi,2 and 3) the regime of the model is explicitly stated, which avoids the problem of the regime
+being ambiguous when the quantities inside a min / max are equal.
+Lane changing is another issue which causes discontinuities in car following models. Speciﬁcally, whenever a lead
+vehicle changes, i.e. L(i, t) changes, then the lead vehicle trajectory xL(i) will have a jump discontinuity, and therefore
+hi will have a jump discontinuity as well.
+Given that lane changing always causes discontinuities and multi-regime models may cause discontinuities, one may
+worry whether or not the objective F will have discontinuities, and whether or not the gradient dF/dp is even
+guarenteed to exist. We give suﬃcient conditions for the continuity of F and dF/dp in section 4.1.2.
+3.4
+Algorithms for Solving the Calibration Problem
+Eqs. (5) and (6) are nonlinear and non-convex optimization problems that must be solved numerically. Current
+approaches usually rely on gradient-free optimization, with genetic algorithm (GA) and Nelder-Mead simplex algo-
+rithm (NM) being the two most commonly applied algorithms ([12, 52, 13, 14, 53, 23, 15, 16]). These methods have
+the disadvantage of being slow to converge, and require many objective function evaluations. The objective F is
+relatively expensive to compute in this context because we ﬁrst must solve a system of diﬀerential equations (i.e.
+compute the simulated trajectories). As an alternative to directly solving the optimization problems (5) and (6),
+parameters can be estimated directly from data using statistics techniques ([54, 55, 56, 57]) but this approach is not
+guaranteed to ﬁnd local minima. Also, models may have parameters which do not have clear physical interpretations,
+and therefore cannot be directly estimated.
+9
+
+Gradient-based optimization algorithms can potentially solve the calibration problem faster than gradient-free
+approaches. However, even though most optimization algorithms use gradient information, not many gradient-based
+algorithms have been examined in the calibration literature. To the authors’ knowledge, the only gradient-based
+algorithms that have been considered are simultaneous perturbation stochastic approximation (SPSA) (see [58]),
+Lindo’s Multistart (a commercial solver’s global optimization routine, see [59]), and sequential quadratic programming
+using ﬁltering (SQP-ﬁlter, see [60]). In [61] SQP-ﬁlter was found to give better solutions than NM or GA, as well
+as solve the problem up to 10 times faster; even better results were found when it was additionally combined
+with gradient-free algorithm DIRECT ([62]). [35] did not consider computational speed, but found the Multistart
+algorithm had a much higher chance of ﬁnding the true global minimum compared to GA or NM.
+Even if one only knows how to explicitly evaluate the objective function F, it is not necessary to use gradient-free
+optimization because the gradient (the vector dF/dp) can be calculated numerically. To do this, one varies the
+parameters p one at a time, and recomputes the objective each time a parameter is varied. Then the gradient can
+be calculated using ﬁnite diﬀerences. We refer to this as the ﬁnite diﬀerence approach for computing the gradient,
+and it requires us to recompute the simulated trajectories of every single vehicle m additional times, where m is the
+number of parameters. When using a forward euler scheme with stepsize ∆t for an ODE model, the computation
+cost for computing the simulated trajectories once is O(T(n)), where T(n) = Pn
+i=1(Ti−1 −ti)/∆t. So computing the
+gradient with ﬁnite diﬀerences has a complexity of O(mT(n)). The adjoint method has complexity O(T(n)), and so
+it is the prefered method for computing the gradient when m is large ([63, 64]).
+4
+Adjoint Method and Gradient-Based Optimization
+In this paper we are primarily concerned with applying the adjoint method to Eq. (5) in order to eﬃciently evaluate
+the gradient dF/dp for an ODE model. The gradient can then be used with any gradient-based optimization routine.
+In this section we derive the gradient and compare it to using ﬁnite diﬀerences; we consider diﬀerent optimization
+algorithms in the next section.
+The adjoint method can also be applied to the calibration problem (6) where the model includes time delay. It can
+also be used to calculate the hessian. Both of these extensions follow the same techniques elaborated in this section,
+and are included in the appendix.
+We ﬁrst consider the calibration of a single vehicle (n = 1) before dealing with the general case of an arbitrary
+number of vehicles.
+4.1
+Adjoint Method for ODEs
+In our notation, xi, hi, and p are vectors, and f and F are scalars. A derivative of a scalar with respect to a
+vector is a vector, so for example ∂f/∂xi = [∂f/∂x∗
+i , ∂f/∂vi]. A derivative of a vector with respect to a vector is
+a matrix, where the rows correspond to the vector being diﬀerentiated, and the columns correspond to the vector
+being diﬀerentiated with respect to. For example,
+∂xi
+∂p =
+
+∂x∗
+i /∂p1
+∂x∗
+i /∂p2
+. . .
+∂x∗
+i /∂pm
+∂vi/∂p1
+∂vi/∂p2
+. . .
+∂vi/∂pm
+
+where pj represents the jth parameter. Additionally, the superscript T indicates transpose.
+Deﬁne the augmented objective function, denoted L
+L =
+Z Tn−1
+tn
+dt
+
+f(xn, ˆxn, t) + λT (t)
+ ˙xn(t) −hn(xn(t), xL(n)(t), pn)
+
+(9)
+in this equation, λ(t) is referred to as the adjoint variable. λ(t) has the same dimension as the state variable xn(t),
+so it is a length two vector for a second order model. Note that since ˙xn −hn(·) = 0, we have that L = F. These
+equalities are always true regardless of the choice of λ(t).
+Following the observation that L = F, it follows that dL/dp = dF/dp, so diﬀerentiating Eq. (9) with respect to the
+parameters p gives
+d
+dpF = d
+dpL =
+Z Tn−1
+tn
+dt
+ ∂f
+∂xn
+∂xn
+∂p + λT (t)
+∂˙xn
+∂p −∂hn
+∂xn
+∂xn
+∂p −∂hn
+∂p
+
+(10)
+where quantities are evaluated at time t if not explicitly stated. Note in this case there are no terms depending on
+the lead trajectory xL(n) since the platoon consists only of xn and the lead trajectory is regarded as ﬁxed.
+10
+
+Eq. (10) cannot be computed in the current form because we have no way to calculate ∂xn/∂p. The adjoint method
+works by choosing the the adjoint variable λ(t) in a way which allows us to avoid the computation of the unknown
+∂xn/∂p. When doing this, one will ﬁnd that the correct choice of λ(t) results in solving a similar system to the
+original constraint, but “backwards” (e.g. when the model is an ODE, λ(t) will end up being deﬁned as an ODE
+which is solved backwards in time). The equations which deﬁne the adjoint variable are known as the adjoint system.
+To derive the adjoint system, ﬁrst apply integration by parts:
+Z Tn−1
+tn
+λT (t)∂˙xn
+∂p dt = λT (t)∂xn
+∂p
+
+Tn−1
+tn
+−
+Z Tn−1
+tn
+˙λT (t)∂xn
+∂p dt
+(11)
+The quantity ∂xn(tn)/∂p is known because it simply depends on the initial conditions; based on (5) it is simply zero.
+We will choose λ(Tn−1) = 0 to eliminate the ∂xn(Tn−1)/∂p term. This choice becomes the initial conditions for the
+adjoint system; note that L = F regardless of how the initial conditions for λ are chosen. Now combining Eqs. (10)
+and (11):
+d
+dpF =
+Z Tn−1
+tn
+dt
+  ∂f
+∂xn
+−˙λT (t) −λT (t)∂hn
+∂xn
+ ∂xn
+∂p −λT (t)∂hn
+∂p
+
+Then to avoid calculating ∂xn/∂p we will enforce:
+∂f
+∂xn
+−˙λT (t) −λT (t)∂hn
+∂xn
+= 0,
+t ∈[Tn−1, tn]
+(12)
+Eq. (12) deﬁnes a new diﬀerential equation in λ(t). Our choice λ(Tn−1) = 0 is the corresponding initial condition.
+Then after solving for λ(t) we can calculate the desired gradient:
+d
+dpF = −
+Z Tn−1
+tn
+λT (t)∂hn
+∂p dt
+(13)
+4.1.1
+N Car Platoon
+Now we will apply the adjoint method to a platoon of arbitrary size, and sketch a general algorithm for computing
+the gradient. Deﬁne the augmented objective function and proceed as before. Again, we suppress t dependence for
+clarity.
+L =
+n
+X
+i=1
+ Z Ti−1
+ti
+f(xi, ˆxi) + λT
+i
+ ˙xi −hi(xi, xL(i), pi)
+
+dt +
+Z Ti
+Ti−1
+λT
+i ( ˙xi −˙ˆxi)dt
+!
+(14)
+d
+dpF = d
+dpL =
+n
+X
+i=1
+ Z Ti−1
+ti
+∂f
+∂xi
+∂xi
+∂p −λT
+i (t)∂hi
+∂xi
+∂xi
+∂p −λT
+i (t)∂hi
+∂p dt
+!
++
+n
+X
+i=1
+ Z Ti
+ti
+λT
+i (t)∂˙xi
+∂p −1(G(i, t) ̸= 0)λT
+G(i)(t)∂hG(i)
+∂xi
+∂xi
+∂p dt
+!
+Here, λn corresponds to the adjoint variables for vehicle n. Similar to how L(n, t) was deﬁned, G(n, t) is deﬁned
+as the index of vehicle n’s follower at time t, so that xG(n) is the following trajectory of vehicle n. If vehicle n has
+no follower at time t, or if the follower is not part of the platoon being calibrated, let G(n, t) return zero. 1 is the
+indicator function. When n > 1, the downstream boundary conditions must be put into the augmented objective
+function, because a vehicle i may aﬀect its follower in the time [Ti−1, Ti], even though it only contributes to the loss
+function during [ti, Ti−1].
+Apply integration by parts, take the initial condition as λi(Ti) = 0, and gather terms with ∂xi/∂p to form the adjoint
+system:
+−˙λT
+i (t) + 1(t ≤Ti−1)
+ ∂f
+∂xi
+−λT
+i (t)∂hi
+∂xi
+
+−1(G(i, t) ̸= 0)λT
+G(i)(t)∂hG(i)
+∂xi
+= 0,
+t ∈[Ti, ti], ∀i
+(15)
+Comparing this adjoint system to the one for a single vehicle (12), the diﬀerence here is that there is an extra
+contribution which occurs from the coupling between vehicles. This coupling term occurs only when a vehicle acts
+as a leader for another vehicle in the same platoon. After solving the adjoint system,
+d
+dpF =
+n
+X
+i=1
+ 
+−
+Z Ti−1
+ti
+λT
+i (t)∂hi
+∂p dt
+!
+(16)
+11
+
+All the partial derivatives in Eqs. (15), (16) are computed exactly for a given loss function and car-following model.
+Solving for xi(t), λi(t), and dF/dp is done numerically with an appropriate time discretization. The same discretiza-
+tion should be used for all quantities, so if one uses a forward euler scheme for xi, the same forward euler scheme
+should be used for λi and the integral in F should use a left Riemann sum. Note as well that for a multi-regime
+model, one should keep the regime for each timestep in memory, because otherwise the switching condition gi,n will
+have to be evaluated at each timestep when computing the adjoint variables.
+We deﬁne a general algorithm for computing F, d
+dpF:
+Inputs: measured trajectory data ˆx1(t), . . . , ˆxn(t), any necessary lead vehicle trajectories xL(i)(t) for i ∈[1, . . . , n], L(i, t) /∈
+[1, . . . , n]. Models h1, . . . , hn with parameters p1, . . . , pn.
+1. For each vehicle i ∈[1, . . . , n]:
+(a) Compute simulated trajectory xi(t), t ∈[ti, Ti−1] by solving ˙xi(t) = hi(xi, xL(i), pi) with intial condition
+xi(ti) = ˆxi(ti).
+(b) Compute xi(t), t ∈[Ti−1, Ti] using downstream boundary conditions Eq. (7)
+(c) Keep in memory: xi(t), G(i, t), and the regime of hi at each time
+2. Compute objective F = Pn
+i
+R Ti−1
+ti
+f(xi, ˆxi, t)dt
+3. For each adjoint variable i ∈[n, . . . , 1] : compute λi(t), t ∈[Ti, ti] by solving adjoint system Eq. (15) with
+initial condition λi(Ti) = 0.
+4. Compute gradient dF/dp = −Pn
+i
+R Ti−1
+ti
+λT
+i ∂hi/∂p dt
+Outputs:
+F, dF/dp
+4.1.2
+Suﬃcient Conditions for a Continuous Objective and Gradient
+Theorem 1. The following are suﬃcient conditions for F and dF/dp to be continuous:
+1. the loss function f(xi, ˆxi) and its partial derivative ∂f/∂xi are piecewise continuous on [ti, Ti−1] for all i
+2. the car following model hi(xi, xL(i), pi) and its partial derivatives ∂hi/∂xi, ∂hi/∂p, and ∂hi/∂xL(i) are piecewise
+continuous on [ti, Ti−1] for all i
+3. ∂hi/∂xi must be able to be bounded by a constant
+4. for a multi-regime model, the Eq. 17 must be satisﬁed
+where it is additionally assumed that xL(i)(t), L(i, t) /∈[1, . . . , n] (any lead vehicle trajectories which are required but
+not simulated) are piecewise continuous and ˆxi(t), i ∈[1, . . . , n] are continuous.
+Corollary 1. If in addition to F and dF/dp being continuous, ∂f/∂xi, ∂hi/∂xL(i), and ∂hi/∂p are bounded, then
+F is Lipschitz continuous.
+We conclude that a multi-regime model need not be continuous when switching between regimes, and lane
+changing, which will always cause jump discontinuities in hi(xi, xL(i), pi), is allowed. Note that by piecewise continuity
+we mean a model (or loss function) can switch regimes only a ﬁnite number of times in a ﬁnite time interval (and
+each regime is continuous); additionally, the time interval of each regime must be continuous with respect to the
+model parameters. Refer to the the full proof in the appendix for further details. We also show in the appendix that
+the objective is Lipschitz continuous for the OVM, which was the model used for the numerical experiments in this
+paper.
+4.2
+Implementation of Adjoint Method and Calibration Problem
+To test the adjoint method and optimization algorithms, the calibration problem Eq. (5) was implemented in python
+for the optimal velocity model. The equations below show the functional form of the model as originally formulated
+in [57] and [26].
+¨xn(t) = c4(V (s) −˙xn(t))
+V (s) = c1[tanh(c2s −c3 −c5) −tanh(−c3)]
+12
+
+c1 through c5 are the 5 parameters of the model. s is the space headway, deﬁned as s = xL(i) −xi −lL(i), where li
+is the length of vehicle i. All vehicles have their own unique parameters, so the total number of parameters in the
+optimization problem is 5 times the number of vehicles.
+The optimal velocity model and its adjoint system were both discretized with a forward euler scheme. The data
+used was the reconstructed NGSim data ([29]), so a time step of .1 seconds was used to be consistent with this data.
+The loss function f used was square error, which was discretized with a left Riemann sum.
+f(xi, ˆxi, t) = (x∗
+i (t) −ˆx∗
+i (t))2
+F =
+n
+X
+i=1
+Ti−1
+X
+t=ti
+f(xi, ˆxi, t)
+which is equivalent to minimizing the root mean square error (RMSE)
+RMSE =
+s
+F
+Pn
+i=1 Ti−1 −ti
+Since only a car following model is being calibrated, any lane changes in the measurements will be the same lane
+changes in the simulation. This also means that the leader/follower relationships in the simulation are the same as
+they are in the data. This allows trajectories to be calibrated at the level of individual vehicles, since it does not make
+sense to directly compare the simulated and measured trajectories of a vehicle if the simulation and measurements
+have diﬀerent lead vehicles.
+4.3
+Adjoint method compared to other methods for calculating the gradient
+Many optimization algorithms will automatically use ﬁnite diﬀerences to compute the gradient if an explicit gradient
+function is not given. Simultaneous perturbation is another option when using an optimization algorithm like the
+one outlined in [58]. Then, assuming that one has chosen to use a gradient-based algorithm for calibration, it is of
+practical interest to investigate how the adjoint method compares to both of these methods. Speciﬁcally, how does
+the speed and accuracy of these three methods compare in practice?
+4.3.1
+Comparison of Speed
+The computational cost of an objective function evaluation is O(T(n)), where T(n) is the number of simulated
+timesteps, added over all n vehicles. The theoretical computational complexities for the adjoint method is O(T(n)),
+while forward diﬀerences has O(mT(n)), where m is the number of parameters. The simultaneous perturbation
+method has O(kT(n)) complexity, where the ﬁnal gradient is the average of k estimates of the gradient. Note that
+these computational complexities are only for the gradient calculation and do not consider the complexity of whatever
+optimization algorithm the gradient is used with.
+To test these theoretical results in practice, the gradient of the calibration problem was calculated and the platoon
+size was varied. Since the OVM was used, the total number of parameters is 5 times the number of vehicles. We
+considered a platoon having between 1 and 15 vehicles. The results are shown in the ﬁgure 4.
+Figure 4’s left panel shows the total CPU time, measured in seconds, needed to calculate the gradient of the calibration
+problem using the three diﬀerent methods. The simultaneous perturbation was done with both 1 and 3 trials, denoted
+SPSA and SPSA-3. The right panel shows the time needed to calculate the gradient divided by the time needed to
+calculate the objective. To minimize the randomness in the CPU times, each data point was repeated 10 times and the
+results were averaged. Some variation is still present because some vehicles are observed for shorter times. The same
+15 vehicles were used in the experiment and always added in the same order. It should also be stated that for either
+a ﬁnite diﬀerencing scheme or for the adjoint method, one needs to ﬁrst compute the objective before computing the
+gradient. Therefore, it should be implicitly understood that “time to calculate the gradient”, really refers to “time to
+calculate both the objective and gradient” for those two methods. This shows that using a ﬁnite diﬀerence method
+quickly becomes intractable when the number of parameters increases. The time increases quadratically in the left
+panel because both m and T(n) are increasing. In the right panel, when the time needed to calculate the gradient is
+divided by the time needed to calculate the objective, one sees the complexity growing as a linear function of m. In
+that ﬁgure, we also see that the complexities for the adjoint method and simultaneous perturbation do not depend
+on m.
+The table 1 shows the cpu times for 5-15 parameters. One can observe that this implementation of the adjoint
+method for OVM requires the equivalent of 4 objective function solves, whereas forward diﬀerences requires m + 1
+(where there are m parameters).
+13
+
+Figure 4: Time for a single evaluation of the gradient for a progressively larger calibration problem. The objective
+varied from the loss from a single vehicle (5 parameters) to 15 vehicles (75 parameters).
+Table 1: Table of speeds for adjoint method compared to ﬁnite diﬀerences for computing the gradient. Relative time
+refers to the equivalent number of objective function evaluations.
+Parameters
+Obj. time (s)
+Adjoint time (s)
+Adjoint relative time
+Finite time (s)
+Finite relative time
+5
+.0062
+.0250
+4.03
+.0390
+6.3
+10
+.0109
+.0438
+4.02
+.1250
+11.5
+15
+.0172
+.0686
+3.99
+.2811
+16.3
+4.3.2
+Comparison of Accuracy
+For the calibration problem, there is no way to calculate the gradient exactly because there is no closed form solution
+for the car following model. To evaluate the accuracy of the adjoint method and simultaneous perturbation, we
+will therefore treat the result from forward diﬀerences as the true solution. In the experiment, points were evenly
+sampled between an initial starting guess and the global minimum of the calibration problem for a single vehicle. At
+each of these points in the parameter space, the relative error was calculated
+relative error = ||∇fdF −∇F||2
+||∇fdF||2
+where ∇fdF is the gradient calculated with forward diﬀerences, ∇F is the gradient calculated with the adjoint
+method or simultaneous perturbation, and ||·||2 denotes the 2 norm. The results of the experiment are shown below.
+For the adjoint method, the relative error is usually small, on the order of 10−6. When the parameters start to
+become close to a local minimum, the relative error starts to rapidly increase to the order of 10−4 −10−3. When
+at the optimum, the relative error becomes as high as .3. The reason why the relative error increases is because as
+the parameters approach the minimum, the norm of the gradient decreases. The right panel shows the relationship
+between the log of the norm of the gradient calculated with ﬁnite diﬀerences, and the log of the relative error. One
+can see that they are inversely proportional to each other. This makes theoretical sense: we expect the residual
+∇fdF −∇F to always be on approximately the same order of magnitude since it depends mainly on truncation error
+which does not change with the parameters. Then, it follows that the relative error is dominated by the ||∇fdF||
+term in the denominator, which is what we observe.
+The relative error for simultaneous perturbation follows the same shape as the adjoint method, but is always about
+6 orders of magnitude larger. Of course, you would not use simultaneous perturbation as a substitute for the ﬁnite
+diﬀerence gradient, since it is used with its own optimization algorithm.
+Nonetheless, this shows that although
+the two methods (adjoint and simultaneous perturbation) both have a ﬂat computational cost with the number of
+14
+
+Figure 5: Compares the accuracy of the gradient for the adjoint method and simultaneous perturbation. The ﬁnite
+diﬀerences gradient is treated as the exact gradient.
+parameters, they have diﬀerent uses. The reason why the the error for simultaneous perturbation is quite high in
+this context is because the gradient is scaled very poorly for the OVM model, meaning the parameters have very
+diﬀerent sensitivities. This poor scaling is a common feature for car following models.
+5
+Benchmarking diﬀerent Algorithms and the Adjoint method
+The ideal optimization algorithm would be one that can not only solve the problem quickly, but also one that is
+able to avoid bad solutions corresponding to local extrema. Because existing literature has focused on gradient-free
+optimization algorithms, not much is known about using gradient/Hessian-based optimization to solve the calibration
+problem. The only works the authors know of in the car following calibration literature that consider gradient based
+optimization are [61] and [35]. Both those works found the gradient based algorithms to work best overall. This result
+is consistent with other engineering applications; for example [65] and [66] deal with aerodynamic shape optimization
+and material science respectively, and report that gradient-based optimization can oﬀer signiﬁcant speed increases.
+To establish the beneﬁts of gradient based optimization and the adjoint method, we consider 2 gradient-free and 5
+gradient-based optimization algorithms. The diﬀerent algorithms, their speciﬁc implementations, and abbreviations
+used throughout the rest of the paper, are detailed below.
+• Genetic Algorithm (GA) - an initial population of trial solutions is randomly selected throughout the parameter
+space. In each iteration, the population is altered through stochastic processes referred to as “mutation” and
+“crossover”, and then updated in a selection step. An implementation following [67] is part of the scipy package
+in python.
+• Nelder-Mead Simplex (NM) - a given initial guess is used to deﬁne a collection of points (a simplex).
+In
+each iteration, the corners of the simplex are updated according to deterministic rules. Implemented in scipy
+following [68]. NM works on unconstrained problems, so a large penalty term was added to the objective if the
+parameters went outside the bounds.
+• Limited memory BFGS for bound constraints (BFGS) - at every iteration, gradient information from the previ-
+ous iterates is used in the BFGS formula to form an approximation to the hessian. A quadratic approximation
+to the objective is formed, and the generalized cauchy point of this approximation is then found, which deﬁnes a
+set of active bound constraints. A minimization is then performed over the variables with inactive constraints,
+while the variables with active constraints are held ﬁxed. The solution to this last minimization ﬁnally de-
+ﬁnes the search direction for the algorithm, and a line search is performed to determine the step length. The
+algorithm, referred to as l-bfgs-b, is due to [69] and [70] and wrapped as part of the scipy package.
+15
+
+• Truncated Newton Conjugate (TNC) - at every iteration, instead of explicitly computing the Newton direction
+−∇2F −1∇F, the conjugate gradient method is applied to the newton system ∇2Fd = −∇F (where d is the
+search direction to be determined). Conjugate gradient is itself an iterative algorithm, and it is terminated
+early (truncated) to give an approximate solution to the newton system which is also guaranteed to deﬁne
+a direction of descent. A line search is then performed to deﬁne the step length. The conjugate gradient
+algorithm only needs hessian-vector products which can be computed eﬃciently using ﬁnite diﬀerences, so the
+full hessian never needs to be calculated. An implementation due to [71] is wrapped as part of scipy. That
+implementation uses a conjugate gradient preconditioner based on the BFGS update, and the search direction
+is projected to enforce the bound constraints.
+• Simultaneous Perturbation Stochastic Approximation (SPSA) - At each iteration, the gradient is approximated
+using simultaneous perturbation. Then the algorithm moves in the direction of the negative gradient with a
+ﬁxed step length, so no line search is performed. The size of the step length is gradually reduced in subsequent
+iterations. Implemented in python following [58]; the step sizes and number of iterations were manually tuned
+by hand.
+• Gradient Descent (GD) - At every iteration, the negative gradient is computed and scaled according to the
+spectral step length (also known as the Barzilei Borwein method). The scaled gradient is then projected onto
+the bound constraints to deﬁne the search direction, and a nonmonotone backtracking linesearch is used to
+deﬁne the step length. Implemented according to [72] in python. The algorithm was tested with diﬀerent line
+searches (backtracking, weak/strong wolfe, watchdog, see [73]) and the nonmonotone backtracking gave the
+best performance.
+• Sequential quadratic programming (SQP) - At every iteration the hessian is computed and the search direction
+is deﬁned by the newton direction projected onto the bound constraints. This algorithm explicitly computes the
+hessian instead of approximating it. Because the hessian may fail to be positive deﬁnite, the search direction is
+safeguarded so that if the newton direction fails to deﬁne a direction of descent, the algorithm instead searches
+in the direction of the negative gradient. A small regularization is also added to the hessian so that it can
+always be inverted. The algorithm is a simple python implementation of sequential quadratic programming
+based on [73]. We again found the nonmonotone backtracking linesearch to be most eﬀective.
+In summary, out of all the algorithms tested: NM and GA are gradient-free; SPSA and GA are stochastic; BFGS
+and TNC are quasi-newton; GD and SPSA do not use hessian information; SQP explicitly computes the hessian;
+GA is the only global algorithm.
+For the TNC, BFGS, GD, and SQP algorithms, we considered two separate modiﬁcations for each algorithm.
+First, either the ﬁnite diﬀerence method or the adjoint method can be used to compute the gradient, and we denote
+this by either “Fin” or ”Adj” respectively. Second we considered starting from multiple initial guesses. Multiple
+initial guesses are speciﬁed, and after each calibration, if the RMSE was above a speciﬁed threshold, the next initial
+guess would be used. The same 3 initial guesses were used in the same order for all algorithms requiring an initial
+guess. So with a threshold of 0, 3 guesses are always used, and with an arbitrarily large threshold, only a single
+guess will be used. The thresholds of 0, 7.5 and ∞were used, and denoted in reference to the algorithm. The initial
+guesses used are based oﬀof the calibrated parameters found from [57].
+5.1
+Evaluating Algorithm Performance
+As detailed in section 4.2, we tested the calibration problem on the OVM car following model using squared error
+in distance as the loss function (equivalent to minimizing the RMSE). In this experiment, for each algorithm, every
+vehicle in the reconstructed NGSim dataset was calibrated using the true measurements of its lead trajectory. In
+total, there were 7 unique algorithms and 23 total algorithms tested when including the variants described above.
+The calibration results are evaluated primarily based on three diﬀerent measures: the average calibration time for
+a single vehicle, the % of the time the algorithm found the global minimum, and the average RMSE of a calibrated
+vehicle. Since there is no way to know the actual global minimum for the calibration problem, we regard the global
+minimum for a vehicle as being the best result out of all the algorithms, and we regard an algorithm as having found
+the global minimum if its RMSE is within 1/12 ft (1 inch) of this best result.
+Based on these three metrics, all algorithms on the pareto front were identiﬁed and are shown in the table 2. In
+ﬁgure 6 every algorithm is plotted in the RMSE - time and % found global optimum - time plane. The algorithms
+on the pareto front are circled in black.
+The only three algorithms on the pareto front were the GA, TNC, and BFGS. GA gave the best % of ﬁnding the
+global optimum. TNC with the adjoint method and three guesses gave the best overall RMSE, and was the fastest
+16
+
+Table 2: Algorithms on the Pareto front. All algorithms tested shown in appendix.
+Algorithm
+% found
+global opt
+Avg.
+RMSE (ft)
+Avg.
+Time (s)
+Avg. RMSE / %
+over global opt
+Initial
+Guesses
+# Obj. Evals
+# Grad. Evals
+Adj BFGS-0
+94.0
+6.46
+7.42
+.10 / 2.0%
+3
+307.1
+307.1
+Adj BFGS-7.5
+85.2
+6.56
+4.16
+.20/6.8%
+1.67
+165.0
+165.0
+GA
+95.0
+6.47
+33.5
+.10/2.2%
+-
+5391
+0
+Fin BFGS-0
+94.3
+6.46
+11.4
+.10/2.2%
+3
+311.5
+311.5
+Fin BFGS-7.5
+85.7
+6.55
+6.32
+.19/6.3%
+1.66
+164.8
+164.8
+Adj TNC-0
+90.7
+6.43
+6.87
+.05/2.4%
+3
+285.7
+285.7
+Adj TNC-7.5
+82.7
+6.48
+3.82
+.11/5.0%
+1.63
+152.3
+152.3
+Adj TNC-∞
+77.3
+6.62
+2.26
+.25/7.7%
+1
+94.1
+94.1
+Figure 6: All algorithms plotted by the three metrics time, RMSE, and % found the global optimum. Algorithms on
+the pareto front with respet to these three metrics circled in black.
+algorithm overall when used with the adjoint method and a single guess. BFGS was slightly slower than TNC and
+has a slightly higher RMSE, but it has a higher chance of ﬁnding the global optimum.
+The conclusion of what algorithms are on the pareto front depends strongly on how “ﬁnding the global optimum”
+is deﬁned. Here, we treat an algorithm as having found the global optimum if it gives a result within an inch (1/12)
+of the best RMSE. Let us refer to this value of 1/12 as the “tolerance” for ﬁnding the global optimum. If a smaller
+tolerance is used, then GA will no longer be on the pareto front. If a larger tolerance is used, GA and BFGS will
+no longer be on the pareto front. For example, with a tolerance of 0, the pareto front consists of only the adj TNC
+and adj BFGS variants, and adj BFGS-0 gives the highest chance of ﬁnding the global optimum. With a tolerance
+of 1/2, the adj TNC variants are the only algorithms on the pareto front. The eﬀects of changing the tolerance are
+shown in the table 3. Adj TNC will always be on the pareto front regardless of the tolerance because it gives the
+best average RMSE for any given speed. No algorithms other than adj TNC, BFGS, and GA are ever on the pareto
+front. The behavior shown in table 3 is explained by ﬁgure 7. That ﬁgure shows how the % found global optimum
+metric changes with tolerance. For example, a tolerance of 1/12 corresponds to -1.08 in a log scale, and the top right
+panel shows that at that point, the GA has the highest chance of ﬁnding the global optimum. The same panel shows
+that if the tolerance increases, adj TNC-0 will have the highest chance, and that adj BFGS-0 will have the highest
+chance if the tolerance decreases.
+BFGS typically found the best solution out of all the algorithms tested, but its distribution of RMSE has a
+heavier tail in the sense that there were also some vehicles for which BFGS couldn’t ﬁnd a good solution. TNC is
+most consistent because its distribution shows less of a heavy tail (it is the ﬁrst to reach 100% found global optimum
+as the tolerance increases). The GA has a tail similar to BFGS and performs well when only a moderate tolerance
+is needed.
+The appendix includes a plot that shows the distributions of RMSE (on a non-log scale), and the diﬀerences
+17
+
+Table 3: Algorithms on the Pareto front depend on how “ﬁnding the global optimum” is deﬁned (without that
+metric, TNC with the adjoint method would be the only algorithm on the pareto front). Set notation indicates the
+strategies used for initial guesses.
+Tolerance for
+global opt (ft)
+Algorithms on the pareto front
+0
+Adj TNC-{0, 7.5, Inf}, Adj BFGS-{0, 7.5, Inf}
+1/24
+Adj TNC-{0, 7.5, Inf}, Adj BFGS-{0, 7.5, Inf}, Fin BFGS-{0, 7.5}
+1/12
+Adj TNC-{0, 7.5, Inf}, Adj BFGS-{0, 7.5}, Fin BFGS-{0, 7.5}, GA
+1/4
+Adj TNC-{0, 7.5, Inf}, GA
+1/2
+Adj TNC-{0, 7.5, Inf}
+between the three algorithms are essentially indistinguishable at that resolution.
+Figure 7: Shows the distribution of RMSE over the global optimum for GA, Adj TNC-0, Adj BFGS-0 in top two
+panels. Bottom two panels show the distributions over all algorithms on the pareto front (with a tolerance of 1/12
+used for obtaining the pareto front). Right panels are zoomed in windows of left panels.
+Overall, these diﬀerences between the three algorithms (GA, adj TNC-0, adj BFGS-0) are relatively minor, with
+all three giving essentially the same average RMSE (GA had a slightly worse RMSE than the other two). It’s not
+clear to the authors whether the subtle diﬀerences between them would cause any diﬀerences in practice. However,
+the BFGS and TNC algorithms both give a signiﬁcant speed increase; the adjoint method with BFGS or TNC is
+about 5 times faster than the GA on average. Even when using ﬁnite diﬀerences instead of the adjoint method,
+BFGS is still about 3 times faster than the GA (ﬁnite diﬀerences with TNC did not work well). A much larger
+speed increase can be realized with only a small trade oﬀin accuracy. Adj TNC-Inf had an average RMSE of 6.62
+compared to 6.47 for the GA, but is 15 times faster. Adj TNC-7.5 had an average RMSE of 6.48 while being 9 times
+faster than the GA.
+The comparison between the diﬀerent strategies for initial guesses (0, 7.5, Inf) shows the trade oﬀbetween speed
+and accuracy when starting a local search based algorithm multiple times. For car following models, it seems that
+even a suboptimal local minimum still gives a reasonable accuracy. The diﬀerence in accuracy made by starting
+a algorithm multiple times is smaller than the diﬀerence from using another algorithm, so regardless of the initial
+guess, the local search seems to converge to similar parameters. We also saw that a good local search algorithm
+(in this case, the quasi-newton algorithms) can give results equivalent to a global search algorithm (the GA) when
+a small number of initial guesses are used. Of course, each initial guess used greatly increases the time needed for
+18
+
+the algorithm, so a hybrid strategy similar to the one proposed in [61] can be considered if a large number of initial
+guesses are needed to achieve good performance.
+Comparing the results of using the adjoint method to ﬁnite diﬀerences, the diﬀerences between the two methods
+depends heavily on the algorithm used.
+For BFGS, using ﬁnite diﬀerences instead of the adjoint method gives
+essentially the same result, in the same number of objective/gradient evaluations, and the diﬀerence is speeds is
+consistent with the speed increase found in section 4. For TNC, the algorithm does not perform well when ﬁnite
+diﬀerences is used.
+All the attention so far has been concentrated on the TNC, BFGS, and GA algorithms since those gave good
+results. None of the other algorithms performed well. NM is designed for unconstrained problems, so it is unsurprising
+that it did not perform as well as an algorithm designed speciﬁcally to deal with box constraints (recall that here the
+box bounds were enforced by adding a penalty term). GD suﬀered from the problem widely reported in the literature
+where it takes a very large number of iterations to fully converge. The majority of the time, the algorithm terminates
+due to exceeding the maximum number of evaluations allowed. For the SQP (recall in this case we explicitly computed
+the Hessian), we found that the newton direction often fails to deﬁne a direction of descent, and the algorithm simply
+searches in the direction of the gradient instead. Then, the algorithm spends a lot of computational time computing
+the Hessian but ends up not using it for anything, so explicitly computing the hessian seems to not work poorly for
+car following calibration; BFGS updating to estimate the Hessian, or a truncated newton method for estimating the
+newton direction should be used instead. SPSA performed worst out of all algorithms tested because of the vastly
+diﬀerent sensitivities for car following models, as well as the rapidly changing magnitude of the gradient. A variant
+of SPSA such as c-SPSA ([74]) or W-SPSA ([75]) may have overcome these issues.
+The analysis in this section has shown the value of gradient based algorithms and the adjoint method; compared
+to gradient free methods, they can give the same overall performance while oﬀering a signiﬁcant speed increase. We
+found that for the calibration of a single vehicle, the truncated newton (TNC) algorithm with the adjoint method
+gives a slightly more accurate calibration than a genetic algorithm, while also being 5 times faster. TNC is 15 times
+faster than the genetic algorithm if ≈2% decrease in accuracy is acceptable (when only a single initial guess is used).
+Actually, as we will see in the next subsection, when the calibration problem becomes larger, the beneﬁt of gradient
+based algorithms and the adjoint method becomes even larger.
+5.2
+Calibration of larger platoons
+Deﬁne platoon size as the number of vehicles calibrated at the same time (n in Eq. (5)). The simplest case is when
+n = 1: a single vehicle is calibrated at a time (this was the strategy used in the above section). Taking n = 1 is how
+most of the literature treats car following calibration. Moreover, trajectories are typically calibrated to the measured,
+as opposed to simulated, lead trajectory. To the authors’ knowledge, [16] is the only paper which has taken a platoon
+size of larger than 1 (n = 2 in that paper) and [46] is the only paper which considers the issue of predicting on the
+simulated vs. measured lead trajectory. In actual traﬃc simulations, all vehicles are simulated at the same time,
+and measured trajectories aren’t assumed to be available. In that case, errors from one vehicle can accumulate in
+the following vehicles and produce unrealistic eﬀects. This motivates the question of calibrating platoons of vehicles,
+where each vehicle uses the simulated lead trajectory.
+In this section, we are interested in two questions regarding the calibration for a platoon size of n > 1. First, for
+the diﬀerent methods considered so far (gradient free, gradient based with ﬁnite diﬀerences, adjoint method) how
+does the time needed to solve the calibration problem scale with the number of parameters. Second, what is the
+beneﬁt (in terms of RMSE) from considering a larger platoon of vehicles.
+A platoon of 100 vehicles was formed from the NGSim data. The platoon was formed by randomly selecting
+the ﬁrst vehicle to be calibrated, and then repeatedly adding vehicles which have their leaders in the platoon. We
+considered calibrating these 100 vehicles with a platoon size n = 1, 2, . . . 10. When the platoon size doesn’t divide
+100, the last platoon used will be the remainder (e.g. for n = 3, the last platoon is of size 1). Here the calibration is
+done sequentially, so each vehicle is calibrated to the simulated trajectory of its leader.
+To compare how diﬀerent algorithms scale, we performed calibration using the GA, Adj TNC, and Fin TNC
+algorithms, as shown in ﬁgure 8. For each platoon of a speciﬁc size, the number of equivalent objective evaluations is
+recorded. Gradient evaluations are converted into objective evaluations following the results of 4.3.1 (adjoint method
+can compute the gradient and objective in the equivalent of 4 objective evaluations, ﬁnite diﬀerences computes the
+gradient and objective in the equivalent of m + 1 objective evaluations, where m is the number of parameters). The
+results are shown in ﬁgure 8.
+Assuming that a gradient based algorithm converges in approximately the same number of gradient/objective
+evaluations for either using ﬁnite diﬀerences or the adjoint method, the equivalent number of objective evaluations can
+be easily converted between the two methods. Namely, if using the adjoint method requires g(m) total computational
+19
+
+Figure 8: Log (base 10) of equivalent number of objective evaluations required to solve the calibration problem for
+an increasing platoon size (n). The number of parameters in each platoon is 5n. The brackets show the standard
+deviation for the data points. The work required to solve the calibration problem increases at a much faster rate
+when using gradient free optimization or ﬁnite diﬀerences compared to the adjoint method.
+Table 4: Compares the number of equivalent objective evaluations for the calibration problem for an increasing
+number of parameters, relative to the Adj TNC-0 algorithm.
+# parameters
+Adj TNC
+Fin TNC
+Fin TNC
+relative evals.
+GA
+GA
+relative evals.
+5
+1098
+1790
+1.63
+5256
+4.79
+10
+1200
+3300
+2.75
+37715
+31.4
+15
+1780
+7139
+4.01
+135485
+76.1
+eﬀort for computing the gradient, for some arbitrary function g, then ﬁnite diﬀerences will require m+1
+4 g(m). So
+using ﬁnite diﬀerences will always scale an order of m worse than the adjoint method. For the GA, it is clear that
+its cost is growing extremely fast with the number of parameters, and we only considered a platoon up to size 3
+because of this reason. It was about 75 times as expensive as using TNC with the adjoint method for a problem
+size of only 15 parameters. We conclude that when the number of parameters becomes large, using the adjoint
+method with gradient based optimization can oﬀer an arbitrarily large speed increase compared to either gradient
+free optimization or ﬁnite diﬀerences.
+As for the eﬀect of platoon size on the overall RMSE of all 100 vehicles, the results are shown in ﬁgure 9. Note
+overall RMSE is diﬀerent than average RMSE because vehicles are weighted according to how many observations
+they have (see section 4.2). Also, the RMSE is expected to be higher here compared to the previous section since
+the calibration is being done sequentially using the leader’s simulated trajectory instead of the leader’s measured
+trajectory. The left panel shows the overall RMSE versus platoon size. The right panel shows the relative improve-
+ment in RMSE. To calculate the relative improvement, the percent change in RMSE compared to a platoon size of
+1 is calculated for a speciﬁc platoon. Then the average and standard deviation of the percent change is calculated
+over all platoons of the speciﬁc size (e.g. 33 size 3 platoons or 10 size 10 platoons). The standard deviations are
+quite large: for any speciﬁc platoon, the improvement could be as large as 50%, or the RMSE could sometimes be
+signiﬁcantly worse. For a platoon size n = 2 or 3, we saw a neglible overall improvement. In both those cases, we
+saw that the majority of platoons had an improvement of around 8% −9%, but there were some platoons which
+achieved a signiﬁcantly worse ﬁt (20%-40%+ worse). These signiﬁcantly worse ﬁts suggest that in those cases, the
+algorithm was converging to bad local minima which apparently were avoided when calibrating vehicles one at a
+time. As the platoon size increased, the improvement became more consistent, and for platoon size n = 9 and 10 we
+saw an overall 13.8% and 17.8% improvement respectively. The authors stress that this improvement was achieved
+20
+
+Figure 9: Left panel shows overall RMSE when using a varying platoon size for the calibration problem. Right panel
+shows the percentage improvement from using the larger platoon sizes compared to calibrating a single vehicle at a
+time. The bars show the standard deviation for each point.
+without changing the algorithm or the model at all. The only thing that was changed was the platoon size (n in Eq.
+(5)).
+Overall, these results suggest that considering a larger platoon size can improve calibration results, and further
+research on larger platoon sizes should be considered. In ﬁgure 9 we saw that the GA starts to perform better than
+TNC when the platoon size increases. We also saw that for larger platoon sizes, there were some platoons which
+ended up with a signiﬁcantly worse ﬁt compared to the case of n = 1. This suggests that the local search algorithm
+(TNC) was having problems converging to bad local minima for n > 1. We therefore conclude that while using
+multiple guesses was adequate for the calibration of a single vehicle, a more sophisticated strategy is needed when
+multiple vehicles are being calibrated.
+6
+Conclusion
+We considered an optimization based formulation of the calibration problem for car following models being calibrated
+to trajectory data. It was shown how to apply the adjoint method to derive the gradient or hessian for an arbitrary
+car following model formulated as either an ordinary or delay diﬀerential equation. Several algorithms for solving the
+calibration problem were compared, and it was found that the best overall algorithms were the genetic algorithm,
+l-bfgs-b, and truncated newton conjugate.
+For the calibration of a single vehicle at a time, it was found that using the adjoint method and a quasi-newton
+method gives slightly better performance than a genetic algorithm, and is 5 times faster. As the number of parameters
+increases, the speed increase oﬀered by the adjoint method and gradient based optimization can become arbitrarily
+large (for 15 parameters, a truncated newton algorithm using the adjoint method was 75 times faster than a genetic
+algorithm). The adjoint method will always perform better than ﬁnite diﬀerences as the number of parameters
+becomes large, because computing the gradient with the adjoint method has a ﬂat cost with respect to the number
+of parameters, whereas using ﬁnite diﬀerences has a cost which increases linearally with the number of parameters.
+Numerical experiments used the reconstructed NGsim data and the optimal velocity model.
+There are two main directions for future research. In this paper we consider only the calibration of a car following
+model, while a full microsimulator has several other important modules, such as route choice or lane changing
+decision models. The question of how to apply the adjoint method to those other components can be considered in
+the future so that the methodology could be applied to a full microsimulation model. There are also more questions
+regarding the calibration of car following models. Future research can consider the eﬀect of a larger platoon size on
+the calibration problem, so that multiple vehicles (which share leaders) are calibrated at a time. Another interesting
+question is using the new highly accurate vehicle trajectory data ([18]) to compare and validate diﬀerent car following
+21
+
+models. Since it was found during this study that lane changing vehicle trajectories are not described well by car
+following models, another question is how to incorporate lane changing dynamics into an arbitrary car following
+model, and the authors have recently proposed a method for doing so in [76].
+Appendix A - Proof of Theorem 1 and Corollary 1
+Deﬁnition 1. We say that the function h(y(t), z(t)) is piecewise continuous on an interval I if there are a ﬁnite
+number of points t ∈I where h(y(t), z(t)) is not continuous.
+Deﬁnition 2. (Existence and Uniqueness Theorem.) Deﬁne the initial value problem
+˙x(t) = h(t, x(t)),
+x(t0) = x0
+where h(t, y(t)) is a continuous function on the region R = {(t, x) : |t −t0| < s, |x −x0| < y}, and h is uniformly
+Lipschitz in x, meaning
+
+∂h
+∂x
+ ≤C
+for some constant C in the region R. Then the solution x(t) exists and is unique on the interval |t −t0| < s∗for
+some 0 < s∗< s.
+Proof 1 (Proof of Theorem 1.). We say that there is a discontinuity for vehicle i, either in its car following model
+or its adjoint variable, if at time t: a) its lead vehicle changes, b) its model regime changes, c) the vehicle changes
+from the car following model to the downstream boundary condition, or d) the loss function f is not continuous at
+time t. We will refer to these diﬀerent causes of discontinuities as types a) - d) respectively. Deﬁne the times θj for
+j = 0, . . . , m as the set of all times when when any vehicle xi, i = 1, . . . , n experiences a discontinuity. The set {θj}
+is of measure zero because each vehicle can contribute only a ﬁnite number of discontinuities. The assumption that
+f and hi are piecewise continuous and switch regimes only a ﬁnite number of times means a vehicle can contribute
+only a ﬁnite number of type b) or d) discontinuities. A vehicle switches to the downstream boundary only once,
+contributing a single type c) discontinuity. And based on the physical nature of the problem it can be assumed that a
+vehicle can change its lead vehicle only a ﬁnite number of times in a ﬁnite interval.
+Some of the times θj may depend on the switching condition g in Eq. (8). These times may therefore depend on the
+parameters p, and we use the notation θj(p) to refer to the switching times for parameters p. Besides the set {θj}
+being ﬁnite, we also require that
+lim
+ϵ→0{θj(p + ϵ)} = {θj(p)}
+(17)
+meaning that the times of discontinuities must be continuous with respect to the parameters.
+Let the set {θj} be ordered in increasing time,and let it include the ﬁrst and last times of the simulation θ0 =
+min{t1, . . . , tn} and θm = max{T1, . . . , Tn}.
+Since all vehicles have the same lead vehicle on each time interval
+[θj, θj+1], on that interval there exists some ordered set of vehicles χj which contains all vehicles which are simulated
+in that time interval, ordered such that the ﬁrst vehicle has no simulated vehicles as leaders (i.e. the vehicle farthest
+downstream) and the last vehicle has no simulated vehicles as followers (i.e. the vehicle farthest upstream). Following
+the deﬁnition it is true that for i ∈χj and t ≤Ti−1 all the partial derivatives ∂f/∂xi, ∂hi/∂xi, ∂hi/∂p, ∂hi/∂xL(i)
+as well as f and hi are continuous with respect to their arguments, except possibly at the endpoints.
+22
+
+𝑣𝑖(𝑡)
+𝑡
+𝜃𝑗= 𝑡𝑖
+𝜃𝑗+1
+𝜃𝑗+2
+𝜃𝑗+3
+𝜃𝑗+4
+𝜃𝑗+5 = 𝑇𝑖−1
+𝑔𝑥𝑖, 𝑥𝐿(𝑖), 𝑝
+≥0
+Figure 10: Illustration of the velocity vi(t) when hi(·) may have discontinuities. The times θj, where discontinuities
+can occur are marked as dashed lines. The region inside the two blue lines is the region where the switching condition
+g(xi, xL(i), p) ≥0, so the model changes regimes at times θj+1 and θj+2. The model is discontinuous at θj+1 and
+θj+2 but vi(t) is still continuous. At θj+3 some other vehicle in the platoon experiences a discontinuity, but i is
+unaﬀected. At θj+4, the lead vehicle changes, causing a discontinuity in the model (but vi is still continuous at that
+time). At θj+5, the vehicle switches to the downstream boundary condition which causes a jump discontinuity in vi.
+First we show that xi(t), i ∈χ0 is continuous on the interval [θ0, θ1]. This is guaranteed by applying the existence
+and uniqueness theorem in order to each vehicle. Since by construction hi(xi, xL(i), pi) is continuous in this interval
+excluding the right endpoint, and ∂hi/∂xi is bounded, then the initial value problem ˙xi = hi with initial condition
+xi(ti) = ˆxi(ti) has a solution, namely
+xi(t) = ˆxi(ti) +
+Z θ1
+ti
+hi(xi, xL(i), pi)dt,
+ti ≤t < θ1
+which is valid for ti ≤t < θ1. Any discontinuity which may exist at θ1 is not felt by the integral since the point has
+measure 0. Since we solve for each vehicle following the order χ0, the continuity of xL(i) for L(i) ∈χ0 is already
+obtained by the time it is needed to compute its follower.
+For some arbitrary interval [θj, θj+1], where the previous interval is already solved, take the left sided limit of the
+previous interval as the initial condition, i.e. xi(θj) = lim
+ϵ→0 xi(θj −ϵ). This point will always be deﬁned by the previous
+interval. Then the solution on the new interval is deﬁned as
+xi(t) = xi(θj) +
+Z θj+1
+θj
+hi(xi, xL(i), pi)dt,
+θj ≤t < θj+1
+xi(θj) = lim
+ϵ→0 xi(θj −ϵ)
+Note that any possible discontinuities in hi at times θj and θj+1 do not aﬀect the integral because they are of measure
+0. Applying the existence and uniqueness theorem again, we have that xi(t) is continuous on [θj, θj+1]. Our choice
+of initial conditions guarentees continuity on the larger interval [θj−1, θj+1].
+Thus it is clear from an induction
+argument that xi(t) will be continuous on the interval [ti, θj+1], despite any possible discontinuities in hi.
+The exception to the continuity of xi is at time Ti−1, where the downstream boundary conditions will cause a jump
+discontinuity. Upon reaching the θj = Ti−1, the remaining trajectory of xi is to be taken as
+xi(t) = xi(Ti−1) +
+Z Ti
+Ti−1
+˙ˆxi(t)dt
+xi(Ti−1) = (lim
+ϵ→0 x∗
+i (Ti−1 −ϵ), ˆvi(Ti−1))T
+23
+
+which guarantees continuity only in position (i.e. x∗
+i , the ﬁrst component of vector xi) and the speed vi will have a
+jump discontinuity.
+Thus we proven that the simulated trajectories xi are continuous on the interval [ti, Ti−1] (excluding Ti−1) by repeat-
+edly applying the existence and uniqueness theorem on the intervals [θj, θj+1] for an arbitrary j.
+Then for the objective
+F =
+n
+X
+i=1
+Z Ti−1
+ti
+f(xi, ˆxi, t)dt
+since f is assumed to have a ﬁnite number of discontinuities in t, ˆxi is assumed to be continuous, and we have shown
+xi(t) is continuous on the interval ti ≤t < Ti−1, it follows that F is continuous.
+To show that λi(t) is continuous, apply the existence and uniqueness theorem starting with the last interval [θm, θm−1],
+going backwards over vehicles on χm−1. Deﬁne
+γi = 1(t ≤Ti−1)
+ ∂f
+∂xi
+−λT
+i (t)∂hi
+∂xi
+
+−1(G(i, t) ̸= 0)λT
+G(i)(t)∂hG(i)
+∂xi
+and for an arbitrary interval [θj, θj−1] deﬁne
+λi(t) = λi(θj) +
+Z θj−1
+θj
+γidt,
+θj ≥t > θj−1
+λi(θj) = lim
+ϵ→0 λi(θj + ϵ)
+where additionally for the ﬁrst interval for λi (the interval where θj = Ti), the initial condition should be λi(θj) = 0.
+The justiﬁcation for why λi(t) is continuous follows the same argument as for xi. The Lipschitz condition for λi nec-
+essary to apply the existence and uniqueness theorem for λi(t) is the same as the Lipschitz condition for xi (∂hi/∂xi
+is bounded). Additionally, by assumption we have all the partial derivatives of hi are continuous on each interval
+excluding the endpoints. Since the adjoint system contains the term 1(G(i, t) ̸= 0)λT
+G(i)(t)∂hG(i)
+∂xi
+the λi need to be
+solved backwards in the order χj so that the follower’s adjoint variable is already proven as continuous by the time it
+is needed. Also note that ∂hG(i)
+∂xi
+is simply ∂hk/∂xL(k) where k = G(i).
+Because λi is continuous on [ti, Ti], xi is continuous on [ti, Ti−1), and ∂hi/∂p contains a ﬁnite number of disconti-
+nuities, it follows that λT
+i (t)∂hi/∂p is a piecewise continuous function with a ﬁnite number of discontinuities. Then
+the gradient
+d
+dpF =
+n
+X
+i=1
+ 
+−
+Z Ti−1
+ti
+λT
+i (t)∂hi
+∂p dt
+!
+is continuous since the number of discontinuities over the integral is of measure 0.
+Proof 2 (Proof of Corrolary 1.). Showing F is lipschitz continuous is equivalent to showing that dF/dp is bounded.
+To do this deﬁne
+α(t) =
+Z t
+Ti
+1(t ≤Ti−1) ∂f
+∂xi
+ +
+1(G(i, t) ̸= 0)λT
+G(i)(t)∂hG(i)
+∂xi
+ dt
+β(t) = ∂hi
+∂xi
+Then by deﬁnition we have
+λi(t) ≤α(t) +
+Z t
+Ti
+β(s)λi(s)ds
+and by Gronwall’s inequality in integral form
+λi(t) ≤α(t) exp
+Z t
+Ti
+β(s)ds
+
+(18)
+24
+
+To show that all λi(t) are bounded, prove that each λi, i ∈χj are bounded in the interval [θj, θj−1] going backwards
+over the order speciﬁed by χj−1, starting with j = m. Since we assumed that ∂f/∂xi and ∂hi/∂xi are both bounded,
+and for the last vehicle k in χj, G(i, t) = 0, then it follows from Eq. (18) that λk(t) is bounded in the interval
+[θj, θj−1]. Then after showing this for k, it can be shown for the other vehicles in χj. Repeating this process for each
+interval shows that each λi(t) is bounded on [Ti, ti].
+Then for the gradient Eq. (15) since we showed λi(t) is bounded, and ∂hi/∂pi is bounded by assumption, then it
+follows that dF/dp is also bounded, and hence F is Lipschitz continuous.
+A.1 - Example with OVM
+Written as a ﬁrst order model OVM is
+˙xi(t) = d
+dt
+x∗
+i (t)
+vi(t)
+
+=
+
+v
+c4c1 tanh(c2si(t) −c3 −c5) −c4c1 tanh(−c3) −c4vi(t)
+
+= hi(xi, xL(i), pi)
+Where pi = (c1, c2, c3, c4, c5) > 0 and si(t) = x∗
+i (t) −xL(i)(t) −l (where l is the length of the lead vehicle). Since it
+is a single regime model, it will be everwhere continuous. The partial derivative
+∂hi
+∂xi
+=
+
+0
+1
+−c1c2c4 sech(c3 + c5 −c2(si))2
+−c4
+
+⇒
+
+∂hi
+∂xi
+ ≤
+
+0
+1
+c1c2c4
+c4
+
+so it can be bounded by a constant for an arbitrary vector space. The other partial derivatives can be bounded as
+
+∂hi
+∂xL(i)
+ ≤
+
+0
+0
+c1c2c4
+0
+
+
+∂hi
+∂pi
+ ≤
+ 0,
+0,
+0,
+0,
+0
+2c4,
+c1c4si,
+c1c4,
+vi + 2c1,
+c1c4
+
+And so the objective will be Lipschitz continuous assuming that the headway si(t) and velocity vi(t) are ﬁnite.
+25
+
+Appendix B - Supplemental ﬁgures/tables for comparison of algorithms
+Table 5: The full table showing all variants of the 7 algorithms considered.
+Algorithm
+% found
+global opt
+Avg.
+RMSE (ft)
+Avg.
+Time (s)
+Avg. RMSE / %
+over global opt
+Initial
+Guesses
+# Obj.
+# Grad.
+# Hess.
+Adj BFGS-0
+94.0
+6.46
+7.42
+.10 / 2.0%
+3
+307.1
+307.1
+0
+Adj BFGS-7.5
+85.2
+6.56
+4.16
+.20/6.8%
+1.67
+165.0
+165.0
+0
+Adj BFGS-∞
+75.6
+6.96
+2.55
+.59 / 15.4%
+1
+107.3
+107.3
+0
+GA
+95.0
+6.47
+33.5
+.10/2.2%
+-
+5391
+0
+0
+NM
+39.4
+7.25
+6.85
+.88/21.0%
+1
+1037
+0
+0
+Fin BFGS-0
+94.3
+6.46
+11.4
+.10/2.2%
+3
+311.5
+311.5
+0
+Fin BFGS-7.5
+85.7
+6.55
+6.32
+.19/6.3%
+1.66
+164.8
+164.8
+0
+Fin BFGS-∞
+77.0
+6.88
+3.91
+.52/13.8%
+1
+107.3
+107.3
+0
+Adj GD-0
+20.2
+7.58
+25.5
+1.21/28.2%
+3
+1374
+542.5
+0
+Adj GD-7.5
+13.4
+7.83
+18.1
+1.46/40.8%
+1.93
+1094
+436.6
+0
+Adj GD-Inf
+8.8
+8.90
+8.75
+2.53/67.2%
+1
+719.3
+282.6
+0
+Adj SQP-0
+29.1
+8.37
+21.1
+2.01/61.7%
+3
+287.6
+83.8
+80.8
+Adj SQP-7.5
+21.5
+8.59
+15.4
+2.22/71.4%
+2.17
+244.8
+71.3
+69.1
+Adj SQP-∞
+10.0
+11.1
+5.87
+4.70/140.7%
+1
+141.6
+39.4
+38.4
+SPSA
+4.2
+53.2
+38.5
+46.8/786%
+1
+6001
+0
+0
+Fin GD-∞
+9.1
+8.86
+14.7
+2.50/66.2%
+1
+657.3
+258.5
+0
+Fin SQP-∞
+2.6
+9.61
+15.8
+3.25/81.8%
+1
+179.4
+67.2
+66.2
+Adj TNC-0
+90.7
+6.43
+6.87
+.05/2.4%
+3
+285.7
+285.7
+0
+Adj TNC-7.5
+82.7
+6.48
+3.82
+.11/5.0%
+1.63
+152.3
+152.3
+0
+Adj TNC-∞
+77.3
+6.62
+2.26
+.25/7.7%
+1
+94.1
+94.1
+0
+Fin TNC-0
+36.3
+6.84
+13.2
+.47/11.0%
+3
+302.4
+302.4
+0
+Fin TNC-7.5
+24.9
+7.05
+8.35
+.69/20.8%
+1.82
+183.2
+183.2
+0
+Fin TNC-∞
+18.0
+7.63
+4.49
+1.27/33.2%
+1
+100.8
+100.8
+0
+26
+
+Figure 11: Shows the distribution of RMSE for diﬀerent algorithms tested. Left panels show overall RMSE, right
+panels show the RMSE for vehicles that experience lane changes (solid) and those that don’t (dashed). The RMSE
+for lane changing vehicles is much higher because car following models don’t describe lane changes well. For example,
+for the genetic algorithm, the average RMSE for vehicles which do not experience lane changes is 4.75, whereas it is
+8.17 for vehicles which do. The other algorithms have very similar numbers.
+Appendix C - Adjoint method for gradient with DDE model
+We will now deal with calculating the gradient for Eq. (6). As before, if not explicitly stated, quantities can be
+assumed to be evaluated at time t. Deﬁne the augmented objective function:
+L =
+n
+X
+i=1
+ Z T ∗
+i−1
+ti+τi
+f(xi, ˆxi) + λT
+i (t)
+
+˙xi(t) −hi(xi(t), xi(t −τi), xL(i)(t −τi), pi)
+
+dt +
+Z Ti
+T ∗
+i−1
+λT
+i ( ˙xi −˙ˆxi)dt
+!
+(19)
+and since F = L
+d
+dpF =
+n
+X
+i=1
+ Z T ∗
+i−1
+ti+τi
+∂f
+∂xi
+∂xi
+∂p −λT
+i (t)∂hi
+∂xi
+∂xi
+∂p −λT
+i (t)
+∂hi
+∂xi(t −τi)
+∂xi(t −τi)
+∂p
+−λT
+i (t)
+∂hi
+∂xi(t −τi) ˙xi(t −τi)∂(t −τi)
+∂p
+−λT
+i (t)∂hi
+∂p dt −
+Z Ti
+ti+τi
+˙λT
+i (t)∂xi
+∂p dt
+
++
+n
+X
+i=1
+X
+j∈S(i)
+Z Ti+τj
+ti+τj
+1(G(i, t −τj) = j)
+
++ . . .
+−λT
+j (t)
+∂hj
+∂xi(t −τj)
+∂xi(t −τj)
+∂p
+−λT
+j (t)
+∂hj
+∂xi(t −τj) ˙xi(t −τj)∂(t −τj)
+∂p
+dt
+
+(20)
+27
+
+where S(i) is deﬁned as the set of all followers for vehicle i and we have chosen λT
+i (T ∗
+i−1) = 0. For a DDE, use a
+change of coordinates on terms containing ∂xi(t −τ)/∂p.
+−
+Z T ∗
+i−1
+ti+τi
+λT
+i (t)
+∂hi
+∂xi(t −τi)
+∂xi(t −τi)
+∂pi
+dt = −
+Z T ∗
+i−1−τi
+ti+τi
+λT
+i (t + τi)∂hi(t + τi)
+∂xi(t −τi)
+∂xi(t)
+∂pi
+dt
+n
+X
+i=1
+X
+j∈S(i)
+Z Ti+τj
+ti+τj
+−1(G(i, t −τj) = j)λT
+j (t)
+∂hj
+∂xi(t −τj)
+∂xi(t −τj)
+∂p
+dt
+=
+n
+X
+i=1
+X
+j∈S(i)
+Z Ti
+ti+τi
+−1(G(i, t) = j)λT
+j (t + τj)∂hj(t + τj)
+∂xi(t −τj)
+∂xi(t)
+∂p
+dt
+(21)
+Where we make use of the fact that ∂xi(t)/∂p = 0 for t ∈[ti, ti + τi] since the initial history function doesn’t depend
+on the parameters. Now substituting Eq. (21) into Eq. (20) and grouping terms, one obtains the adjoint system:
+−˙λT
+i (t) + 1(t ≤T ∗
+i−1)
+ ∂f
+∂xi
+−λT
+i (t)∂hi
+∂xi
+
+−1(t ≤T ∗
+i−1 −τi)λT
+i (t + τi)∂hi(t + τi)
+∂xi(t −τi) . . .
+−
+X
+j∈S(i)
+1(G(i, t) = j)λT
+j (t + τj)∂hj(t + τj)
+∂xi(t −τj) = 0,
+t ∈[Ti, ti + τi],
+∀i
+(22)
+with initial conditions λi(Ti) = 0. For a DDE model, the adjoint system also becomes a DDE. After solving for the
+adjoint variables, one can compute the gradient:
+d
+dpF =
+n
+X
+i=1
+ Z T ∗
+i−1
+ti+τi
+−λT
+i (t)
+∂hi
+∂xi(t −τi) ˙xi(t −τi)∂(t −τi)
+∂p
+−λT
+i
+∂hi
+∂p dt
+
++
+n
+X
+i=1
+X
+j∈S(i)
+Z Ti+τj
+ti+τj
+−1(G(i, t −τj) = j)λT
+j (t)
+∂hj
+∂xi(t −τj) ˙xi(t −τj)∂(t −τj)
+∂p
+dt
+(23)
+Appendix D - Extension of adjoint method for Hessian
+In this section, for a scalar being diﬀerentiated with respect to two vectors, the result is a matrix where the rows
+correspond to the ﬁrst vector, and the columns correspond to the second vector. For example,
+∂f
+∂xi∂p =
+∂f/∂x∗
+i ∂p1
+∂f/∂x∗
+i ∂p2
+. . .
+∂f/∂x∗
+i ∂pm
+∂f/∂vi∂p1
+∂f/∂vi∂p2
+. . .
+∂f/∂vi∂pm
+
+For a matrix being diﬀerentiated to two vectors, the result is a 3-dimensional array which should be interpreted as
+a vector of matrices. For example
+∂hi
+∂p∂xi
+=
+∂h1
+i /∂p∂xi
+∂h2
+i /∂p∂xi
+
+where h1
+i and h2
+i refer to the two components of hi. So the normal rules of linear algebra can be applied, e.g.
+∂xi
+∂p
+T
+∂hi
+∂p∂xi
+T
+λi = ∂xi
+∂p
+T 
+h1
+i
+∂p∂xi
+T
+,
+h2
+i
+∂p∂xi
+T 
+λi =
+
+∂xi
+∂p
+T ∂h1
+i
+∂xi∂p,
+∂xi
+∂p
+T ∂h2
+i
+∂xi∂p
+ λ1
+i
+λ2
+i
+
+= ∂xi
+∂p
+T ∂h1
+i
+∂xi∂pλ1
+i + ∂xi
+∂p
+T ∂h2
+i
+∂xi∂pλ2
+i
+where λ1
+i and λ2
+i are the two components of the adjoint variable.
+The adjoint method extends in a straightforward way for computing the Hessian. Using ﬁnite diﬀerences would have
+complexity O(m2T(n)), whereas the adjoint method can be shown to have complexity O(mT(n)) ([77]).
+When calculating the gradient, the beneﬁt of the adjoint method is that you avoid calculating ∂xi/∂p terms. When
+calculating the Hessian, the adjoint method will be used to avoid calculating ∂2xi/∂p2 terms. We will still be left
+with the unknowns ∂xi/∂p, which need to be calculated using the “variational” approach, also known as the “forward
+sensitivity” approach (see [64, 63]).
+28
+
+To obtain the variational system, diﬀerentiate the model Eq. (4) with respect to the parameters
+d
+dp ˙xi = d
+dphi(xi, xL(i), pi)
+and then switch the order of diﬀerentiation on the left hand side to obtain the variational system
+d
+dt
+∂xi
+∂p = ∂hi
+∂xi
+∂xi
+∂p + ∂hi
+∂pi
++ 1(L(i, t) ∈[1, n]) ∂hi
+∂xL(i)
+∂xL(i)
+∂p
+,
+t ∈[ti, Ti−1]
+∀i.
+(24)
+Eq. (24) gives ∂xi(t)/∂p starting from the initial conditions ∂xi(ti)/∂p. Note that the variational system for xi
+is only deﬁned up to time Ti−1 because ∂xi(t)/∂p = ∂xi(Ti−1)/∂p for t ∈[Ti−1, Ti]. Now starting from Eq. (9),
+diﬀerentiate twice instead of once
+d2
+dp2 F = d2
+dp2 L =
+n
+X
+i=1
+ Z Ti−1
+ti
+∂xi
+∂p
+T ∂2f
+∂x2
+i
+T ∂xi
+∂p + ∂f
+∂xi
+∂2xi
+∂p2 −∂xi
+∂p
+T ∂2hi
+∂x2
+i
+T
+λi
+∂xi
+∂p −λT
+i
+∂hi
+∂xi
+∂2xi
+∂p2 + . . .
+−∂xi
+∂p
+T ∂2hi
+∂p∂xi
+T
+λi −λT
+i
+∂2hi
+∂p2 −∂2hi
+∂xi∂p
+T
+λi
+∂xi
+∂p dt +
+Z Ti
+ti
+λT
+i
+∂2 ˙xi
+∂p2 dt
+
++ . . .
++
+n
+X
+i=1
+Z Ti
+ti
+1(G(i, t) ̸= 0)
+
+−∂xi
+∂p
+T ∂2hG(i)
+∂x2
+i
+T
+λG(i)
+∂xi
+∂p −∂xi
+∂p
+T ∂2hG(i)
+∂p∂xi
+T
+λG(i) −∂xi
+∂p
+T ∂2hG(i)
+∂xG(i)∂xi
+T
+λG(i)
+∂xG(i)
+∂p
++ . . .
+−λT
+G(i)
+∂hG(i)
+∂xi
+∂2xi
+∂p2 −∂2hG(i)
+∂xi∂p
+T
+λG(i)
+∂xi
+∂p −∂xG(i)
+∂p
+T ∂2hG(i)
+∂xi∂xG(i)
+T
+λG(i)
+∂xi
+∂p dt
+
+The adjoint variables are deﬁned the same way whether the gradient or Hessian is being computed. Eq. (15)
+gives the adjoint system for the unmodiﬁed objective F. After solving for all the adjoint variables, in addition to
+solving the variational system Eq. (24), one can calculate the Hessian:
+d2
+dp2 F =
+n
+X
+i=1
+ Z Ti−1
+ti
+∂xi
+∂p
+T ∂2f
+∂x2
+i
+T ∂xi
+∂p −∂xi
+∂p
+T ∂2hi
+∂x2
+i
+T
+λi
+∂xi
+∂p −∂xi
+∂p
+T ∂2hi
+∂p∂xi
+λi −λT
+i
+∂2hi
+∂p2 + . . .
+−∂2hi
+∂xi∂p
+T
+λi
+∂xi
+∂p dt
+
++
+n
+X
+i=1
+Z Ti
+ti
+1(G(i, t) ̸= 0)
+
+−∂xi
+∂p
+T ∂2hG(i)
+∂x2
+i
+T
+λG(i)
+∂xi
+∂p −∂xi
+∂p
+T ∂2hG(i)
+∂p∂xi
+T
+λG(i) + . . .
+−∂xi
+∂p
+T ∂2hG(i)
+∂xG(i)∂xi
+T
+λG(i)
+∂xG(i)
+∂p
+−∂2hG(i)
+∂xi∂p
+T
+λG(i)
+∂xi
+∂p −∂xG(i)
+∂p
+T ∂2hG(i)
+∂xi∂xG(i)
+T
+λG(i)
+∂xi
+∂p dt
+
++ . . .
+(25)
+References
+[1] M. J. Lighthill and G. B. Whitham. On kinematic waves ii. a theory of traﬃc ﬂow on long crowded roads.
+Proceedings of the Royal Society of London A: Mathematical, Physical and Engineering Sciences, 229(1178):317–
+345, 1955.
+[2] Boris S. Kerner. Three-phase theory of city traﬃc: Moving synchronized ﬂow patterns in under-saturated city
+traﬃc at signals. Physica A: Statistical Mechanics and its Applications, 397:76 – 110, 2014.
+[3] Jorge A. Laval and Carlos F. Daganzo. Lane-changing in traﬃc streams. Transportation Research Part B:
+Methodological, 40(3):251 – 264, 2006.
+[4] D. Helbing, A. Hennecke, V. Shvetsov, and M. Treiber. Micro- and macro-simulation of freeway traﬃc. Mathe-
+matical and Computer Modelling, 35(5):517 – 547, 2002.
+[5] Kai Nagel and Michael Schreckenberg. A cellular automaton model for freeway traﬃc. Journal de Physique I,
+2(12):2221–2229, 1992.
+[6] G.C.K Wong and S.C Wong. A multi-class traﬃc ﬂow model an extension of lwr model with heterogeneous
+drivers. Transportation Research Part A: Policy and Practice, 36(9):827 – 841, 2002.
+[7] Carlos F. Daganzo. The cell transmission model: A dynamic representation of highway traﬃc consistent with
+the hydrodynamic theory. Transportation Research Part B: Methodological, 28(4):269 – 287, 1994.
+29
+
+[8] B. S. Kerner and H. Rehborn. Experimental properties of phase transitions in traﬃc ﬂow. Phys. Rev. Lett.,
+79:4030–4033, Nov 1997.
+[9] Jorge A. Laval and Ludovic Leclercq. Microscopic modeling of the relaxation phenomenon using a macroscopic
+lane-changing model. Transportation Research Part B: Methodological, 42(6):511 – 522, 2008.
+[10] Benjamin Coifman and Lizhe Li. A critical evaluation of the next generation simulation (ngsim) vehicle trajectory
+dataset. Transportation Research Part B: Methodological, 105:362 – 377, 2017.
+[11] Dirk Helbing and Benno Tilch. Generalized force model of traﬃc dynamics. Phys. Rev. E, 58:133–138, Jul 1998.
+[12] Mark Brackstone and Mike McDonald. Car-following: a historical review. Transportation Research Part F:
+Traﬃc Psychology and Behaviour, 2(4):181 – 196, 1999.
+[13] Elmar Brockfeld, Reinhart Khne, and Peter Wagner.
+Calibration and validation of microscopic traﬃc ﬂow
+models. Transportation Research Record: Journal of the Transportation Research Board, 1876:62–70, 2004.
+[14] Elmar Brockfeld, Reinhart Khne, Alexander Skabardonis, and Peter Wagner. Toward benchmarking of mi-
+croscopic traﬃc ﬂow models. Transportation Research Record: Journal of the Transportation Research Board,
+1852:124–129, 2003.
+[15] Vincenzo Punzo and Fulvio Simonelli. Analysis and comparison of microscopic traﬃc ﬂow models with real traﬃc
+microscopic data. Transportation Research Record: Journal of the Transportation Research Board, 1934:53–63,
+2005.
+[16] Saskia Ossen, Serge Hoogendoorn, and Ben Gorte. Interdriver diﬀerences in car-following: A vehicle trajectory-
+based study. Transportation Research Record: Journal of the Transportation Research Board, 1965:121–129,
+2006.
+[17] U.
+S.
+Department
+of
+Transportation.
+Next
+generation
+simulation
+(ngsim)
+vehi-
+cle
+trajectories
+and
+supporting
+data.
+https://data.transportation.gov/Automobiles/
+Next-Generation-Simulation-NGSIM-Vehicle-Trajector/8ect-6jqj, 2006. Accessed: 2018-05-05.
+[18] Robert Krajewski, Julian Bock, Laurent Kloeker, and Lutz Eckstein. The highd dataset: A drone dataset of
+naturalistic vehicle trajectories on german highways for validation of highly automated driving systems. In 2018
+IEEE 21st International Conference on Intelligent Transportation Systems (ITSC), 2018.
+[19] Martin Treiber and Arne Kesting. Microscopic calibration and validation of car-following models a systematic
+approach. Procedia - Social and Behavioral Sciences, 80:922 – 939, 2013. 20th International Symposium on
+Transportation and Traﬃc Theory (ISTTT 2013).
+[20] Vincenzo Punzo, Biagio Ciuﬀo, and Marcello Montanino. Can results of car-following model calibration based
+on trajectory data be trusted? Transportation Research Record: Journal of the Transportation Research Board,
+2315:11–24, 2012.
+[21] V. Punzo, M. Montanino, and B. Ciuﬀo. Do we really need to calibrate all the parameters? variance-based
+sensitivity analysis to simplify microscopic traﬃc ﬂow models. IEEE Transactions on Intelligent Transportation
+Systems, 16(1):184–193, Feb 2015.
+[22] Hwasoo Yeo, Alexander Skabardonis, John Halkias, James Colyar, and Vassili Alexiadis. Oversaturated free-
+way ﬂow algorithm for use in next generation simulation.
+Transportation Research Record: Journal of the
+Transportation Research Board, 2088:68–79, 2008.
+[23] Arne Kesting and Martin Treiber. Calibrating car-following models by using trajectory data: Methodological
+study. Transportation Research Record: Journal of the Transportation Research Board, 2088:148–156, 2008.
+[24] P Hidas.
+A functional evaluation of the aimsun, paramics and vissim microsimulation models.
+Road and
+Transport Research, 14:45–59, 12 2005.
+[25] Carlos F. Daganzo.
+In traﬃc ﬂow, cellular automata=kinematic waves.
+Transportation Research Part B:
+Methodological, 40(5):396 – 403, 2006.
+30
+
+[26] M Bando, K Hasebe, A Nakayama, A Shibata, and Y Sugiyama. Dynamical model of traﬃc congestion and
+numerical simulation. Physical review. E, Statistical physics, plasmas, ﬂuids, and related interdisciplinary topics,
+51(2):10351042, February 1995.
+[27] Yuki Sugiyama, Minoru Fukui, Macoto Kikuchi, Katsuya Hasebe, Akihiro Nakayama, Katsuhiro Nishinari,
+Shin ichi Tadaki, and Satoshi Yukawa. Traﬃc jams without bottlenecksexperimental evidence for the physical
+mechanism of the formation of a jam. New Journal of Physics, 10(3):033001, 2008.
+[28] Martin Treiber, Ansgar Hennecke, and Dirk Helbing. Congested traﬃc states in empirical observations and
+microscopic simulations. Physical Review E, 62:1805–1824, 02 2000.
+[29] Marcello Montanino and Vincenzo Punzo.
+Trajectory data reconstruction and simulation-based validation
+against macroscopic traﬃc patterns. Transportation Research Part B: Methodological, 80:82 – 106, 2015.
+[30] L.C. Davis. Modiﬁcations of the optimal velocity traﬃc model to include delay due to driver reaction time.
+Physica A: Statistical Mechanics and its Applications, 319:557 – 567, 2003.
+[31] G´abor Orosz and G´abor St´ep´an. Subcritical hopf bifurcations in a car-following model with reaction-time delay.
+Proceedings of the Royal Society of London A: Mathematical, Physical and Engineering Sciences, 462(2073):2643–
+2670, 2006.
+[32] Martin Treiber, Arne Kesting, and Dirk Helbing. Delays, inaccuracies and anticipation in microscopic traﬃc
+models. Physica A: Statistical Mechanics and its Applications, 360(1):71 – 88, 2006.
+[33] I. Gasser, G. Sirito, and B. Werner. Bifurcation analysis of a class of car following traﬃc models. Physica D:
+Nonlinear Phenomena, 197(3):222 – 241, 2004.
+[34] L. C. Davis. Comment on “analysis of optimal velocity model with explicit delay”. Phys. Rev. E, 66:038101,
+Sep 2002.
+[35] Biagio Ciuﬀo, Vincenzo Punzo, and Marcello Montanino. The Calibration of Traﬃc Simulation Models: Report
+on the Assessment of Diﬀerent Goodness of Fit measures and Optimization Algorithms. Technical Report EU
+Cost Action TU0903 MULTITUDE, European Commission Joint Research Centre, 2012.
+[36] Biagio Ciuﬀo, Vincenzo Punzo, and Marcello Montanino. Thirty years of gipps’ car-following model. Trans-
+portation Research Record: Journal of the Transportation Research Board, 2315:89–99, 2012.
+[37] H. X. Ge, S. Q. Dai, L. Y. Dong, and Y. Xue. Stabilization eﬀect of traﬃc ﬂow in an extended car-following
+model based on an intelligent transportation system application. Phys. Rev. E, 70:066134, Dec 2004.
+[38] Rui Jiang, Cheng-Jie Jin, H.M. Zhang, Yong-Xian Huang, Jun-Fang Tian, Wei Wang, Mao-Bin Hu, Hao Wang,
+and Bin Jia. Experimental and empirical investigations of traﬃc ﬂow instability. Transportation Research Part
+C: Emerging Technologies, 94:83 – 98, 2018. ISTTT22.
+[39] Jorge A. Laval, Christopher S. Toth, and Yi Zhou. A parsimonious model for the formation of oscillations in
+car-following models. Transportation Research Part B: Methodological, 70:228 – 238, 2014.
+[40] Cathy Wu, Aboudy Kreidieh, Kanaad Parvate, Eugene Vinitsky, and Alexandre Bayen. Flow: Architecture and
+benchmarking for reinforcement learning in traﬃc control. 10 2017.
+[41] Junfang Tian, Rui Jiang, Bin Jia, Ziyou Gao, and Shoufeng Ma. Empirical analysis and simulation of the
+concave growth pattern of traﬃc oscillations. Transportation Research Part B: Methodological, 93:338 – 354,
+2016.
+[42] Martin Treiber and Arne Kesting. The intelligent driver model with stochasticity -new insights into traﬃc ﬂow
+oscillations. Transportation Research Procedia, 23:174 – 187, 2017. Papers Selected for the 22nd International
+Symposium on Transportation and Traﬃc Theory Chicago, Illinois, USA, 24-26 July, 2017.
+[43] Rui Jiang, Mao-Bin Hu, H.M. Zhang, Zi-You Gao, Bin Jia, and Qing-Song Wu. On some experimental features
+of car-following behavior and how to model them. Transportation Research Part B: Methodological, 80:338 –
+354, 2015.
+[44] Zhengbing He, Liang Zheng, and Wei Guan. A simple nonparametric car-following model driven by ﬁeld data.
+Transportation Research Part B: Methodological, 80:185 – 201, 2015.
+31
+
+[45] Vasileia Papathanasopoulou and Constantinos Antoniou. Towards data-driven car-following models. Trans-
+portation Research Part C: Emerging Technologies, 55:496 – 509, 2015.
+Engineering and Applied Sciences
+Optimization (OPT-i) - Professor Matthew G. Karlaftis Memorial Issue.
+[46] Mofan Zhou, Xiaobo Qu, and Xiaopeng Li. A recurrent neural network based microscopic car following model
+to predict traﬃc oscillation. Transportation Research Part C: Emerging Technologies, 84:245 – 264, 2017.
+[47] Xiuling Huang, Jie Sun, and Jian Sun. A car-following model considering asymmetric driving behavior based
+on long short-term memory neural networks. Transportation Research Part C: Emerging Technologies, 95:346 –
+362, 2018.
+[48] Meixin Zhu, Xuesong Wang, and Yinhai Wang. Human-like autonomous car-following model with deep rein-
+forcement learning. Transportation Research Part C: Emerging Technologies, 97:348 – 368, 2018.
+[49] P.G. Gipps.
+A behavioural car-following model for computer simulation.
+Transportation Research Part B:
+Methodological, 15(2):105 – 111, 1981.
+[50] Martin Treiber and Arne Kesting. Traﬃc Flow Dynamics. 01 2013.
+[51] Raphael E. Stern, Shumo Cui, Maria Laura Delle Monache, Rahul Bhadani, Matt Bunting, Miles Churchill,
+Nathaniel Hamilton, Rmani Haulcy, Hannah Pohlmann, Fangyu Wu, and et al. Dissipation of stop-and-go waves
+via control of autonomous vehicles: Field experiments. Transportation Research Part C: Emerging Technologies,
+89:205221, Apr 2018.
+[52] Hesham Rakha and Brent Crowther. Comparison of greenshields, pipes, and van aerde car-following and traﬃc
+stream models. Transportation Research Record: Journal of the Transportation Research Board, 1802:248–262,
+2002.
+[53] Prakash Ranjitkar, Takashi Nakatsuji, and Motoki Asano. Performance evaluation of microscopic traﬃc ﬂow
+models with test track data. Transportation Research Record: Journal of the Transportation Research Board,
+1876:90–100, 2004.
+[54] Aurlien Duret, Christine Buisson, and Nicolas Chiabaut. Estimating individual speed-spacing relationship and
+assessing ability of newell’s car-following model to reproduce trajectories.
+Transportation Research Record:
+Journal of the Transportation Research Board, 2088:188–197, 2008.
+[55] Hwasoo Yeo and Alexander Skabardonis. Parameter estimation for ngsim over-saturated freeway ﬂow algorithm.
+In Proceedings of the 10th AATT Conference, 2008. cd-rom.
+[56] Xiao-Yun Lu and Alexander. Skabardonis. Freeway shockwave analysis: Exploring ngsim trajectory data. In
+Transportation Research Board 86th Annual Meeting, 2007. cd-rom.
+[57] Masako Bando, Katsuya Hasebe, Ken Nakanishi, Akihiro Nakayama, Akihiro Shibata, and Y¯uki Sugiyama.
+Phenomenological Study of Dynamical Model of Traﬃc Flow. Journal de Physique I, 5(11):1389–1399, 1995.
+[58] J. C. Spall. Multivariate stochastic approximation using a simultaneous perturbation gradient approximation.
+IEEE Transactions on Automatic Control, 37(3):332–341, March 1992.
+[59] Inc. LINDO Systems. Lindo api 12.0 user manual, 2018.
+[60] R. Fletcher, N. Gould, S. Leyﬀer, P. Toint, and A. Wchter. Global convergence of a trust-region sqp-ﬁlter
+algorithm for general nonlinear programming. SIAM Journal on Optimization, 13(3):635–659, 2002.
+[61] Li Li, Xiqun (Micheal) Chen, and Lei Zhang. A global optimization algorithm for trajectory data based car-
+following model calibration. Transportation Research Part C: Emerging Technologies, 68:311 – 332, 2016.
+[62] D. R. Jones, C. D. Perttunen, and B. E. Stuckman. Lipschitzian optimization without the lipschitz constant.
+Journal of Optimization Theory and Applications, 79(1):157–181, Oct 1993.
+[63] Jonathan Calver and Wayne Enright. Numerical methods for computing sensitivities for odes and ddes. Nu-
+merical Algorithms, 74(4):1101–1117, Apr 2017.
+[64] Y. Cao, S. Li, L. Petzold, and R. Serban. Adjoint sensitivity analysis for diﬀerential-algebraic equations: The
+adjoint dae system and its numerical solution. SIAM Journal on Scientiﬁc Computing, 24(3):1076–1089, 2003.
+32
+
+[65] David W. Zingg, Marian Nemec, and Thomas H. Pulliam. A comparative evaluation of genetic and gradient-
+based algorithms applied to aerodynamic optimization. European Journal of Computational Mechanics, 17(1-
+2):103–126, 2008.
+[66] B.M. Chaparro, S. Thuillier, L.F. Menezes, P.Y. Manach, and J.V. Fernandes. Material parameters identiﬁcation:
+Gradient-based, genetic and hybrid optimization algorithms. Computational Materials Science, 44(2):339 – 346,
+2008.
+[67] Rainer Storn and Kenneth Price.
+Diﬀerential evolution &ndash; a simple and eﬃcient heuristic for global
+optimization over continuous spaces. J. of Global Optimization, 11(4):341–359, December 1997.
+[68] Fuchang Gao and Lixing Han. Implementing the nelder-mead simplex algorithm with adaptive parameters.
+Computational Optimization and Applications, 51(1):259–277, Jan 2012.
+[69] Richard H. Byrd, Peihuang Lu, Jorge Nocedal, and Ciyou Zhu. A limited memory algorithm for bound con-
+strained optimization. SIAM J. Sci. Comput., 16(5):1190–1208, September 1995.
+[70] Ciyou Zhu, Richard H. Byrd, Peihuang Lu, and Jorge Nocedal. Algorithm 778: L-bfgs-b: Fortran subroutines
+for large-scale bound-constrained optimization. ACM Trans. Math. Softw., 23(4):550–560, December 1997.
+[71] S. Nash. Newton-type minimization via the lanczos method. SIAM Journal on Numerical Analysis, 21(4):770–
+788, 1984.
+[72] E. Birgin, J. Martnez, and M. Raydan. Nonmonotone spectral projected gradient methods on convex sets. SIAM
+Journal on Optimization, 10(4):1196–1211, 2000.
+[73] Jorge Nocedal and Stephen J. Wright. Numerical Optimization. Springer, New York, NY, USA, 1999.
+[74] Athina Tympakianaki, Haris N. Koutsopoulos, and Erik Jenelius. c-spsa: Cluster-wise simultaneous pertur-
+bation stochastic approximation algorithm and its application to dynamic origindestination matrix estimation.
+Transportation Research Part C: Emerging Technologies, 55:231 – 245, 2015. Engineering and Applied Sciences
+Optimization (OPT-i) - Professor Matthew G. Karlaftis Memorial Issue.
+[75] Constantinos Antoniou, Carlos Lima Azevedo, Lu Lu, Francisco Pereira, and Moshe Ben-Akiva. W-spsa in
+practice: Approximation of weight matrices and calibration of traﬃc simulation models. Transportation Research
+Part C: Emerging Technologies, 59:129 – 146, 2015. Special Issue on International Symposium on Transportation
+and Traﬃc Theory.
+[76] Ronan Keane and H. Oliver Gao. A formulation of the relaxation phenomenon for lane changing dynamics in
+an arbitrary car following model. In submission, 2019.
+[77] D. I. Papadimitriou and K. C. Giannakoglou. Direct, adjoint and mixed approaches for the computation of
+hessian in airfoil design problems. International Journal for Numerical Methods in Fluids, 56(10):1929–1943,
+2007.
+33

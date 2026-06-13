@@ -1,0 +1,1977 @@
+TITLE: Learning Symbolic Expressions: Mixed-Integer Formulations, Cuts, and Heuristics
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2023
+DOI: https://doi.org/10.1287/ijoc.2022.0050
+---
+
+arXiv:2102.08351v2 [math.OC] 24 Feb 2021
+LEARNING SYMBOLIC EXPRESSIONS: MIXED-INTEGER
+FORMULATIONS, CUTS, AND HEURISTICS∗
+JONGEUN KIM†, SVEN LEYFFER‡, AND PRASANNA BALAPRAKASH†
+Abstract.
+In this paper we consider the problem of learning a regression function without
+assuming its functional form. This problem is referred to as symbolic regression.
+An expression
+tree is typically used to represent a solution function, which is determined by assigning operators
+and operands to the nodes.
+The symbolic regression problem can be formulated as a nonconvex
+mixed-integer nonlinear program (MINLP), where binary variables are used to assign operators and
+nonlinear expressions are used to propagate data values through nonlinear operators such as square,
+square root, and exponential. We extend this formulation by adding new cuts that improve the solu-
+tion of this challenging MINLP. We also propose a heuristic that iteratively builds an expression tree
+by solving a restricted MINLP. We perform computational experiments and compare our approach
+with a mixed-integer program-based method and a neural-network-based method from the literature.
+Key words. Symbolic regression, mixed-integer nonlinear programming, local branching heuris-
+tic, expression tree.
+AMS subject classiﬁcations. 90C11, 90C26, 90C27, 90C30.
+1. Introduction. We consider the problem of learning symbolic expressions,
+which is referred to as symbolic regression. Symbolic regression is a form of regression
+that learns functional expressions from observational data. Unlike traditional regres-
+sion, symbolic regression does not assume a ﬁxed functional form but instead learns
+the functional relationship and its constants. Given observational data in terms of
+independent variables, xi ∈IRd, and dependent variables (function values), zi ∈IR,
+for i = 1, . . . , ndata, symbolic regression aims to ﬁnd the best functional form that
+maps the x-values to the z-values by solving the following optimization problem:
+(1.1)
+min
+f∈F
+ndata
+X
+i=1
+(f(xi) −zi)2 ,
+where F is the space of functions from which f is chosen. We note that other loss
+functions involving general norms are also possible and that, in general, problem (1.1)
+is an inﬁnite-dimensional optimization problems. Various applications of symbolic
+regression have been presented in diﬀerent ﬁelds including materials science [21], ﬂuid
+systems [7], physics [16, 19, 20], and civil engineering [17].
+Symbolic regression is especially useful when we do not know the precise functional
+form that relates the independent variables x to the dependent variables z or when
+we wish to exploit the freedom of optimally choosing the functional form.
+Given
+data (xi, zi) ∈IRd+1, i = 1, . . . , ndata and a set of mathematical operators, symbolic
+regression searches for a best-ﬁt mathematical expression as a combination of these
+operators, independent variables, and constant. Given suitable restrictions on the
+function space F (e.g., a ﬁnite set of mathematical operators), we can formulate (1.1)
+as a nonconvex mixed-integer nonlinear program (MINLP). In this paper, we describe
+new cutting planes to enhance the MINLP formulation, develop new heuristics to solve
+∗ARGONNE NATIONAL LABORATORY, PREPRINT ANL/MCS-P9445-0212.
+†Industrial and Systems Engineering, University of Minnesota Twin Cities, Minneapolis, MN
+55455, USA (kim00623@umn.edu).
+‡Mathematics and Computer Science Division, Argonne National Laboratory, Lemont, IL 60439,
+USA (leyﬀer@mcs.anl.gov, pbalapra@anl.gov).
+1
+
+2
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+the resulting MINLP, and demonstrate the eﬀectiveness of our approach on a broad
+set of test problems.
+The remainder of this paper is organized as follows. In the rest of this section,
+we review some background material on expression trees and the literature on sym-
+bolic regression. In section 2, we introduce a MINLP formulation that improves the
+existing formulations by adding new sets of cutting planes. In section 3, we introduce
+the sequential tree construction heuristic for solving the MINLPs arising in symbolic
+regression.
+We demonstrate the eﬀectiveness of our ideas in a detailed numerical
+comparison in section 4, before concluding with some ﬁnal remarks in section 5.
+1.1. Review of Expression Trees. A mathematical expression can be repre-
+sented by an expression tree. Figure 1 shows an expression tree of the pendulum
+formula (in general, an expression tree is not unique). An expression tree can be
+constructed by assigning an operand (an independent variable (xj) or constant (cst))
+or an operator (+, −, ∗, /, exp, log, (·)2, (·)3, √, etc.) to the nodes on a tree.
+∗
+∗
+2
+π
+√
+/
+L
+g
+Fig. 1: An expression tree of the pendulum formula, T = 2π
+q
+L
+g .
+The objective in (1.1) is to minimize the empirical loss, in other words, to maxi-
+mize the accuracy of the expression. Additionally, the objective function may include
+a regularization term modeling the complexity of the expression to obtain a simple
+expression. A common way to measure the complexity of symbolic regression is to
+calculate the number of nodes in an expression tree. We review in section 2 how we
+can formulate (1.1) by modeling expression trees using binary variables.
+1.2. Methods, Test Problems, and Challenges for Symbolic Regres-
+sion. Over the past few years, researchers have expressed renewed interest in learn-
+ing symbolic expressions. Both exact formulations and solution techniques based on
+mixed-integer nonlinear programming and heuristic search techniques have been pro-
+posed. Recently, machine learning methodologies and hybrid techniques have also
+been proposed. Below, we brieﬂy review each class of methods as well as test problem
+collections.
+Heuristic Techniques for Symbolic Regression. Genetic programming is the most
+common approach for solving symbolic regression. It begins with an initial popula-
+tion of individuals or randomly selected expression trees. These trees are compared
+by a ﬁtness measure and error metrics. Individuals with high scores have a higher
+probability of being selected for the next iteration of crossover, mutation, and repro-
+duction. Ideas to enhance genetic algorithms have been proposed in [11, 12] to reduce
+the search space. Nicolau and McDermott [14] use prior information of the values
+of the dependent variable. The quality of solutions is not stable, however, because
+genetic algorithms are a stochastic process, which means that it can generate diﬀerent
+
+LEARNING SYMBOLIC EXPRESSIONS
+3
+solutions for the same input data and the same settings. Kammerer et al. [11] remark
+that “it might produce highly dissimilar solutions even for the same input data.”
+Exact Mixed-Integer Approaches to Symbolic Regression. Exact approaches based
+on the MINLP formulation are deterministic in the sense that they return the same
+solution if the input data and parameter settings are the same. In principle MINLP
+approaches are exact in the sense that they will recover the global solution of (1.1),
+although their runtime may be prohibitively long in practice. MINLP formulations
+were ﬁrst proposed in [3], extended in [4, 13], and independently studied in [2, 10].
+MINLP formulations use binary variables to deﬁne the expression tree and continuous
+variables to represent intermediate values for each node and each data point; see
+section 2.
+The resulting optimization problem is a nonlinear, nonconvex MINLP,
+because it involves nonlinear operators such as ∗, /, exp, and log. The solution time
+typically increases exponentially in the maximum depth of the tree.
+To limit the
+runtime of the MINLP solvers, several researchers [2, 3, 4, 13] limit the structure of
+the expression tree (usually by limiting its depth) and solve a smaller MINLP. The
+approaches in [2, 3, 4] are tested only on noiseless data. Neumann et al. [13] propose
+an interesting methodology to avoid overﬁtting: (1) they add a constraint to limit
+the complexity of the expression tree (number of nodes); (2) they then generate a
+portfolio of solutions by varying the complexity limitation on the training set; and (3)
+they choose the solution based on the validation error.
+Approaches Based on Machine Learning Methodologies. An approach based on
+training a neural network has been proposed in [19, 20] and is referred to as AI Feyn-
+man. A key of AI Feynman is to discover functional properties of the overall function
+using a neural network in order to reduce the search space and decompose the over-
+all symbolic regression problem into smaller subproblems. The method recursively
+applies dimension reduction techniques (dimensional analysis, symmetry, and sepa-
+rability detection) until the remaining components are simple enough to be detected
+by polynomial ﬁts or complete enumeration. These techniques require knowledge of
+the units of the independent and the dependent variables in order to perform the
+dimensional analysis, as well as smoothness of the underlying expression, because
+the method trains a neural network to evaluate values on missing points. A related
+method is considered in [5], which involves using a graph neural network.
+Hybrid Techniques for Symbolic Regression. Austel et al. [1] propose an interest-
+ing idea that considers a generalized expression tree instead of an expression tree. A
+generalized tree assigns a monomial (hxa1
+1 xa2
+2 · · · xad
+d ) to each leaf node, instead of a
+single variable or constant. Consequently, generalized expression trees can represent
+a larger class of functions for the same depth.
+The algorithm has two steps. First, it lists all generalized trees up to depth D.
+The number of generalized trees is reduced by removing redundant expressions. For
+example, both the generalized tree corresponding to the summation of two monomials
+(hxa1
+1 xa2
+2 · · · xad
+d + gxb1
+1 xb2
+2 · · · xbd
+d ) and the generalized tree corresponding to the sub-
+traction of two monomials (h′xa′
+1
+1 xa′
+2
+2 · · · xa′
+d
+d −g′xb′
+1
+1 xb′
+2
+2 · · · xb′
+d
+d ) are equivalent because
+both can represent the same set of functions; therefore, one of the expressions can be
+removed from the list. The list of all generalized trees up to depth one with operators
+{+, −, ∗, /, √} is
+L1,
+p
+L1, (L1 + L2 ≡L1 −L2), (L1 ∗L2 ≡L1/L2),
+where L1 and L2 are monomials and ≡represents that two expressions are equivalent.
+Second, the algorithm solves optimization problems to ﬁnd a global solutions for each
+
+4
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+generalized tree. For example, the optimization problem of L1 + L2 is
+min
+h,a1,...,ad,g,b1,...,bd
+ndata
+X
+i=1
+
+zi −
+
+hxa1
+i,1xa2
+i,2 · · · xad
+i,d + gxb1
+i,1xb2
+i,2 · · · xbd
+i,d
+2
+,
+(1.2)
+where h, g are bounded continuous variables and a, b are bounded integer variables.
+Even though the problem assumes that the tree structure of the generalized expression
+tree is given, it is a mixed-integer nonlinear (nonconvex) programming problem that
+is in NP-hard. Constraints are added based on the knowledge of the units of the
+independent and the dependent variables to reduce the search space.
+Benchmark Problems for Symbolic Regression. Several test problem collections
+have been produced to test symbolic regression ideas. For example, ALAMO, the
+Automatic Learning of Algebraic Models, is a software package for symbolic re-
+gression; see http://minlp.com/alamo.
+The test set of [4] (see http://minlp.com/
+nlp-and-minlp-test-problems) has 24 instances. In [2], the authors consider Kepler’s
+law d =
+3p
+cτ 2(M + m) and the period of the pendulum τ = 2π
+p
+ℓ/g. A set of exam-
+ples from [22] is available at http://gpbenchmarks.org. A number of test problems are
+also in [19, 20] and are available at https://space.mit.edu/home/tegmark/aifeynman.
+html.
+The Challenges of Symbolic Regression. Solving symbolic regression problems
+such as (1.1) has been shown to be challenging; see, for example,[1, 2, 4, 13].
+In
+particular, the problem complexity increases with the number of operators and the
+number of operator types. For example, the number of expression trees represented
+by d independent variables and B binary operators with a maximum depth D is
+more than (B · d)2D/B.1
+Another challenge is the non-convexity of the problem,
+which remains even if the expression tree is ﬁxed because the problem with a ﬁxed
+expression tree is equivalent to optimize parameters of an arbitrary functional form.
+2. An Improved MINLP Formulation of Symbolic Regression. We re-
+view and improve a MINLP formulation that searches an expression tree with the min-
+imum training error given data points (xi,1, . . . , xi,d, zi) ∈IRd+1 for i = 1, . . . , ndata.
+Our formulation improves the one proposed by [4]. The new constraints remove equiv-
+alent expression trees and tighten the feasible set of the relaxation.
+2.1. Notation. A relaxation refers to the relaxation obtained by relaxing binary
+variables. We let [a] := {1, 2, . . ., a} for a ∈Z++, the set of positive integers.
+2.2. Inputs. We are given a set of operators and a set of nodes that deﬁne the
+superset of all feasible expression trees. By limiting the number of nodes and operands
+used to construct the expression tree, we transform the inﬁnite-dimensional problem
+(1.1) into a ﬁnite-dimensional problem. We denote by P ⊆{+, −, ∗, /, √, exp, log, . . . }
+a set of operators. To streamline our presentation, we deﬁne the set of binary operators
+B := P ∩{+, −, ∗, /}, the set of unary operators U := P ∩{√, exp, log}, and the set
+of operands L = {x1, . . . , xd, cst}, where cst is a constant. We denote the set of all
+operators and operands by O := B ∪U ∪L.
+We identify each node of the tree by an integer, and we let N denote the set
+of all nodes in the tree. We denote the children of node n ∈N by 2n and 2n + 1,
+respectively. We assume 1 ∈N, which is the root of the tree. We denote by T the set
+1Let Tδ denote the number of expression trees up to depth δ. TD ≥(B · d)2D /B is derived from
+the system of T0 ≥n and Tδ ≥B · T 2
+δ−1. The equality holds if we allow an expression tree to use
+only binary operators and the independent variables.
+
+LEARNING SYMBOLIC EXPRESSIONS
+5
+of terminal nodes (that have no child). We assume that N corresponds to a full binary
+tree.2 For example, N = {1, 2, 3, 6, 7} is a full binary tree, while N = {1, 2, 3, 4} is not
+because node 2 has only one child, namely, node 4. Provided that the set of operators
+O is ﬁnite and we limit the number of nodes, this MINLP formulation transforms the
+inﬁnite-dimensional functional approximation (1.1) into a ﬁnite-dimensional problem.
+2.3. Decision Variables and Individual Variable Restrictions. There are
+three types of decision variables. The binary variable yo
+n is one if operator o is assigned
+to node n, and zero otherwise. Variable cn is the constant value at node n if node
+n exists, and zero otherwise. Therefore, yo
+n and cn determine the expression tree.
+Variable vi,n represents the intermediate computation value at node n for data point
+i. In other words, vi,n is the value of the symbolic expression represented by the
+subtree rooted by node n at data point i. Therefore, vi,1 is the value predicted by the
+expression tree of data point i. All continuous variables are bounded. To streamline
+our presentation, we use n /∈T instead of n ∈N \ T in the following discussions. We
+deﬁne Y := {(n, o), ∀o ∈O, ∀n /∈T } ∪{(n, o), ∀o ∈L, ∀n ∈T }, the set of all pairs
+of node n and operator o such that o can be assigned to n. To summarize, our model
+has the following set of variables and ranges:
+yo
+n ∈{0, 1},
+∀(n, o) ∈Y,
+(2.1a)
+clo ≤cn ≤cup,
+∀n ∈N,
+(2.1b)
+vlo ≤vi,n ≤vup,
+∀i ∈[ndata], ∀n ∈N.
+(2.1c)
+We assume without loss of generality that vlo ≤clo ≤0 ≤cup ≤vup.
+2.4. Objective Function. We minimize the mean of the squared errors
+min
+1
+ndata
+ndata
+X
+i=1
+(zi −vi,1)2.
+(2.2)
+Additionally, we might add a regularization term such as λ P
+(n,o)∈Y yo
+n, where λ ∈IR+
+is a regularization parameter to promote a sparser expression tree.
+2.5. Constraints. In subsections 2.5.1 and 2.5.2, we introduce constraints that
+are necessary to solve this problem. In subsections 2.5.3 to 2.5.5, we introduce con-
+straints that remove equivalent expression trees and/or reduce the space of the re-
+laxation, an acton that potentially leads to an improvement in computation.
+We
+compare the constraints with the similar constraints in [4] in each section. For the
+sake of completeness, the formulation proposed in [4] is summarized in Appendix A
+in terms of our notations.
+2.5.1. Tree-Deﬁning Constraints. Tree-deﬁning constraints enforce that the
+assignment of operators and operands results in a valid expression tree. The con-
+straints consist of (2.3a), (2.3b), (A.1a), and (A.1b). In addition to (A.1a) and (A.1b)
+from [4], we use the following tree-deﬁning constraints:
+X
+o∈B∪U
+yo
+n =
+X
+o∈O
+yo
+2n+1,
+n /∈T ,
+(2.3a)
+X
+o∈B
+yo
+n =
+X
+o∈O
+yo
+2n,
+n /∈T .
+(2.3b)
+2A full (proper) binary tree is a tree in which every node has zero or two children.
+
+6
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+Constraint (2.3a) enforces that a binary/unary operator is assigned to node n if and
+only if its right child (node 2n + 1) exists.
+Constraint (2.3b) enforces that a bi-
+nary operator is assigned to node n if and only if its left child (node 2n) exists.
+Constraint (A.1a) forces the assignment of at most one operator to a node. Con-
+straint (A.1b) forces the expression tree to include at least one independent vari-
+able. All four constraints are necessary to obtain an expression tree with valid oper-
+ator/operand assignments.
+In contrast, the tree-deﬁning constraints from [4] are (A.1a)-(A.1f).
+Figure 2
+shows two assignments of operators and operands to an expression tree. Both rep-
+resent the symbolic expression x1, and both are feasible in (A.1c)-(A.1f), but only
+Figure 2a is feasible in (2.3a)-(2.3b). We formalize this observation by showing in
+x1
+(a)
+x1
+x2
+x3
+(b)
+Fig. 2: Two equivalent expression trees corresponding to x1. Both are feasible in the
+[4]’s formulation, while only (a) is feasible in our improved formulation.
+Lemma 2.1 that our tree-deﬁning constraints system is tighter.
+Lemma 2.1. It holds that
+
+y ∈{0, 1}|Y| | (2.3a), (2.3b), (A.1a), (A.1b)
+ 
+⊊{y ∈
+{0, 1}|Y| | (A.1a)-(A.1f)}.
+Proof. Let S := {y | (2.1a), (2.3a), (2.3b), (A.1a), (A.1b)} and T := {y | (2.1a),
+(A.1a)-(A.1f)}.
+We ﬁrst show that S ⊆T .
+Pick any point y ∈S.
+We need to
+show that y satisﬁes (A.1c)-(A.1f). Point y satisﬁes (A.1c) and (A.1d) because those
+are relaxations of (2.3a) and (2.3b), respectively, by the fact that B (set of binary
+operators), U (set of unary operators), and L (set of operands) are a partition of O
+(set of operators and operands). We can also show that y satisﬁes (A.1e) by
+X
+o∈U∪L
+yo
+n ≤1 −
+X
+o∈B
+yo
+n = 1 −
+X
+o∈O
+yo
+2n,
+where the inequality and the equality hold by (A.1a) and (2.3b), respectively. Simi-
+larly, we can show that y satisﬁes (A.1f) by
+X
+o∈L
+yo
+n ≤1 −
+X
+o∈B∪U
+yo
+n = 1 −
+X
+o∈O
+yo
+2n+1,
+where the inequality and the equality hold by (A.1a) and (2.3a), respectively. There-
+fore, y satisﬁes all the constraints in T , and consequently S ⊆T holds.
+We next show that there exists y ∈T \ S. Let N = [7], yx1
+1
+= yx2
+2
+= yx3
+7
+= 1,
+and otherwise yo
+n = 0. Figure 2b shows the expression tree corresponding to y. The
+y satisﬁes (A.1a) and (A.1b). Also, y satisﬁes (A.1a)–(A.1b) because every left-hand-
+side value is zero. However, y does not satisfy (2.3a) and (2.3b) because x2 and x3
+cannot be assigned unless an operator is assigned to their parents. Therefore, the
+proof is complete.
+
+LEARNING SYMBOLIC EXPRESSIONS
+7
+2.5.2. Value-Deﬁning Constraints. Value-deﬁning constraints enforce that
+the value of vi,n is computed based on the solution expression tree and data points.
+Speciﬁcally, if an operand is assigned to node n, then vi,n is equal to the value of
+the operand.
+If a unary operator ⊗(x) is assigned to node n, then vi,n is equal
+to ⊗(vi,2n+1). If a binary operator ⊗is assigned to node n, then vi,n is equal to
+vi,2n ⊗vi,2n+1.
+Cozaad and Sahinidis [4] introduce a value-deﬁning constraint for
+each data point, each node, and each operator or operand, given in (A.2b)–(A.11c)
+in Appendix A.2. All these constraints are necessary to ensure the correct prediction
+values for each data point given an expression tree.
+We propose a set of improved value-deﬁning constraints, (2.4a)–(2.4b) together
+with (A.4a)–(A.11c) from [4]:
+vi,n ≤
+d
+X
+j=1
+xi,jyxj
+n + vup
+X
+o∈B∪U∪{cst}
+yo
+n,
+∀i ∈[ndata], ∀n ∈N,
+(2.4a)
+vi,n ≥
+d
+X
+j=1
+xi,jyxj
+n + vlo
+X
+o∈B∪U∪{cst}
+yo
+n,
+∀i ∈[ndata], ∀n ∈N.
+(2.4b)
+Our value-deﬁning constraints replace (A.2a)-(A.3b) with (2.4a)-(2.4b). Both (2.4a)-
+(2.4b) and (A.2a)-(A.3b) represent the following disjunction:
+(2.5)
+_
+o∈{x1,...,xd}
+
+
+yo
+n = 1
+vi,n = xi,j,
+∀i ∈[ndata]
+
+_
+
+
+P
+o∈O yo
+n = 0
+vi,n = 0,
+∀i ∈[ndata]
+
+_
+
+
+P
+o∈B∪U∪{cst} yo
+n = 1
+vlo ≤vi,n ≤vup,
+∀i ∈[ndata]
+
+,
+∀n ∈N.
+Note that if P
+o∈B∪U∪{cst} yo
+n = 1 (i.e., node n exists), then the value of vi,n is
+determined by (A.4a)–(A.11c). Our formulation reduces the number of constraints.
+The number of constraints (2.4a)–(2.4b) is ndata|N|, while the number of constraints
+(A.2a)–(A.3b) is ndata|N|(d + 1). We show in Lemma 2.3 that our formulation does
+not change the feasible set and, in fact, reduces the space of the relaxation.
+We ﬁrst show in Lemma 2.2 that we can merge k big-M constraints associated
+with diﬀerent constant bounds on an identical function. This merge reduces the space
+of the relaxation while it does not change the feasible space.
+Lemma 2.2. Let m be a positive integer, k ∈[m], w ∈Rk, M > maxi∈[k] wi. Let
+FB = {y ∈{0, 1}m | Pm
+i=1 yi = 1} and FC = {y ∈Rm
++ | Pm
+i=1 yi = 1}. Consider
+sets S and T , where
+S := {(x, y) ∈R × Rn | f(x) ≤
+X
+i∈[k]
+wiyi + M(1 −
+X
+i∈[k]
+yi)},
+T := {(x, y) ∈R × Rn | f(x) ≤wiyi + M(1 −yi), ∀i ∈[k]}.
+Then, the following relations hold:
+{(x, y) ∈S | y ∈FB} = {(x, y) ∈T | y ∈FB},
+(2.6a)
+{(x, y) ∈S | y ∈FC} ⊊{(x, y) ∈T | y ∈FC}.
+(2.6b)
+
+8
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+Proof. The proof of this result is given in Appendix B.
+Next, we show that the new constraints do not change the feasible set of the
+MINLP but improve its continuous relaxation.
+Lemma 2.3. Let FB = {(y, v) ∈{0, 1}|Y| × [vlo, vup]ndata|N| | (A.1a)} and FC =
+{(y, v) ∈[0, 1]|Y| × [vlo, vup]ndata|N| | (A.1a)}. It holds that
+{(y, v) ∈FB | (2.4a)-(2.4b)} = {(y, v) ∈FB | (A.2a)-(A.3b)},
+(2.7a)
+{(y, v) ∈FC | (2.4a)-(2.4b)} ⊊{(y, v) ∈FC | (A.2a)-(A.3b)}.
+(2.7b)
+Proof. Constraints (A.1a), (2.4a)–(2.4b), and (A.2a)–(A.3b) are all separable in
+n ∈N. Thus, it is suﬃcient to show that (2.7a) and (2.7b) hold for a speciﬁc n. We
+introduce ynone
+n
+:= 1−P
+(n′,o)∈Y:n′=n yo
+n. By deﬁnition, ynone
+n
++P
+(n′,o)∈Y:n′=n yo
+n = 1.
+Then, we can merge all “vi,n ≤· · · ” constraints in (A.2a)–(A.3b) into (2.4a) for all
+n ∈N, an action that corresponds to merging constraints in T to the constraint in
+S in Lemma 2.2. Similarly, we merge all “vi,n ≥· · · ” constraints in (A.2a)–(A.3b)
+into (2.4b) for all n ∈N. By Lemma 2.2, this merge strictly reduces the space of the
+relaxation while it does not change the feasible set. Therefore, the proof is complete.
+2.5.3. Redundancy-Eliminating Constraints. Redundancy-eliminating con-
+straints exclude redundant operations and remove three kinds of redundancy described
+in Table 1.
+Redundancy type
+Example
+Constraints
+Association property
+x1 −(x2 −3) = x1 + (3 −x2)
+(2.8a), (2.8b)
+Operations on constants
+2 =
+√
+4 = 1.5 + 0.5
+(2.8c), (A.12d)
+Nested operations
+x = elog(x) = log(ex)
+(A.12e), (A.12f)
+Table 1: Redundancy removing constraints.
+In addition to the redundancy-eliminating constraints (A.12d)-(A.12f) from [4],
+we introduce the following constraints:
+y+
+n + y−
+2n+1 ≤1,
+n /∈Nperfect,
+(2.8a)
+y∗
+n + y/
+2n+1 ≤1,
+n /∈Nperfect,
+(2.8b)
+ycst
+2n+1 ≤y+
+n + y∗
+n,
+n /∈T ,
+(2.8c)
+where Nperfect is a set of nodes whose rooted subtree of N is a perfect binary tree.3
+Speciﬁcally, the constraints exclude all equivalent expressions except the ﬁrst expres-
+sion of the examples in Table 1.
+Redundancy induced by the association property is not considered in [4], while our
+redundancy-removing constraints (2.8a) and (2.8b) exclude such cases. For example,
+all the expression trees in Figures 3 and 4 are feasible in the formulation in [4];
+however, only (a) is feasible in our formulation.
+Constraint (2.8c) allows the right child to be a constant only if + or ∗is assigned
+to node n. The constraints exclude −C and /C because equivalent expressions +(−C)
+and ∗(1/C) are feasible. In addition, they exclude
+√
+C, exp C, and log C because we
+3A perfect binary tree is a binary tree in which all nonterminal nodes have two children and all
+terminal nodes have the same depth.
+
+LEARNING SYMBOLIC EXPRESSIONS
+9
+can represent them as a single constant node. This type of redundancy is considered
+in [4], and the corresponding constraints are (A.12a)–(A.12c). We show in Lemma 2.4
+that the substitution (2.8c) for (A.12a)–(A.12c) results in a tighter relaxation.
+−
+A
+−
+B
+C
+(a) A −(B −C)
++
+A
+−
+C
+B
+(b) A + (C −B)
+Fig. 3: Two equivalent expression trees with addition and subtraction.
+Both are
+feasible in [4], but only (a) is feasible in (2.8a).
+/
+A
+/
+B
+C
+(a) A/(B/C)
+∗
+A
+/
+C
+B
+(b) A ∗(C/B)
+Fig. 4: Two equivalent expression trees with multiplication and division. Both are
+feasible in [4], but only (a) is feasible in (2.8b).
+Lemma 2.4. Let FB and FC denote the set of binary and continuous y, respec-
+tively, that satisfy the tree-deﬁning constraints, that is,
+FB = {y ∈{0, 1}|Y| | (2.3a), (2.3b), (A.1a), (A.1b)},
+FC = {y ∈[0, 1]|Y| | (2.3a), (2.3b), (A.1a), (A.1b)}.
+It follows that
+{y ∈FB | (2.8c)} = {y ∈FB | (A.12b)-(A.12d)},
+(2.10a)
+{y ∈FC | (2.8c)} ⊊{y ∈FC | (A.12b)-(A.12d)}.
+(2.10b)
+Proof. Recall (A.12b)-(A.12d):
+ycst
+2n+1 ≤1 −
+X
+o∈U
+yo
+n,
+n /∈T ,
+ycst
+2n+1 ≤1 −y−
+n ,
+n /∈T ,
+ycst
+2n+1 ≤1 −y/
+n,
+n /∈T .
+By relaxing (2.3a), we get the following inequality:
+ycst
+2n+1 ≤1 −ynone
+n
+,
+n /∈T ,
+
+10
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+where ynone
+n
+:= 1−P
+o∈B∪U yo
+n. Let us consider that those constraints are deﬁning the
+upper bound of ycst
+2n+1 depending on the choice of yn. For example, ycst
+2n+1 ≤1 −y−
+n
+enforces the upper bound by 0 if y−
+n = 1; otherwise it relaxes this constraint. By
+Lemma 2.2, we can merge the constraints for each n. The merged constraints are
+ycst
+2n+1 ≤1 −
+X
+o∈U
+yo
+n −y−
+n −y/
+n −ynone
+n
+= y+
+n + y∗
+n,
+n /∈T .
+By Lemma 2.2, this merge does not change the feasible set; it reduces the feasible set
+of the relaxation.
+2.5.4. Implication Cuts. Implication cuts are motivated by the fact that some
+operators are domain-restricted, for example, /, √, and log. From a set of given data
+points, we can identify the characteristics of the independent variables:
+Xposi = {i ∈[d] | ∃j ∈[ndata] : xi,j > 0} ,
+(2.11a)
+Xnega = {i ∈[d] | ∃j ∈[ndata] : xi,j < 0} ,
+(2.11b)
+Xzero = {i ∈[d] | ∃j ∈[ndata] : xi,j = 0} .
+(2.11c)
+All invalid expression trees with up to depth one are described in Figure 5. We can
+/
+xi
+(a) (·)/xi, i ∈Xzero
+√
+xj
+(b) √xj, j ∈Xnega
+log
+xk
+(c) log(xk), k
+∈Xnega ∪
+Xzero
+Fig. 5: Invalid expression trees because of domain restriction.
+write the constraints that restrict the expressions in Figure 5 as follows:
+y/
+n + yxj
+2n+1 ≤1,
+∀j ∈Xzero, ∀n /∈T ,
+(2.12a)
+y
+√
+n + yxj
+2n+1 ≤1,
+∀j ∈Xnega, ∀n /∈T ,
+(2.12b)
+ylog
+n
++ yxj
+2n+1 ≤1,
+∀j ∈Xnega ∪Xzero, ∀n /∈T .
+(2.12c)
+Constraints (2.12a)–(2.12c) exclude an expression tree that includes the expressions
+in Figure 5 as a subtree.
+We can generate more invalid trees from depth-two or
+higher-depth trees. One example is √xjxk for j ∈Xposi and for k ∈Xnega. The
+corresponding constraint is
+(2.13)
+y
+√
+n + y∗
+2n+1 + yxj
+4n+2 + yxk
+4n+3 ≤3,
+∀j ∈Xposi, ∀k ∈Xnega, ∀n ∈N : {4n + 2, 4n + 3} ⊆N.
+Note that the expressions in Figure 5 are already infeasible in both our formulation
+and the formulation in [4] because of (A.8d), (A.9c), and (A.11c). However, adding
+implication cuts reduces the feasible space of the relaxation. Example 2.5 shows that
+the solution y
+√
+n = yxj
+2n+1 = 0.9 for j ∈Xnega is feasible in the space of the relaxation
+of the formulation without implication cuts, whereas it violates (2.12b).
+
+LEARNING SYMBOLIC EXPRESSIONS
+11
+Example 2.5. We consider a symbolic regression problem with N = {1, 3}, P =
+{√} and a single data point (x1,1, z1) = (−1, 5). Suppose that vlo = −10, vup = 10,
+and ǫ = 0.01. To streamline the presentation, we assume that ycst
+1
+= ycst
+3
+= 0. The
+formulation without implication cuts is follows:
+min
+(5 −v1,1)2,
+s.t.
+Tree-Deﬁning Constraints:
+y
+√
+1 + yx1
+1
+≤1,
+yx1
+3
+≤1,
+yx1
+1 + yx1
+3
+≥1,
+y
+√
+1 = yx1
+3 ,
+Value-Deﬁning Constraints:
+v1,1 ≤(−1)yx1
+1 + 10y
+√
+1 ,
+v1,1 ≥(−1)yx1
+1 −10y
+√
+1 ,
+v1,3 ≤(−1)yx1
+3 ,
+v1,3 ≥(−1)yx1
+3 ,
+v2
+1,1 −v1,3 ≤90(1 −y
+√
+1 ),
+v2
+1,1 −v1,3 ≥−10(1 −y
+√
+1 ),
+0.01 −v1,3 ≤10.01(1 −y
+√
+1 ),
+Variable Restrictions:
+−10 ≤v1,1, v1,3 ≤10,
+y
+√
+1 , yx1
+1 , yx1
+3
+∈{0, 1}.
+Note that there is no redundancy-removing constraint because we consider only a
+limited set of operators and a limited set of nodes. We consider the relaxation that
+replaces y
+√
+1 , yx1
+1 , yx1
+3
+∈{0, 1} with y
+√
+1 , yx1
+1 , yx1
+3
+∈[0, 1]. Consider the solution (y
+√
+1 ,
+yx1
+1 , yx1
+3 , v1,1, v1,3) = (0.9, 0.1, 0.9, 0, −0.9). The solution is feasible in the relaxation,
+whereas it violates y
+√
+1 + yx1
+3
+≤1, which is (2.12b).
+2.5.5. Symmetry-Breaking Constraints. Symmetry-breaking constraints re-
+move equivalent expression trees because of a symmetric operator including addition
+(+) and multiplication (∗), for example, x1 + x2 = x2 + x1. We retain only those
+expression trees in which the left argument value is greater than or equal to the right
+argument value for the ﬁrst data point:
+v1,2n −v1,2n+1 ≥(vlo −vup)(1 −y+
+n −y∗
+n),
+n ∈Nperfect.
+(2.14)
+Symmetry-breaking constraints are discussed in [4, (5)]. We rewrite the constraints
+in terms of our notations because we assume that N corresponds to a full binary tree
+whereas [4] assumes that N corresponds to a perfect binary tree.
+2.6. Summary. We summarize the formulation and our contributions in Ta-
+ble 2.
+Table 2: Summary of the formulation and contributions compared with the benchmark
+formulation [4].
+Categories
+Variables
+Convexity
+Remove additional
+Reduce
+equiv. expressions
+relaxation space
+Objective
+v
+convex
+Tree-deﬁning constraints
+y, c
+linear
+✓
+✓
+Value-deﬁning constraints
+y, c, v
+nonconvex
+✓
+Redundancy-eliminating constraints
+y
+linear
+✓
+✓
+Implication cuts
+y
+linear
+✓
+Symmetry-breaking constraints
+y, v
+linear
+
+12
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+The formulation we propose for symbolic regression is
+min
+y,c,v
+1
+ndata
+ndata
+X
+i=1
+(zi −vi,1)2
+s.t.
+(2.3a)-(2.3b), (A.1a)-(A.1b),
+(Tree-deﬁning constraints)
+(2.4a)-(2.4b), (A.4a)-(A.11c),
+(Value-deﬁning constraints)
+(2.8a)-(2.8c), (A.12d)-(A.12f),
+(Redundancy-eliminating constraints)
+(2.12a)-(2.12c),
+(Implication cuts)
+(2.14),
+(Symmetry-breaking constraints)
+yo
+n ∈{0, 1},
+∀(n, o) ∈Y,
+clo ≤cn ≤cup,
+∀n ∈N,
+vlo ≤vi,n ≤vup,
+∀i ∈[ndata], ∀n ∈N.
+3. Sequential Tree Construction Heuristic. In this section, we propose a
+heuristic that searches a solution by building up an expression tree starting from a
+simple approximation to a comprehensive formula. It repeatedly modiﬁes a part of
+the current expression tree in order to lower the training error. It is motivated by
+the fact that a comprehensive formula can be approximated by a simple formula, and
+we observe that those two formulas have similar structures. For example,
+1−x+x2
+1+x
+can be approximated by 1−x
+1+x when |x| is small, see Figure 6. We can achieve the
+comprehensive formula by adding x2 to the simple formula. Another example can be
+found in Kepler’s third law, where the comprehensive formula d =
+3p
+cτ 2(M + m) is
+approximated by a simple formula d =
+3√
+cτ 2M for M ≫m.
+-2
+-1
+0
+1
+2
+x
+-1
+0
+1
+2
+3
+4
+5
+f(x)
+(b)
+(1-x)/(1+x)
+(1-x+x2)/(1+x)
+(a) x ∈(−1, 2)
+-0.5
+0
+0.5
+x
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+f(x)
+(1-x)/(1+x)
+(1-x+x2)/(1+x)
+(b) x ∈(−0.5, 0.5)
+Fig. 6: Illustration of 1−x+x2
+1+x
+and 1−x
+1+x.
+Our approach is motivated by a heuristic framework for general MINLPs that
+searches an improved solution from the neighbors of the current solution, namely,
+local branching proposed by [8]. A local branching heuristic iteratively explores the
+neighbors by solving a restricted MINLP with a branch-and-bound solver. We de-
+velop a sequential tree construction heuristic (STreCH) based on the formulation in
+section 2. In subsection 3.1 we deﬁne the neighbors of an expression tree that is the
+core of our heuristic, and in subsection 3.2 we discuss how to speed up the heuristic.
+
+LEARNING SYMBOLIC EXPRESSIONS
+13
+3.1. Deﬁnition of Neighbors and a Basic Heuristic. We deﬁne the dis-
+tance between two expression trees as the number of nodes assigned diﬀerent opera-
+tors/operands. There are three cases of a node with diﬀerent assignment:
+• a change of a node assignment from an operator/operand to another opera-
+tor/operand,
+• an addition of a new node, and
+• a deletion of a node.
+We consider constant as an operand. This distance does not count a change from
+a constant value to another constant value. For example, the distance between two
+trees in Figure 7 is three because of one change (from x1 to ∗) and two additions of
+a node. The change in the constant value (from 2.0 to 1.5) is not counted.
+We deﬁne a k-neighbor of a given solution ¯y as an expression tree with distance at
+most k. Let Nactive(¯y) be the set of nodes in which an operator/operand is assigned.
+Let o(n, ¯y) for n ∈Nactive(¯y) be the operator/operand that is assigned to node n.
+The set of k-neighbors of ¯y, NBk(¯y), is represented as follows:
+δ(¯y, y) =
+X
+n∈Nactive(¯y)
+(1 −yo(n,¯y)
+n
+) +
+X
+n/∈Nactive(¯y)
+X
+o∈O
+yo
+n,
+(3.1)
+NBk(¯y) = {y | δ(¯y, y) ≤k} .
+(3.2)
+The restricted MINLP that searches k-neighbors needs a single additional linear con-
+straint described in (3.2).
+/
+2.0
+x1
+(a) 2.0/x1
+/
+1.5
+∗
+x1
+x2
+(b) 1.5/(x1x2)
+Fig. 7: Two expression trees with distance three.
+Our basic heuristic works as follows. It ﬁrst obtains an initial solution by solving a
+small-sized problem. At each iteration, it searches for an improvement of the current
+solution by exploring its neighbors by solving a restricted MINLP with (3.2).
+It
+terminates by optimality (the objective value is less than a given tolerance ǫ) or by
+time limit. In our implementation we encounter the following situations:
+• When the tree size (the number of nodes) of the incumbent solution is large,
+it takes a long time to search its neighbors.
+• There is no better solution in its neighbor at some iteration.
+We next propose some ideas to mitigate these situations.
+3.2. Heuristics to Speed Up Ideas and STreCH. In this section we propose
+STreCH, whose pseudocode is described in Algorithm 3.3. Algorithm 3.1 describes
+a restricted MINLP solve, and Algorithm 3.2 describes the solution improvement
+procedure. In addition, we propose a number of heuristics to speed up the solution
+process:
+
+14
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+Algorithm 3.1 ResMINLP (approximately solving a restricted MINLP).
+Data: (x, z), P, N; (optional) ¯y, k1, k2, β, γ
+Result: An expression tree (y, c) found by MINLP and its training error ω
+1 Formulate a MINLP with with data (x, z), operators P, nodes N;
+2 if ¯y, k1, and k2 are given then
+3
+Add constraint k1 ≤δ(¯y, y) ≤k2 to search within NBk2(¯y) \ NBk1(¯y);
+4 if ¯y and β are given then
+5
+Fix some variables in y by given solution ¯y and ﬁx level β;
+6 if γ is given then
+7
+Set the node limit of a branch-and-bound solver to γ;
+8 Solve the problem with a branch-and-bound solver;
+9 return (y, c, ω);
+Early Termination. A branch-and-bound solver returns an optimal solution with
+the proof of optimality. However, proving optimality for a restricted problem does
+not guarantee optimality of the whole problem. Therefore, we terminate the solver
+under one of the following conditions: (1) when it ﬁnds an improved solution, or (2)
+it reaches a time-limit to prove optimality. First, we stop an iteration when the solver
+ﬁnds a solution whose training error is smaller than (100 ∗δ)% of the training error
+of the incumbent. Second, we stop an iteration when it reaches at a predetermined
+time limit or node limit.
+Start Value. We provide the incumbent as a starting point. In general, it is not
+always eﬃcient especially when we are looking for an optimal solution with the proof
+of optimality. However, it helps in combination with early termination.
+Fix a Part of an Expression Tree. As the size of an expression tree grows, the
+size of k-neighbors increases. We ﬁx the top part of an expression tree to reduce
+the search space. Speciﬁcally, given an incumbent and β ∈Z++, we ﬁx a node that
+has a descendant at the β-th lower generation where the ﬁrst lower generation is the
+children and the ith generation is the children of (i −1)th generation. For example,
+when β = 1, we ﬁx all nonleaf nodes. When β = 2, we ﬁx all grandparents of some
+node.
+With the implementation of early termination, there are three situations when a
+MINLP solver terminates at an iteration. Let ¯y denote the current incumbent and k
+denote the current distance. We deﬁne the next iteration for each situation as follows:
+1. The solver returns a better solution. Then, we solve a MINLP restricted by
+the neighbors of the returned solution.
+2. The solver proves that there is no better solution within the neighbors. Then,
+we search in a larger neighborhood, NBk′(¯y) \ NBk(¯y) where k′ > k.
+3. The solver terminates by time limit or node limit and no better solution has
+been found. Then, we increase the time limit or the node limit in the next
+iteration.
+The pseudocode of STreCH is described in Algorithms 3.1 to 3.3. Algorithm 3.1
+describes a restricted MINLP. Algorithm 3.2 describes the solution-improving proce-
+dure. The inputs of Algorithm 3.2 are the solution ¯y and the parameters that are
+given in the beginning and not changed during the procedure: kinit is the initial dis-
+tance to deﬁne neighbors, kmax is the maximum distance of candidate neighbors, βinit
+is the initial node ﬁx level, βmax is the maximum node ﬁx level, γinit is the initial
+
+LEARNING SYMBOLIC EXPRESSIONS
+15
+Algorithm 3.2 Improve (procedure to ﬁnd an improved solution from a solution).
+Data: (x, z), P, N, solution (¯y, ¯c, ¯ω)
+Result: An improved solution if found, otherwise the given solution
+1 (k1, k2, β, γ) ←(0, kinit, βinit, γinit) ;
+// Initialize the parameters.
+2 repeat
+// Repeatedly search neighbors.
+3
+(y, c, ω) ←ResMINLP(x, z, P, N, k1, k2, β, γ);
+4
+if ω < ¯ω then
+5
+return (y, c, ω) ;
+// Return an improved solution.
+6
+else if Terminated by node limit and 10γ ≤γmax then
+7
+γ ←10γ ;
+// Spend more time on this problem.
+8
+else
+// Spent enough time.
+9
+(k1, k2) ←(k2, k2 + 2) ;
+// Change the neighbor set.
+10
+if k2 > kmax then
+11
+(k1, k2) ←(0, kinit);
+12
+β ←β + 1;
+13
+if β > βmax then
+14
+return (¯y, ¯c, ¯ω) ;
+// Return the given solution.
+15 until Time limit reached;
+Algorithm 3.3 STreCH.
+Data: (x, z), P, N, Ninit (the node set for the initial problem)
+Result: An expression tree (y, v) and its training error ω
+1 (y, c, ω) ←ResMINLP(x, z, P, Ninit) ;
+// Solve an initial problem.
+2 repeat
+// Repeatedly improve a solution.
+3
+(y′, c′, ω′) ←Improve(x, z, P, N, y, c, ω);
+4
+if ω′ < ω then
+5
+(y, c, ω) ←(y′, c′, ω′) ;
+// Update the incumbent.
+6
+else
+7
+break;
+8 until Time limit reached;
+9 return (y, c, ω);
+node limit for the branch-and-bound tree, and γmax is the maximum node limit for
+the branch-and-bound tree. Algorithm 3.3 describes the overall loop.
+We recommend solving a single MINLP by limiting the number of nodes in the
+branch-and-bound tree instead of limiting time in the heuristic. The reason is that
+limiting the number of node guarantees that the same solution will be reproduced
+at each iteration whereas limiting time may return a diﬀerent solution depending on
+how much resource is available on the computing machine.
+4. Computational Experiments. We perform computational experiments on
+the improved formulation and the sequential tree construction heuristic. The ﬁrst
+experiment tests our ability to ﬁnd a global solution. We investigate whether the new
+constraints deliver an improvement in computation. The second experiment tests the
+ability to ﬁnd a good approximated symbolic function with limited information. We
+assume that a limited number of observations is given and no additional information
+
+16
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+such as the unit of variables is available. We compare our methods with AI Feynman
+[19, 20], which is a state-of-the-art symbolic regression solver specialized for physics
+formulas.
+Test Problems. We test 71 formulas from the Feynman database for symbolic
+regression [20] whose operator set is a subset of {+, −, ∗, /, √}. Table 3 shows that
+all formulas can be represented by an expression tree of depth ﬁve. We assume that
+Depth
+1
+2
+3
+4
+5
+Total
+# of formulas
+4
+25
+22
+7
+13
+71
+Table 3: Distribution of the required depth to represent a formula in the test problems.
+(i) no unit information is available, (ii) we have a small number of observations (10
+data points), and (iii) the observations are noisy. Although (i)–(iii) were discussed in
+[20] independently, the combination of all three was not discussed.
+Hardware and Software. Our computational experiments are performed on a com-
+puter with Intel Xeon Gold 6130 CPU cores running at 2.10 GHz and 192 GB of
+memory. The operating system is Linux Ubuntu 18.04. The code is written in Ju-
+lia 1.5.3 with SCIP 7.0.0 [9] as a MINLP solver that showed the best performance
+among open-source global MINLP solvers for this problem [4]. The code is available
+at https://github.com/jongeunkim/STreCH.
+4.1. Comparison of MINLP Formulations. We compare the formulations
+described in section 2 with the formulation from [4].
+4.1.1. Experimental Setup for Comparing MINLP Formulations. We
+start by investigating the eﬀect of the new optional constraints that do not need to
+be included in the formulation but can reduce the search space. In the experiments
+in [4], the variance of the computational performance is large with regard to the in-
+clusion/exclusion of optional constraints, and the authors suggest running all possible
+formulations in parallel. In this experiment, we consider four formulations for each
+method (ours and [4]) by adding or not adding redundancy-eliminating constraints
+and symmetry-breaking constraints. Imp and Coz stand for the improved formulation
+and the formulation from [4], respectively. -F refers to the full formulation (adding
+all the constraints). -N refers to the formulation with only the necessary constraints
+(tree and value deﬁning constraints). -R refers to the formulation with the necessary
+constraints and the redundancy-eliminating constraints. -S refers to the formulation
+with the necessary constraints and the symmetry-breaking constraints. The conﬁgu-
+ration of the formulations are described in Table 4. We do not consider implication
+Formulations
+Imp-F
+Imp-R
+Imp-S
+Imp-N
+Coz-F
+Coz-R
+Coz-S
+Coz-N
+Objective
+(2.2)
+Tree
+(2.3a)-(2.3b), (A.1a)-(A.1b)
+(A.1a)-(A.1f)
+Value
+(2.4a)-(2.4b), (A.4a)-(A.11c)
+(A.2a)-(A.11c)
+Redundancy
+(2.8a)-(2.8c), (A.12d)-(A.12f)
+-
+(A.12a)-(A.12f)
+-
+Symmetry
+(2.14)
+-
+(2.14)
+-
+(2.14)
+-
+(2.14)
+-
+Table 4: Formulations used in the experiments.
+cuts because all the independent variables used in the test functions are positive,
+which means that there are no implication cuts. We limit the depth of the expression
+
+LEARNING SYMBOLIC EXPRESSIONS
+17
+tree to two (seven nodes) in order to ﬁnd an optimal solution for all instances within
+the prespeciﬁed time limit (three hours).
+4.1.2. Results Comparing MINLP Formulations. First, we compare our
+best results with the best results of [4] in Figure 8a. We collect the smallest solution
+times among four formulations for each method. We visualize our results using perfor-
+mance proﬁles [6] in Figure 8. Figure 8a shows that our formulations can solve 70% of
+instances within ten minutes while [4]’s can solve 50% of instances. Our formulations
+failed to solve 2.8% of instances (2 of 71) within three hours while [4]’s failed to solve
+5.6% of instances (4 of 71) within the time limit.
+0
+600
+1200
+1800
+2400
+3000
+3600
+Time (seconds)
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+Fraction of Problems
+Best of Imp
+Best of Coz
+(a) Best of four.
+0
+3600
+7200
+10800
+Time (seconds)
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+Fraction of Problems
+Imp-F
+Imp-R
+Imp-S
+Imp-N
+Coz-F
+Coz-R
+Coz-S
+Coz-N
+(b) All.
+Fig. 8: Comparison of solution times of MINLP solves with the improved formulations
+and those of [4].
+Next, we compare all eight formulations in Figure 8b. Now we draw eight lines for
+each formulation. Figure 8b shows that our formulation with all optional constraints
+performs best. The formulation terminates ﬁrst in more than half of the instances
+(36 of 71) and is in the top three in 81.7% of the instances (58 of 71). Figure 9 shows
+that the newly proposed optional constraints in the improved formulation also reduce
+the number of nodes in the branch-and-bound tree (BnBnodes) compared with the
+existing ones.
+Our experiments show that it clearly is better to add all optional constraints to
+reduce the search space. This conclusion diﬀers from the result in [4]. We believe
+that this diﬀerence may be due to a diﬀerence in the branch-and-bound solvers: we
+use SCIP while [4] uses BARON [15, 18].
+4.2. STreCH and AI Feynman. The goal of this experiment is to compare
+the performance of our methods with the state-of-the-art symbolic regression method
+AI Feynman.
+4.2.1. Experimental Setup for Heuristic Comparison. We test both meth-
+ods with noisy data and perform cross-validation to select the ﬁnal symbolic expres-
+sion.
+We ﬁrst generate a training set with noise and a validation and testing set
+without noise. For each method, we ﬁnd a set of candidate formulas using the train-
+ing set. Next, we select the formula from the candidates that has the lowest validation
+error. We then compute the testing error of the selected formula.
+
+18
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+0
+5
+10
+15
+BnBnodes
+104
+0.5
+0.6
+0.7
+0.8
+0.9
+1
+Fraction of Problems
+Imp-F
+Imp-R
+Imp-S
+Imp-N
+Coz-F
+Coz-R
+Coz-S
+Coz-N
+Fig. 9: Comparison of the number of nodes in the branch-and-bound tree of MINLP
+solves with the improved formulations and the the formulations of [4].
+We consider three approaches: a STreCH-based approach, a MINLP-based ap-
+proach, and AI Feynman.
+The ﬁrst two approaches solve multiple instances with
+diﬀerent parameter setups in parallel to collect candidate formulas. The set of pa-
+rameters includes the type of formulation (adding or not adding optional constraints),
+the maximum depth of the expression tree, the type of constant (integer or fractional),
+and the bounds on the constants. When a single instance is solved, the STreCH-based
+approach uses the heuristic described in section 3, and the MINLP-based approach
+solves the MINLP problem in section 2.
+We run AI Feynman ourselves because there are no reported computational ex-
+periments in our setting (running without no unit information, for a small number
+of observations, and noisy data). We download the AI Feynman code from https://
+github.com/SJ001/AI-Feynman. We use the default parameters except the set of op-
+erators used in brute-force because the default set does not include all operators used
+in tested functions. Instead, we use the largest operator set that includes all used
+operators. Note that the AI Feynman code itself manages computing resources in
+parallel.
+4.2.2. Results for Comparison of Heuristics. First, we investigate how
+many formulas can be rediscovered by each method.
+We run all methods on the
+dataset with ten training data points, a noise level of 10−4, and no unit information.
+In Table 5, we observe that every method can discover the correct formula when it
+can be represented by an expression tree of depth one or two. When the depth is
+three, the STreCH and the MINLP approaches discover twice as many formulas as AI
+Feynman. When the depth is four or ﬁve, the STreCH and the MINLP approaches
+cannot discover the original formulas, while AI Feynman discovers two formulas.
+Next, we investigate formulas for which the methods return diﬀerent solutions.
+We ﬁrst consider formulas that were discovered by the STreCH and the MINLP ap-
+proaches but not by AI Feynman. These include
+q1q2r
+4πǫr3 (Feynman Eq. I.12.2) and
+
+LEARNING SYMBOLIC EXPRESSIONS
+19
+Table 5: Required depth to represent a formula.
+Depth
+# Formulas
+Discovery rate (%)
+STreCH
+MINLP
+AI Feynman
+≤2
+29
+100.0
+100.0
+100.0
+3
+22
+59.1
+54.5
+27.2
+≥4
+20
+0.0
+0.0
+10.0
+2I
+4πǫc2r (Feynman Eq.
+II.13.17).
+We suspect that this diﬀerence happens because
+the STreCH and the MINLP approaches can assign any constant value at a node in
+the expression tree whereas AI Feynman relies on the user-speciﬁed particular con-
+stants. Speciﬁcally, when solving the problem of q1q2r
+4πǫr3 , the STreCH and the MINLP
+approaches can assign 0.159(=
+1
+2π) at a node while AI Feynman needs a few steps
+in combination with a prespeciﬁed constant (π) and operators (x →2x and x →1
+x).
+These few steps might hinder the ability of the path to rediscover the original formula.
+This weakness also has been pointed out in [1].
+Second, we investigate formulas that were discovered by AI Feynman but not
+by the STreCH and the MINLP approaches. These include
+m0
+√
+1−v2/c2 and
+ρc0
+√
+1−v2/c2 .
+AI Feynman beneﬁts from the use of trigonometrical functions, arcsin(cos(x)), which
+are equivalent to
+√
+1 −x2. Third, we consider formulas where the STreCH approach
+could ﬁnd the original formula but the MINLP approach failed. These include (h/(2π))2
+2End2
+(Feynman Eq. III.15.14). Table 6 shows how the STreCH develops a solution at each
+iteration. Because the formula is a monomial, there are multiple sequences to reach
+the correct formula. For example, the correct formula can be obtained from
+h2
+End2 ,
+Ch2
+d2 , and
+Ch
+End2 , where C = (8π2)−1. Therefore, there are formula structures such as
+a monomial that the STreCH performs well.
+Table 6: Progress of STreCH to discover (h/(2π))2
+2End2 .
+Iteration
+Incumbent∗
+Update
+Time Spent (s)
+1
+c1h
+d
+initial solution∗∗
+75.33
+2
+c2h
+End
+h →h/En
+2.82
+3
+c3h
+End2
+d →d2
+68.39
+4
+c4h
+End2
+change the constant value
+1.73
+5
+c5h2
+End2
+h →h2
+26.24
+6
+c6h2
+End2
+change the constant value
+161.77
+∗c1-c6 are constant values
+∗∗achieved by solving a depth-two problem
+We next compare the testing errors of the three methods. We perform the com-
+putational experiments on both noiseless and noisy data. Figure 10 shows the dis-
+tributions of the root mean square testing errors of the results.
+We see that the
+solutions generated by the STreCH and the MINLP approaches have a lower testing
+error compared with AI Feynman’s solutions.
+
+20
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+0
+2
+4
+6
+8
+10
+RMSE
+0.7
+0.75
+0.8
+0.85
+0.9
+0.95
+1
+Fraction of Problems
+STreCH
+MINLP
+AI Feynman
+(a) Noiseless.
+0
+2
+4
+6
+8
+10
+RMSE
+0.7
+0.75
+0.8
+0.85
+0.9
+0.95
+1
+Fraction of Problems
+STreCH
+MINLP
+AI Feynman
+(b) Noise level of 0.01%.
+Fig. 10: Comparison of the testing errors achieved by the STreCH approach, the
+MINLP approach, and AI Feynman.
+5. Conclusion. In this paper we present MINLP-based methods for symbolic
+regression. We propose an improved MINLP formulation. We also propose a new
+heuristic, STreCH, which is based on the tighter formulation and builds an expression
+tree by repeatedly modifying a solution expression tree. Compared with state-of-the-
+art methods, our methods are able to discover more correct formulas when there is a
+lack of data. When an original formula is diﬃcult to rediscover, our methods return
+a formula that has a lower testing error.
+For future work, our method can be integrated with AI Feynman. AI Feynman
+decomposes to small problems and solves those using polynomial ﬁt and brute-force
+methods. Since our method is good at ﬁnding a relatively simple symbolic expression,
+it would be a good option for solving small subproblems that arise within the AI
+Feynman decomposition within a tight time limit, of, say, less that a minute.
+Acknowledgements. This work was supported by the Applied Mathematics
+activity within the U.S. Department of Energy, Oﬃce of Science, Advanced Scientiﬁc
+Computing Research, under Contract DE-AC02-06CH11357.
+Appendix A. The MINLP Formulation Proposed in [4].
+The formulation proposed by [4] is written in terms of our notations.
+A.1. Tree-Deﬁning Constraints. The constraints are (1d)–(1i) in [4].
+X
+o∈O
+yo
+n ≤1,
+n ∈N,
+(A.1a)
+X
+n∈N
+d
+X
+j=1
+yxj
+n ≥1,
+(A.1b)
+X
+o∈B∪U
+yo
+n ≤
+X
+o∈O
+yo
+2n+1,
+n /∈T ,
+(A.1c)
+X
+o∈B
+yo
+n ≤
+X
+o∈O
+yo
+2n,
+n /∈T ,
+(A.1d)
+
+LEARNING SYMBOLIC EXPRESSIONS
+21
+X
+o∈U∪L
+yo
+n ≤1 −
+X
+o∈O
+yo
+2n,
+n /∈T ,
+(A.1e)
+X
+o∈L
+yo
+n ≤1 −
+X
+o∈O
+yo
+2n+1,
+n /∈T .
+(A.1f)
+A.2. Value-Deﬁning Constraints. The constraints are (1b) and (1c) in [4].
+No Assignment.
+vi,n ≤vup(1 −
+X
+o∈O
+yo
+n),
+∀i ∈[ndata], ∀n ∈N,
+(A.2a)
+vi,n ≥vlo(1 −
+X
+o∈O
+yo
+n),
+∀i ∈[ndata], ∀n ∈N.
+(A.2b)
+Independent Variables.
+vi,n ≤xi,jyxj
+n + vup(1 −yxj
+n ),
+∀i ∈[ndata], ∀n ∈N, ∀j ∈[d],
+(A.3a)
+vi,n ≥xi,jyxj
+n + vlo(1 −yxj
+n ),
+∀i ∈[ndata], ∀n ∈N, ∀j ∈[d].
+(A.3b)
+Constant.
+vi,n −cn ≤(vup −clo)(1 −ycst
+n ),
+∀i ∈[ndata], ∀n ∈N,
+(A.4a)
+vi,n −cn ≥(vlo −cup)(1 −ycst
+n ),
+∀i ∈[ndata], ∀n ∈N.
+(A.4b)
+Addition.
+vi,n −(vi,2n + vi,2n+1) ≤(vup −2vlo)(1 −y+
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.5a)
+vi,n −(vi,2n + vi,2n+1) ≥(vlo −2vup)(1 −y+
+n ),
+∀i ∈[ndata], ∀n /∈T .
+(A.5b)
+Subtraction.
+vi,n −(vi,2n −vi,2n+1) ≤(2vup −vlo)(1 −y−
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.6a)
+vi,n −(vi,2n −vi,2n+1) ≥(2vlo −vup)(1 −y−
+n ),
+∀i ∈[ndata], ∀n /∈T .
+(A.6b)
+Multiplication.
+vi,n −vi,2nvi,2n+1 ≤(vup −min{v2
+lo, vlovup, v2
+up})(1 −y∗
+n),
+∀i ∈[ndata], ∀n /∈T ,
+(A.7a)
+vi,n −vi,2nvi,2n+1 ≥(vlo −max{v2
+lo, v2
+up})(1 −y∗
+n),
+∀i ∈[ndata], ∀n /∈T .
+(A.7b)
+Division.
+vi,nvi,2n+1 −vi,2n ≤(max{v2
+lo, v2
+up} −vlo)(1 −y/
+n),
+∀i ∈[ndata], ∀n /∈T ,
+(A.8a)
+vi,nvi,2n+1 −vi,2n ≥(min{v2
+lo, vlovup, v2
+up} −vup)(1 −y/
+n),
+∀i ∈[ndata], ∀n /∈T ,
+(A.8b)
+ǫy/
+n ≤v2
+i,2n,
+∀i ∈[ndata], ∀n /∈T ,
+(A.8c)
+ǫy/
+n ≤v2
+i,2n+1,
+∀i ∈[ndata], ∀n /∈T .
+(A.8d)
+
+22
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+Square Root.
+v2
+i,n −vi,2n+1 ≤(max{v2
+lo, v2
+up} −vlo)(1 −y
+√
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.9a)
+v2
+i,n −vi,2n+1 ≥(−vup)(1 −y
+√
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.9b)
+ǫ −vi,2n+1 ≤(ǫ −vlo)(1 −y
+√
+n ),
+∀i ∈[ndata], ∀n /∈T .
+(A.9c)
+Exponential.
+vi,n −exp(vi,2n+1) ≤vup(1 −yexp
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.10a)
+vi,n −exp(vi,2n+1) ≥(vlo −exp(vup))(1 −yexp
+n
+),
+∀i ∈[ndata], ∀n /∈T .
+(A.10b)
+Logarithm.
+exp(vi,n) −vi,2n+1 ≤(exp(vup −vlo)(1 −ylog
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.11a)
+exp(vi,n) −vi,2n+1 ≥(−vup)(1 −ylog
+n ),
+∀i ∈[ndata], ∀n /∈T ,
+(A.11b)
+ǫ −vi,2n+1 ≤(ǫ −vlo)(1 −ylog
+n ),
+∀i ∈[ndata], ∀n /∈T .
+(A.11c)
+A.3. Redundancy-Eliminating Constraints. These constraints are (2a), (2b),
+(3a), (3b), (4a), and (4b) in [4]. Deﬁne Opair as the set of all inverse unary operation
+pairs o and o′ such as (exp, log), and ((·)2, √).
+ycst
+2n+1 +
+X
+o∈U
+yo
+n ≤1,
+n /∈T ,
+(A.12a)
+ycst
+2n+1 + y−
+n ≤1,
+n /∈T ,
+(A.12b)
+ycst
+2n+1 + y/
+n ≤1,
+n /∈T ,
+(A.12c)
+ycst
+2n + ycst
+2n+1 ≤1,
+n /∈T ,
+(A.12d)
+yo
+n + yo′
+2n+1 ≤1,
+n /∈T , (o, o′) ∈Opair,
+(A.12e)
+yo′
+n + yo
+2n+1 ≤1,
+n /∈T , (o, o′) ∈Opair.
+(A.12f)
+A.4. Symmetry-Breaking Constraints. This constraint is (5) in [4].
+v1,2n −v1,2n+1 ≥(vlo −vup)(1 −y+
+n −y∗
+n),
+n ∈Nperfect
+(A.13)
+Appendix B. Proof of Lemma 2.2.
+Proof. We ﬁrst show (2.6a). Note that FB = {ei, ∀i ∈[m]}, where ei is the ith
+standard unit vector where the ith element is one, and otherwise zero. Equality (2.6a)
+can be shown by
+{(x, y) ∈S | y ∈FB} =
+m
+[
+i=1
+(S ∩{(x, y) | y = ei})
+=
+m
+[
+i=1
+(T ∩{(x, y) | y = ei}) = {(x, y) ∈T | y ∈FB}.
+The equality in the middle holds because of the following observations:
+S ∩{(x, y) | y = ei} =
+(
+{(x, ei) | f(x) ≤wi}
+if i ∈[k],
+{(x, ei) | f(x) ≤M}
+otherwise,
+
+LEARNING SYMBOLIC EXPRESSIONS
+23
+T ∩{(x, y) | y = ei} =
+(
+{(x, ei) | f(x) ≤min{wi, M} = wi}
+if i ∈[k],
+{(x, ei) | f(x) ≤M}
+otherwise.
+We next show (2.6b). Let SC := {(x, y) ∈S | y ∈FC} and TC := {(x, y) ∈
+T | y ∈FC}. First, it holds that SC ⊆TC because the constraint in S dominates
+every constraint in T . It is suﬃcient to show that
+X
+i∈[k]
+wiyi + M(1 −
+X
+i∈[k]
+yi) = wjyj +
+X
+i∈[k]:i̸=j
+wiyi + M(1 −
+X
+i∈[k]
+yi)
+≤wjyj +
+X
+i∈[k]:i̸=j
+Myi + M(1 −
+X
+i∈[k]
+yi) = wjyj + M(1 −yj),
+for all j ∈[k].
+Second, we show that there exists (x, y) ∈TC \ SC.
+Let j =
+arg mini∈[k] wi. Consider (¯x, ¯y) with ¯x =
+1
+mwj + m−1
+m M and ¯yi =
+1
+m for all i. Point
+(¯x, ¯y) is in FC. Point (¯x, ¯y) is not in S because
+¯x −
+
+X
+i∈[k]
+wi¯yi + M(1 −
+X
+i∈[k]
+¯yi)
+
+
+=
+ 1
+mwj + m −1
+m
+M
+
+−
+ P
+i∈[k] wi
+m
++ m −k
+m
+M
+!
+=
+P
+i∈[k]:i̸=j(M −wi)
+m
+> 0,
+while the point is in T because
+¯x −(wi¯yi + M(1 −¯yi)) =
+ 1
+mwj + m −1
+m
+M
+
+−
+ 1
+mwi + m −1
+m
+M
+
+= 1
+m(wj −wi) ≤0
+for all i ∈[k]. Therefore, (¯x, ¯y) ∈TC \ SC, which completes the proof.
+REFERENCES
+[1] V. Austel,
+C. Cornelio,
+S. Dash, J. Goncalves, L. Horesh, T. Josephson, and
+N. Megiddo, Symbolic regression using mixed-integer nonlinear optimization, 2020,
+https://arxiv.org/abs/2006.06813.
+[2] V. Austel, S. Dash, O. Gunluk, L. Horesh, L. Liberti, G. Nannicini, and B. Schieber,
+Globally optimal symbolic regression, in NIPS 2017 Symposium on Interpretable Machine
+Learning, 2017, https://arxiv.org/abs/1710.10720.
+[3] A. Cozad, Data- and theory-driven techniques for surrogate-based optimization, PhD thesis,
+Department of Chemical Engineering, Carnegie Mellon University, 2014.
+[4] A. Cozad and N. V. Sahinidis, A global MINLP approach to symbolic regression, Mathemat-
+ical Programming, 170 (2018), pp. 97–119, https://doi.org/10.1007/s10107-018-1289-x.
+[5] M. Cranmer, A. Sanchez-Gonzalez, P. Battaglia, R. Xu, K. Cranmer, D. Spergel,
+and S. Ho, Discovering symbolic models from deep learning with inductive biases, 2020,
+https://arxiv.org/abs/2006.11287.
+[6] E. D. Dolan and J. J. Mor´e, Benchmarking optimization software with performance
+proﬁles, Mathematical programming, 91 (2002), pp. 201–213, https://doi.org/10.1007/
+s101070100263.
+[7] T. Duriez, S. L. Brunton, and B. R. Noack, Machine learning control-taming nonlinear
+dynamics and turbulence, Springer, 2017, https://doi.org/10.1007/978-3-319-40624-4.
+[8] M. Fischetti and A. Lodi, Local branching, Mathematical programming, 98 (2003), pp. 23–47,
+https://doi.org/10.1007/s10107-003-0395-5.
+
+24
+J. KIM, S. LEYFFER, AND P. BALAPRAKASH
+[9] A. Gleixner, M. Bastubbe, L. Eifler, T. Gally, G. Gamrath, R. L. Gottwald, G. Hen-
+del, C. Hojny, T. Koch, M. L¨ubbecke, S. J. Maher, M. Miltenberger, B. M¨uller,
+M. Pfetsch, C. Puchert, D. Rehfeldt, F. Schl¨osser, C. Schubert, F. Serrano,
+Y. Shinano, J. M. Viernickel, M. Walter, F. Wegscheider, J. T. Witt, and
+J. Witzig, The SCIP Optimization Suite 6.0, Tech. Report 18-26, Zuse Institute Berlin,
+2018, https://nbn-resolving.de/urn:nbn:de:0297-zib-69361.
+[10] L. Horesh, L. Liberti, and H. Avron, Globally optimal minlp formulation for symbolic regres-
+sion, tech. report, IBM Research, 2016, https://dominoweb.draco.res.ibm.com/reports/
+rc25620.pdf.
+[11] L. Kammerer, G. Kronberger, B. Burlacu, S. M. Winkler, M. Kommenda, and M. Af-
+fenzeller, Symbolic regression by exhaustive search:
+Reducing the search space using
+syntactical constraints and eﬃcient semantic structure deduplication, in Genetic Pro-
+gramming Theory and Practice XVII, Springer, 2020, pp. 79–99, https://doi.org/10.1007/
+978-3-030-39958-0 5.
+[12] G. Kronberger, L. Kammerer, B. Burlacu, S. M. Winkler, M. Kommenda, and M. Af-
+fenzeller, Cluster analysis of a symbolic regression search space, in Genetic Program-
+ming Theory and Practice XVI, Springer, 2019, pp. 85–102, https://doi.org/10.1007/
+978-3-030-04735-1 5.
+[13] P. Neumann, L. Cao, D. Russo, V. S. Vassiliadis, and A. A. Lapkin, A new formulation
+for symbolic regression to identify physico-chemical laws from experimental data, Chemical
+Engineering Journal, (2019), p. 123412, https://doi.org/10.1016/j.cej.2019.123412.
+[14] M. Nicolau and J. McDermott, Genetic programming symbolic regression: What is the prior
+on the prediction?, in Genetic Programming Theory and Practice XVII, Springer, 2020,
+pp. 201–225, https://doi.org/10.1007/978-3-030-39958-0 11.
+[15] N. V. Sahinidis, BARON 17.8.9: Global Optimization of Mixed-Integer Nonlinear Programs,
+User’s Manual, 2017, https://sahinidis.coe.gatech.edu/baron.
+[16] M. Schmidt and H. Lipson, Distilling free-form natural laws from experimental data, Science,
+324 (2009), pp. 81–85, https://doi.org/10.1126/science.1165893.
+[17] B. Tarawneh, W. A. Bodour, and K. Al Ajmi, Intelligent computing based formulas to
+predict the settlement of shallow foundations on cohesionless soils, The Open Civil Engi-
+neering Journal, 13 (2019), https://doi.org/10.2174/1874149501913010001.
+[18] M. Tawarmalani and N. V. Sahinidis, A polyhedral branch-and-cut approach to global opti-
+mization, Mathematical Programming, 103 (2005), pp. 225–249, https://doi.org/10.1007/
+s10107-005-0581-8.
+[19] S.-M. Udrescu, A. Tan, J. Feng, O. Neto, T. Wu, and M. Tegmark, AI Feynman 2.0:
+Pareto-optimal symbolic regression exploiting graph modularity, 2020, https://arxiv.org/
+abs/2006.10782.
+[20] S.-M. Udrescu and M. Tegmark, AI Feynman: A physics-inspired method for symbolic re-
+gression, Science Advances, 6 (2020), p. eaay2631, https://doi.org/10.1126/sciadv.aay2631.
+[21] Y. Wang, N. Wagner, and J. M. Rondinelli, Symbolic regression in materials science, MRS
+Communications, 9 (2019), pp. 793–805, https://doi.org/10.1557/mrc.2019.85.
+[22] D. R. White, J. Mcdermott, M. Castelli, L. Manzoni, B. W. Goldman, G. Kronberger,
+W. Jaundefinedkowski, U.-M. O’Reilly, and S. Luke, Better GP benchmarks: Com-
+munity survey results and proposals, Genetic Programming and Evolvable Machines, 14
+(2013), pp. 3—-29, https://doi.org/10.1007/s10710-012-9177-2.
+The submitted manuscript has been created by UChicago Argonne, LLC, Operator of Ar-
+gonne National Laboratory (”Argonne”). Argonne, a U.S. Department of Energy Oﬃce
+of Science laboratory, is operated under Contract No. DE-AC02-06CH11357. The U.S.
+Government retains for itself, and others acting on its behalf, a paid-up nonexclusive,
+irrevocable worldwide license in said article to reproduce, prepare derivative works, dis-
+tribute copies to the public, and perform publicly and display publicly, by or on behalf
+of the Government. The Department of Energy will provide public access to these results
+of federally sponsored research in accordance with the DOE Public Access Plan (http://
+energy.gov/downloads/doe-public-access-plan).

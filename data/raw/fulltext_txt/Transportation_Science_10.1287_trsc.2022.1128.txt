@@ -1,0 +1,1546 @@
+TITLE: Real-Time Forecasting of Metro Origin-Destination Matrices with High-Order Weighted Dynamic Mode Decomposition
+JOURNAL: Transportation_Science
+YEAR: 2022
+DOI: https://doi.org/10.1287/trsc.2022.1128
+---
+
+Real-time forecasting of metro origin-destination matrices with high-order
+weighted dynamic mode decomposition
+Zhanhong Chenga, Martin Tr´epanierb, Lijun Suna,∗
+aDepartment of Civil Engineering, McGill University, Montreal, QC H3A 0C3, Canada
+bDepartment of Mathematics and Industrial Engineering, Polytechnique Montreal, Montreal, QC H3T 1J4, Canada
+Abstract
+Forecasting the short-term ridership among origin-destination pairs (OD matrix) of a metro system is crucial in real-
+time metro operation. However, this problem is notoriously diﬃcult due to the high-dimensional, sparse, noisy, and
+skewed nature of OD matrices. This paper proposes a High-order Weighted Dynamic Mode Decomposition (HW-
+DMD) model for short-term metro OD matrices forecasting. DMD uses Singular Value Decomposition (SVD) to
+extract low-rank approximation from OD data, and a low-rank high-order vector autoregression model is established
+for forecasting. To address a practical issue that metro OD matrices cannot be observed in real-time, we use the
+boarding demand to replace the unavailable OD matrices. Particularly, we consider the time-evolving feature of
+metro systems and improve the forecast by exponentially reducing the weights for old data. Moreover, we develop a
+tailored online update algorithm for HW-DMD to update the model coeﬃcients daily without storing historical data
+or retraining. Experiments on data from a large-scale metro system show the proposed HW-DMD is robust to the
+noisy and sparse data and signiﬁcantly outperforms baseline models in forecasting both OD matrices and boarding
+ﬂow. The online update algorithm also shows consistent accuracy over a long time when maintaining an HW-DMD
+model at low costs.
+Keywords:
+origin-destination matrices, ridership forecasting, dynamic mode decomposition, public transport
+systems, high-dimensional time series, time-evolving system
+1. Introduction
+The metro is a green and eﬃcient travel mode that plays an ever-important role in urban transportation. An
+accurate real-time ridership/demand forecast is crucial for a metro system’s eﬃciency and reliability. With the wide
+application of smart card systems and all kinds of sensors, forecasting the real-time metro ridership has become
+a research hotspot in recent years. Existing research mainly focuses on forecasting the short-term (e.g., 15 or 30
+minutes) boarding or alighting ridership at metro stations, such as Wei and Chen (2012); Sun et al. (2015); Li et al.
+(2017); Chen et al. (2019); Liu et al. (2019b); Zhang et al. (2020). In contrast, forecasting the short-term ridership
+at origin-destination (OD) pairs of a metro system receives little attention. The ridership among all OD pairs of a
+metro system can be organized into a matrix. For simplicity, an “OD matrix” in this paper refers to the ridership of
+this matrix at a certain (short) time interval.
+Forecasting metro OD matrices has much broader applications than the station-level ridership forecast. For exam-
+ple, by assigning OD matrices to a metro network, we can predict and thus regulate each metro train’s crowdedness.
+The station-level boarding/alighting ﬂow also can be calculated from an OD matrix. However, the real-time forecast
+of metro OD matrices is extremely diﬃcult for the following reasons. (1) The ﬁrst challenge is the high dimension-
+ality. The number of OD pairs of a metro system is squared of the number of stations, often tens of thousands in
+practice. Moreover, (2) short-term OD matrices of a metro system are sparse, and the ridership/ﬂow distribution
+within an OD matrix is highly skewed (Fig. 3). Besides, unlike the boarding or alighting ﬂow, (3) a metro system’s
+OD matrices are not available in real-time (delayed data availability). Because an OD matrix can only be obtained
+after all the trips belonging to the OD matrix have reached their destinations. Lastly, (4) the complex dynamics of a
+metro system are time-evolving; a well-tuned model may have a short “shelf life” and has expensive retrain/re-tune
+costs in long-term maintenance. Although a few studies tried to forecast the real-time metro OD matrices by matrix
+∗Corresponding author. Address: 492-817 Sherbrooke Street West, Macdonald Engineering Building, Montreal, Quebec H3A 0C3,
+Canada
+Email addresses: zhanhong.cheng@mail.mcgill.ca (Zhanhong Cheng), mtrepanier@polymtl.ca (Martin Tr´epanier),
+lijun.sun@mcgill.ca (Lijun Sun)
+arXiv:2101.00466v2 [stat.AP] 14 Jun 2022
+
+factorization methods (Gong et al., 2018, 2020) or deep learning models (Toqu´e et al., 2016; Zhang et al., 2021b;
+Shen et al., 2020), no existing solution overcomes all the four challenges above.
+To address the above challenges, this paper proposes an eﬀective model for real-time metro OD matrices forecast-
+ing. We use the Dynamic Mode Decomposition (DMD) (Schmid, 2010), a recent advance in the ﬂuid ﬂow community,
+to extract the dominating dynamics from the high-dimensional noisy OD sequence. We extend the original DMD
+model by a high-order vector autoregression to incorporate long-term temporal correlations. In dealing with the
+delayed data availability problem, we replace the unavailable latest OD matrices with snapshots of boarding ﬂow.
+We consider the time-evolving dynamics and introduce a forgetting ratio to reduce the weights of old data exponen-
+tially. We name the proposed model High-order Weighted Dynamic Mode Decomposition (HW-DMD). Moreover, we
+develop a tailored online update algorithm that updates an HW-DMD’s coeﬃcients daily without storing historical
+data or retraining the model, which greatly reduces the model maintenance costs for long-term implementations.
+Finally, the proposed model is tested on a Guangzhou metro smart card dataset with 159 stations. Experiments
+show HW-DMD excellently handles the sparse, skewed, and noise OD data and signiﬁcantly outperforms baseline
+models in both the OD matrices and the boarding ﬂow forecast. The online update algorithm also shows consistent
+accuracy in updating an HW-DMD model over a long period.
+The online HW-DMD model is applied to the metro OD matrices forecast problem, but it can be readily applied
+to general (high-dimensional) traﬃc ﬂow forecast problems, such as in recent studies about DMD-based traﬃc ﬂow
+forecasting (Avila and Mezi´c, 2020; Yu et al., 2020). We summary main contributions of this paper as follows:
+• This paper proposes an HW-DMD model that addresses various diﬃculties of the real-time metro OD matrices
+forecasting. Experiments show the forecast of HW-DMD is signiﬁcantly better than conventional models.
+• The time-evolving dynamics of a transportation system and the maintenance of a forecast model are often
+ignored in the literature. This paper considers the time-evolving feature of a metro system by reducing the
+weights for old data and shows improved performance. An online update algorithm is proposed to reduce the
+long-term maintenance cost of the HW-DMD model under a time-evolving metro system.
+The remainder of this paper is organized as follows. We review related work on the short-term OD matrices
+forecasting in section 2. Next, a description of the metro OD matrices forecasting problem is presented in section
+3. Section 4 brieﬂy introduces the DMD algorithm, which serves as the base for the proposed HW-DMD model.
+Section 5 is the core part of this paper, where the model speciﬁcation, estimation, and the online update method for
+HW-DMD are elaborated. Section 6 is about experiments on the Guangzhou metro dataset. Conclusions and future
+directions are summarized in section 7.
+2. Related Work
+In the literature, only a few studies have explored the real-time OD matrix forecasting problem for a “metro”
+system. Therefore, we extend the range to OD demand forecasting for general road transportation modes, such as the
+ride-hailing system and the highway tolling system. Note that for a ride-hailing system, the origins and destinations
+are often deﬁned as zones on a grid.
+Matrix/tensor factorization is an eﬀective method to tackle the high-dimensionality problem of OD matrix fore-
+casting. For example, Ren and Xie (2017) applied Canonical Polyadic (CP) decomposition to an origin×destination×
+vehicle type × time tensor from highway tolling data. Time series models were then built on the latent temporal
+matrix to forecast OD matrices. Dai et al. (2018) and Liu et al. (2020) used principal component analysis (PCA) to
+reduce the dimensionality of OD data and applied several machine learning models to the reduced data for OD ﬂow
+forecasting. Gong et al. (2020) developed a matrix factorization model to forecast the OD matrices of a metro system.
+Their work highlights a solution to the delayed data availability problem and various spatial and temporal regular-
+ization techniques are introduced to improve the forecast. In summary, the matrix/tensor factorization-based OD
+matrix forecasting consists of two components: (1) a dimensionality reduction by factorization and (2) a forecasting
+model applied to the reduced data.
+Deep learning is another mainstream method for OD matrix forecasting. In an early study, Toqu´e et al. (2016)
+used Long Short-Term Memory (LSTM) networks to forecast the OD matrices of a transit network. They only applied
+the model to selected high-ﬂow OD pairs because of the high dimensionality and sparsity problems. Convolutional
+Neural Networks (CNN) and Graph Convolutional Networks (GNN) are two deep learning models that greatly
+reduce the model size compared with a fully connected neural network.
+Recently, using CNN/GCN to capture
+spatial correlations and LSTM to capture temporal correlations started to become the “standard conﬁguration” for
+deep learning-based OD matrix forecasting. For example, Chu et al. (2019) used multi-scale convolutional LSTM to
+forecast the real-time taxi OD demand, and Wang et al. (2019b, 2020) used multi-task learning to improve the OD
+2
+
+ﬂow forecast of GCN+LSTM networks. A large body of literature focused on better utilizing the spatial/semantic
+correlations by optimizing the GNN structure or incorporating side information. Such as the local spatial context
+used by Liu et al. (2019a), the Spatio-Temporal Encoder-Decoder Residual Multi-Graph Convolutional network (ST-
+ED-RMGC) proposed by Ke et al. (2021), and the Dynamic Node-Edge Attention Network (DNEAT) developed by
+Zhang et al. (2021a). Some studies combined deep learning models with other models to complement each other.
+In this direction, (Xiong et al., 2020) combined GCN with Kalman ﬁlter to forecast the OD matrices of a Turnpike
+network. Shen et al. (2020) mixed CNN with a Gravity model to forecast OD matrices of a metro system. Hu et al.
+(2020) considered the travel time between OD pairs as a stochastic variable, and developed a stochastic OD matrix
+forecasting model based on tensors factorization and GCN. Noursalehi et al. (2021) used discrete wavelet transform to
+decompose OD matrices into frequency domain; the outputs were fed into CNN and Convolutional-LSTM networks
+for forecasting.
+The performances of deep learning models are often impaired by the noise in sparse metro OD matrices. To reduce
+the impact of the noise, Zhang et al. (2019b, 2021b) developed a metric called OD attraction degree (ODAD) to
+mask insigniﬁcant OD pairs. Zhang et al. (2019b) showed that masking near-zero OD pairs improves the forecasting
+accuracy of an LSTM. Based on ODAD, Zhang et al. (2021b) developed a Channel-wise Attentive Split-CNN (CAS-
+CNN) model for metro OD matrix forecasting. Another merit of this work is they considered the delayed data
+availability problem.
+In summary, matrix/tensor factorization, CNN, and GCN all aim to reduce model size while maintaining spa-
+tial/temporal correlations/dependencies. The HW-DMD model proposed in this paper belongs to the matrix fac-
+torization category. Although some ride-hailing systems may not have the delayed data availability problem, most
+research essentially omitted this problem for simplicity. Particularly, RNN-based deep learning models can barely
+work without the most recent OD matrices as inputs. In dealing with the delayed data availability problem, existing
+solutions (Gong et al., 2020; Zhang et al., 2021b; Xiong et al., 2020) used alternative quantities (e.g., boarding
+ridership, link ﬂow) to compensate for the unavailable OD information. We also adopt this approach in the proposed
+model.
+3. Problem Description
+Many modern metro systems record passengers’ entry and exit information using smart cards. We thus know the
+origin and destination stations, the start and end time for every trip in such a system. Given a ﬁxed time interval
+(30 minutes in this paper), we denote by ot,i,j the number of trips that depart from station i at the t-th interval to
+station j. We call ot,i,j an OD ﬂow. Next, we can describe the number of trips between every OD pair in the system
+at the t-th time interval by an OD matrix
+Ot =
+
+
+ot,1,1
+· · ·
+ot,1,s
+...
+...
+...
+ot,s,1
+· · ·
+ot,s,s
+
+∈Rs×s,
+where s is the number of metro stations. The diagonal elements of a metro OD matrices are always zero. We keep
+these zero elements because they have a negligible eﬀect on the forecast. In our model, OD matrices are organized
+in a vector form
+ft = vec(Ot) = [ot,1,1, · · · , ot,s,1, ot,1,2, · · · , ot,s,2, · · · , ot,1,s, · · · , ot,s,s]⊤∈Rn,
+where n = s × s is the number of OD pairs. For convenience, we refer to ft as an OD snapshot.
+Note that OD snapshots are aggregated by the time when passengers enter the system; the exit time might be
+in a diﬀerent time interval. Therefore, the true OD snapshot for interval t can only be obtained after all those
+passengers entered at interval t have reached their destinations; it cannot be observed in real-time (i.e., the delayed
+data availability). In other words, we often do not have access to ft when forecasting ft+1. In contrast, the boarding
+(entering) ﬂow–another important quantity–is observable in real-time. We denote by bt,i the number of passengers
+entering station i at interval t.
+In fact, we have bt,i = P
+j ot,i,j.
+We deﬁne a boarding snapshot as a vector
+bt = [bt,1, bt,2, · · · , bt,s]⊤.
+The OD matrices/ﬂow forecasting problem is to forecast future OD snapshots ft+1, ft+2, · · · , ft+L given a se-
+quence of available historical OD snapshots f1, f2, · · · , ft and boarding snapshots b1, b2, · · · , bt. The reason for using
+boarding snapshots is to compensate for the delayed data availability problem of recent OD snapshots.
+3
+
+0
+100
+200
+300
+Order
+0
+1
+2
+3
+4
+Singular value
+1e4
+Figure 1: The singular values of a ten-day-length Yt−1 collected from Guangzhou metro smart card system.
+4. Dynamic Mode Decomposition
+Dynamic Mode Decomposition (DMD, Schmid, 2010) is developed by the ﬂuid dynamic community to extract
+dynamic features from high-dimensional data. To better illustrate our forecasting model, we brieﬂy introduce DMD
+in this section.
+Consider using a linear dynamical system fi ≈Afi−1 for OD ﬂow forecasting. Similar to many ﬂuid problems, n
+is huge for an OD snapshot and even storing A ∈Rn×n can be prohibitive. Therefore, DMD outputs the (leading)
+eigenvalues and eigenvectors of A without calculating the expensive A. The eigenvectors of A are referred to as the
+DMD modes and have clear physical meaning. Each DMD mode is associated with an oscillation frequency and a
+decay/growth rate determined by its eigenvalue. DMD is also connected to Koopman theory and can model complex
+non-linear systems by constructing proper measurements (Rowley et al., 2009). There are many variant algorithms
+for DMD. We only present the exact DMD proposed by Tu et al. (2014), which is closely related to this paper.
+We arrange OD snapshots into m-column matrices Yi = [fi−m+1, fi−m+2, · · · , fi] ∈Rn×m. Typically, m ≪n.
+The linear dynamical system follows Yt ≈AYt−1. The exact DMD seeks the leading eigenvalues and eigenvectors of
+the best-ﬁt linear operator A by the following procedure.
+1. Compute the truncated singular value decomposition (SVD) of Yt−1 ≈UΣV ⊤, where U ∈Rn×r, Σ ∈Rr×r,
+and V ∈Rm×r and r ≪m.
+2.
+Instead of computing the full matrix A = YtY +
+t−1 ≈YtV Σ−1U ⊤.1 We deﬁne a reduced matrix ˜A = U ⊤AU ≈
+U ⊤YtV Σ−1 ∈Rr×r. It can be proved that ˜A and A have the same nonzero leading eigenvalues (Tu et al.,
+2014).
+3.
+Compute the eigenvalue decomposition ˜AW = WΛ. The entries of the diagonal matrix Λ are also the eigen-
+values of the full matrix A.
+4.
+The DMD modes (eigenvectors of A) can be obtained by Φ = YtV Σ−1W.
+Figure 1 shows the singular values of a ten-day-length Yt−1 from the Guangzhou metro system. A few leading
+singular values explain a signiﬁcant portion of the variance, conﬁrming the low-rank feature of OD snapshots data.
+DMD-based model can thus greatly reduce the dimensionality/complexity of such a dynamic system. However, the
+exact DMD has some limitations for the OD ﬂow forecasting problem. Firstly, the complex temporal correlation of
+OD ﬂow cannot be well captured by a linear dynamical system. Moreover, using the last OD snapshot is impractical
+since OD snapshots cannot be observed in real-time. To address these problems, we propose our solution in the next
+section.
+1(·)+ denotes the Moore-Penrose inverse of a matrix.
+4
+
+5. High-order Weighted Dynamic Mode Decomposition
+5.1. Model speciﬁcation
+The forecasting formula of an exact DMD amounts to a high-dimensional vector autoregression of order 1.
+However, the latest OD snapshots are unknown at the time of forecasting. Therefore, we use the two latest snapshots
+of the boarding ﬂow as a replacement. We regard OD snapshots of three or more intervals ago as available; because
+we ﬁnd more than 96% trips in our data set are completed within one hour (two lags). And we can use a high-order
+vector autoregression to capture the long-term correlations in OD snapshots. The forecasting model follows
+fi ≈At,1fi−q1 + At,2fi−q2 + · · · + At,hfi−qh + At,b1bi−1 + At,b2bi−2
+∀i ∈{qh + 1, qh + 2, · · · , t},
+(1)
+where time lags for OD snapshots are positive integers satisfying 3 ≤q1 < · · · < qh < t. Note that coeﬃcient matrices
+At,1, · · · , At,h ∈Rn×n and At,b1, At,b2 ∈Rn×s are estimated using the data up to the latest (t-th) time interval; they
+are re-estimated when new data become available.
+This allows model coeﬃcients to be time-varying.
+We will
+introduce how to update coeﬃcient matrices using new observations without storing historical data in Section 5.3.
+To express Eq. (1) in a concise matrix form, let Yi = [fi−m+1, fi−m+2, · · · , fi] and Bi = [bi−m+1, bi−m+2, · · · , bi],
+where m = t −qh is the number of target snapshots. Then, Eq. (1) is equivalent to
+Yt ≈At,1Yt−q1 + At,2Yt−q2 + · · · + At,hYt−qh + At,b1Bt−1 + At,b2Bt−2
+(2)
+= [At,1, At,2, · · · At,h, At,b1, At,b2]
+
+
+Yt−q1
+Yt−q2
+...
+Yt−qh
+Bt−1
+Bt−2
+
+
+(3)
+= GtXt,
+(4)
+where Gt ∈Rn×(hn+2s) and Xt ∈R(hn+2s)×m are augmented matrices for coeﬃcients and data, respectively. Note
+that with this approach, we model forecasting as a regression problem without considering the inter-sequence depen-
+dence.
+We next introduce a forgetting ratio ρ (0 < ρ ≤1) that assigns small weights on snapshots to past days. This is
+because the dynamics of the system may change over time and we prefer to use the most recent dynamics to achieve
+accurate forecasting. The matrix Gt can be solved by the following optimization problem
+min
+Gt
+m
+X
+i=1
+ρday(m)−day(i)∥yi −Gtxi∥2
+F ,
+(5)
+where yi and xi are the i-th column of Yt and Xt, respectively; day(i) represents the day of the snapshot yi. We
+assign the same weight for snapshots of the same day.
+The weight ρday(m)−day(m) = ρ0 = 1 for the latest OD
+snapshot. For a snapshot in j days ago, the weight is ρj, which decreases exponentially. This weighting idea is
+similar to works by Alfatlawi and Srivastava (2020), Zhang et al. (2019a), and Kwak and Geroliminis (2020). For
+convenience, we deﬁne σ = √ρ and the weighted version of Yt and Xt as
+Y w
+t
+= [σday(m)−day(1)y1, σday(m)−day(2)y2, · · · , ym],
+Xw
+t = [σday(m)−day(1)x1, σday(m)−day(2)x2, · · · , xm].
+Then, the optimization problem in Eq. (5) becomes an ordinary least squares problem
+min
+Gt ∥Y w
+t −GtXw
+t ∥2
+F .
+(6)
+Figure 2 summarizes the overall structure of the proposed higher-order weighted DMD (HW-DMD) framework.
+The underlying forecasting model is a high-order vector autoregression with the boarding ﬂow as extra inputs. A
+forgetting ratio is introduced to decrease the weights of past data exponentially on a daily basis. In Section 5.2, we
+will introduce a dimensionality reduction technique based on DMD to ﬁnd a low-rank solution for this large model
+(w.r.t. number of parameters). Instead of full matrices At,(·), we seek ˜At,(·)—much smaller matrices—to capture
+the system’s dynamic. Finally, an online update method is proposed in Section 5.3 to update the model coeﬃcients
+incrementally without storing historical data. This provides a memory-saving solution that maintains an up-to-date
+5
+
+Figure 2: Model framework for HW-DMD. Model input X contains hn rows for lagged OD snapshots and 2s rows for lagged boarding
+snapshots. Columns in Y and ˆY are, respectively, real and forecasted snapshots for OD ﬂow. Model coeﬃcients are estimated by weighted
+historical data (Xw
+t
+and Y w
+t ) and updated daily whenever new data come.
+model. Note that the same model framework can be easily extended to incorporate higher-order boarding ﬂow or
+other external covariates (e.g., days of the week, alighting ﬂow, holidays). For example, we can represent days of
+the week by one-hot encoding wi ∈R7×1 and add an additional regression term At,wwi to Eq.(1) to incorporate the
+weekly pattern. This paper only presents the model speciﬁed in Eq. (1) for illustration.
+5.2. Model estimation
+We prefer a low-rank approximation of Gt over a full matrix of the optimal solution of Eq. (6). This is because
+storing the large full matrix is prohibitive, and the optimal solution often leads to overﬁtting problems, especially
+for the sparse and noisy OD data. Luckily, we can ﬁnd a pretty good approximation thanks to the inherent low-rank
+nature of OD data.
+Similar to the exact DMD, we ﬁrst compute the truncated SVD on the weighted augmented data matrix Xw
+t ≈
+UXΣXV ⊤
+X , where we keep the rX (rX ≪m) largest singular values and UX ∈R(hn+2s)×rX, ΣX ∈RrX×rX, VX ∈
+Rm×rX.
+As shown in Figure 1, a few leading singular values can well capture the entire data.
+Therefore, an
+approximation for coeﬃcient matrices is
+Gt = Y w
+t Xw+
+t
+≈Y w
+t VXΣ−1
+X U ⊤
+X,
+(7)
+[At,1, · · · At,h, At,b1, At,b2] ≈
+[Y w
+t VXΣ−1
+X U ⊤
+X,1, · · · , Y w
+t VXΣ−1
+X U ⊤
+X,h, Y w
+t VXΣ−1
+X U ⊤
+X,b1, Y w
+t VXΣ−1
+X U ⊤
+X,b2],
+(8)
+where U ⊤
+X = [U ⊤
+X,1, · · · , U ⊤
+X,h, U ⊤
+X,b1, U ⊤
+X,b2], UX,1, · · · , UX,h ∈Rn×rX, and UX,b1, UX,b2 ∈Rs×rX. This step uses the
+result from a truncated SVD to replace the original Xw
+t , which reduces the impact of the noise in the data.
+The results computed from Eq. (7) and Eq. (8) are still prohibitive. Therefore, for each column in Y w
+t , we seek
+a transformation yw
+i →˜yw
+i such that ˜yw
+i ∈RrY with rY ≪n. In doing so, we compute another rank-rY truncated
+SVD of the target matrix Y w
+t
+≈UY ΣY V ⊤
+Y . The columns of UY form an orthonormal basis; thus, the transformation
+˜yw
+i = U ⊤
+Y yw
+i compute the coordinates of yw
+i on this basis, which compresses yw
+i from Rn to RrY . We can project
+coeﬃcient matrices onto the same basis UY to greatly reduce the dimensionality:
+˜At,i = U ⊤
+Y At,iUY ≈U ⊤
+Y Y w
+t VXΣ−1
+X U ⊤
+X,iUY ,
+∀i ∈{1, 2, · · · , h},
+(9)
+˜At,bj = U ⊤
+Y At,bj ≈U ⊤
+Y Y w
+t VXΣ−1
+X U ⊤
+X,bj,
+∀j ∈{1, 2},
+(10)
+6
+
+where ˜At,i ∈RrY ×rY and ˜At,bj ∈RrY ×s. Finally, we can write the model of Eq. (2) in the reduced-order subspace
+˜Yt ≈˜At,1 ˜Yt−q1 + ˜At,2 ˜Yt−q2 + · · · + ˜At,h ˜Yt−qh + ˜At,b1Bt−1 + ˜At,b1Bt−2,
+where ˜Yi = U ⊤
+Y Yi. The ﬁnal forecast of an OD snapshot ˆyi can be calculated by transforming back to the original
+basis by ˆyi = UY ˜yi. With the reduced coeﬃcient matrices ˜At,(·) and projection bases UY , we avoid calculating and
+storing the giant coeﬃcient matrices At,(·).
+DMD-based estimation is diﬀerent from common dimensionality reduction techniques in several ways. For many
+matrix-factorization-based models and dynamic factor models, a forecasting model is estimated after performing
+dimensionality reduction (e.g., Ren and Xie, 2017), or latent factors are constructed by keeping the most temporal
+dynamics (e.g., Forni et al., 2000; Lam et al., 2011; Yu et al., 2016); the forecast ability is designed on the latent
+(size-reduced) data for these models.
+In contrast, DMD-based methods ﬁrst estimate a forecasting model by a
+least-square ﬁt of rank-reduced full-size data (i.e., Eq. (7)), next reduce the dimensionality of the linear operator
+by projecting to leading SVD modes (i.e., Eq. (9)–(10)); the resulting linear operator captures the dynamics of the
+rank-reduced full-sized data. Although the forecast value ˆyi by an HW-DMD is restricted on the column space of
+UY , it is already the best approximation in RrY (in terms of Frobenius norm (Eckart and Young, 1936)) because the
+basis is determined by leading singular vectors. Besides, the rank truncation for the data also eases the noise and
+the overﬁtting problem. As noted by Schmid (2010), accurate identiﬁcation of more than the ﬁrst couple modes can
+be diﬃcult on noisy data sets without this truncation step.
+The major computational cost in parameter estimation of HW-DMD is the SVD part. Current numerical software
+can solve large-scale SVD very eﬃciently. Therefore, estimating the HW-DMD model is very fast. We can further
+derive the eigenvalues and eigenvectors of coeﬃcient matrices At,i (Proctor et al., 2016). But this step is not necessary
+for our task, since they are not used to generate the forecast and there is no clear physical meaning for eigenvectors
+in a high-order vector autoregression.
+5.3. Online update
+A model trained by dated data may not reﬂect the recent dynamic in a system. Instead of retraining using entire
+data, we develop an online algorithm that updates HW-DMD day by day with new observations without storing
+historical data, as shown in Figure 2. Similar algorithms for online DMD have been developed by Hemati et al.
+(2014), Zhang et al. (2019a), and Alfatlawi and Srivastava (2020). We extend the online DMD update algorithm to
+a high-order weighted version.
+To illustrate the update algorithm, we need to reorganize Eq. (7)–(10). Let ˜Xw
+i = U ⊤
+XXw
+i and ˜Y w
+i
+= U ⊤
+Y Y w
+i
+be
+the projection of data to the coordinates of UX and UY , respectively. Using the fact (UX ˜Xw
+t )+ = VXΣ−1
+X U ⊤
+X, we
+can rewrite Eq. (7) as
+Gt ≈Y w
+t (UX ˜Xw
+t )+
+= Y w
+t
+˜Xw⊤
+t
+
+˜Xw
+t ˜Xw⊤
+t
++
+U ⊤
+X.
+Therefore, Eq. (9) and (10) becomes
+˜At,i ≈˜Y w
+t
+˜Xw⊤
+t
+
+˜Xw
+t ˜Xw⊤
+t
++
+U ⊤
+X,iUY = PQ+
+XU ⊤
+X,iUY
+∀i ∈{1, · · · , h},
+(11)
+˜At,bj ≈˜Y w
+t
+˜Xw⊤
+t
+
+˜Xw
+t ˜Xw⊤
+t
++
+U ⊤
+X,bj = PQ+
+XU ⊤
+X,bj
+∀j ∈{1, 2},
+(12)
+where P = ˜Y w
+t
+˜Xw⊤
+t
+∈RrY ×rX and QX = ˜Xw
+t ˜Xw⊤
+t
+∈RrX×rX.
+To facilitate the online update, we deﬁne an additional matrix QY = ˜Y w
+t ˜Y w⊤
+t
+∈RrY ×rY . After the reorganization,
+model coeﬃcients are represented by three “core” matrices P, QX, QY and two projection matrices UX, UY . Note
+these matrices are also time-varying. For simplicity, we omit the t subscript and regard they are always “up-to-date”.
+Moreover, there are two important properties for the core matrices.
+Theorem 1. Given new observations Ynew ∈Rn×d and Xnew ∈R(hn+2s)×d from a new day, where d is the number
+of snapshots per day. Under the same projection matrices, the new core matrices can be updated by
+P ←ρP + ˜Ynew ˜X⊤
+new,
+(13)
+QX ←ρQX + ˜Xnew ˜X⊤
+new,
+(14)
+QY ←ρQY + ˜Ynew ˜Y ⊤
+new,
+(15)
+where ˜Xnew = U ⊤
+XXnew and ˜Ynew = U ⊤
+Y Ynew.
+7
+
+Proof. Given new observations Ynew ∈Rn×d and Xnew ∈R(hn+2s)×d from a new day, Under the same projection
+matrices, the new core matrix P can be computed by
+˜Y w
+t+d ˜Xw⊤
+t+d = [σ ˜Y w
+t , U ⊤
+Y Ynew][σ ˜Xw
+t , U ⊤
+XXnew]⊤
+= [σ ˜Y w
+t , ˜Ynew][σ ˜Xw
+t , ˜Xnew]⊤
+= σ2 ˜Y w
+t
+˜Xw⊤
+t
++ ˜Ynew ˜X⊤
+new
+= ρP + ˜Ynew ˜X⊤
+new.
+Therefore, P can be updated by P ←ρP + ˜Ynew ˜X⊤
+new. Similar proof applies to QX and QY .
+Theorem 2. Denote by ¯Y w
+t
+= UY ˜Y w
+t
+the recovered data from the reduced data. If vi is the i-th eigenvector of QY ,
+then UY vi is the i-th left singular vector of ¯Y w
+t . The same property applies to QX and ¯Xw
+t = UX ˜Xw
+t .
+Proof. Compute SVD ¯Y w
+t
+= ¯U ¯Σ ¯V ⊤, then
+¯Y w
+t ¯Y w⊤
+t
+= ¯U ¯Σ ¯V ⊤¯V ¯Σ⊤¯U ⊤= ¯U
+ ¯Σ¯Σ
+ ¯U ⊤,
+(16)
+  ¯Y w
+t ¯Y w⊤
+t
+ ¯U = ¯U
+ ¯Σ¯Σ
+
+= ¯U ¯Λ.
+(17)
+Therefore, columns of ¯U are the eigenvectors of ¯Y w
+t ¯Y w⊤
+t
+and the left singular vectors of ¯Y w
+t . Substitute ¯Y w
+t ¯Y w⊤
+t
+=
+UY QY U ⊤
+Y to Eq. (17), we have
+ UY QY U ⊤
+Y
+ ¯U = ¯U ¯Λ,
+QY
+ U ⊤
+Y ¯U
+
+=
+ U ⊤
+Y ¯U
+ ¯Λ.
+Deﬁne V = U ⊤
+Y ¯U. Then, each column vi in V is a eigenvector for QY and UY vi = UY
+ U ⊤
+Y ¯ui
+
+= ui is a singular
+vector of ¯Y w
+t .
+Theorem 1 is used to update the core matrices in a memory-saving way. Theorem 2 indicates we can use the
+eigenvectors of QY to approximate the left singular vectors of Y w
+t
+(because Y w
+t
+≈¯Y w
+t ), which is crucial for updating
+the projection matrices. Based on these properties, we summarize the online update algorithm in the following three
+steps.
+1. Expand projection matrices. Let EY = Ynew −UY U ⊤
+Y Ynew and EX = Xnew −UXU ⊤
+XXnew be the residuals
+that cannot be represented by the column space of UX and UY . To incorporate these residuals, we expand
+projection matrices by UX ←[UX, UEX] and UY ←[UY , UEY ], where UEX and UEY are the orthonormal bases
+(obtained by SVD or QR factorization) of EX and EY , respectively.
+2. Update core matrices. To align dimensions, we ﬁrst pad P, QX, and QY with zeros on the dimensions
+where UX and UY expanded. Then update core matrices by Eq. (13)–(15).
+3. Compression. The ﬁrst two steps incorporate all new information at the cost of expanding dimensions. Next,
+we compress the model based on Theorem 2. Denote VX and VY to be matrices composed by the leading
+rX and rY eigenvectors of QX and QY , respectively. We can compress projection matrices by UX ←UXVX,
+UY ←UY VY to keep the leading singular vectors of ¯Xw
+t+d and ¯Y w
+t+d. The core matrices can be compressed
+accordingly by QX ←V ⊤
+X QXVX, QY ←V ⊤
+Y QY VY , P ←V ⊤
+Y PVX.
+Besides the daily update, a more general setting can be updating the model for every k intervals or only doing the
+compression step when rX or rY exceeds a threshold. This paper adopts the daily update described above because
+metro systems often have a one-day periodicity. In terms of computational eﬃciency, the online update algorithm
+computes the SVD for d-column data matrices and eigenvalue decomposition of QX and QY . The computation
+has a constant cost every day and it is signiﬁcantly faster than retraining using entire data. In terms of memory
+eﬃciency, historical data are not required when updating the model. All we need to store are three “core” matrices
+and two projection matrices. Regarding the error, the online algorithm does not take into account the previously
+truncated part.
+This impact is negligible because the truncated part contains mostly noise, and past data are
+forgotten exponentially. Our experiments in section 6.6 show the online algorithm performs pretty close to or even
+slightly better than retraining.
+8
+
+5.4. Connections with other DMD models
+The proposed HW-DMD is closely related to Hankel-DMD (Brunton et al., 2017; Arbabi and Mezi´c, 2017; Avila
+and Mezi´c, 2020) and DMD with control (DMDc, Proctor et al., 2016). Hankel-DMD uses Hankel data matrices as
+input and output to model a non-linear dynamical system by a linear model; its DMD modes approximate to the
+Koopman modes. There is another model also named Higher Order DMD (HODMD, Le Clainche and Vega, 2017),
+which requires Hankelizing data in its estimation and is essentially similar to Hankel-DMD. Instead, the proposed
+HW-DMD uses raw snapshots as the output (the left side of Eq. (2)) without using the Hankel structure. This
+formula is equivalent to a high-order vector autoregression model, which is neater and more suitable in the context
+of forecasting. Moreover, our model can use non-continuous orders and external variables (e.g., the boarding ﬂow).
+Essentially, the external variables of our model can be regarded as the control term of a DMDc model.
+The three-step online update algorithm for HW-DMD in this paper inherits from the work of Hemati et al.
+(2014). The original algorithm was developed for the exact DMD introduced in Section 4. Besides, the online DMD
+proposed by (Zhang et al., 2019a) considers the decaying weight of data, but the constant projection matrix in their
+assumption restricts the update eﬀect. (Alfatlawi and Srivastava, 2020) proposed an online algorithm for weighted
+DMD using incremental SVD, which is a diﬀerent technique from our method. Our contribution is extending the
+algorithm proposed by Hemati et al. (2014) to a high-order weighted version with the consideration of external
+regression covariates.
+6. Experiments
+In this section, we compare the proposed HW-DMD with other forecasting models using real-world data. We
+begin with an introduction to data and experimental settings. Next, we compare model performances by forecast-
+ing the OD matrices and the boarding ﬂow derived from the OD matrices.
+Finally, we examine the long-term
+eﬀect of the online HW-DMD update algorithm. The code for experiments is available from https://github.com/
+mcgill-smart-transport/high-order-weighted-DMD.
+6.1. Data and experimental settings
+We examine HW-DMD using the metro smart card data from two cities, Guangzhou and Hangzhou. Both data
+sets record the origin, destination, and entry and exit time of each metro trip. We focus on the forecast of workdays
+and connect each Friday to the next Monday. Details of the two data sets are as follows:
+• Guangzhou metro data: This data set covers around 301 million trips among 159 metro stations in Guangzhou
+from July 1st to Sept 30th, 2017. Guangzhou metro operates from 6:00 to 24:00. We use the ﬁrst twenty
+weekdays (July 3rd to July 28th) as the training set, the following ten weekdays (July 31st to Aug 11th) as the
+validation set, and the following ten weekdays (Aug 14th to Aug 25th) as the test set. There are additional
+one-month data after the test set; we use these data to study the long-term eﬀect of the online HW-DMD
+update algorithm.
+• Hangzhou metro data2: This is an open data set that covers 80 eﬀective stations of Hangzhou metro from Jan
+1st to Jan 25th, 2019. The operation hours are from 5:30 to 23:30. We use the ﬁrst ten weekdays (Jan 1 to
+Jan 14) for training, the following four weekdays (Jan 15 to Jan 18) for validation, and the rest ﬁve weekdays
+(Jan 21 to Jan 25) for testing.
+We aggregate OD snapshots by a 30-minute time interval, which means 36 snapshots per day for both cities. Note
+that a small interval may result in sparse OD matrices; we choose the 30-minute interval to balance the practical
+requirements. Figure 3 shows the distribution of oi,j from an OD snapshot of a typical morning peak in Guangzhou.
+The distribution roughly follows a power law, with most OD pairs having small volumes while a few of them are
+signiﬁcantly larger. The highly skewed distribution is very diﬃcult to be properly handled by conventional forecasting
+models.
+The performance of a model is quantiﬁed using the root-mean-square error (RMSE), the weighted mean absolute
+percentage error (WMAPE), and the coeﬃcient of determination (denoted as R2):
+RMSE(α, ˆα) =
+v
+u
+u
+t 1
+N
+N
+X
+i=1
+(αi −ˆαi)2,
+2https://doi.org/10.5281/zenodo.3145404
+9
+
+0
+200
+400
+600
+Number of trips
+10
+0
+10
+1
+10
+2
+10
+3
+10
+4
+Count
+Figure 3: The histogram of oi,j in an OD snapshot of a morning peak in Guangzhou.
+WMAPE(α, ˆα) =
+PN
+i |αi −ˆαi|
+PN
+i |αi|
+× 100%,
+R2(α, ˆα) = 1 −
+PN
+i=1 (αi −ˆαi)2
+PN
+i=1 (αi −¯α)2 ,
+where α and ˆα are, respectively, the real and predicted values; ¯α is the average value of α; N is the total number
+of elements under diﬀerent time intervals and locations. The three performance metrics are computed for both OD
+ﬂow o and boarding ﬂow b (forecasted by ˆbt,i = P
+j ˆot,i,j).
+6.2. Hyperparameters
+We use the online update algorithm for HW-DMD if not otherwise speciﬁed. Hyperparameters for HW-DMD
+include time lags q1, · · · , qh, the SVD truncation rank rX, rY , and the forgetting ratio ρ. These parameters are
+determined in a sequential order.
+We use the Guangzhou data set as an example to elaborate the hyperparameter tuning procedure. We ﬁrst set
+rX = rY = 100 and ρ = 1 and select time lags in a greedy manner. For time lags within one day (3 ≤qi ≤36),
+we repeatedly add a “currently best” time lag based on the RMSE of the validation set until a new lag brings no
+improvement or the number of lags reaches ten. This procedure selects {3, 4, 8, 14, 19, 28, 30, 33, 35, 36} as time
+lags. The considerable high-order time lags in the result indicate long-term auto-correlations of OD time series. For
+example, the lag 19 roughly equals a typical work duration (9.5 hours), which can be explained as a strong correlation
+between the departure trips for commuters in the morning and the returning trips in the afternoon (Cheng et al.,
+2021). The metro OD ﬂow is also highly regular; the largest several lags (e.g., 33, 35, and 36) capture the one-day
+periodicity. Next, we determine rX and rY by a grid search from 20 to 100 at an interval of 10. The best rY is 50.
+A larger rX than 100 still brings a marginal improvement, but we truncate rX at 100 to restrict the model size (rX
+aﬀects the size of UX in the online update). Lastly, we set ρ to be 0.92 based on a line search from 0.8 to 1. As shown
+in Figure 4, we can see assigning smaller weights for old data indeed improves the forecast. Because 0.928 ≈0.51,
+using ρ = 0.92 is roughly equivalent to halving the weight every eight days.
+The hyperparameter tuning for the Hangzhou data set follows the same procedure. The selected hyperparameters
+for the Hangzhou data set are time lags={3, 4, 6, 14, 18, 19, 28, 32, 35, 36}, rY = 40, rX = 100, and ρ = 0.92.
+6.3. Benchmark models
+We compare HW-DMD with the following benchmark models:
+• HA: Historical Average. For the OD ﬂow at a certain period (e.g., 7:00–7:30) of the day, HA uses the average
+OD ﬂow at that period in the training set as the forecast value.
+• TRMF: Temporal Regularized Matrix Factorization (Yu et al., 2016). TRMF is a matrix factorization model
+that imposes autoregression (AR) processes on each temporal factor. We use time lags [1, · · · , 10] for the AR
+10
+
+0.80
+0.85
+0.90
+0.95
+1.00
+½
+3.00
+3.01
+3.02
+3.03
+3.04
+RMSE
+Figure 4: The eﬀect of ρ to the forecast OD RMSE in the validation set of the Guangzhou data.
+processes. We search over {100, 300, 500, 1000, 1500, 2000, 2500, 3000} for the best regularization parameter
+and search from 30 to 150 with an interval of 10 for the best number of factors.
+• ConvLSTM: Convolutional LSTM (Shi et al., 2015). It is a deep recurrent neural network model that forecasts
+future frames of matrix time series (e.g., videos). Here we use it to forecast future OD matrices by the most
+recent ten OD matrices. Following the work by Zhang et al. (2021b), we apply a three-layer LSTM structure
+with eight, eight, and one ﬁlter, respectively, and set the kernel size to be 3 × 3 for all convolutional layers in
+the model.
+• FNN: A two-layer Feedforward Neural Network. We use the OD snapshots of 3-10 lags ago and the boarding
+ﬂow snapshot of 1-2 lags ago as the input features. We perform a grid search over the type of activation
+functions (linear, sigmoid, and relu) and the number of hidden layers (from 10 to 100 at an interval of 10) for
+the best model setting.
+• SARIMA: Seasonal AutoRegressive Integrated Moving Average. We only use SARI-MA to forecast the boarding
+ﬂow since SARIMA only handles one-dimensional time series. We use the order ARIMA(2, 0, 1)(1, 1, 0)[36] for
+all the stations and ﬁt 159 separate models. This model conﬁguration is the same as Cheng et al. (2021) and
+was tested to be suitable for most metro stations.
+Applying TRMF, ConvLSTM, and FNN to the original data (or after a normalization) can hardly obtain a
+forecast better than HA. This phenomenon was also found by Gong et al. (2018, 2020). This is because the OD data
+are high-dimensional, sparse, noisy, and highly skewed. To improve the forecast of these models, we apply TRMF,
+ConvLSTM, and FNN to the residuals after subtracting the HA from the original data.
+This “mean-removal”
+processing also weakens the data’s periodicity; therefore, we do not use seasonal lags in these models. Besides,
+because the standard TRMF and ConvLSTM cannot use the boarding ﬂow as extra inputs, we ignore the delayed
+data availability problem for these models and assume all historical OD snapshots are available.
+6.4. Forecast result
+We apply trained models to the test set and forecast OD matrices of the next three steps at each time interval.
+Note OD snapshots of 1-2 lags ago are unknown; they are replaced by previously forecasted OD snapshots when doing
+multi-step rolling forecasting by HW-DMD/FNN. Next, the boarding ﬂow can be calculated from OD matrices. We
+compare the forecast accuracy of models in terms of OD ﬂow and boarding ﬂow.
+Table 1 shows the results of OD ﬂow forecast. We can see HW-DMD with a forgetting ratio ρ = 0.92 outperforms
+other models in all evaluation metrics. Even the three-step forecast of HW-DMD is better than the one-step forecast
+of other models.
+The advantage of HW-DMD over other models is more signiﬁcant in the Hangzhou data set.
+Although TRMF, FNN, and ConvLSTM are trained on the residuals after subtracting the HA from the original
+data, the improvement of these models compared with HA is limited. In contrast, HW-DMD is directly applied to
+the original data but provides a signiﬁcantly better forecast, demonstrating its strong prediction power in handling
+11
+
+Table 1: Models’ performance for OD ﬂow forecasting.
+Method
+Criterion
+Guangzhou
+Hangzhou
+One-step
+Two-step
+Three-step
+One-step
+Two-step
+Three-step
+HW-DMD
+ρ = 0.92
+RMSE
+3.05
+3.09
+3.11
+3.36
+3.41
+3.44
+WMAPE
+29.65%
+29.77%
+29.79%
+31.76%
+31.96%
+31.84%
+R2
+0.957
+0.956
+0.955
+0.934
+0.932
+0.931
+HW-DMD
+ρ = 1
+RMSE
+3.08
+3.12
+3.14
+3.40
+3.45
+3.48
+WMAPE
+29.71%
+29.87%
+29.91%
+31.94%
+32.22%
+32.13%
+R2
+0.956
+0.955
+0.954
+0.933
+0.930
+0.929
+TRMF
+RMSE
+3.22
+3.24
+3.26
+3.80
+3.89
+3.96
+WMAPE
+30.61%
+30.72%
+30.79%
+34.02%
+34.48%
+34.82%
+R2
+0.952
+0.951
+0.951
+0.916
+0.912
+0.908
+FNN
+RMSE
+3.15
+3.16
+3.18
+3.97
+4.01
+4.05
+WMAPE
+30.23%
+30.28%
+30.32%
+33.58%
+33.63%
+33.65%
+R2
+0.954
+0.953
+0.953
+0.908
+0.906
+0.904
+Conv-LSTM
+RMSE
+3.25
+3.26
+3.27
+4.04
+4.06
+4.08
+WMAPE
+30.11%
+30.18%
+30.23%
+32.96%
+32.92%
+33.04%
+R2
+0.951
+0.950
+0.950
+0.905
+0.904
+0.903
+HA
+RMSE
+3.43
+3.43
+3.43
+4.34
+4.34
+4.34
+WMAPE
+31.21%
+31.21%
+31.21%
+34.28%
+34.28%
+34.28%
+R2
+0.945
+0.945
+0.945
+0.890
+0.890
+0.890
+Table 2: Models’ performance for boarding ﬂow forecasting.
+Method
+Criterion
+Guangzhou
+Hangzhou
+One-step
+Two-step
+Three-step
+One-step
+Two-step
+Three-step
+HW-DMD
+ρ = 0.92
+RMSE
+93.99
+102.61
+107.58
+50.08
+54.14
+56.32
+WMAPE
+6.09%
+6.68%
+6.98%
+7.38%
+8.05%
+8.12%
+R2
+0.991
+0.989
+0.988
+0.989
+0.988
+0.987
+HW-DMD
+ρ = 1
+RMSE
+94.51
+102.46
+106.55
+51.28
+55.66
+58.45
+WMAPE
+6.18%
+6.74%
+6.98%
+7.54%
+8.29%
+8.43%
+R2
+0.991
+0.989
+0.988
+0.989
+0.987
+0.986
+TRMF
+RMSE
+126.03
+127.87
+128.65
+77.70
+81.19
+83.12
+WMAPE
+7.92%
+8.07%
+8.13%
+10.00%
+10.55%
+10.81%
+R2
+0.983
+0.983
+0.983
+0.975
+0.972
+0.971
+FNN
+RMSE
+101.93
+104.00
+106.06
+67.16
+68.83
+70.77
+WMAPE
+6.44%
+6.58%
+6.69%
+9.00%
+9.22%
+9.50%
+R2
+0.989
+0.989
+0.988
+0.981
+0.980
+0.979
+Conv-LSTM
+RMSE
+117.16
+121.22
+123.40
+71.46
+75.75
+78.07
+WMAPE
+6.87%
+7.19%
+7.35%
+8.83%
+9.63%
+9.98%
+R2
+0.985
+0.984
+0.984
+0.978
+0.976
+0.974
+HA
+RMSE
+136.56
+136.56
+136.56
+88.25
+88.25
+88.25
+WMAPE
+8.38%
+8.38%
+8.38%
+11.09%
+11.09%
+11.09%
+R2
+0.980
+0.980
+0.980
+0.967
+0.967
+0.967
+SARIMA
+RMSE
+110.23
+120.60
+126.52
+55.59
+60.97
+64.66
+WMAPE
+7.15%
+7.65%
+7.93%
+7.86%
+8.28%
+8.50%
+R2
+0.987
+0.985
+0.983
+0.987
+0.984
+0.982
+12
+
+the sparse, noisy, and high-dimensional OD data. Besides, the performance of the “unweighted” HW-DMD (ρ = 1)
+is slightly behind the weighted version, but still better than other models.
+Examining the aggregated boarding ﬂow is important because it reﬂects if the forecast errors in OD matrices’ are
+properly distributed, which is crucial when using OD matrices in traﬃc assignments. Moreover, the boarding ﬂow
+itself is of interest to many applications. Table 2 shows the boarding ﬂow forecasting; all models except SARIMA
+calculate boarding ﬂow by OD matrices.
+The two HW-DMD models are the best models in most cases.
+The
+only exception is that FNN slightly outperforms HW-DMD for the three-step forecast of the Guangzhou data set.
+Importantly, HW-DMD is the only model that outperforms SARIMA, a well-established boarding ﬂow forecasting
+model, in both data sets, showing that the forecast of HW-DMD accurately reﬂects the marginal distribution of OD
+matrices.
+The magnitude of OD ﬂow in a metro system varies signiﬁcantly in time and space dimensions. Therefore, we
+further compare HW-DMD with other models under diﬀerent scenarios. Figure 5 (a) and (c) show the forecast
+RMSE at diﬀerent times of a day. We can see the RMSE of HW-DMD is the smallest in most time slots, particularly
+for the Hangzhou data set. Other models, such as Conv-LSTM, perform slightly better in the early morning and
+late night, but the diﬀerence is close, and the total network OD ﬂow of these periods is pretty small. Figure 5 (b)
+and (d) show the forecast RMSE for OD pairs with diﬀerent ﬂow magnitudes. The forecast RMSE of HW-DMD is
+considerably lower than other models for high-ﬂow OD pairs (average half-hour OD ﬂow larger than 24). Note the
+number of OD pairs drops exponentially with the increase of OD ﬂow, showing the superior forecast capability of
+HW-DMD for highly skewed data.
+0
+1
+2
+3
+Total OD flow
+1e5
+10
+0
+10
+1
+10
+2
+10
+3
+10
+4
+Number of OD pairs
+0
+2
+4
+6
+8
+Total OD flow
+1e4
+10
+0
+10
+1
+10
+2
+10
+3
+Number of OD pairs
+0
+1
+2
+3
+4
+5
+6
+7
+RMSE
+(a) Guangzhou
+0
+10
+20
+30
+40
+RMSE
+(b) Guangzhou
+5:30
+9:00
+12:30
+16:00
+19:30
+23:00
+Time in a day
+0
+1
+2
+3
+4
+5
+6
+7
+RMSE
+(c) Hangzhou
+2
+1
+2
+2
+2
+3
+2
+4
+2
+5
+2
+6
+2
+7
+Average half-hour OD flow at an OD pair
+0
+20
+40
+60
+RMSE
+(d) Hangzhou
+HW-DMD ½ = 0:92
+FNN
+TRMF
+Conv-LSTM
+Total OD flow
+Number of stations
+Figure 5: The RMSE of OD ﬂow forecasting at diﬀerent times and diﬀerent OD pairs. (a) and (c) shows the RMSE of OD matrix
+forecasting at every 30-minute interval, along with the total OD ﬂow in the network. Using 2i as boundaries, we divide OD pairs into
+groups according to their average half-hour OD ﬂow; the forecast RMSE at each group and the number of OD pairs of each group are
+shown in (b) and (d).
+Finally, we show the real and one-step forecast of OD ﬂow at four representative OD pairs of Guangzhou metro
+in Figure 6.
+The OD ﬂow exhibits a clear daily periodicity, explaining why HA already works reasonably well.
+Compared with FNN, HW-DMD is better at forecasting the ﬂuctuation of high-ﬂow OD pairs, as shown in Figure 6
+(a) and (b). In Figure 6 (a), the forecast of HW-DMD is often lower than the real value; this is hard to avoid since
+there is a two-lag delay when collecting the real OD ﬂow. More OD pairs in the system are like Figure 6 (c) and (d)
+with a low ﬂow but high noise. Under such high volatility, the forecast by HW-DMD reﬂects a smooth average value.
+In fact, the performances of other models are often undermined by noise. The SVD truncation to the data greatly
+13
+
+enhances HW-DMD’s ability in handling the noise data (Figure 1). Overall, HW-DMD achieves a great balance
+between forecasting and noise reduction, which is particularly hard for such a high-dimensional system with diverse
+ﬂow magnitudes.
+0
+200
+400
+600
+OD flow
+(a)
+0
+100
+200
+(b)
+08/21
+08/22
+08/23
+08/24
+08/25
+Time
+0
+10
+20
+30
+OD flow
+(c)
+08/21
+08/22
+08/23
+08/24
+08/25
+Time
+0
+2
+4
+6 (d)
+Real
+HW-DMD
+FNN
+Figure 6: The real and forecasted time series of four selected OD pairs of Guangzhou metro. (a) is the busiest OD pair in the Guangzhou
+metro data set. (a) to (d) are in a ﬂow decreasing order.
+6.5. Eﬀect of the low-rank assumption
+The demands of majority OD pairs are small and sparse by nature, making it diﬃcult for a forecasting model to
+distinguish random ﬂuctuation (noise) and intrinsic dynamic patterns. Taking the OD pair shown in Figure 6 (d)
+as an example, the randomness in this OD pair is quite large compared with its average ﬂow (low signal-to-noise
+ratio). A good forecasting should be robust to the noise while maintaining accurate cumulative eﬀects of OD pairs
+in total (e.g., the boarding ﬂow). This section evaluates the impact of using the low-rank assumption on forecasting
+and noise ﬁltering.
+According to Section 5.2, the forecast of HW-DMD is always on the column space of UY . Therefore, the best
+possible value of an OD snapshot ˆyi calculated by HW-DMD is the rank-reduced full-size data, i.e., UY U ⊤
+Y yi, which
+is the upper bound of an HW-DMD’s forecast ability. Figure 7 shows how well this low-rank approximation ﬁts
+the original data. We can see the low-rank approximation keeps most information for the high-demand OD pair
+of Figure 7 (a). In contrast, most ﬂuctuations in the sparse-demand OD pair of Figure 7 (b) are truncated. By
+comparing with HA, we can see the low-rank approximation reﬂects the average daily pattern of the sparse-demand
+OD pair, which is a reasonable approximation when considering the cumulative eﬀects of OD pairs. Therefore, the
+rank truncation is crucial for ﬁltering the noise in a large number of sparse-demand OD pairs.
+Table 3: The diﬀerence between original data and the low-rank approximation.
+Variable
+Criterion
+Guangzhou
+Hangzhou
+OD ﬂow
+RMSE
+2.82
+3.00
+WMAPE
+28.80%
+30.65%
+R2
+0.963
+0.947
+Boarding ﬂow
+RMSE
+64.15
+36.89
+WMAPE
+4.69%
+5.95%
+R2
+0.996
+0.994
+Table 3 further quantitatively evaluates the diﬀerences between the original OD data and its low-rank approxi-
+mation. The results in Table 3 are the forecast upper bound of HW-DMD under the current rank-reduced space. By
+comparing Table 3 with the forecast of HW-DMD in Table 1 and Table 2, we can see that a signiﬁcant portion of
+the forecast error of HW-DMD essentially attributes to the rank truncation, but there is still space to improve the
+current HW-DMD model (e.g., by higher order, larger rX, more regression covariates).
+14
+
+0
+200
+400
+600
+OD flow
+(a)
+08/21
+08/22
+08/23
+08/24
+08/25
+Time
+0
+2
+4
+6
+OD flow
+(b)
+Real
+Low rank approximation
+HA
+Figure 7: Comparing OD ﬂow with its low-rank approximation in two Guangzhou metro OD pairs. (a) and (b) corresponds to the (a)
+and (d) in Figure 6, respectively.
+In choosing the rank-reduced space, the two rank parameters in HW-DMD balance the trade-oﬀbetween forecast
+accuracy and model complexity. Based on the results of hyperparameter tuning, a further increase in rank rY may
+result in overﬁtting (bringing the noise into the rank-reduced target data). We can further slightly improve the
+forecasting accuracy of HW-DMD by increasing the rank rX (related to the rank-reduced input data), but we here
+prefer a compact model with a smaller rX at the cost of slight accuracy loss. Lastly, the current HW-DMD chooses
+the rank-reduced space purely based on the leading singular values, which may be sensitive and not optimal when
+encountering signiﬁcant data anomalies and failures (Duke et al., 2012). Using optimized DMD (Chen et al., 2012)
+or combined with an anomaly detection algorithm (Scherl et al., 2020) could further improve the current HW-DMD.
+6.6. Eﬀect of the online update
+The online update algorithm proposed in Section 5.3 can update HW-DMD’s parameters daily without storing
+historical data, which is computationally more eﬃcient. On the Guangzhou metro training set, it takes 18.7 ± 0.43
+seconds to train an HW-DMD model, while the online update only takes 1.0 ± 0.03 seconds for each day3 Besides
+the training time, we particularly care about if errors will accumulate if we keep using the online update algorithm
+for a long time. Therefore, we apply the online update algorithm to all the two-month data after the training set
+of the Guangzhou data set to evaluate its long-term eﬀect. In comparison, we retrain two HW-DMD models (with
+ρ=0.92 and 1, respectively) every day using all historical data up until the latest. The results are shown in Figure 8.
+We summarize the key ﬁndings for Figure 8 as follows:
+• The RMSE of a constant model gradually increases over time. This indicates the metro system’s dynamics are
+time-evolving; thus, forecasting models should be updated/retrained regularly for better performance.
+• The RMSE curve of the online update algorithm clings to the model (ρ = 0.92) retrained every day by
+entire historical data, showing the online HW-DMD update algorithm works consistently well in long-term
+applications. For a large training set (e.g., after September in Figure 8), the online update approach even
+performs slightly better than retraining.
+• Properly reducing the weight for old data improves the forecast. Compare ρ = 0.92 with ρ = 1 for the two
+retrained models; the beneﬁts of forgetting the old data become more signiﬁcant as the training data increases.
+• The OD ﬂow of certain weekdays can be harder to forecast. Especially for the forecast of September. The
+RMSEs on Fridays are signiﬁcantly higher on than other weekdays.
+3We report the mean ± standard deviation of 20 runs. Tests were run on a computer with Intel® CoreTM i7-8700 Processor and 24
+gigabytes of RAM. Other benchmark models have much longer training time than HW-DMD (more than 1 minute for FNN and more
+than 20 minutes for TRMF and Conv-LSTM).
+15
+
+31
+Aug
+2017
+Sep
+07
+14
+21
+28
+04
+11
+18
+25
+2.75
+3.00
+3.25
+3.50
+3.75
+4.00
+RMSE
+Online update, ½ = 0:92
+Retrain every day, ½ = 0:92
+Retrain every day, ½ = 1
+Constant model
+Figure 8: The evolvement of forecast RMSE under diﬀerent HW-DMD update methods (Guangzhou data set). Each marker represents
+the RMSE of forecasted OD ﬂow during a day. Numbered dates in the horizontal axis are Mondays; weekends are skipped.
+Many forecasting models do not consider the time-evolving dynamics of a metro system. Regular retraining can
+be prohibitive, especially for complicated models (e.g., deep learning models). This experiment shows the online
+update algorithm for HW-DMD is a memory-saving and accurate approach to keep an HW-DMD model up to date.
+7. Conclusions and Discussion
+This paper proposes a high-order weighted dynamic mode decomposition (HW-DMD) model to solve the real-
+time short-term OD matrix forecasting problem in metro systems. Experiments show that HW-DMD signiﬁcantly
+outperforms common forecasting models under the high-dimensional, sparse, noisy, and skewed OD data. Particu-
+larly, we address the delayed data availability problem and the time-evolving dynamics of metro systems, which are
+often ignored in the literature. The idea of the forgetting rate and online update in dealing with a time-evolving
+system is also beneﬁcial for other forecasting models. Moreover, the implementation of HW-DMD is simple, and
+the computation is very eﬃcient, providing a promising solution to general high-dimensional time series forecasting
+problems.
+We discuss several future research directions.
+(1) Current HW-DMD reshapes OD matrices into vectors for
+dimensionality reduction. However, performing dimensionality reduction directly on OD matrices may better utilize
+the column/row-wise correlations and produce more concise models (Chen et al., 2021; Gong et al., 2020). A diﬃculty
+in this direction is that the low-rank feature in metro OD matrices is relatively weak because the diagonal elements of
+metro OD matrices are all zeros. (2) Another future direction is to use a non-linear model instead of the current linear
+model in the reduced space, such as the deep factor model (Wang et al., 2019a). But a limitation for a non-linear
+model is that an online update method may be diﬃcult to derive or even impossible. (3) Lastly, current HW-DMD
+uses external features, such as the boarding ﬂow, simply as covariates. Incorporating more general features (e.g.,
+weather, events) and network structure to improve the HW-DMD is worth investigating.
+Acknowledgement
+This research is supported by the Natural Sciences and Engineering Research Council (NSERC) of Canada,
+Mitacs, exo.quebec (https://exo.quebec/en), and the Canada Foundation for Innovation (CFI). The code for HW-
+DMD is available at https://github.com/mcgill-smart-transport/high-order-weighted-DMD.
+References
+Alfatlawi, M., Srivastava, V., 2020. An incremental approach to online dynamic mode decomposition for time-varying
+systems with applications to eeg data modeling. Journal of Computational Dynamics 7, 209–241.
+16
+
+Arbabi, H., Mezi´c, I., 2017. Ergodic theory, dynamic mode decomposition, and computation of spectral properties
+of the koopman operator. SIAM Journal on Applied Dynamical Systems 16, 2096–2126.
+Avila, A., Mezi´c, I., 2020. Data-driven analysis and forecasting of highway traﬃc dynamics. Nature communications
+11, 1–16.
+Brunton, S.L., Brunton, B.W., Proctor, J.L., Kaiser, E., Kutz, J.N., 2017. Chaos as an intermittently forced linear
+system. Nature communications 8, 1–9.
+Chen, E., Ye, Z., Wang, C., Xu, M., 2019. Subway passenger ﬂow prediction for special events using smart card
+data. IEEE Transactions on Intelligent Transportation Systems 21, 1109–1120.
+Chen, K.K., Tu, J.H., Rowley, C.W., 2012. Variants of dynamic mode decomposition: boundary condition, koopman,
+and fourier analyses. Journal of nonlinear science 22, 887–915.
+Chen, R., Xiao, H., Yang, D., 2021. Autoregressive models for matrix-valued time series. Journal of Econometrics
+222, 539–560.
+Cheng, Z., Tr´epanier, M., Sun, L., 2021. Incorporating travel behavior regularity into passenger ﬂow forecasting.
+Transportation Research Part C: Emerging Technologies 128, 103200.
+Chu, K.F., Lam, A.Y., Li, V.O., 2019. Deep multi-scale convolutional lstm network for travel demand and origin-
+destination predictions. IEEE Transactions on Intelligent Transportation Systems .
+Dai, X., Sun, L., Xu, Y., 2018. Short-term origin-destination based metro ﬂow prediction with probabilistic model
+selection approach. Journal of Advanced Transportation 2018.
+Duke, D., Soria, J., Honnery, D., 2012. An error analysis of the dynamic mode decomposition. Experiments in ﬂuids
+52, 529–542.
+Eckart, C., Young, G., 1936. The approximation of one matrix by another of lower rank. Psychometrika 1, 211–218.
+Forni, M., Hallin, M., Lippi, M., Reichlin, L., 2000.
+The generalized dynamic-factor model: Identiﬁcation and
+estimation. Review of Economics and statistics 82, 540–554.
+Gong, Y., Li, Z., Zhang, J., Liu, W., Zheng, Y., 2020. Online spatio-temporal crowd ﬂow distribution prediction for
+complex metro system. IEEE Transactions on Knowledge and Data Engineering .
+Gong, Y., Li, Z., Zhang, J., Liu, W., Zheng, Y., Kirsch, C., 2018. Network-wide crowd ﬂow prediction of sydney
+trains via customized online non-negative matrix factorization, in: Proceedings of the 27th ACM International
+Conference on Information and Knowledge Management, pp. 1243–1252.
+Hemati, M.S., Williams, M.O., Rowley, C.W., 2014. Dynamic mode decomposition for large and streaming datasets.
+Physics of Fluids 26, 111701.
+Hu, J., Yang, B., Guo, C., Jensen, C.S., Xiong, H., 2020. Stochastic origin-destination matrix forecasting using
+dual-stage graph convolutional, recurrent neural networks, in: 2020 IEEE 36th International Conference on Data
+Engineering (ICDE), IEEE. pp. 1417–1428.
+Ke, J., Qin, X., Yang, H., Zheng, Z., Zhu, Z., Ye, J., 2021. Predicting origin-destination ride-sourcing demand with
+a spatio-temporal encoder-decoder residual multi-graph convolutional network. Transportation Research Part C:
+Emerging Technologies 122, 102858.
+Kwak, S., Geroliminis, N., 2020. Travel time prediction for congested freeways with a dynamic linear model. IEEE
+Transactions on Intelligent Transportation Systems .
+Lam, C., Yao, Q., Bathia, N., 2011. Estimation of latent factors for high-dimensional time series. Biometrika 98,
+901–918.
+Le Clainche, S., Vega, J.M., 2017. Higher order dynamic mode decomposition. SIAM Journal on Applied Dynamical
+Systems 16, 882–925.
+Li, Y., Wang, X., Sun, S., Ma, X., Lu, G., 2017. Forecasting short-term subway passenger ﬂow under special events
+scenarios using multiscale radial basis function networks. Transportation Research Part C: Emerging Technologies
+77, 306–328.
+17
+
+Liu, J., Zheng, F., van Zuylen, H.J., Li, J., 2020. A dynamic od prediction approach for urban networks based on
+automatic number plate recognition data. Transportation Research Procedia 47, 601–608.
+Liu, L., Qiu, Z., Li, G., Wang, Q., Ouyang, W., Lin, L., 2019a. Contextualized spatial–temporal network for taxi
+origin-destination demand prediction. IEEE Transactions on Intelligent Transportation Systems 20, 3875–3887.
+Liu, Y., Liu, Z., Jia, R., 2019b. Deeppf: A deep learning based architecture for metro passenger ﬂow prediction.
+Transportation Research Part C: Emerging Technologies 101, 18–34.
+Noursalehi, P., Koutsopoulos, H.N., Zhao, J., 2021. Dynamic origin-destination prediction in urban rail systems: A
+multi-resolution spatio-temporal deep learning approach. IEEE Transactions on Intelligent Transportation Systems
+.
+Proctor, J.L., Brunton, S.L., Kutz, J.N., 2016. Dynamic mode decomposition with control. SIAM Journal on Applied
+Dynamical Systems 15, 142–161.
+Ren, J., Xie, Q., 2017. Eﬃcient od trip matrix prediction based on tensor decomposition, in: 2017 18th IEEE
+International Conference on Mobile Data Management (MDM), IEEE. pp. 180–185.
+Rowley, C.W., Mezi´c, I., Bagheri, S., Schlatter, P., Henningson, D., et al., 2009. Spectral analysis of nonlinear ﬂows.
+Journal of ﬂuid mechanics 641, 115–127.
+Scherl, I., Strom, B., Shang, J.K., Williams, O., Polagye, B.L., Brunton, S.L., 2020. Robust principal component
+analysis for modal decomposition of corrupt ﬂuid ﬂows. Physical Review Fluids 5, 054401.
+Schmid, P.J., 2010. Dynamic mode decomposition of numerical and experimental data. Journal of ﬂuid mechanics
+656, 5–28.
+Shen, L., Shao, Z., Yu, Y., Chen, X., 2020. Hybrid approach combining modiﬁed gravity model and deep learning
+for short-term forecasting of metro transit passenger ﬂows. Transportation Research Record , 0361198120968823.
+Shi, X., Chen, Z., Wang, H., Yeung, D.Y., Wong, W.K., Woo, W.c., 2015. Convolutional lstm network: A machine
+learning approach for precipitation nowcasting. Advances in neural information processing systems 28, 802–810.
+Sun, Y., Leng, B., Guan, W., 2015. A novel wavelet-svm short-time passenger ﬂow prediction in beijing subway
+system. Neurocomputing 166, 109–121.
+Toqu´e, F., Cˆome, E., El Mahrsi, M.K., Oukhellou, L., 2016. Forecasting dynamic public transport origin-destination
+matrices with long-short term memory recurrent neural networks, in: 2016 IEEE 19th international conference on
+intelligent transportation systems (ITSC), IEEE. pp. 1071–1076.
+Tu, J.H., Rowley, C.W., Luchtenburg, D.M., Brunton, S.L., Kutz, J.N., 2014. On dynamic mode decomposition:
+Theory and applications. Journal of Computational Dynamics 1, 391–421.
+Wang, S., Miao, H., Chen, H., Huang, Z., 2020. Multi-task adversarial spatial-temporal networks for crowd ﬂow
+prediction, in: Proceedings of the 29th ACM International Conference on Information & Knowledge Management,
+pp. 1555–1564.
+Wang, Y., Smola, A., Maddix, D.C., Gasthaus, J., Foster, D., Januschowski, T., 2019a. Deep factors for forecasting.
+arXiv preprint arXiv:1905.12417 .
+Wang, Y., Yin, H., Chen, H., Wo, T., Xu, J., Zheng, K., 2019b. Origin-destination matrix prediction via graph convo-
+lution: a new perspective of passenger demand modeling, in: Proceedings of the 25th ACM SIGKDD International
+Conference on Knowledge Discovery & Data Mining, pp. 1227–1235.
+Wei, Y., Chen, M.C., 2012. Forecasting the short-term metro passenger ﬂow with empirical mode decomposition and
+neural networks. Transportation Research Part C: Emerging Technologies 21, 148–162.
+Xiong, X., Ozbay, K., Jin, L., Feng, C., 2020. Dynamic origin–destination matrix prediction with line graph neural
+networks and kalman ﬁlter. Transportation Research Record 2674, 491–503.
+Yu, H.F., Rao, N., Dhillon, I.S., 2016. Temporal regularized matrix factorization for high-dimensional time series
+prediction, in: Advances in neural information processing systems, pp. 847–855.
+18
+
+Yu, Y., Zhang, Y., Qian, S., Wang, S., Hu, Y., Yin, B., 2020. A low rank dynamic mode decomposition model for
+short-term traﬃc ﬂow prediction. IEEE Transactions on Intelligent Transportation Systems .
+Zhang, D., Xiao, F., Shen, M., Zhong, S., 2021a.
+DNEAT: A novel dynamic node-edge attention network for
+origin-destination demand prediction. Transportation Research Part C: Emerging Technologies 122, 102851.
+Zhang, H., Rowley, C.W., Deem, E.A., Cattafesta, L.N., 2019a. Online dynamic mode decomposition for time-varying
+systems. SIAM Journal on Applied Dynamical Systems 18, 1586–1609.
+Zhang, J., Che, H., Chen, F., Ma, W., He, Z., 2021b. Short-term origin-destination demand prediction in urban rail
+transit systems: A channel-wise attentive split-convolutional neural network method. Transportation Research
+Part C: Emerging Technologies 124, 102928.
+Zhang, J., Chen, F., Cui, Z., Guo, Y., Zhu, Y., 2020. Deep learning architecture for short-term passenger ﬂow
+forecasting in urban rail transit. IEEE Transactions on Intelligent Transportation Systems .
+Zhang, J., Chen, F., Wang, Z., Liu, H., 2019b. Short-term origin-destination forecasting in urban rail transit based
+on attraction degree. IEEE Access 7, 133452–133462.
+19

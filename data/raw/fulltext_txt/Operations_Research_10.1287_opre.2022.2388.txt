@@ -1,0 +1,3277 @@
+TITLE: The Power of Adaptivity for Stochastic Submodular Cover
+JOURNAL: Operations_Research
+YEAR: 2022
+DOI: https://doi.org/10.1287/opre.2022.2388
+---
+
+The Power of Adaptivity for Stochastic Submodular Cover
+Rohan Ghuge∗
+Anupam Gupta†
+Viswanath Nagarajan∗
+July 1, 2021
+Abstract
+In the stochastic submodular cover problem, the goal is to select a subset of stochastic items
+of minimum expected cost to cover a submodular function. Solutions in this setting correspond
+to sequential decision processes that select items one by one “adaptively” (depending on prior
+observations). While such adaptive solutions achieve the best objective, the inherently sequential
+nature makes them undesirable in many applications. We ask: how well can solutions with only a
+few adaptive rounds approximate fully-adaptive solutions? We give nearly tight answers for both
+independent and correlated settings, proving smooth tradeoﬀs between the number of adaptive
+rounds and the solution quality, relative to fully adaptive solutions. Experiments on synthetic
+and real datasets show qualitative improvements in the solutions as we allow more rounds of
+adaptivity; in practice, solutions with a few rounds of adaptivity are nearly as good as fully
+adaptive solutions.
+1
+Introduction
+Submodularity is a fundamental notion that arises in applications such as image segmentation,
+data summarization [SSS07, LB11, SSSJ12], hypothesis identiﬁcation [BLK12, CSM+14], informa-
+tion gathering [RSKF18], and social networks [KKT15] . The submodular cover optimization prob-
+lem requires us to pick a minimum-cost subset S of items to cover a monotone submodular function
+f. Submodular cover has been extensively studied in machine learning, computer science and op-
+erations research [Wol82,GK11,MKBK15,BEM18]: here are two examples from sensor deployment
+and medical diagnosis.
+In the sensor deployment setting, we consider the problem of deploying a collection of sensors
+to monitor some phenomenon [KG07,MUS14,SLLL19], for example: we may wish to monitor air
+quality or traﬃc situations. The area each sensor can cover depends on its sensing range. The goal
+of the problem is to deploy as few sensors as possible to cover a desired region entirely. The area
+covered as a function of the sensors deployed is a submodular function, and we can cast the sensor
+deployment problem as a special case of submodular cover.
+In the medical diagnosis example, we have s possible conditions (hypotheses) the patient may
+suﬀer from along with the priors on their occurrence, and our goal is to perform tests to identify
+the correct condition as quickly as possible [GG74, KPB99, Das04, CLS14]. This can be cast as
+submodular cover by viewing each test as eliminating all inconsistent hypotheses. Hence we want a
+∗Department of Industrial and Operations Engineering, University of Michigan, Ann Arbor, USA. Research sup-
+ported in part by NSF grants CMMI-1940766 and CCF-2006778.
+†Department of Computer Science, Carnegie Mellon University, Pittsburgh, USA. Supported in part by NSF
+awards CCF-1907820, CCF-1955785, and CCF-2006953.
+1
+arXiv:2106.16115v1 [cs.DS] 30 Jun 2021
+
+coverage value of s −1: once s −1 inconsistent hypotheses are eliminated, the remaining one must
+be correct.
+Observe that both these applications involve uncertain data: the precise area covered by a
+sensor is not known before the sensor is actually setup and the precise outcome (positive/negative)
+of a test is not known until the action has been taken. This uncertainty can be modeled using
+stochastic submodular optimization, where the items are stochastic. As a simple example of the
+stochastic nature, each item may be active or inactive (with known probabilities), and only active
+items contribute to the submodular function.
+A solution for stochastic submodular cover is now a sequential decision process. At each step,
+an item is probed and its realization (e.g., active or inactive) is observed. The process is typically
+adaptive, where all the information from previously probed items is used to identify the next item to
+probe. This process continues until the submodular function is covered, and the goal is to minimize
+the expected cost of probed items. Such adaptive solutions are inherently fully sequential, which
+is undesirable if probing an item is time-consuming. E.g., in sensor deployment, probing a sensor
+corresponds to physically deploying a sensor and observing whether it functions as expected, which
+may take hours or days. Or, probing/performing a test in medical diagnosis may involve a long
+wait for test results. Therefore, we prefer solutions with only few rounds of adaptivity.
+Motivated by this, we ask: how well do solutions with only a few adaptive rounds approximate
+fully-adaptive solutions for the stochastic submodular cover problem? We consider both cases where
+realizations of diﬀerent items are independent, and where they are allowed to be correlated. For
+both these situations we give nearly tight answers, with smooth tradeoﬀs between the number r of
+adaptive rounds and the solution quality (relative to fully adaptive solutions).
+The main contribution of our work is an r-round adaptive solution for stochastic submodular
+cover in the “set-based” model for adaptive rounds. In this model, a ﬁxed subset of items is probed
+in parallel every round (and their total cost is incurred). The decisions in the current round can
+depend on the realizations seen in all previous rounds. However, as noted in [AAK19], if we require
+function f to be covered with probability one then the r-round-adaptivity gap turns out to be very
+large. (See §A for an example.) Therefore, we focus on set-based solutions that are only required
+to cover the function with high probability.
+In designing algorithms, it turns out to be more convenient to work with the “permutation”
+model for adaptive rounds, where the function is covered with probability one. This model was also
+used in prior literature [GV06,AAK19]. Here, every round of an r-round-adaptive solution speciﬁes
+an ordering of all remaining items and probes them in this order until some stopping rule. See
+Deﬁnition 2.1 for a formal deﬁnition. Moreover, our r-round adaptive algorithm in the permutation
+model can be transformed into an r-round adaptive algorithm in the set-based model. We obtain
+algorithms in the set-based model that:
+• for any η ∈(0, 1), ﬁnds an r-round adaptive solution that has expected cost at most rα
+η · OPT
+and covers the function with probability at least 1 −η.
+• ﬁnds an O(r)-round adaptive solution that has expected cost at most O(α) · OPT and covers
+the function with probability at least 1 −e−Ω(r).
+Here OPT is the cost of an optimal fully-adaptive solution and α is the approximation ratio of our
+algorithm in the permutation model.
+The ﬁrst algorithm above is for the case where r, the number of rounds of adaptivity, is small
+(say, a constant). In this, we keep the number of rounds the same, but we lose a factor r in the
+2
+
+expected cost. The second algorithm is for the case that r is large, e.g., more than a constant.
+Here, the number of set-based rounds increases by a factor 2, but we only lose a constant factor in
+expected cost. We formalize and prove these results in §A. For the rest of the paper, an r-round
+adaptive algorithm refers to an an r-round adaptive algorithm in the permutation model (unless
+speciﬁed otherwise).
+1.1
+Results and Techniques
+Consider a monotone submodular function f : 2U →Z≥0 with Q := f(U). There are m items,
+where each item i is a random variable Xi having cost ci and corresponding to a random element
+of U. (Our results extend to the more general setting where each item realizes to a subset of U.)
+The goal is to select a set of items such that the union S of their corresponding realizations satisﬁes
+f(S) = Q, and the expected cost is minimized. Our ﬁrst result is when the items have independent
+distributions.
+Theorem 1.1 (Independent Items). For any integer r ≥1, there is an r-round adaptive algorithm
+for the stochastic submodular cover problem with cost O(Q1/r · log Q) times the cost of an optimal
+adaptive algorithm.
+This improves over an O(r Q1/r log Q log(mcmax)) bound from [AAK19] by eliminating the
+dependence on the number of items m and the item costs (which could be much larger than
+Q). Moreover, our result nearly matches the lower bound of Ω( 1
+r3 Q1/r) from [AAK19]. Setting
+r = log Q shows that O(log Q) adaptive rounds give an O(log Q)-approximation. By transforming
+this algorithm into a set-based solution using Theorem A.2, we get:
+Corollary 1.2 (Independent Items: Set-Based Model). There is an O(log Q) round algorithm for
+stochastic submodular cover in the set-based model with cost O(log Q) times the optimal (fully)
+adaptive cost.
+This approximation ratio of O(log Q) is the best possible (unless P=NP) even with an arbitrary
+number (r = m) of adaptive rounds. Previously, one could only obtain an O(log2 Q log(mcmax))-
+approximation in a logarithmic number of rounds [AAK19], or an O(log(mQcmax))-approximation
+in O(log m log(Qmcmax)) set-based rounds [EKM19].
+Moreover, Theorem 1.1 (with r = 1) implies an O(Q log Q) adaptivity gap for stochastic set
+cover (a special case of submodular cover), resolving an open question from [GV06] up to an
+O(log Q) factor, where Q is the number of objects in set cover.
+Our second set of results is for the case where items have correlated distributions. Let s denote
+the support size of the joint distribution D, i.e., the number of scenarios.
+Theorem 1.3 (Correlated Items). For any integer r ≥1, there is an r-round adaptive algorithm for
+scenario submodular cover with cost O
+ s1/r(log s + r log Q)
+
+times the cost of an optimal adaptive
+algorithm.
+We also obtain a 2r-round adaptive algorithm with an better cost guarantee of O
+ s1/r log(sQ)
+
+times the cost of an optimal adaptive algorithm (see Corollary 6.6). Combined with the conversion
+to a set-based solution (Theorem A.2) and setting r = log s, we can then infer:
+Corollary 1.4 (Correlated Items: Set-Based Model). There is an O(log s) round algorithm for
+scenario submodular cover in the set-based model with cost O(log(sQ)) times the optimal (fully)
+adaptive cost.
+3
+
+The above approximation guarantee is nearly the best possible, even with an arbitrary number
+of adaptive rounds: there is an Ω(log s)-factor hardness of approximation [CPR+11].
+Scenario
+submodular cover generalizes the classic optimal decision tree problem [GG74,HR77,Lov85,KPB99,
+Das04,AH12,GNR17]. A fully-adaptive O(log(sQ))-approximation for scenario submodular cover
+was obtained in [GHKL16]; see also [NKN20] for a more general result. In terms of rounds-of-
+adaptivity, an O(log(mQcmax
+pmin ))-approximation in O(log m log(Qmcmax
+pmin )) set-based rounds follows
+from [GHKL16,EKM19]. Here pmin ≤1
+s is the minimum probability of any scenario. We note that
+when the number of rounds is less than logarithmic, our result provides the ﬁrst approximation
+guarantee even in the well-studied special case of optimal decision tree.
+The results in Theorem 1.1 and Theorem 1.3 are incomparable: while the independent case has
+more structure in the distribution D, its support size is exponential. Finally, the dependence on
+the support size s is necessary in the correlated setting, as our next result shows.
+Theorem 1.5 (Lower Bound). For any integer r ≥1, there is an instance of scenario submodular
+cover with Q = 1 where the cost of any r-round adaptive solution is Ω(
+1
+r2 log s ·s1/r) times the optimal
+adaptive cost.
+This lower bound is information-theoretic and does not depend on computational assumptions,
+whereas the upper bound of Theorem 1.3 is given by a polynomial algorithm.
+Finally, we note that our algorithms are also easy to implement. We tested both algorithms on
+synthetic and real datasets that validate the practical performance of our algorithms. Speciﬁcally,
+we test our algorithm for the independent case (Theorem 1.1) on instances of stochastic set cover,
+and our algorithm for the correlated case (Theorem 1.3) on instances of optimal decision tree.
+For stochastic set cover, we use real-world datasets to generate instances with ≈1200 items. We
+observe a sharp improvement in performance within a few rounds of adaptivity, and that 6-7 rounds
+of adaptivity are nearly as good as fully adaptive solutions. For optimal decision tree, we use both
+real-world data and synthetic data. The real-world data has ≈400 scenarios and the synthetic data
+has 10, 000 scenarios. Again, we ﬁnd that about 6 rounds of adaptivity suﬃce to obtain solutions
+as good as fully adaptive ones. We also compared our algorithms’ cost to information-theoretic
+lower bounds for both applications: our costs are typically within 50% of these lower bounds.
+1.1.1
+Techniques
+The algorithms for the independent and correlated cases are similar, with some crucial diﬀerences.
+In each round of both algorithms, we iteratively compute a “score” for each item and greedily select
+the item of maximum score. This results in a non-adaptive list of all remaining items, and the items
+are probed in this order until a stopping rule. The ParCA stopping rule in the independent case
+corresponds to reducing the remaining target (on the function value) by a factor of Q1/r, whereas
+the SParCA rule involves reducing the number of “compatible scenarios” by an s1/r factor in the
+correlated case.
+The analysis for both Theorems 1.1 and 1.3 follows parallel lines at the beginning. For each
+i ≥0, we relate the “non-completion” probabilities of the algorithm after cost α · 2i to the optimal
+adaptive solution after cost 2i. The “stretch” factor α corresponds to the approximation ratio,
+which is diﬀerent for the independent and correlated cases. In order to relate these non-completion
+probabilities, we consider the total score G of items selected by the algorithm between cost α2i−1
+and α2i. The crux of the analysis lies in giving lower and upper bounds on the total score G; the
+arguments here are diﬀerent for the independent and correlated settings.
+4
+
+In the independent case, the score of any item Xe is an estimate of its relative marginal gain,
+where we take an expectation over all previous items as well as Xe. We also normalize this gain
+by the item’s cost.
+See Equation (1) for the deﬁnition.
+In lower bounding the total score G,
+we use a variant of a sampling lemma from [AAK19] as well as the constant-factor adaptivity
+gap for submodular maximization [BSZ19]. We also need to partition the outcome space (of all
+previous realizations) into “good” and bad outcomes: conditional on a good outcome, OPT has a high
+probability of completing before cost 2i. Good outcomes are necessary in our proof of the sampling
+lemma, but luckily the total probability of bad outcomes is small (and they can be eﬀectively
+ignored). In upper bounding G, we consider the total score as a sum over decision/sample paths
+and use the fact that the sum of relative gains corresponds to a harmonic series.
+In the correlated case, the score of any item Xe is the sum of two terms (i) its expected relative
+marginal gain as in the independent case, and (ii) an estimate of the probability on “eliminated”
+scenarios. Both terms are needed because the algorithm needs to balance (i) covering the function
+and (ii) identifying the realized scenario (after which it is trivial to cover f). Again, we normalize
+by the item’s cost.
+See Equation (16).
+In lower bounding the total score G, we partition the
+outcome space into good/okay/bad outcomes that correspond to a high conditional probability of
+OPT (i) covering function f by cost 2i, (ii) eliminating a constant fraction of scenarios by cost 2i,
+or (iii) neither of the two cases. Further, by restricting to outcomes that have a “large” number of
+compatible scenarios (else, the algorithm’s stopping rule would apply), we can bound the number
+of “relevant” outcomes by s1/r. Then we consider OPT (up to cost 2i) conditional on all good/okay
+outcomes and show that one of these items has a high score. To upper bound G, we again consider
+the total score as a sum over decision paths.
+1.2
+Related Work
+A (1 + ln Q)-approximation algorithm for the basic submodular cover problem was obtained in
+[Wol82].
+This is also the best possible (unless P=NP) as the set cover problem is a special
+case [Fei98].
+In the past several years, there have been many papers on stochastic variants of
+submodular cover [GK11, INvdZ16, DHK16, GHKL16, NKN20] as this framework captures many
+diﬀerent applications.
+The stochastic set cover problem was ﬁrst studied in [GV06], which showed that the adaptivity
+gap lies between Ω(d) and O(d2) where d is the number of objects to be covered. Recently, [AAK19]
+improved the upper bound to O(d log d log(mcmax)). As a corollary of Theorem 1.1, we obtain a
+tighter O(d log d) adaptivity gap. Importantly, we eliminate the dependence of the items m and
+maximum-cost, which may even be exponential in d.
+An O(log Q) adaptive approximation algorithm for stochastic submodular cover (independent
+items) follows from [INvdZ16]. Related results for special cases or with weaker bounds were ob-
+tained in [LPRY08,GK11,GK17,DHK16]. As mentioned earlier, upper/lower bounds for algorithms
+with limited rounds-of-adaptivity were obtained in [AAK19]. Theorem 1.1 improves on these upper
+bounds by an O(r · log(mcmax)) factor. Moreover, our algorithm is greedy-style and much simpler
+to implement. We bypass computationally expensive steps in prior work such as solving several
+instances of stochastic submodular maximization. Our analysis (outlined above) is also very diﬀer-
+ent. We use a variant of a key sampling lemma from [AAK19], but it is applied in diﬀerent manner
+and only aﬀects the analysis. Our high-level approach of lower/upper bounding the total score is
+similar to the analysis in [INvdZ16] for the fully adaptive problem. However, the details are very
+diﬀerent because we need to handle issues of r-round-adaptivity gaps.
+5
+
+The scenario submodular cover problem was introduced in [GHKL16] as a common general-
+ization of several problems including optimal decision tree [GG74, GNR17], equivalence class de-
+termination [CLS14] and decision region determination [JCK+14]. An O(log(sQ)) fully adaptive
+algorithm was obtained in [GHKL16]. The same approximation ratio (in a more general setting)
+was also obtained in [NKN20]. In the correlated setting we are not aware of any prior work on
+limited rounds of adaptivity (when the number of rounds r < log s) . Some aspects of our analysis
+(e.g., good/okay/bad outcomes) are similar to [NKN20], but more work is needed as we have to
+bound the r-round-adaptivity gap.
+The framework of “adaptive submodularity”, introduced by [GK17], models correlations in
+stochastic submodular cover in a diﬀerent way. Adaptive submodularity is a combined condition
+on the goal function f (that needs to be covered) and the distribution D on items. While stochastic
+submodular cover with independent items satisﬁes adaptive-submodularity, scenario submodular
+cover does not. [GK17] gave a fully-adaptive O(log2(mQ))-approximation algorithm for adaptive-
+submodular cover (AdSubCov) when all costs are unit. Recently, [EKM19] improved this to an
+O(log(mQ))-approximation in O(log m log(Qm)) rounds of adaptivity, still assuming unit costs.
+When costs are arbitrary, the result in [EKM19] implies an O(log(mQcmax))-approximation in
+O(log m log(Qmcmax)) rounds: this result also applies to stochastic submodular cover and can be
+compared to Corollary 1.2 that we obtain. Although scenario submodular cover is not a special case
+of AdSubCov, [GHKL16] showed that scenario submodular cover can be re-formulated as AdSubCov
+with a diﬀerent goal function that is adaptive-submodular. However, this new goal function has
+a larger “Q value” of
+Q
+pmin . So, when the algorithm from [EKM19] is applied to this new goal
+function, it only implies an O(log(mQcmax
+pmin ))-approximation in O(log m log(Qmcmax
+pmin )) rounds (this
+can be compared to Corollary 1.4). To the best of our knowledge, there are no algorithms for
+AdSubCov using fewer than squared-logarithmic rounds of adaptivity.
+The role of adaptivity has been extensively studied for stochastic submodular maximization. A
+constant adaptivity gap under matroid constraints (on the probed items) was obtained in [AN16].
+Later, [GNS17] obtained a constant adaptivity gap for a very large class of “preﬁx closed” con-
+straints; the constant factor was subsequently improved to 2 which is also the best possible [BSZ19].
+We make use of this result in our analysis. More generally, the role of adaptivity has been exten-
+sively studied for various stochastic “maximization” problems such as knapsack [DGV08,BGK11],
+matching [BGL+12,BDH20], probing [GN13] and orienteering [GM09,GKNR15,BN15].
+Recently, there have been several results examining the role of adaptivity in (deterministic)
+submodular optimization [BS18a, BBS18, BS18b, BRS19, CQ19]. The motivation here was in par-
+allelizing function queries (that are often expensive). In many settings, there are algorithms using
+(poly)logarithmic number of rounds that nearly match the best sequential (or fully adaptive) ap-
+proximation algorithms. While our motivation is similar (in parallelizing the expensive probing
+steps), the techniques used are completely diﬀerent.
+2
+Deﬁnitions
+In the stochastic submodular cover problem, the input is a collection of m random variables (or
+items) X = {X1, . . . , Xm}. Each item Xi has a cost ci ∈R+, and realizes to a random element of
+groundset U. Let the joint distribution of X be denoted by D. The random variables Xi may or
+may not be independent; we discuss this issue in more detail below. The realization of item Xi is
+denoted by Xi ∈U; this realization is only known when Xi is probed at a cost of ci. Extending this
+6
+
+notation, given a subset of items S ⊆X, its realization is denoted S = {Xi : Xi ∈S} ⊆U.
+In addition, we are given an integer-valued monotone submodular function f : 2U →Z+ with
+f(U) = Q. A realization S of items S ⊆X is feasible if and only if f(S) = Q the maximal value; in
+this case, we also say that S covers f. The goal is to probe (possibly adaptively) a subset S ⊆X
+of items that gets realized to a feasible set. We use the shorthand c(S) := P
+i:Xi∈S ci to denote the
+total cost of items in S ⊆X. The objective is to minimize the expected cost of probed items, where
+the expectation is taken over the randomness in X. We consider the following types of solutions.
+Deﬁnition 2.1. For an integer r ≥1, an r-round-adaptive solution proceeds in r rounds of
+adaptivity. In each round k ∈{1, . . . , r}, the solution speciﬁes an ordering of all remaining items
+and probes them in this order until some stopping rule. The decisions in round k can depend on
+the realizations seen in all previous rounds 1, . . . , k −1.
+Setting r = 1 gives us a non-adaptive solution, and setting r = m gives us a (fully) adaptive
+solution. Having more rounds leads to a smaller objective value, so adaptive solutions have the least
+objective value. Our performance guarantees are relative to an optimal fully adaptive solution; let
+OPT denote this solution and its cost. The r-round-adaptivity gap is deﬁned as follows:
+sup
+instance I
+E[cost of best r-round adaptive solution on I]
+E[cost of best adaptive solution on I]
+Setting r = 1 gives the adaptivity gap.
+Independent and Correlated Distributions
+We ﬁrst study the case where the random vari-
+ables X are independent. In keeping with existing literature [INvdZ16,DHK16,AAK19], we refer to
+this problem simply as the stochastic submodular cover problem. We then consider the case when
+the random variables X are correlated with a joint distribution of polynomial size, and refer to it
+as the scenario submodular cover problem [GHKL16].
+3
+Stochastic Submodular Cover
+We now consider the (independent) stochastic submodular cover problem and prove Theorem 1.1.
+For simplicity, we assume that costs ci are integers. Our results also hold for arbitrary costs (by
+replacing certain summations in the analysis by integrals).
+We ﬁnd it convenient to solve a partial cover version of the stochastic submodular cover problem.
+In this partial cover version, we are given a parameter δ ∈[0, 1] and the goal is to probe some R that
+realizes to a set R achieving value f(R) > Q(1 −δ). We are interested in a non adaptive algorithm
+for this problem. Clearly, if δ = 1/Q, the integrality of the function f means that f(R) = Q, and
+we solve the original (full coverage) problem. Moreover, we can use this algorithm with diﬀerent
+thresholds to also get the r-round version of the problem. The main result of this section is:
+Theorem 3.1. There is a non-adaptive algorithm for the partial cover version of stochastic sub-
+modular cover with cost O
+  ln 1/δ
+δ
+
+times the optimal adaptive cost for the (full) submodular cover.
+The algorithm ﬁrst creates an ordering/list L of the items non-adaptively; that is, without
+knowing the realizations of the items. To do so, at each step we pick a new item that maximizes
+a carefully-deﬁned score function (Equation (1)).
+The score of an item cannot depend on the
+realizations of previous items on the list (since we are non-adaptive). However, it depends on the
+7
+
+marginal relative increase for a random draw from the previously chosen items. Once this ordering
+L is speciﬁed, the algorithm starts probing and realizing the items in this order, and does so until
+the realized value exceeds (1 −δ)Q.
+Algorithm 1 PARtial Covering Algorithm ParCA(X, f, Q, δ)
+1: S ←∅, list L ←⟨⟩, τ ←Q(1 −δ)
+2: while S ̸= X do
+▷Building the list non-adaptively
+3:
+select an item Xe ∈X \ S that maximizes:
+score(Xe) := 1
+ce
+·
+X
+S∼S:f(S)≤τ
+P(S = S) · EXe∼Xe
+f(S ∪Xe) −f(S)
+Q −f(S)
+
+(1)
+4:
+S ←S ∪{Xe} and list L ←L ◦Xe
+5: R ←∅, R ←∅
+6: while f(R) ≤τ do
+▷Probing items on the list
+7:
+Xe ←ﬁrst r.v. in list L not in R, and let Xe ∈U be its realization.
+8:
+R ←R ∪{Xe}, R ←R ∪{Xe}
+9: return probed items R and their realizations R.
+Given this partial covering algorithm we immediately get an algorithm for the r-round version of
+the problem, where we are allowed to make r rounds of adaptive decisions. Indeed, we can ﬁrst set
+δ = Q−1/r and solve the partial covering problem with this value of δ. Suppose we probe variables
+R and their realizations are given by the set R ⊆U. Then we can condition on these values to get
+the marginal value function fR (which is submodular), and inductively get an r −1-round solution
+for this problem. The following algorithm formalizes this.
+Algorithm 2 r-round adaptive algorithm for stochastic submodular cover SSC(r, X, f)
+1: run ParCA (X, f, Q, Q−1/r) for round #1.
+2: let R (resp. R) denote the probed items (resp. their realizations) in ParCA.
+3: deﬁne residual submodular function bf := fR.
+4: recursively solve SSC(r −1, X \ R, bf).
+Theorem 3.2. Algorithm 2 is an r-round adaptive algorithm for stochastic submodular cover with
+cost O(Q1/r log Q) times the optimal adaptive cost.
+Proof. We proceed by induction on the number of rounds r. Let OPT denote the cost of an optimal
+adaptive solution. The base case is r = 1, in which case δ = Q−1/r = 1
+Q. By Theorem 3.1, the partial
+cover algorithm ParCA(X, f, Q, Q−1/r) obtains a realization R with f(R) > (1 −δ)Q = Q −1.
+As f is integer-valued, we must have f(R) = Q, which means the function is fully covered. So the
+algorithm’s expected cost is O(Q log Q) · OPT.
+We now consider r > 1 and assume (inductively) that Algorithm 2 ﬁnds an r −1-round
+O(Q
+1
+r−1 log Q)-approximation algorithm for any instance of stochastic submodular cover.
+Let
+δ = Q−1/r. By Theorem 3.1, the expected cost in round 1 (step 1 in Algorithm 2) is O(1
+rQ1/r log Q).
+Let bQ := Q −f(R) = bf(U) denote the maximal value of the residual submodular function bf = fR.
+Note that bQ < δQ = Q(r−1)/r, by the deﬁnition of the partial covering algorithm. The optimal
+8
+
+solution OPT conditioned on the variables in R realizing to R gives a feasible adaptive solution to
+the residual problem of covering bf; we denote this conditional solution by d
+OPT. We inductively get
+that the cost of our r −1-round solution on bf is at most
+O( bQ
+1
+r−1 log bQ) · d
+OPT ≤O
+r −1
+r
+Q1/r log Q
+
+· d
+OPT,
+where we used bQ < Q(r−1)/r. As this holds for every realization R, we can take expectations over
+R to get that the (unconditional) expected cost of the last r −1 rounds is O
+  r−1
+r
+Q1/r log Q
+
+· OPT.
+Adding to this the cost of the ﬁrst round, which is O
+  1
+rQ1/r log Q
+
+, completes the proof.
+Remark:
+Assuming that the scores (1) can be computed in polynomial time, it is clear that our
+entire algorithm can be implemented in polynomial time. In particular, if T denotes the time taken
+to calculate the score of one item, then the overall algorithm runs in time poly(m, T) where m is
+the number of items. We are not aware of a closed-form expression for the scores (for arbitrary
+submodular functions f). However, as discussed in §C, we can use sampling to estimate these scores
+to within a constant factor. Moreover, our analysis works even if we only choose an approximate
+maximizer for (1) at each step.
+It turns out that T = poly(m, cmax) many samples suﬃce to
+estimate these scores. So, the ﬁnal runtime is poly(m, cmax); note that this does not depend on
+the number |U| of elements. We note that even the previous algorithms [AAK19,EKM19] have a
+polynomial dependence on cmax in their runtime. In the following analysis we will assume that the
+scores (1) are computed exactly; see §C for the sampling details.
+3.1
+Analysis for a Call to ParCA
+We now prove Theorem 3.1.
+We denote by OPT an optimal adaptive solution for the covering problem on f. Now we analyze
+the cost incurred by following the non-adaptive strategy (which we call NA): probe variables ac-
+cording to the order given by the list L generated by ParCA, and stop when the realized coverage
+exceeds τ := Q(1 −δ) (see Algorithm 1 for details). We consider the expected cost of this strategy,
+and relate it to the cost of OPT.
+We refer to the cumulative cost incurred (either by OPT or by NA) until any point in a solution
+as time elapsing. We say that OPT is in phase i when it is in the time interval [2i, 2i+1) for i ≥0.
+Let α := O
+
+ln 1/δ
+δ
+
+. We say that NA is in phase i when it is in time interval [α · 2i−1, α · 2i) for
+i ≥1; phase 0 refers to the interval [1, α). Deﬁne
+• ui: probability that NA goes beyond phase i; that is, has cost at least α · 2i.
+• u∗
+i : probability that OPT goes beyond phase i −1; that is, costs at least 2i.
+Since all costs are integers, u∗
+0 = 1. For ease of notation, we also use OPT and NA to denote the
+random cost incurred by OPT and NA respectively.
+The following lemma forms the crux of the
+analysis.
+Lemma 3.3. For any phase i ≥1, we have ui ≤ui−1
+4
++ 6
+5u∗
+i .
+Before we prove this lemma, we use it to prove Theorem 3.1.
+9
+
+Proof of Theorem 3.1. With probability (ui−1 −ui), NA ends in phase i with cost at most α · 2i. As
+a consequence of this, we have
+E[NA] ≤α · (1 −u0) +
+X
+i≥1
+α · 2i · (ui−1 −ui) = α + α ·
+X
+i≥0
+2iui.
+(2)
+Similarly, we can bound the cost of the optimal adaptive algorithm as
+E[OPT] ≥
+X
+i≥0
+2i(u∗
+i −u∗
+i+1) ≥u∗
+0 + 1
+2 ·
+X
+i≥1
+2iu∗
+i = 1 + 1
+2 ·
+X
+i≥1
+2iu∗
+i ,
+(3)
+where the ﬁnal equality uses the fact that u∗
+0 = 1. Deﬁne Γ := P
+i≥0 2iui. We have
+Γ :=
+X
+i≥0
+2iui ≤u0 + 1
+4
+X
+i≥1
+2i · ui−1 + 6
+5
+X
+i≥1
+2i · u∗
+i
+≤u0 + 1
+4
+X
+i≥1
+2iui−1 + 12
+5 · (E[OPT] −1)
+= u0 + 1
+2
+ X
+i≥0
+2iui
+
++ 12
+5 · (E[OPT] −1)
+≤1
+2Γ + 12
+5 E[OPT] −1,
+where the ﬁrst inequality follows from Lemma 3.3, the second inequality from (3), and the last
+inequality from the fact that u0 ≤1. Thus, Γ ≤24
+5 · E[OPT] −2. From (2), we conclude E[NA] ≤
+24
+5 α · E[OPT]. Setting α = O
+
+ln(1/δ)
+δ
+
+completes the proof.
+4
+Proof of the Key Lemma (Lemma 3.3)
+Recall the setting of Lemma 3.3 and ﬁx the phase i ≥1.
+Consider the list L generated by
+ParCA(X, f, Q, δ).
+Let NA denote both the non-adaptive strategy of Algorithm 1, as well as
+its cost. Note that NA probes items in the order given by L until a coverage value greater than
+τ := Q(1 −δ) is achieved.
+We will assume (without loss of generality) that δ is a power-of-two, i.e., δ = 2−z for some
+integer z ≥0. Indeed, if this is not the case, we can use a power-of-two value δ′ where δ
+2 ≤δ′ ≤δ:
+this only increases the approximation ratio O(1
+δ ln 1
+δ) in Theorem 3.1 by a constant factor.
+For each time t ≥0, let Xe(t) denote the item that would be selected at time t. In other words,
+this is the item which causes the cumulative cost of L to exceed t for the ﬁrst time. We deﬁne the
+total gain as the random variable
+G :=
+α2i
+X
+t=α2i−1
+score(Xe(t)),
+(4)
+which corresponds to the sum of scores over the time interval [α·2i−1, α·2i). The proof of Lemma 3.3
+will be completed by giving upper- and lower-bounds on G, which we do next. The lower bound
+views G as a sum over time steps, whereas the upper bound views G as a sum over decision paths.
+10
+
+4.1
+A Lower Bound for G
+Fix some time t ∈[α2i−1, α2i) in phase i of our algorithm. Let S be the random variable denoting
+the set of chosen items (added to list L) until some time t, and let S denote its realization. We
+also need the following deﬁnitions:
+1. For any power-of-two θ ∈{ 1
+2j : 0 ≤j ≤log Q}, we say that a realization S of S belongs to
+scale θ iﬀθ
+2 < Q−f(S)
+Q
+≤θ. We use Eθ to denote all outcomes of S that belong to scale θ. We
+also use S ∼Eθ to denote the conditional distribution of S corresponding to Eθ.
+2. For any scale θ, let r∗
+iθ := P(OPT covers f with cost at most 2i and S ∈Eθ).
+3. Scale θ is called good if
+r∗
+iθ
+P(Eθ) ≥1
+6 where P(Eθ) := PS∼S(S ∈Eθ).
+Lemma 4.1. NA terminates by time t if and only if the realization of S is in a scale θ ≤δ.
+Proof. Note that if the realization of S is in some scale θ ≥2δ then
+f(S) < Q −θQ
+2 ≤Q −δQ = τ,
+and NA would not terminate before time t. On the other hand, if the realization of S is in a scale
+θ ≤δ (note that all scales are powers-of-two) then f(S) ≥Q −θQ ≥τ, and NA would terminate
+before time t.
+We now deﬁne a function
+g(T) :=
+X
+θ>δ
+P(Eθ) · ES∼Eθ
+f(S ∪T) −f(S)
+Q −f(S)
+
+=
+X
+S∼S:f(S)<τ
+P(S = S) ·
+fS(T)
+Q −f(S),
+∀T ⊆U. (5)
+The second equality is by Lemma 4.1. The function g is monotone and submodular, since fS is
+monotone and submodular for each S ⊆U, and g is a non-negative linear combination of such
+functions. Moreover, for any item Xe, we have score(Xe) = 1
+ce · EXe[g(Xe)].
+Constrained stochastic submodular maximization.
+Our analysis makes use of some known
+results for stochastic submodular maximization. Here, we are given as input a non-negative mono-
+tone submodular function g : 2U →R≥0, independent stochastic items X = {X1, . . . , Xm} such
+that each Xi realizes to some element of the groundset U. There is a cost ci associated with each
+item Xi, and a budget B on the total cost. The goal is to select S ⊆X such that the total cost of
+S is at most B and it maximizes the expected value ES∼S[g(S)]. The adaptivity gap for stochastic
+submodular maximization is at most 2; see Theorem 1 in [BSZ19].
+Lemma 4.2. For any good scale θ, there exists a subset Tθ ⊆X \ S with c(Tθ) ≤144
+θ · 2i such that:
+ES∼EθETθ∼Tθ
+h
+f(S ∪Tθ) −f(S)
+i
+≥θQ
+6 ·
+r∗
+iθ
+P(Eθ).
+(6)
+Proof. We construct set Tθ as follows. Initially, Tθ ←∅. For each k = 1, 2, . . . , 144
+θ :
+1. Sample realization S of S from Eθ.
+11
+
+2. Let Tk ⊆X\S be an optimal non-adaptive solution to the stochastic submodular maximization
+instance with function fS and cost budget 2i.
+3. Set Tθ ←Tθ ∪Tk.
+By construction, c(Tθ) ≤144
+θ · 2i. So we focus on the expected function value. Consider any
+S ∈Eθ as the realization of S. Let TS denote the non-adaptive solution obtained in step 2 above
+for realization S. Deﬁne w∗
+i,S as the probability that OPT covers f with cost at most 2i given that
+S realizes to S, i.e.,
+w∗
+i,S := P( OPT covers f with cost at most 2i | S = S ).
+Note that P
+S∈Eθ w∗
+i,S · P(S = S) = r∗
+iθ. Let AD denote OPT until time 2i and restricted to items
+X \ S. Note that AD is a feasible adaptive solution to the stochastic submodular maximization
+instance with function fS: every decision path has total cost at most 2i. The expected value of AD
+is at least (Q −f(S)) · w∗
+i,S by deﬁnition of w∗
+i,S. As S ∈Eθ, we have Q −f(S) ≥θQ
+2 , which implies
+AD has value at least θQ
+2 · w∗
+i,S. Now, using the factor 2 adaptivity gap for stochastic submodular
+maximization (discussed above), it follows that the non-adaptive solution TS has expected value:
+ETS∼TS[f(S ∪TS) −f(S)] ≥θQ
+4 · w∗
+i,S,
+∀S ∈Eθ.
+Taking expectations,
+ESETS[f(S ∪TS) −f(S) | S ∈Eθ] ≥
+X
+S∈Eθ
+θQ
+4 · w∗
+i,S · P(S = S | S ∈Eθ)
+= θQ
+4 ·
+X
+S∈Eθ
+w∗
+i,S · P(S = S)
+P(Eθ)
+= θQ
+4 ·
+r∗
+iθ
+P(Eθ).
+The left-hand-side of the above relation can be rewritten to give
+ES∼EθETS[f(S ∪TS) −f(S)] ≥θQ
+4 ·
+r∗
+iθ
+P(Eθ).
+(7)
+For a contradiction to (6), suppose that
+ES∼EθETθ[f(S ∪Tθ) −f(S)] < θQ
+6 ·
+r∗
+iθ
+P(Eθ).
+(8)
+Subtracting Equation (8) from Equation (7) gives the following:
+θQ
+12 ·
+r∗
+iθ
+P(Eθ) < ES∼EθETSETθ[f(S ∪TS) −f(S ∪Tθ)]
+≤ES∼EθETSETθ[f(S ∪Tθ ∪TS) −f(S ∪Tθ)]
+≤ES∼EθETSETθ[f(Tθ ∪TS) −f(Tθ)]
+(9)
+where the second inequality uses monotonicity of f, and the last one its submodularity.
+Let T (k) = T1 ∪T2 . . . ∪Tk denote the items selected until iteration k. We write a telescoping
+12
+
+sum as follows
+ETθ[f(Tθ)] =
+X
+k
+ET (k)
+h
+f(T (k)) −f(T (k−1))
+i
+where we deﬁne f(T (0)) := 0. Note that in each iteration k, the sample S is drawn independently
+and identically from Eθ, and items Tk = TS are added.
+ET (k)
+h
+f(T (k)) −f(T (k−1))
+i
+= ES∼EθETSET k−1
+h
+f(T (k−1) ∪TS) −f(T (k−1))
+i
+≥ES∼EθETSETθ [f(Tθ ∪TS) −f(Tθ)] > θQ
+12 ·
+r∗
+iθ
+P(Eθ).
+The ﬁrst inequality above uses T (k−1) ⊆Tθ and submodularity, and the second inequality uses (9).
+Adding over all iterations k,
+ETθ[f(Tθ)] >
+X
+k
+θQ
+12 ·
+r∗
+iθ
+P(Eθ) = 144
+θ
+· θQ
+12 ·
+r∗
+iθ
+P(Eθ) ≥2Q,
+where the last inequality uses the fact that θ is a good scale. This is a contradiction since the
+maximum function value is Q. This completes the proof of (6).
+Lemma 4.3. For any S ⊆X, there exists a subset T ⊆X \ S of total cost at most 144
+δ · 2i with
+ET∼T [g(T)]
+≥
+1
+6 ·
+X
+θ>δ, good
+r∗
+iθ.
+Proof. Let B denote the set of good scales θ with θ > δ. Note that P
+θ∈B
+1
+θ ≤1
+δ as the scales are
+powers of two. From Lemma 4.2, let Tθ denote the items satisfying (6) for each scale θ ∈B. Deﬁne
+T = ∪θ∈BTθ. As claimed, the total cost is
+c(T ) ≤
+X
+θ∈B
+c(Tθ) ≤2i X
+θ∈B
+144
+θ
+≤144
+δ
+· 2i.
+Next, we bound the expected increase in the value of f. By (6) and T ⊇Tθ, it follows that
+ES∼EθET∼T [f(S ∪T) −f(S)] ≥θQ
+6 ·
+r∗
+iθ
+P(Eθ)
+for each θ ∈B. Using the fact that θQ
+2 < Q −f(S) ≤θQ for all S ∈Eθ, we get:
+ES∼EθET∼T
+f(S ∪T) −f(S)
+Q −f(S)
+
+≥1
+6 ·
+r∗
+iθ
+P(Eθ),
+∀θ ∈B.
+By deﬁnition of function g (see (5)),
+ET∼T [g(T)]
+=
+X
+θ>δ
+P(Eθ) · ES∼EθET∼T
+f(S ∪T) −f(S)
+Q −f(S)
+
+≥
+X
+θ∈B
+P(Eθ) · ES∼Eθ ET∼T
+f(S ∪T) −f(S)
+Q −f(S)
+
+≥1
+6 ·
+X
+θ∈B
+r∗
+iθ,
+13
+
+which completes the proof of the lemma.
+Using Lemma 4.3 and averaging,
+max
+Xe∈X\S score(Xe)
+≥
+max
+Xe∈T score(Xe) ≥
+P
+Xe∈T E[g(Xe)]
+c(T )
+= ET∼T [P
+Xe∈T g(Xe)]
+c(T )
+≥
+ET∼T [g(T)]
+c(T )
+≥
+δ
+β · 2i ·
+X
+θ>δ, good
+r∗
+iθ,
+(10)
+where β = O(1).
+Lemma 4.4. We have P
+θ>δ, good r∗
+iθ ≥ui −6u∗
+i
+5 .
+Proof. First, we upper bound P
+θ not good r∗
+iθ. Consider any scale θ that is not good. Then,
+r∗
+iθ
+P(Eθ) <
+1
+6, i.e., P(OPT < 2i | S ∼Eθ) < 1/6, which implies P(OPT ≥2i | S ∼Eθ) > 5
+6 > 5
+r∗
+iθ
+P(Eθ). So,
+X
+θ not good
+r∗
+iθ < 1
+5
+X
+θ not good
+P(Eθ) · P(OPT ≥2i | S ∼Eθ) ≤1
+5
+X
+θ
+P(OPT ≥2i and S ∼Eθ) ≤u∗
+i
+5
+(11)
+where the last inequality uses the fact that P
+θ P(OPT ≥2i and S ∼Eθ) = u∗
+i .
+We now upper bound P
+θ≤δ r∗
+iθ. By Lemma 4.1, if the realization S is in scale θ ≤δ then NA
+ends before time t ≤α2i, i.e., it does not go beyond phase i. Hence,
+X
+θ≤δ
+r∗
+iθ ≤
+X
+θ≤δ
+P(S ∼Eθ) ≤1 −ui.
+(12)
+We now use the fact that 1 −u∗
+i = P
+θ r∗
+iθ where we sum over all scales. So,
+X
+θ>δ, good
+r∗
+iθ ≥
+X
+θ
+r∗
+iθ −
+X
+θ not good
+r∗
+iθ −
+X
+θ≤δ
+r∗
+iθ ≥(1 −u∗
+i ) −u∗
+i
+5 −(1 −ui) = ui −6u∗
+i
+5 ,
+where we used (11) and (12).
+Combining (10) and Lemma 4.4, and using the greedy choice in step 3 (Algorithm 1), the score
+at time t,
+score(Xe(t))
+≥
+δ
+β2i
+
+ui −6
+5u∗
+i
+
+.
+We note that this inequality continues to hold (with a larger constant β) even if we choose an item
+that only maximizes the score (1) within a constant factor.
+Using the above inequality for each time t during phase i, we have
+G
+≥
+α2i−1 ·
+δ
+β2i
+
+ui −6
+5u∗
+i
+
+=
+αδ
+2β ·
+
+ui −6
+5u∗
+i
+
+.
+(13)
+We will use this lower bound for G in conjunction with an upper bound, which we prove next.
+14
+
+4.2
+An Upper Bound for G
+We now consider the implementation of the non-adaptive list L and calculate G as a sum of
+contributions over the observed decision path. Let Π denote the (random) decision path followed
+by the non-adaptive strategy NA: this consists of a preﬁx of L along with their realizations. Denote
+by ⟨X1, X2, . . . , ⟩the sequence of realizations (each in U) observed on Π. So item Xj is selected
+between time Pj−1
+ℓ=1 cℓand Pj
+ℓ=1 cℓ. Let h (resp. p) index the ﬁrst (resp. last) item in Π (if any)
+that is selected (even partially) during phase i, i.e., between time α2i−1 and α2i. For each index
+h ≤j ≤p, let tj denote the duration of time that item Xj is selected during in phase i; so tj is the
+width of interval [Pj−1
+ℓ=1 cℓ, Pj
+ℓ=1 cℓ] T[α2i−1, α2i]. It follows that tj ≤cj.
+Deﬁne G(Π) := 0 if index h is undeﬁned (i.e., Π terminates before phase i), and otherwise:
+G(Π) :=
+p
+X
+j=h
+tj
+cj
+·f({X1, . . . , Xj}) −f({X1, . . . , Xj−1})
+Q −f({X1, . . . , Xj−1})
+≤
+p
+X
+j=h
+f({X1, . . . , Xj}) −f({X1, . . . , Xj−1})
+Q −f({X1, . . . , Xj−1})
+.
+(14)
+By the stopping criterion for L, the f value before the end of Π remains at most τ = Q(1 −δ). So
+the denominator above, i.e., Q −f({X1, . . . , Xj−1}) is at least δQ for all j.
+Lemma 4.5. For any decision path Π, we have G(Π) ≤1 + ln(1/δ).
+Proof. For each h ≤j ≤p, let Vj := f({X1, . . . , Xj}); also let V0 = 0. For j ≤p −1, as noted
+above, Vj ≤τ; as f is integer-valued, Vj ∈{0, 1, · · · , ⌊τ⌋}. We have:
+p−1
+X
+j=h
+Vj −Vj−1
+Q −Vj−1
+≤
+p−1
+X
+j=h
+Vj−Vj−1−1
+X
+y=0
+1
+Q −Vj−1 −y ≤
+Q
+X
+ℓ=δQ+1
+1
+ℓ≤ln
+ Q
+δQ
+
+= ln(1/δ).
+The second inequality above uses Q−Vj−1−y ≥Q−Vj+1 ≥Q−τ +1 = δQ+1. The right-hand-side
+of (14) is then:
+p−1
+X
+j=h
+Vj −Vj−1
+Q −Vj−1
++ Vp −Vp−1
+Q −Vp−1
+≤
+1 + ln(1/δ),
+where we used Vp ≤Q. This completes the proof.
+Taking expectations over the various decision paths means G = EΠ[G(Π)], so Lemma 4.5 gives
+G ≤(1 + ln(1/δ)) · P(Π doesn’t terminate before phase i) = (1 + ln(1/δ)) · ui−1.
+(15)
+4.3
+Wrapping Up
+To complete the proof of Lemma 3.3, we set α := 8β
+δ (1 + ln(1/δ)) = O
+  ln(1/δ)
+δ
+
+, and combine (13)
+and (15) to get
+ui−1 ≥
+G
+1 + ln(1/δ) ≥
+αδ
+2β(1 + ln(1/δ)) ·
+
+ui −6
+5u∗
+i
+
+= 4
+
+ui −6
+5u∗
+i
+
+.
+This completes the proof of Lemma 3.3 and hence Theorem 1.1.
+15
+
+5
+Scenario Submodular Cover
+In this section, we describe an r-round adaptive algorithm for the scenario submodular cover prob-
+lem. As before, we have a collection of m stochastic items X = {X1, ..., Xm} with costs ci. In
+contrast to the independent case, the stochastic items here are correlated, and their joint distri-
+bution D is given as input. The goal is to minimize the expected cost of a solution S ⊆X that
+realizes to a feasible set (i.e., f(S) = Q).
+The joint distribution D speciﬁes the (joint) probability that X realizes to any outcome X ∈Um.
+We refer to the realizations X ∈Um that have a non-zero probability of occurrence as scenarios.
+Let s = |D| denote the number of scenarios in D. The set of scenarios is denoted M = {1, · · · , s}
+and pω denotes the probability of each scenario ω ∈M. Note that Ps
+ω=1 pω = 1. For each scenario
+ω ∈M and item Xe, we denote by Xe(ω) ∈U the realization of Xe in scenario ω. The distribution
+D can be viewed as selecting a random realized scenario ω∗∈M according to the probabilities {pω},
+after which the item realizations are deterministically set to ⟨X1(ω∗), · · · , Xm(ω∗)⟩. However, an
+algorithm does not know the realized scenario ω∗: it only knows the realizations of the probed
+items (using which it can infer a posterior distribution for ω∗). As stated in §2, our performance
+guarantee in this case depends on the support-size s. We will also show that such a dependence is
+necessary (even when Q is small).
+For any subset S ⊆X of items, we denote by S(ω), the realizations for items in S under scenario
+ω. We say that scenario ω is compatible with a realization of S ⊆X if and only if, Xe realizes to
+Xe(ω) for all items Xe ∈S.
+5.1
+The Algorithm
+Similar to the algorithm for the independent case, it is convenient to solve a partial cover version
+of the scenario submodular cover problem. However, the notion of partial progress is diﬀerent:
+we will use the number of compatible scenarios instead of function value. Formally, in the partial
+version, we are given a parameter δ ∈[0, 1] and the goal is to probe some items R that realize to a
+set R such that either (i) the number of compatible scenarios is less than δs or (ii) the function f
+is fully covered. Clearly, if δ = 1/s then case (i) cannot happen (it corresponds to zero compatible
+scenarios), so the function f must be fully covered.
+We will use this algorithm with diﬀerent
+parameters δ to solve the r-round version of the problem. The main result of this section is:
+Theorem 5.1. There is a non-adaptive algorithm for the partial cover version of scenario submod-
+ular cover with cost O
+  1
+δ(ln 1
+δ + log Q)
+
+times the optimal adaptive cost for the (full) submodular
+cover.
+The algorithm ﬁrst creates an ordering/list L of the items non-adaptively; that is, without
+knowing the realizations of the items. To do so, at each step we pick a new item that maximizes a
+carefully-deﬁned score function (Equation (16)). The score of an item depends on an estimate of
+progress towards (i) eliminating scenarios and (ii) covering function f. Before we state this score
+formally, we need some deﬁnitions.
+Deﬁnition 5.1. For any S ⊆X let H(S) denote the partition {Y1, · · · , Yℓ} of the scenarios M
+where all scenarios in a part have the same realization for items in S. Let Z := {Y ∈H(S) : |Y | ≥
+δs} be the set of “large” parts having size at least δs.
+16
+
+(a) We have S = {Xe1, Xe2}, and we partition
+the set of scenarios M based on outcomes of S
+to get H(S) = {Y1, Y2, Y3}.
+(b) We further partition scenarios Y2 based on re-
+alizations of Xe3.The part of Y2 compatible with
+outcome Xe3 = 2 is the largest cardinality part,
+that is, Be3(Y2). The shaded region represents
+Le3(Y2).
+Figure 1: Illustrations of Key Deﬁnitions
+In other words, scenarios ω and σ lie in the same part of H(S) if and only if S(ω) = S(σ). Note
+that partition H(S) does not depend on the realization of S. Moreover, after probing and realizing
+items S, the set of compatible scenarios must be one of the parts in H(S). Also, the number of
+“large” parts |Z| ≤s
+δs = 1
+δ as the number of scenarios |M| = s. See Figure 1a for an example.
+Deﬁnition 5.2. For any Xe ∈X and subset Z ⊆M of scenarios, consider the partition of Z
+based on the realization of Xe. Let Be(Z) ⊆Z be the largest cardinality part, and deﬁne Le(Z) :=
+Z \ Be(Z).
+Note that Le(Z) is comprised of several parts of the above partition of Z. If the realized scenario
+ω∗∈Le(Z) and Xe is selected then, at least half the scenarios in Z will be eliminated (as being
+incompatible with Xe). Figure 1b illustrates these deﬁnitions.
+For any Z ∈H(S), note that the realizations S(ω) are identical for all ω ∈Z: we use S(Z) ⊆U
+to denote the realization of S under each scenario in Z.
+If S denotes the previously added items in list L, the score (16) involves a term for each part
+Z ∈Z, which itself comes from two sources:
+• Information gain P
+ω∈Le(Z) pω, the total probability of scenarios in Le(Z).
+• Relative function gain P
+ω∈Z pω · f(S(Z)∪Xe(ω))−f(S(Z))
+Q−f(S(Z))
+, the expected relative gain obtained by
+including element Xe, where the expectation is over the scenarios in part Z.
+The overall score of item Xe is the sum of these terms (over all parts in Z) normalized by the cost
+ce of item Xe. In deﬁning the score, we only focus on the “large” parts Z. If the realization of S
+corresponds to any other part then the number of compatible scenarios would be less than δs (and
+the partial-cover algorithm would have terminated).
+Once the list L is speciﬁed, the algorithm starts probing and realizing the items in this order,
+and does so until either (i) the number of compatible scenarios drops below δs, or (ii) the realized
+function value equals Q. Note that in case (ii), the function is fully covered. See Algorithm 3 for a
+formal description of the non-adaptive partial-cover algorithm.
+17
+
+Algorithm 3 Scenario PARtial Covering Algorithm SParCA(X, M, f, Q, δ)
+1: S ←∅and list L ←⟨⟩.
+2: while S ̸= X do
+▷Building the list non-adaptively
+3:
+deﬁne Z and Le(Z) as in Deﬁnitions 5.1 and 5.2.
+4:
+select an item Xe ∈X \ S that maximizes:
+score(Xe) = 1
+ce
+·
+X
+Z∈Z
+ 
+X
+ω∈Le(Z)
+pω +
+X
+ω∈Z
+pω · f(S(Z) ∪Xe(ω)) −f(S(Z))
+Q −f(S(Z))
+!
+(16)
+5:
+S ←S ∪{Xe} and list L ←L ◦Xe
+6: R ←∅, R ←∅, H ←M.
+7: while |H| ≥δ|M| and f(R) < Q do
+▷Probing items on the list
+8:
+Xe ←ﬁrst r.v. in list L not in R
+9:
+Xe = v ∈U be the realization of Xe.
+10:
+R ←R ∪{v}, R ←R ∪{Xe}
+11:
+H ←{ω ∈H : Xe(ω) = v}
+12: return probed items R, realizations R and compatible scenarios H.
+Given this partial covering algorithm we immediately get an algorithm for the r-round version of
+the problem, where we are allowed to make r rounds of adaptive decisions. Indeed, we can ﬁrst set
+δ = s−1/r and solve the partial covering problem. Suppose we probe the items R (with realizations
+R ⊆U) and are left with compatible scenarios H ⊆M. Then we can condition on scenarios H and
+the marginal value function fR (which is submodular), and inductively get an r −1-round solution
+for this problem. The following algorithm and result formalizes this.
+Algorithm 4 r-round adaptive algorithm for scenario submodular cover NSC(r, X, M, f)
+1:
+run SParCA(X, M, f, Q, |M|−1/r) for round one. Let R denote the probed items, R their
+realizations, and H ⊆M the compatible scenarios returned by SParCA.
+2: deﬁne residual submodular function bf := fR.
+3: recursively solve NSC(r −1, X \ R, H, bf).
+Theorem 5.2. Algorithm 4 is an r-round adaptive algorithm for scenario submodular cover with
+cost O
+ s1/r(log s + r log Q)
+
+times the optimal adaptive cost, where s is the number of scenarios.
+Proof. We proceed by induction on the number of rounds r. Let OPT denote the cost of an optimal
+fully adaptive solution. The base case is r = 1, in which case δ = s−1/r = 1
+s. By Theorem 5.1,
+the partial cover algorithm SParCA(X, M, f, Q, s−1/r) obtains a realization R and compatible
+scenarios H ⊆M where either (i) |H| < δs = 1 or (ii) f(R) = Q. Clearly, we cannot have case (i)
+as there is always at least one compatible scenario. So f is fully covered. Moreover, the algorithm’s
+expected cost is O(s(log s + log Q)) · OPT, as claimed.
+We now consider r > 1 and assume (inductively) that Algorithm 4 ﬁnds an r −1-round
+O
+ s1/r(log s + r log Q)
+
+-approximation algorithm for any instance of scenario submodular cover.
+Let δ = s−1/r. By Theorem 5.1, the expected cost in round 1 (step 1 in Algorithm 4) is O(s1/r(1
+r log s+
+log Q)) · OPT. Let bs = |H| denote the number of scenarios in the residual instance. Let bQ :=
+Q −f(R) = bf(U) denote the maximal value of the residual submodular function bf = fR. By
+18
+
+deﬁnition of the partial covering problem, we have either bs < δs or bQ = 0. If bQ = 0 then our algo-
+rithm incurs no further cost and the inductive statement follows. We now assume bs < δs = s
+r−1
+r .
+The optimal solution OPT conditioned on the scenarios H gives a feasible adaptive solution to the
+residual instance of covering bf; we denote this conditional solution by d
+OPT. We inductively get that
+the cost of our r −1-round solution on bf is at most
+O(bs
+1
+r−1 (log bs + (r −1) log bQ)) · d
+OPT ≤O
+
+s1/r
+r −1
+r
+log s + (r −1) log Q
+
+· d
+OPT,
+where we used bs < s(r−1)/r and bQ ≤Q. As this holds for every subset of scenarios H, we can
+take expectations over H to get that the (unconditional) expected cost of the last r −1 rounds
+is O
+ s1/r   r−1
+r log s + (r −1) log Q
+
+· OPT.
+Adding to this the cost of the ﬁrst round, which is
+O(s1/r(1
+r log s + log Q)) · OPT, completes the proof.
+5.2
+Analysis for the partial covering algorithm
+We now prove Theorem 5.1. Consider any call to SParCA. Let s = |M| denote the number of
+scenarios in the instance. Recall that the goal is to probe items R ⊆X with some realization R and
+compatible scenarios H ⊆M such that (i) |H| < δs or (ii) f(R) = Q. We denote by OPT an optimal
+fully adaptive solution for the covering problem on f. Now we analyze the cost incurred by our
+algorithm’s non-adaptive strategy (which we call NA). Note that NA probes items in the order given
+by the list L (generated by SParCA) and stops when either condition (i) or (ii) above occurs. We
+consider the expected cost of this strategy, and relate it to the cost of OPT. The high-level approach
+is similar to that for the independent case: but the details are quite diﬀerent.
+We refer to the cumulative cost incurred until any point in a solution as time. We say that OPT
+is in phase i in the time interval [2i, 2i+1) for i ≥0. We say that NA is in phase i in the time interval
+[β · 2i−1, β · 2i) for i ≥1. We use phase 0 to refer to the interval [1, β). We set β := 16
+δ log(Q/δ);
+this choice will become clear in the proof of Lemma 5.3. The following notation is associated with
+any phase i ≥0:
+• ui: probability that NA goes beyond phase i, i.e., costs at least β · 2i.
+• u∗
+i : probability that OPT goes beyond phase i −1, i.e., costs at least 2i.
+Since all costs are integers, u∗
+0 = 1. For ease of notation, we also use OPT and NA to denote the
+random cost incurred by OPT and NA respectively. The main result here is that E[NA] ≤O(β)·E[OPT].
+As in the independent case, it suﬃces to show:
+Lemma 5.3. For any phase i ≥1, we have ui ≤ui−1
+4
++ 2u∗
+i .
+Using this lemma, we can immediately prove Theorem 5.1. This part of the analysis is identical
+to the one presented in §3 for Theorem 3.1.
+6
+Proof of the key lemma for Scenario Submodular Cover
+We now prove Lemma 5.3. Let L be the list returned by SParCA. Recall that NA is the cost
+incurred by non-adaptively realizing items in the order of L until (i) the number of compatible
+scenarios |H| < δs or (ii) f gets fully covered. For each time t ≥0, let Xe(t) denote the item that
+19
+
+would be selected at time t. In other words, this is the item which causes the cumulative cost of L
+to exceed t for the ﬁrst time. We deﬁne the total gain as the random variable
+G :=
+β2i
+X
+t=β2i−1
+score(Xe(t)),
+which corresponds to the sum of scores over the time interval [β · 2i−1, β · 2i). The proof will be
+completed by upper and lower bounding G, which we do next. The lower bound views G as a sum
+over time steps, whereas the upper bound views G as a sum over decision paths.
+6.1
+Lower bounding G
+For the analysis, it will be convenient to view OPT as a decision tree where nodes correspond to
+probed items and branches correspond to item realizations. Fix some time t ∈[β · 2i−1, β · 2i) in
+phase i. Let S denote the items that have already been added to the list L: so X \ S are the
+available items. The partition H(S) of scenarios M and the large parts Z are as in Deﬁnition 5.1.
+For any Z ∈Z, we deﬁne:
+• S(Z) ⊆U is the realization from items S compatible with all scenarios in Z.
+• QZ := Q −f(S(Z)) is the residual target (after selecting S) under scenarios Z.
+• residual submodular function fZ := fS(Z) under scenarios Z.
+• for any item Xe ∈X \S, scenarios Le(Z) ⊆Z are as in Deﬁnition 5.2. This is the complement
+of the largest part of Z (based on the realization of Xe).
+• OPTZ is the subtree of OPT until time 2i, restricted to paths traced by scenarios in Z; this
+only includes items that are completely selected by time 2i.
+• StemZ is the path in OPTZ that at each node Xe follows the branch corresponding to the
+realization compatible with scenarios Be(Z) = Z \ Le(Z). We use StemZ to also denote the
+set of items on this path.
+See Figure 2 for an illustration of OPTZ and StemZ.
+For each Z ∈Z, we partition scenarios Z based on the realizations on StemZ:
+• Zgood = {ω ∈Z : ω compatible at the end of StemZ and f covered},
+• Zbad = {ω ∈Z : ω compatible at the end of StemZ and f uncovered},
+• Zok = {ω ∈Z : ω ∈Le(Z) for some Xe ∈StemZ}; these are the scenarios that diverge from
+StemZ at some item Xe.
+See Figure 2 for an illustration.
+Deﬁnition 6.1. We deﬁne part Z ∈Z as good if p(Zgood) ≥p(Z)/2, bad if p(Zbad) ≥p(Z)/2, or
+okay if p(Zokay) ≥p(Z)/2.
+If there are ties, they can be broken arbitrarily.
+20
+
+Figure 2: The tree on the left represents the decision tree OPT for scenarios {s1, ..., s8}.
+Each
+node represents the element chosen at the node, and the set of scenarios compatible until the node
+(before element at node is chosen). We redraw the decision tree for Z = {s1, s2, s3, s5, s7} and
+restrict attention to scenarios in Z. The decision tree on the right represents OPTZ. Note that both
+trees are restricted to time 2i. Furthermore, we add StemZ (using dotted lines) in OPTZ. Note that
+scenario s5 is a good scenario since it is covered by the end of StemZ, and scenarios s1, s2, s3, s7 are
+all okay scenarios. Thus Zgood = {s5} and Zokay = {s1, s2, s3, s7}. If s5 was not covered by time
+2i, it would be a bad scenario.
+Lemma 6.1. Each Z ∈Z is either good, bad or okay.
+Proof. Observe that one of Zgood or Zbad is always empty and the other equals all scenarios com-
+patible at the end of StemZ. Moreover, Zokay consists of all scenarios that diverge from StemZ. So
+Zgood ∪Zbad ∪Zokay = Z. It follows that max{p(Zgood), p(Zbad), p(Zokay)} ≥p(Z)/2, which proves
+the lemma.
+For each Z ∈Z, let TZ = StemZ \ S ⊆X \ S denote the available items on StemZ. In the
+next two lemmas, we lower bound the total score from items in TZ. We consider separately the
+terms corresponding to function gain and information gain.
+For any scenario ω ∈Z, we use
+StemZ(ω) ⊆U denotes the realization of items StemZ under scenario ω.
+Lemma 6.2. If Z is good, then P
+ω∈Z pω · fZ(TZ(ω))
+QZ
+≥p(Z)
+2 .
+Proof. Consider any scenario ω ∈Zgood.
+If ω is realized then f is covered by the realization
+StemZ(ω) of StemZ. Thus, f(StemZ(ω)) = Q. We have
+fZ(TZ(ω)) = f(TZ(ω) ∪S(Z)) −f(S(Z)) = f(StemZ(ω) ∪S(Z)) −f(S(Z)) = Q −f(S(Z)) = QZ,
+where the second equality uses that TZ(ω) = StemZ(ω) \ S(Z). As Z is good, p(Zgood) ≥p(Z)/2,
+and the lemma follows by summing over ω ∈Zgood.
+Lemma 6.3. If Z is okay, then p
+S
+Xe∈TZ Le(Z)
+
+≥p(Z)
+2 .
+21
+
+Proof. Note that Zokay = S
+Xe∈StemZ Le(Z). As Z is okay, we have p(Zokay) ≥p(Z)/2. Recall that
+Z is a part in H(S), which implies that realizations S(ω) of S are identical under all scenarios
+ω ∈Z. Hence, Be(Z) = Z for each Xe ∈S, i.e., ∪Xe∈SLe(Z) = ∅. So,
+[
+Xe∈TZ
+Le(Z)
+⊇
+
+
+[
+Xe∈StemZ
+Le(Z)
+
+\
+ [
+Xe∈S
+Le(Z)
+!
+=
+[
+Xe∈StemZ
+Le(Z)
+=
+Zokay.
+Hence, p
+S
+Xe∈TZ Le(Z)
+
+≥p(Z)
+2 , which completes the proof.
+We now prove a bound on the overall probability of parts that are either good or okay.
+Lemma 6.4. We have P
+Z:okay or good p(Z) ≥(ui −2u∗
+i ).
+Proof. We ﬁrst show that P
+Z: bad p(Z) ≤2 · u∗
+i . For any Z ∈Z, if scenario ω ∈Zbad is realized
+then we know that OPT does not cover f at the end of StemZ, which implies that OPT costs at least
+2i. Thus u∗
+i ≥P
+Z∈Z
+P
+ω∈Zbad pω. Moreover, p(Zbad) ≥p(Z)/2 if Z is bad. So,
+u∗
+i ≥
+X
+Z∈Z
+X
+ω∈Zbad
+pω ≥
+X
+Z:bad
+X
+ω∈Zbad
+pω ≥
+X
+Z: bad
+p(Z)/2.
+(17)
+Thus, P
+Z:bad p(Z) ≤2u∗
+i as claimed.
+Consider any part Y ∈H(S) \ Z; recall Deﬁnition 5.1. Note that |Y | < δs. So, if S realizes to
+the set S(Y ) then NA would terminate by time t ≤β2i, which implies that NA does not go beyond
+phase i. Thus,
+X
+Y ∈H(S)\Z
+p(Y ) ≤Pr[NA terminates by phase i] = 1 −ui.
+(18)
+Finally, we have
+X
+Z:okay or good
+p(Z) = 1 −
+X
+Z: bad
+p(Z) −
+X
+Y ∈H(S)\Z
+p(Y ) ≥1 −2u∗
+i −(1 −ui) = ui −2u∗
+i ,
+where we used (17) and (18). This completes the proof.
+We are now ready to prove the lower bound on score(Xe(t)).
+Lemma 6.5. For any time t in phase i, we have score(Xe(t)) ≥δ ·
+1
+2i+1 · (ui −2u∗
+i ).
+Proof. Recall the subsets TZ ⊆X \ S for Z ∈Z. Let T = F
+Z∈Z TZ denote the multiset that
+contains each item as many times as it occurs. By deﬁnition of StemZ, the cost c(TZ) ≤2i for each
+Z. So, c(T ) = P
+Z∈Z c(TZ) ≤|Z| · 2i ≤1
+δ · 2i. Moreover, T ⊆X \ S: so each item in T is available
+to be added to L at time t. We can lower bound score(Xe(t)) by averaging over the multiset T :
+score(Xe(t)) ≥max
+Xe∈T score(Xe) ≥
+1
+c(T ) ·
+X
+Z∈Z
+X
+Xe∈TZ
+X
+Y ∈Z
+ 
+p(Le(Y )) +
+X
+ω∈Y
+pω · fY (Xe(ω))
+QY
+!
+≥
+1
+c(T ) ·
+X
+Z∈Z
+X
+Xe∈TZ
+ 
+p(Le(Z)) +
+X
+ω∈Z
+pω · fZ(Xe(ω))
+QZ
+!
+.
+(19)
+We now consider the two terms above (information and function gain) separately.
+22
+
+Bounding the information gain.
+We only consider okay sets Z.
+X
+Z∈Z
+X
+Xe∈TZ
+p(Le(Z)) ≥
+X
+Z∈Z
+p
+
+[
+Xe∈TZ
+Le(Z)
+
+≥
+X
+Z: okay
+p(Z)
+2
+,
+where the ﬁrst inequality is by submodularity of the p-weighted coverage function and the second
+inequality is by Lemma 6.3.
+Bounding the function gain.
+Consider any good set Z.
+X
+Xe∈TZ
+X
+ω∈Z
+pω · fZ(Xe(ω))
+QZ
+=
+X
+ω∈Z
+pω ·
+P
+Xe∈TZ fZ(Xe(ω))
+QZ
+≥
+X
+ω∈Z
+pω · fZ(TZ(ω))
+QZ
+≥p(Z)
+2
+,
+where the ﬁrst inequality is by submodularity of fZ and the second inequality is by Lemma 6.2.
+Adding over all good sets Z,
+X
+Z∈Z
+X
+Xe∈TZ
+X
+ω∈Z
+pω · fZ(Xe(ω))
+QZ
+≥
+X
+Z: good
+p(Z)
+2
+.
+Combining the two bounds above,
+X
+Z∈Z
+X
+Xe∈TZ
+ 
+p(Le(Z)) +
+X
+ω∈Z
+pω · fZ(Xe(ω))
+QZ
+!
+≥
+X
+Z:okay or good
+p(Z)
+2
+≥ui −2u∗
+i
+2
+,
+where the last inequality is by Lemma 6.4. Combined with (19) and c(T ) ≤1
+δ · 2i, this completes
+the proof.
+As Lemma 6.5 holds for each time t in phase i,
+G =
+β2i
+X
+t=β2i−1
+score(Xe(t)) ≥β2i−1 · δ ·
+1
+2i+1 · (ui −2u∗
+i ) ≥βδ
+4 · (ui −2u∗
+i )
+(20)
+6.2
+Upper bounding G
+We now consider the implementation of the non-adaptive list L and calculate G as a sum of
+contributions over the decision path in the non-adaptive solution NA.
+Let ω ∈M denote the
+realized scenario, and consider the decision path under scenario ω. Let ⟨X1, X2, . . .⟩be the sequence
+of realizations (each in U) of items in L under scenario ω. So item Xj is selected between time
+Pj−1
+ℓ=1 cℓand Pj
+ℓ=1 cℓ. Let h (resp. p) index the ﬁrst (resp. last) item (if any) that is selected
+(even partially) during phase i, i.e., between time β2i−1 and β2i. For each index h ≤j ≤p, let tj
+denote the duration of time that item Xj is selected during in phase i; so tj is the width of interval
+[Pj−1
+ℓ=1 cℓ, Pj
+ℓ=1 cℓ] T[β·2i−1, β·2i]. Furthermore, for each index j, let Zj ⊆M be the set of scenarios
+compatible with outcomes ⟨X1, · · · , Xj−1⟩. Note that M = Z1 ⊇Z2 ⊇· · · ⊇Zp ⊇Zp+1. Deﬁne
+23
+
+G(ω) := 0 if index h is undeﬁned (i.e., NA ends before phase i under scenario ω) and otherwise:
+G(ω) :=
+p
+X
+j=h
+tj
+cj
+·
+ 
+1[ω ∈Lj(Zj)] + f({X1, ..., Xj}) −f({X1, ..., Xj−1})
+Q −f({X1, ..., Xj−1})
+!
+≤
+p
+X
+j=h
+ 
+1[ω ∈Lj(Zj)] + f({X1, ..., Xj}) −f({X1, ..., Xj−1})
+Q −f({X1, ..., Xj−1})
+!
+(21)
+By the stopping criterion for L, before the end of NA we must have (i) the number of compatible
+scenarios remains at least δs and (ii) the f value remains less than Q. In particular, we must have
+|Zp| ≥δs.
+We analyze the two quantities in the above expression separately.
+We begin by analyzing
+Pp
+j=h 1[ω ∈Lj(Zj)]. Fix any h ≤j ≤p. If the realized scenario ω ∈Lj(Zj), then the number
+of compatible scenarios drops by a factor of at least 2 upon observing Xj; that is, |Zj+1| ≤1
+2|Zj|.
+Using the fact that |Z1| = |M| = s and |Zp| ≥δs, it follows that
+p
+X
+j=h
+1[ω ∈Lj(Zj)] ≤log2
+s
+δs = log2(1/δ).
+Next, we analyze the second term in (21). Using the fact that f is integral, monotone and takes
+values in the range [0, Q], we have:
+p
+X
+j=h
+f({X1, ..., Xj}) −f({X1, ..., Xj−1})
+Q −f({X1, ..., Xj−1})
+≤
+Q
+X
+ℓ=1
+1
+ℓ≤ln Q.
+Thus, we have G(ω) ≤log 1
+δ + ln Q ≤log(Q/δ).
+Note that G = Eω∼M[G(ω)]. It now follows that
+G ≤log(Q/δ) · P(NA doesn’t terminate before phase i) = log(Q/δ) · ui−1.
+(22)
+6.3
+Completing proof of Lemma 5.3
+Using (20), (22) and setting β = 16
+δ log(Q/δ), we get
+16 log(Q/δ)
+4
+· (ui −2u∗
+i ) ≤log(Q/δ) · ui−1
+which on rearranging gives ui ≤
+ui−1
+4
++ 2u∗
+i , as desired.
+This completes the proof of Theorem 1.3.
+6.4
+Tight approximation using more rounds
+We now show that a better (and tight) approximation is achievable if we use 2r (instead of r)
+adaptive rounds. The main idea is to use the following variant of the partial covering problem,
+called scenario submodular partial cover (SSPC). The input is the same as scenario submodular
+cover: items X, scenarios M with |M| = s and submodular function f with maximal value Q.
+Given parameters δ, ε ∈[0, 1], the goal in SSPC is to probe some items R that realize to set R ⊆U
+24
+
+such that either (i) the number of compatible scenarios is less than δs or (ii) the function value
+f(R) > Q(1 −ε). Unlike the partial version studied previously, we do not require f to be fully
+covered in case (ii). Note that setting ε = 1
+Q, we recover the previous partial covering problem; so
+SSPC is more general.
+Corollary 6.6. There is a non-adaptive algorithm for SSPC with cost O
+  1
+δ(ln 1
+δ + ln 1
+ε)
+
+times the
+optimal adaptive cost for the (full) submodular cover.
+Proof. The algorithm is nearly identical to SParCA (Algorithm 3). In Deﬁnition 5.1, we change
+Z := {Y ∈H(S) : |Y | ≥δs and f(S(Y )) ≤Q(1 −ε)}.
+In other words Z contains parts having size at least δs and for which the realized function value
+is at most the target Q(1 −ε). Note that scenarios in Z correspond to those under which the
+SSPC stopping rule does not already apply. After this, we use the same steps to produce list L in
+Algorithm 3. The only diﬀerence is in the stopping rule (when probing items from L) which reﬂects
+the deﬁnition of SSPC. In particular, the condition in the while-loop (step 7 of Algorithm 3) is now
+replaced by:
+While |H| ≥δ|M| and f(R) ≤Q(1 −ε).
+The analysis is also nearly identical: we prove Lemma 5.3 by lower/upper bounding the total gain
+G. The lower bound (20) remains the same. For the upper bound, the analysis for the ﬁrst term
+in (21) remains the same, but its second term is now bounded as:
+p
+X
+j=h
+Vj −Vj−1
+Q −Vj−1
+≤1 +
+p−1
+X
+j=h
+Vj −Vj−1
+Q −Vj−1
+≤1 +
+Q
+X
+ℓ=εQ
+1
+ℓ≤1 + ln 1
+ε,
+where Vj := f({X1, ..., Xj}). The second inequality uses V1 ≤V2 ≤· · · Vp−1 ≤Q(1 −ε). This
+implies (just as before) that
+G ≤
+
+1 + log 1
+δ + log 1
+ε
+
+· ui−1.
+Finally, choosing β = 16
+δ
+ 1 + log 1
+δ + log 1
+ε
+
+and simplifying, we get ui ≤
+ui−1
+4
++ 2u∗
+i (Lemma 5.3).
+This completes the proof.
+Next, we show how SSPC can be used iteratively to obtain a 2r-round algorithm.
+Theorem 6.7. There is a 2r-round adaptive algorithm for scenario submodular cover with cost
+O
+ s1/r log(sQ)
+
+times the optimal adaptive cost, where s is the number of scenarios.
+Proof. We use SSPC with δ = s−1/r and ε = Q−1/r repeatedly for 2r adaptive rounds.
+Let
+ρ = O(1
+rs1/r log(sQ)) denote the approximation ratio from Corollary 6.6 for these δ, ε values.
+The state at any round consists of previously probed items and their realizations.
+For the
+analysis, we view the iterative algorithm as a 2r depth tree, where the nodes at depth i are the
+states in round i and the branches out of each node represent the observed realizations in that
+round. For any i ∈[2r], let Ωi denote all the states in round i: note that these form a partition of
+the outcome space.
+For any state ω ∈Ωi, let OPT(ω) denote the expected cost of the optimal adaptive policy
+conditioned on the realizations in ω. By Corollary 6.6, conditioned on ω, the expected cost in
+25
+
+round i is at most ρ · OPT(ω).
+Hence, the (unconditional) expected cost in round i is at most
+ρ P
+ω∈Ωi Pr[ω] · OPT(ω) = ρ · OPT where we used that Ωi is a partition of all outcomes. So the
+expected cost of the 2r-round algorithm is at most 2r · ρ · OPT as claimed.
+It remains to show that f is fully covered after 2r rounds. Note that after each round, we have
+one of the following (i) the number of compatible scenarios drops by factor s1/r, or (ii) the residual
+target drops by factor Q1/r. Clearly, case (i) can happen at most r times (as there is always some
+compatible scenario). So case (ii) occurs at least r times, which implies that the residual target is
+less than 1, i.e., f is fully covered.
+Setting r = log s, we achieve a tight O(log(sQ)) approximation in O(log s) rounds. Combined
+with the conversion to set-based rounds (Theorem A.2), this proves Corollary 1.4.
+7
+Lower Bound for Scenario Submodular Cover
+Recall that we obtained an r-round O(s1/r · (log s + r log Q))-approximation algorithm for scenario
+submodular cover. It is natural to ask if the dependence on the support-size s is necessary, given
+that the bound for the independent case only depends on Q. The main result of this section is
+Theorem 1.5, which is a nearly matching lower bound on the r-round-adaptivity gap. In particular,
+it shows that the s1/r dependence is necessary even when Q = 1.
+7.1
+Hard Instances for Scenario Submodular Cover
+As a warm-up we ﬁrst consider the case when r = 1. We design an instance to prove a 1-round
+adaptivity gap. The instances that we use to prove the adaptivity gap for r > 1 will build on this.
+The instance has groundset U = {0, 1, ⋆, ⊥} and function f(S) = |S ∩{⋆}|. Clearly, f is a 0 −1
+valued monotone submodular function; and Q = 1. Let ℓbe an integer parameter and N = 2ℓ.
+We have two types of items: Y0, ..., Yℓ−1 each of which realizes to either 0 or 1, and N items
+Z0, ..., ZN−1 each of which realizes a symbol ⋆or ⊥. All items have cost 1. The joint distribution
+D of these items has s = N scenarios, each of uniform probability. For each B ∈{0, 1, · · · , N −1},
+scenario B has the following realizations (below, b0b1 · · · bℓ−1 is the binary representation of B).
+Yi(B) = bi, ∀i = 0, · · · , ℓ−1
+and
+Zj(B) =⊥, ∀j ∈{0, · · · , N −1} \ {B} and ZB(B) = ⋆.
+We say that item Zk is active if, and only if, Zk realizes to ⋆. Note that there is a unique active
+item in each scenario, and this item needs to be probed to cover f.
+An adaptive solution is as follows. First, probe items Y0, ..., Yℓ−1, and based on their realizations
+calculate the number B represented by Y0, · · · , Yℓ−1. Then, probe item ZB (the active one) to cover
+f. This policy has cost ℓ+ 1. On the other hand, since each Zk is equally likely to be active, any
+non-adaptive policy needs to pick Ω(2ℓ) items, in expectation, to cover f. In conclusion, this proves
+an Ω(2ℓ/ℓ) = Ω(
+s
+log s) lower bound on the 1-round adaptivity gap for scenario submodular cover.
+The r-round instance.
+This is based on recursively applying the above instance structure.
+Recall that ℓis some parameter and N = 2ℓ. Moreover, the realizations of Y-items above point to
+the unique Z-item that is active. To extend this idea, we consider an N-ary tree T of depth r. For
+each internal node, we index its N children by {0, · · · , N −1} in an arbitrary order. We deﬁne a
+collection of items, each of unit cost, using T as follows.
+26
+
+• For each depth i = 0, · · · , r−1 and node v ∈T at depth i, there are ℓitems Y0(v), · · · , Yℓ−1(v),
+each of which realizes 0 or 1.
+• For each leaf node w of T (i.e., at depth r), there is an item Zw which realizes to one of the
+symbols ⋆or ⊥.
+For any non-leaf node v, we use the shorthand Y(v) = ⟨Y0(v), · · · , Yℓ−1(v)⟩to denote all its Y-
+items. The function f is as deﬁned earlier: f(S) = |S ∩{⋆}|. So f(S) = 1 if ⋆∈S (else f(S) = 0).
+The distribution D involves s = 2rℓscenarios with uniform probability. Each scenario is associated
+with a unique leaf node (i.e. Z-item); note that the number of leaves is exactly s.
+For each leaf w, we deﬁne its corresponding scenario as follows. Let v0, · · · , vr−1, vr = w denote
+the path from the root of T to w. For each depth i = 0, · · · , r −1, let node vi+1 be the Bth
+i
+child
+of node vi. Then, scenario w’s realizations are:
+• The realization Y0(vi), · · · , Yℓ−1(vi) of Y(vi) equals the binary representation of Bi, for each
+depth 0 ≤i ≤r −1. The realization of all other Y-items is 0.
+• The realization Zw = ⋆and Zu =⊥for all leaf u ̸= w.
+In this way, the realizations at the depth i node vi point to the “correct” depth i + 1 node vi+1
+that should be probed next. This completes the description of the instance.
+Adaptive solution.
+We now describe a good (r + 1)-round adaptive solution OPT of cost rℓ+ 1.
+It is a natural top-down strategy. It starts by probing the ℓitems Y(v0) at the root v0, and based
+on their realization calculates the number B0 represented by Y0(v0), · · · , Yℓ−1(v0); then it probes
+the Y-items at the Bth
+0 child of v0; and so on. After r rounds, it is able to discern the unique active
+item Zw and probes it (in the ﬁnal round) to cover f.
+7.2
+Lower bound proof
+Consider any r-round solution A for the above instance.
+By Yao’s minimax principle, we can
+assume that A is deterministic. We denote by random variables L0, ..., Lr−1, the ordered lists used
+by A in each of its r rounds. Moreover, S0, ..., Sr−1 denote the sets of items probed by A in each
+round; note that each Si is a preﬁx of Li. Also, Li is deterministic conditioned on the realizations
+of S0, · · · , Si−1. The following proof strategy is similar to that in [AAK19] for the independent
+setting; however, note that the instance itself is very diﬀerent.
+We use w∗to denote the realized scenario (leaf node) and ⊓0, · · · , ⊓r = w∗to denote the
+(random) nodes of T on the path from the root to w∗. For any depth 0 ≤i ≤r, random variable Ti
+denotes the set of all items at all descendant nodes of ⊓i (including itself). Note that conditioned
+on w∗, all other random variables (Li, Si, ⊓i, Ti etc.) are deterministic. For this reason, each
+random event can be seen as a subset of the scenarios.
+Roughly speaking, we show that one of the following events occurs: (i) either the size of probed
+set Si is large for some round i, or (ii) if sets S0, ..., Si−1 are small, then with high probability Si
+does not contain any item from Ti+1. In the ﬁrst case, we are immediately done. If the second case
+keeps occuring then the problem eventually reduces to an instance with r = 1 rounds (for which
+we already know a lower bound). For a contradiction, assume:
+Assumption 7.1. The expected cost of A is at most
+N
+(4r)2 .
+27
+
+For each i = 0, ..., r, deﬁne the following events.
+• Fi is the event that
+(S0 ∪· · · Si−1)
+\
+Ti = ∅,
+i.e., no item from Ti is probed before round i (i.e. in rounds 0, · · · , i −1).
+• Ei is the event that
+|Sj| ≤N
+4r,
+for all j = 0, · · · , i −1,
+i.e., at most N
+4r items are probed in each round 0, · · · , i −1.
+Note that |F0| = |E0| = Nr as they include all scenarios.
+Lemma 7.1. For any i ∈{0, · · · , r −1}, we have |Ei+1 ∩Fi+1| ≥|Ei ∩Fi| −Nr
+2r .
+Proof. Note that E[|Si|] ≤N/(4r)2 by Assumption 7.1. So,
+Pr[Ei \ Ei+1] ≤Pr
+
+|Si| > N
+4r
+
+≤1
+4r,
+where the ﬁrst inequality is by deﬁnition of events Eis and the second is Markov’s inequality. As
+all scenarios have uniform probability, |Ei \ Ei+1| = Nr · Pr[Ei \ Ei+1] ≤Nr/(4r).
+Let G := Ei+1 ∩Fi. Note that
+|G| ≥|Ei ∩Fi| −|Ei \ Ei+1| ≥|Ei ∩Fi| −Nr/(4r).
+(23)
+We now partition scenarios in G according to the depth i nodes in tree T . For any node u at depth
+i, let G(u) ⊆G denote the scenarios that appear in the subtree below u. Note |G| = P
+u |G(u)|.
+Fix any depth i node u. Note that under any scenario of G(u), set Ti consists of all items T (u)
+in the subtree below u. We ﬁrst claim that
+The list Li in round i is the same for all scenarios w ∈G(u).
+As w ∈Fi, we know that no item in Ti = T (u) is probed in rounds 0, · · · , i −1 (under scenario
+w). Moreover, by construction of our instance, each item I ∈X \ Ti = X \ T (u) has the same
+realization I under all scenarios in G(u). So the realizations seen before round i are identical under
+all scenarios in G(u), which implies that the list Li in round i is also the same (for all scenarios in
+G(u)).
+Let Pu denote the ﬁrst N/(4r) items in list Li under scenarios G(u). Note that Si ⊆Pi under
+all scenarios in G(u) ⊆Ei+1: this follows from the deﬁnition of Ei+1.
+Let G′(u) = G(u) ∩Fi+1. We now claim that
+|G(u) \ G′(u)| ≤Nr−i/(4r).
+(24)
+To see this, let Nu denote all children nodes of u and Cu ⊆Nu denote those children that do not
+contain any Pu-item in in their subtree. As u has N children, |Cu| ≥N −|Pu|. Now consider any
+depth i + 1 node v ∈Cu and scenario w ∈G(u) that lies in the subtree below v. Note that, under
+scenario w, Ti+1 = T (v) the items in subtree below v. We now claim that w ∈Fi+1 (and hence
+w ∈G′(u)) because:
+28
+
+• no item probed in rounds before i is in Ti ⊇Ti+1 as w ∈G(u) ⊆Fi.
+• no item probed in round i is in Ti+1 = T (v); recall that Si ⊆P(u) (as w ∈G(u) ⊆Ei+1) and
+P(u) ∩T (v) = ∅.
+It follows that every scenario in G(u) \ G′(u) appears in a subtree below a node of Nu \ Cu. Hence,
+|G(u) \ G′(u)| ≤|Nu \ Cu| · Nr−i−1 ≤|P(u)| · Nr−i−1 as the number of scenarios under each such
+subtree is Nr−i−1. Equation (24) follows by using |P(u)| ≤N/(4r).
+Finally, let G′ = ∪uG′(u) over all depth-i nodes u. Note that G′ = G ∩Fi+1 ⊆Ei+1 ∩Fi+1. We
+have
+|G′| =
+X
+u
+|G′(u)| ≥
+X
+u
+|G(u)| −Ni Nr−i
+4r
+= |G| −Nr
+4r ≥|Ei ∩Fi| −Nr
+2r .
+Above, the ﬁrst inequality uses (24) and the fact that the number of depth-i nodes is Ni. The last
+inequality uses (23). This completes the proof.
+Applying this lemma repeatedly, we obtain |Er ∩Fr| ≥|E0 ∩F0| −rNr
+2r ≥Nr/2. Consider any
+scenario w ∈Er ∩Fr. Note that w ∈Fr means that, under scenario w, no Tr item is probed in
+rounds 0, · · · , r −1, i.e., all r rounds. However, we need to probe item Zw in Tr in order to cover f
+(under scenario w). This is a contradiction to solution A being feasible and hence Assumption 7.1.
+Thus, the cost of any r-round-adaptive solution must be at least
+N
+(4r)2 = Ω(2ℓ/r2). Using the
+fact that there is an adaptive solution of cost at most rℓ+ 1, this implies an adaptivity gap of
+Ω( 1
+r3ℓ2ℓ) = Ω( s1/r
+r2 log s) as s = 2rℓ. This completes the proof of Theorem 1.5. Note that the above
+instance can also be viewed as one for optimal decision tree: by just ignoring the Z-items, and with
+the goal of identifying the realized scenario.
+8
+Applications
+8.1
+Stochastic Set Cover
+The stochastic set cover problem is a special case of stochastic submodular cover. It abstracts the
+unreliable sensor deployment problem mentioned in §1. The input is a universe E of d objects
+and a collection {X1, . . . , Xm} of m items. Each item Xi has a cost ci ∈R+ and corresponds to
+a random subset of objects (with a known explicit distribution). Diﬀerent items are independent
+of each other. The goal is to select a set of items such that the realized subsets cover E and the
+expected cost is minimized. This problem was ﬁrst studied by [GV06], where it was shown that
+the adaptivity gap (relative gap between the best non-adaptive and adaptive solutions) is between
+Ω(d) and O(d2). The correct adaptivity gap for stochastic set cover was posed as an open question
+by [GV06]. Subsequently, [AAK19] made signiﬁcant progress, by showing that the adaptivity gap
+is O(d log d · log(mcmax)). However, as a function of the natural parameter d (number of objects),
+the best adaptivity gap remained O(d2) because the number of stochastic sets m and maximum
+cost cmax may be arbitrary larger than d.
+As a corollary of our result for (independent) stochastic submodular cover, we obtain a nearly-
+tight O(d log d) adaptivity gap for this problem. In fact, for any r ≥1, we obtain an r-round
+adaptive algorithm that costs at most O(d1/r log d) times the optimal (fully) adaptive cost. This
+nearly matches the Ω( 1
+r3 d1/r) gap for r-round adaptive algorithms shown in [AAK19]. We note
+that when r = log d, we obtain an O(log d)-approximation algorithm with a logarithmic number of
+adaptive rounds; this approximation ratio is the best possible even for deterministic set cover.
+29
+
+8.2
+Optimal Decision Tree
+The optimal decision tree problem captures problems from a variety of ﬁelds including, but not
+limited to, learning theory, medical diagnosis, pattern recognition, and boolean logic (see [Mor82]
+and [Mur97] for a comprehensive survey on the use of decision trees). In an instance of optimal
+decision tree (ODT) we are given s hypotheses from which an unknown random hypothesis y∗is
+drawn. There is a collection of m tests, where test e costs ce ∈R+ and returns a positive result if
+y∗lies in some subset Te ⊆[s] (and a negative result if y∗̸∈Te). The goal is to identify y∗using
+tests of minimum expected cost.
+Note that ODT is a special case of the scenario submodular cover problem. We can transform
+an instance of ODT into an instance for scenario submodular cover. We associate scenarios with
+hypotheses. For each test e, we have an item Xe of cost ce. Let Xe(y) denote the realization of Xe
+under scenario y. We set
+Xe(y) =
+(
+[s] \ Te,
+if y ∈Te
+Te,
+otherwise.
+The joint distribution D realizes to ⟨X1(y), ..., Xm(y)⟩with probability py. We deﬁne the submod-
+ular function g(S) = | S
+Xe∈S Xe| where Xe corresponds to the realization of item Xe. Observe that
+g(S) computes the number of eliminated scenarios. Finally, we deﬁne f(S) = min (g(S), s −1);
+that is, we truncate full coverage at s −1. This is because we can identify the realized scenario
+once s−1 scenarios have been eliminated. Noting the f is an integer-valued monotone submodular
+function completes the description of the instance for scenario submodular cover. For any r ≥1,
+we obtain an r-round adaptive algorithm that costs at most O(rs1/r log s) times the optimal (fully)
+adaptive cost. We also obtain a nearly matching lower bound: any r-round adaptive algorithm
+must incur approximation ratio Ω( 1
+r3 s1/r).
+8.3
+Shared Filter Evaluation
+This problem was introduced by [MSW07] in the context of executing multiple queries on a dataset
+with shared (boolean) ﬁlters. There are n independent “ﬁlters” X1, · · · , Xn, where each ﬁlter i has
+cost ci and evaluates to true with probability pi (and false otherwise). There are also m conjunctive
+queries, where each query j ∈[m] is the “and” of some subset Qi ⊆[n] of the ﬁlters. So query j
+is true iﬀXi = true for all i ∈Qj. The goal is to evaluate all queries at the minimum expected
+cost. This can be modeled as an instance of stochastic submodular cover. The items correspond
+to ﬁlters. The groundset U = {Ti, Fi}n
+i=1 where Ti (resp. Fi) corresponds to ﬁlter i evaluating to
+true (resp. false). The submodular function is:
+f(S) :=
+m
+X
+j=1
+min {|Qj| , |Qj| · |S ∩{Fi : i ∈Qj}| + |S ∩{Ti : i ∈Qj}|} .
+Note that the term for query Qj is |Qj| iﬀthe query’s value is determined: it is false when a single
+false ﬁlter is seen and it’s true when all its ﬁlters are true. The maximal value of the function is
+Q = Pm
+j=1 |Qj| ≤mn. So, for any r ≥1, we obtain an r-round adaptive algorithm with cost at
+most O((mn)1/r · log(mn)) times the optimal adaptive cost.
+30
+
+8.4
+Correlated Knapsack Cover
+There are n items, each of cost ci and random (integer) reward Xi. The rewards may be correlated
+and are given by a joint distribution D with s scenarios. The exact reward of an item is only
+known when it is probed. Given a target Q, the goal is to probe some items so that the total
+realized reward is at least Q and we minimize the expected cost. This is a special case of scenario
+submodular cover. The groundset U = {(i, v) : i ∈[n], 0 ≤v ≤Q} where element (i, v) represents
+item Xi realizing to v. Any realization of value at least Q is treated as equal to Q: this is because
+the target is itself Q. For each element e = (i, v) ∈U let ae = v denote its value. Then, the
+submodular function is f(S) = min{P
+e∈S ae , Q} for S ⊆U. For any r ≥1, we obtain an r-round
+adaptive algorithm with cost at most O(s1/r(log s + r log Q)) times the optimal adaptive cost.
+9
+Computational Results
+We provide a summary of computational results of our r-round adaptive algorithms for the stochas-
+tic set cover and optimal decision tree problems. We conducted all of our computational experi-
+ments using Python 3.8 and Gurobi 8.1 with a 2.3 Ghz Intel Core i5 processor and 16 GB 2133
+MHz LPDDR3 memory.
+9.1
+Stochastic Set Cover
+Instances.
+We use the Epinions network1 and a Facebook messages dataset described in [RA15]
+to generate instances of the stochastic set cover problem. The Epinions network consists of 75 879
+nodes and 508 837 directed edges.
+We compute the subgraph induced by the top 1000 nodes
+with the highest out-degree (this subgraph has 57 092 directed edges) and use this to generate
+the stochastic set cover instance. The Facebook messages dataset consists 1 266 nodes and 6 451
+directed edges. Given an underlying directed graph, we generate an instance of the stochastic set
+cover problem as follows. We associate the ground set U with the set of nodes of the underlying
+graph. We associate an item with each node. Let Γ(u) denote the out-neighbors of u. We sample a
+subset of Γ(u) using the binomial distribution with p = 0.1 for 500 times. Let S ⊆Γ(u) be sampled
+αS times: then Xu realizes to S ∪{u} with probability αS/500. This ensures that Xu always covers
+u. We set f to be the coverage function and set Q = δn where n represents the number of nodes
+in the underlying network. We use δ = 0.5 for the Epinions network. However, since the Facebook
+messages network is sparse, we set δ = 0.25 in the second instance.
+Results.
+We test our r-round adaptive algorithm on the two kinds of instances described above.
+We vary r over integers in the interval [1, log n], where n ≈1000. To compute an estimate of
+the expected cost, we sample new realizations 20 times and take the average cost incurred by the
+algorithm over these trials. In each trial, we also solve an integer linear program (using the Gurobi
+solver) to determine the optimal oﬄine cost to cover Q elements for the given realization: we use
+the average cost over the trials as an estimate on an information-theoretic lower bound: no adaptive
+policy can do better than this lower bound. In fact, the gap between this information-theoretic
+lower bound and an optimal adaptive solution may be as large as Ω(Q) on worst-case instances. We
+observe that in both cases, the expected cost of our solution after only a few rounds of adaptivity
+is within 50% of the information-theoretic lower bound. Moreover, in 6 −7 rounds of adaptivity
+1http://snap.stanford.edu/
+31
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+53
+54
+55
+56
+57
+Cost
+Information-theoretic Lower Bound: 40.6
+Our Algorithm
+Fully Adaptive
+(a) Epinions network
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+88
+90
+92
+94
+96
+Cost
+Information-theoretic Lower Bound: 64.85
+Our Algorithm
+Fully Adaptive
+(b) Facebook messages network
+Figure 3: Computational results for Stochastic Set Cover
+we notice a decrease of ≈8% in the expected cost and these solutions are nearly as good as fully
+adaptive solutions. We plot this trend in Figure 3. Finally, note that the increase in expected cost
+with rounds of adaptivity (see Figure 3a) can be attributed to the the probabilistic nature of our
+algorithm (and the experimental setup). We also notice this in the next batch of experiments.
+9.2
+Optimal Decision Tree
+Instances.
+We use a real-world dataset called WISER 2 for our experiments. The WISER dataset
+describes symptoms that one may suﬀer from after being exposed to certain chemicals. It contains
+data corresponding to 415 chemicals (scenarios for ODT) and 79 symptoms (elements with binary
+outcomes). Given a patient exhibiting certain symptoms, the goal is to identify the chemical that the
+patient has been exposed to (by testing as few symptoms as possible). This dataset has been used
+for evaluating algorithms for similar problems in other papers [BAD+07, BBS11, BBS12,NKN20].
+For each symptom-chemical pair, the data speciﬁes whether or not someone exposed to the chemical
+exhibits the given symptom. However, the WISER data has ‘unknown’ entries for some pairs. In
+order to obtain instances for ODT from this, we generate 10 diﬀerent datasets by assigning random
+binary values to the ‘unknown’ entries. Then we remove all identical scenarios: to ensure that the
+ODT instance is feasible. We use the uniform probability distribution for the scenarios. Given these
+10 datasets, we consider two cases. The ﬁrst case considered is one where all tests have unit cost.
+We refer to this as the WISER −U case. For the second case, we generate costs randomly for each
+test from {1, 4, 7, 10} according to the weight vector [0.1, 0.2, 0.4, 0.3]; for example, with probability
+0.4, a test is assigned cost 7. Varying cost captures the setting where tests may have diﬀerent costs,
+and we may not want to schedule an expensive test without suﬃcient information. We refer to this
+as WISER −R case.
+We also test our algorithm on synthetic data which we generate as follows. We set s = 10000 and
+m = 100. For each y ∈[s], we randomly generate a binary sequence of outcomes which corresponds
+to how y reacts to the tests. We do this in two ways: for test e, we set y ∈Te with probability
+p ∈{0.2, 0.5}. If a sequence of outcomes is repeated, we discard the scenario to ensure feasibility of
+the ODT instance. We assign equal probability to each scenario. We generate instances using unit
+costs or by assigning a random cost from {1, 4, 7, 10} to each test according to the weight vector
+2http://wiser.nlm.nih.gov/
+32
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+(a) WISER −U
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+28
+Cost
+Our Algorithm
+Fully Adaptive
+(b) WISER −R
+Figure 4: Computational results for ODT on WISER dataset
+[0.1, 0.2, 0.4, 0.3] (as described above). Thus, we generate 4 types of instances with synthetic data.
+We refer to the instance generated with p = 0.2 and unit costs as SYN −U −0.2. We similarly name
+the other instances.
+Results.
+We test our r-round adaptive algorithm on all of the above mentioned datasets. We
+vary r over integers in the interval [1, log s]. For the WISER −U datasets, we compute the expected
+cost of our algorithm over all scenarios. We plot the expected costs over all rounds, and compare
+it to log(s) which is an information-theoretic lower bound for the ODT problem with unit costs and
+uniform probabilities over the scenarios. We observe that our algorithm gets very close to this
+lower bound in only 3 rounds of adaptivity. See Figure 4a. In the case of WISER −R, we compute
+the expected cost incurred by our r-round adaptive algorithm for r varying over integers in the
+interval [1, log s] (expectation taken over all scenarios). We observe a sharp decrease in costs within
+4 rounds of adaptivity. We plot the results in Figure 4b.
+For the synthetic data, we sample scenarios over 100 trials (since s = 10000, computing ex-
+pectation over all s would be very slow). As in the previous case, for each trial, we compute the
+cost incurred by our r-round adaptive algorithm for r varying over integers in the interval [1, log s].
+Then, we average all these costs and use it as an estimate for the expected cost. For SYN −U −0.2
+and SYN −U −0.5, we compare the results to log(s) which is an information-theoretic lower bound
+for the instances (since scenarios are sampled uniformly at random). We observe a improvement
+in the costs within 6 rounds of adaptivity. Beyond this however, the costs do not improve (and we
+exclude it from our plot). We observe a similar trend for the case of SYN−R−0.2 and SYN−R−0.5.
+We plot the results in Figures 5 and 6.
+Note that we only plot results related to the ﬁrst dataset for the WISER−U and WISER−R cases.
+We include plots for all 10 datasets in Appendix D.
+References
+[AAK19]
+Arpit Agarwal, Sepehr Assadi, and Sanjeev Khanna. Stochastic submodular cover with limited
+adaptivity. In Proceedings of the 30th Annual ACM-SIAM Symposium on Discrete Algorithms,
+page 323–342, 2019.
+33
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+13
+14
+15
+16
+17
+18
+19
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+(a) SYN −U −0.2
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+13.0
+13.2
+13.4
+13.6
+13.8
+14.0
+14.2
+14.4
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+(b) SYN −U −0.5
+Figure 5: Computational results for ODT on synthetic data with unit costs
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+35.0
+37.5
+40.0
+42.5
+45.0
+47.5
+50.0
+52.5
+Cost
+Our Algorithm
+Fully Adaptive
+(a) SYN −R −0.2
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+21
+22
+23
+24
+25
+Cost
+Our Algorithm
+Fully Adaptive
+(b) SYN −R −0.5
+Figure 6: Computational results for ODT on synthetic data with non-uniform costs
+[AH12]
+M. Adler and B. Heeringa. Approximating optimal binary decision trees. Algorithmica, 62(3-
+4):1112–1121, 2012.
+[AN16]
+Arash Asadpour and Hamid Nazerzadeh. Maximizing stochastic monotone submodular func-
+tions. Manag. Sci., 62(8):2374–2391, 2016.
+[BAD+07]
+Suresh K Bhavnani, Annie Abraham, Christopher Demeniuk, Messeret Gebrekristos, Abe Gong,
+Satyendra Nainwal, Gautam K Vallabha, and Rudy J Richardson. Network analysis of toxic
+chemicals and symptoms: implications for designing ﬁrst-responder systems.
+AMIA Annual
+Symposium Proceedings, pages 51–55, 2007.
+[BBS11]
+Gowtham Bellala, Suresh Bhavnani, and Clayton Scott. Active diagnosis under persistent noise
+with unknown noise distribution: A rank-based approach. In Proceedings of the 14th Interna-
+tional Conference on Artiﬁcial Intelligence and Statistics, volume 15, pages 155–163, 2011.
+[BBS12]
+G. Bellala, S. K. Bhavnani, and C. Scott. Group-based active query selection for rapid diagnosis
+in time-critical situations. IEEE Transactions on Information Theory, 58(1):459–478, 2012.
+[BBS18]
+Eric Balkanski, Adam Breuer, and Yaron Singer. Non-monotone submodular maximization in
+exponentially fewer iterations. In Advances in Neural Information Processing Systems, pages
+2359–2370, 2018.
+34
+
+[BDH20]
+Soheil Behnezhad, Mahsa Derakhshan, and MohammadTaghi Hajiaghayi. Stochastic match-
+ing with few queries: (1-ϵ) approximation. In Proccedings of the 52nd Annual ACM SIGACT
+Symposium on Theory of Computing, pages 1111–1124, 2020.
+[BEM18]
+MohammadHossein Bateni, Hossein Esfandiari, and Vahab S. Mirrokni. Optimal distributed
+submodular optimization via sketching. In Proceedings of the 24th ACM SIGKDD International
+Conference on Knowledge Discovery & Data Mining, pages 1138–1147, 2018.
+[BGK11]
+Anand Bhalgat, Ashish Goel, and Sanjeev Khanna. Improved approximation results for stochas-
+tic knapsack problems. In Proceedings of the 22nd Annual ACM-SIAM Symposium on Discrete
+Algorithms, pages 1647–1665, 2011.
+[BGL+12]
+N. Bansal, A. Gupta, J. Li, J. Mestre, V. Nagarajan, and A. Rudra. When LP is the cure for
+your matching woes: Improved bounds for stochastic matchings. Algorithmica, 63(4):733–762,
+2012.
+[BLK12]
+O. Barinova, V. Lempitsky, and P. Kholi. On detection of multiple object instances using hough
+transforms. IEEE Transactions on Pattern Analysis and Machine Intelligence, 34(9):1773–1784,
+2012.
+[BN15]
+Nikhil Bansal and Viswanath Nagarajan. On the adaptivity gap of stochastic orienteering. Math.
+Program., 154(1-2):145–172, 2015.
+[BRS19]
+Eric Balkanski, Aviad Rubinstein, and Yaron Singer. An exponential speedup in parallel running
+time for submodular maximization without loss in approximation. In Proceedings of the 30th
+Annual ACM-SIAM Symposium on Discrete Algorithms, pages 283–302, 2019.
+[BS18a]
+Eric Balkanski and Yaron Singer. The adaptive complexity of maximizing a submodular function.
+In Proceedings of the 50th Annual ACM SIGACT Symposium on Theory of Computing, pages
+1138–1151, 2018.
+[BS18b]
+Eric Balkanski and Yaron Singer. Approximation guarantees for adaptive sampling. In Proceed-
+ings of the 35th International Conference on Machine Learning, pages 393–402, 2018.
+[BSZ19]
+Domagoj Bradac, Sahil Singla, and Goran Zuzic. (Near) Optimal Adaptivity Gaps for Stochas-
+tic Multi-Value Probing. In Approximation, Randomization, and Combinatorial Optimization,
+volume 145, pages 49:1–49:21, 2019.
+[CLS14]
+F. Cicalese, E. S. Laber, and A. M. Saettler. Diagnosis determination: decision trees optimiz-
+ing simultaneously worst and expected testing cost. In Proceedings of the 31th International
+Conference on Machine Learning, pages 414–422, 2014.
+[CPR+11]
+V. T. Chakaravarthy, V. Pandit, S. Roy, P. Awasthi, and M. K. Mohania. Decision trees for
+entity identiﬁcation: Approximation algorithms and hardness results. ACM Transactions on
+Algorithms, 7(2):15, 2011.
+[CQ19]
+Chandra Chekuri and Kent Quanrud. Parallelizing greedy for submodular set function maxi-
+mization in matroids and beyond. In Proceedings of the 51st Annual ACM SIGACT Symposium
+on Theory of Computing, pages 78–89, 2019.
+[CSM+14]
+Yuxin Chen, Hiroaki Shio, C´esar Antonio Fuentes Montesinos, Lian Pin Koh, Serge Wich, and
+Andreas Krause. Active detection via adaptive submodularity. In Proceedings of the 31st Inter-
+national Conference on Machine Learning, page I–55–I–63, 2014.
+[Das04]
+S. Dasgupta. Analysis of a greedy active learning strategy. In Advances in Neural Information
+Processing Systems, pages 337–344, 2004.
+[DGV08]
+B. C. Dean, M. X. Goemans, and J. Vondr´ak. Approximating the stochastic knapsack problem:
+The beneﬁt of adaptivity. Math. Oper. Res., 33(4):945–964, 2008.
+35
+
+[DHK16]
+Amol Deshpande, Lisa Hellerstein, and Devorah Kletenik. Approximation algorithms for stochas-
+tic submodular set cover with applications to boolean function evaluation and min-knapsack.
+ACM Trans. Algorithms, 12(3), April 2016.
+[EKM19]
+Hossein Esfandiari, Amin Karbasi, and Vahab S. Mirrokni. Adaptivity in adaptive submodular-
+ity. CoRR, abs/1911.03620, 2019.
+[Fei98]
+U. Feige. A threshold of ln n for approximating set cover. Journal of the ACM, 45(4):634–652,
+1998.
+[GG74]
+M.R. Garey and R.L. Graham. Performance bounds on the splitting algorithm for binary testing.
+Acta Informatica, 3:347–355, 1974.
+[GHKL16] Nathaniel Grammel, Lisa Hellerstein, Devorah Kletenik, and Patrick Lin. Scenario submodular
+cover. In International Workshop on Approximation and Online Algorithms, pages 116–128.
+Springer, 2016.
+[GK11]
+D. Golovin and A. Krause. Adaptive submodularity: Theory and applications in active learning
+and stochastic optimization. J. Artif. Intell. Res. (JAIR), 42:427–486, 2011.
+[GK17]
+Daniel Golovin and Andreas Krause. Adaptive submodularity: A new approach to active learning
+and stochastic optimization. CoRR, abs/1003.3967, 2017.
+[GKNR15] Anupam Gupta, Ravishankar Krishnaswamy, Viswanath Nagarajan, and R. Ravi. Running er-
+rands in time: Approximation algorithms for stochastic orienteering. Math. Oper. Res., 40(1):56–
+79, 2015.
+[GM09]
+Sudipto Guha and Kamesh Munagala. Multi-armed bandits with metric switching costs. In
+Automata, Languages and Programming, 36th Internatilonal Colloquium (ICALP), pages 496–
+507, 2009.
+[GN13]
+Anupam Gupta and Viswanath Nagarajan. A stochastic probing problem with applications. In
+Integer Programming and Combinatorial Optimization - 16th International Conference, pages
+205–216, 2013.
+[GNR17]
+Anupam Gupta, Viswanath Nagarajan, and R. Ravi. Approximation algorithms for optimal
+decision trees and adaptive TSP problems. Math. Oper. Res., 42(3):876–896, 2017.
+[GNS17]
+Anupam Gupta, Viswanath Nagarajan, and Sahil Singla. Adaptivity gaps for stochastic probing:
+Submodular and XOS functions. In Proceedings of the 28th Annual ACM-SIAM Symposium on
+Discrete Algorithms, pages 1688–1702, 2017.
+[GV06]
+Michel Goemans and Jan Vondr´ak. Stochastic covering and adaptivity. In LATIN 2006: Theo-
+retical Informatics, pages 532–543. Springer Berlin Heidelberg, 2006.
+[HR77]
+L. Hyaﬁl and R. L. Rivest. Constructing optimal binary decision trees is NP-complete. Infor-
+mation Processing Lett., 5(1):15–17, 1976/77.
+[INvdZ16]
+Sungjin Im, Viswanath Nagarajan, and Ruben van der Zwaan. Minimum latency submodular
+cover. ACM Trans. Algorithms, 13(1):13:1–13:28, 2016.
+[JCK+14]
+Sh. Javdani, Y. Chen, A. Karbasi, A. Krause, D. Bagnell, and S. S. Srinivasa. Near optimal
+bayesian active learning for decision making. In AISTATS, pages 430–438, 2014.
+[KG07]
+Andreas Krause and Carlos Guestrin.
+Near-optimal observation selection using submodular
+functions. In Proceedings of the 22nd National Conference on Artiﬁcial Intelligence - Volume 2,
+page 1650–1654. AAAI Press, 2007.
+[KKT15]
+David Kempe, Jon M. Kleinberg, and ´Eva Tardos. Maximizing the spread of inﬂuence through
+a social network. Theory of Computing, 11:105–147, 2015.
+36
+
+[KPB99]
+S. R. Kosaraju, T. M. Przytycka, and R. S. Borgstrom. On an Optimal Split Tree Problem.
+In Proceedings of the 6th International Workshop on Algorithms and Data Structures, pages
+157–168, 1999.
+[LB11]
+Hui Lin and JeﬀBilmes. A class of submodular functions for document summarization. In Pro-
+ceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human
+Language Technologies - Volume 1, HLT ’11, page 510–520, 2011.
+[Lov85]
+D. W. Loveland. Performance bounds for binary testing with arbitrary weights. Acta Inform.,
+22(1):101–114, 1985.
+[LPRY08]
+Zhen Liu, Srinivasan Parthasarathy, Anand Ranganathan, and Hao Yang. Near-optimal algo-
+rithms for shared ﬁlter evaluation in data stream systems. In Proceedings of the ACM SIGMOD
+International Conference on Management of Data (SIGMOD), pages 133–146, 2008.
+[MKBK15] Baharan Mirzasoleiman, Amin Karbasi, Ashwinkumar Badanidiyuru, and Andreas Krause. Dis-
+tributed submodular cover: Succinctly summarizing massive data. In Advances in Neural Infor-
+mation Processing Systems, pages 2881–2889, 2015.
+[Mor82]
+Bernard M. E. Moret.
+Decision trees and diagrams.
+ACM Comput. Surv., 14(4):593––623,
+December 1982.
+[MSW07]
+K. Munagala, U. Srivastava, and J. Widom. Optimization of continuous queries with shared ex-
+pensive ﬁlters. In 27th ACM SIGMOD-SIGACT-SIGART Symposium on Principles of Database
+Systems (PODS), pages 215–224, 2007.
+[Mur97]
+Sreerama K. Murthy. Automatic construction of decision trees from data: A multi-disciplinary
+survey. Data Mining and Knowledge Discovery, 2:345–389, 1997.
+[MUS14]
+S. Mini, S. K. Udgata, and S. L. Sabat. Sensor deployment and scheduling for target coverage
+problem in wireless sensor networks. IEEE Sensors Journal, 14(3):636–644, 2014.
+[NKN20]
+Fatemeh Navidi, Prabhanjan Kambadur, and Viswanath Nagarajan. Adaptive submodular rank-
+ing and routing. Oper. Res., 68(3):856–877, 2020.
+[RA15]
+Ryan A. Rossi and Nesreen K. Ahmed. The network data repository with interactive graph an-
+alytics and visualization. In Proceedings of the 29th AAAI Conference on Artiﬁcial Intelligence,
+2015.
+[RSKF18]
+Goran Radanovic, Adish Singla, Andreas Krause, and Boi Faltings. Information gathering with
+peers: Submodular optimization with peer-prediction constraints. In Proc. Conference on Arti-
+ﬁcial Intelligence (AAAI), Feburary 2018.
+[SLLL19]
+C. Sun, V. O. K. Li, J. C. K. Lam, and I. Leslie. Optimal citizen-centric sensor placement for
+air quality monitoring: A case study of city of cambridge, the united kingdom. IEEE Access,
+7:47390–47400, 2019.
+[SSS07]
+I. Simon, N. Snavely, and S. M. Seitz. Scene summarization for online image collections. In 11th
+International Conference on Computer Vision, pages 1–8, 2007.
+[SSSJ12]
+Ruben Sipos, Adith Swaminathan, Pannaga Shivaswamy, and Thorsten Joachims. Temporal
+corpus summarization using submodular word coverage. In Proceedings of the 21st ACM In-
+ternational Conference on Information and Knowledge Management, CIKM ’12, page 754–763,
+2012.
+[Wol82]
+L.A. Wolsey. An analysis of the greedy algorithm for the submodular set covering problem.
+Combinatorica, 2(4):385–393, 1982.
+37
+
+A
+Set-based Model for Rounds
+Here we discuss the “set based” model for adaptive rounds, where each round probes a ﬁxed subset
+of items (and incurs their total cost). In this model, as noted in [AAK19], we can no longer require
+the function f to be covered with probability one. We also provide an example below where the
+r-round-adaptivity gap is very large if we require coverage with probability one. Therefore, we
+consider solutions that are only required to cover the function with high probability. We will still
+compare to the (fully) adaptive optimum OPT that always covers the function.
+Formally, an r-round adaptive solution in the set-based model proceeds as follows. For each
+round i = 1, . . . , r, it speciﬁes a subset Si of items (that depends on all realizations in rounds
+1, . . . , i −1) that are probed in parallel. The cost incurred in round i is c(Si) the total cost of all
+probed items in that round.
+Example:
+Consider an instance with |U| = 1, and function f with f(U) = 1 and f(∅) = 0. So
+parameter Q = 1. There are m items, where each item i ∈{1, . . . , m−1} has cost 2i and instantiates
+to U with probability 1
+2. The last item m costs 2m and instantiates to U with probability one.
+In the permutation model, there is a non-adaptive solution of cost O(m), which just probes items
+in the order 1, 2 . . . , m. On the other hand, in the set-based model with r < m rounds we claim
+that the optimal cost is Ω(2m/r) if we require f to be covered with probability one. Note that any
+solution B in the set-based model with r rounds is given by indices 0 = i(0) ≤i(1) ≤. . . , i(r −1) ≤
+i(r) = m where the jth round probes items i(j −1) + 1, . . . , i(j) (if f is not already covered).
+The probability that round j is needed in B is 2−i(j−1).
+So the expected cost of B is at least
+Pr
+j=1 2−i(j−1) · 2i(j) ≥2m/r where we used Pr
+j=1(i(j) −i(j −1)) = i(r) −i(0) = m. It follows that
+the r-round adaptivity gap in the set-based model is exponential in m (while the adaptivity gap
+is constant for the permutation model). This is the reason our set-based algorithms only cover f
+with high probability (rather than probability one).
+A.1
+Conversion Theorems
+While we give our main technical results in the permutation model to make the analysis easier, we
+can translate our r-round algorithm in the permutation model into one in the set-based model, as
+we show next. Below, OPT is the cost of an optimal fully-adaptive solution.
+Theorem A.1. For any r ≥1 and η > 0, there is a set-based r-round adaptive solution for stochas-
+tic submodular cover (resp. scenario submodular cover) with expected cost at most O( r
+ηQ1/r log Q) ·
+OPT (resp. O
+  r
+η(s1/r log s + r log Q) · OPT
+
+) and covers the function with probability at least 1 −η.
+Proof. We will show the following “black box” reduction. Suppose there is an r-round adaptive
+algorithm in the permutation model with approximation ratio α. Then, there is an algorithm in
+the set-based model that for any η ∈(0, 1), ﬁnds an r-round adaptive solution that has expected
+cost at most rα
+η · OPT and covers the function with probability at least 1 −η. The theorem would
+then follow from Theorems 1.1 and 1.3.
+Consider any solution A in the permutation-model that always covers the function. For each
+round i = 1, . . . , r in A, let Li be the permutation to probe items and let µi be the expected cost
+of probed items (after applying the stopping rule). Note that Li and µi depend on realizations in
+all previous rounds. Let Si denote the maximal preﬁx of Li that has total cost at most r
+ηµi. We
+deﬁne the set-based solution B as follows. In round i, we probe all items Si in parallel. Note that
+38
+
+the cost of solution B in round i is at most r
+ηµi. Taking expectations and adding over all rounds,
+the expected cost of B is at most r
+η times that of A. So the cost is at most rα
+η · OPT.
+We refer to round-i as a failure if the round-i stopping rule (in A) does not apply by the end
+of Si. By Markov’s inequality, the probability that round-i is a failure is at most η
+r . Using a union
+bound over all r rounds, the probability of a failure in any round is at most η. Note that, if there is
+no failure then solution B indeed covers the function fully: as the items probed by B is a superset
+of those probed by A. Hence, solution B covers the function with probability at least 1 −η.
+Note that the approximation ratios for the set-based model are only a factor r more than in the
+permutation model (assuming that the “failure probability” η is any constant). So this is a good
+result for small (constant) r. When the number of rounds r is larger, we have a diﬀerent approach
+that does not lose this factor r in the approximation ratio, but uses O(r) set-based rounds.
+Theorem A.2. For any r ≥1, in the set-based model:
+• there is a 2r-round adaptive algorithm for stochastic submodular cover with expected cost at
+most O(Q1/r log Q) · OPT
+• there is a 4r-round adaptive algorithm for scenario submodular cover with expected cost at
+most O(s1/r log(sQ)) · OPT
+that covers the function with probability at least 1 −e−Ω(r).
+Proof. We ﬁrst consider stochastic submodular cover. We make use of the partial cover algorithm
+ParCA (Theorem 3.1) in an iterative manner (similar to the r-round algorithm in the permutation
+model). The diﬀerence is that we will run ParCA for 2r set-based rounds (instead of r). The items
+probed in each set-based round is a preﬁx of the permutation-based round. Algorithm 5 gives a
+formal description. The state at any round is the tuple (T , T) consisting of previously probed items
+and their realizations. For the analysis, we view the iterative algorithm as a 2r depth tree, where
+the nodes at depth i are the states in round i and the branches out of each node represent the
+observed realizations in that round. For any i ∈[2r], let Ωi denote all the states in round i: note
+that these form a partition of the outcome space.
+Algorithm 5 2r-round set-based algorithm for stochastic submodular cover
+1: let T ←∅denote the probed items and T ←∅their realization.
+2: for i = 1, 2, . . . , 2r do
+3:
+run ParCA (X \ T , fT , Q −f(T), Q−1/r).
+4:
+let Li denote the permutation on items X \ T from ParCA.
+5:
+let µi be the expected cost of probing Li (in the permutation model).
+6:
+let Ri denote the maximal preﬁx of Li of cost at most 4µi.
+7:
+probe items Ri in the set-based solution and let Ri denote their realizations.
+8:
+update T ←T ∪Ri and T ←T ∪Ri.
+Expected cost.
+For any state ω ∈Ωi, let OPT(ω) denote the expected cost of the optimal adaptive
+policy conditioned on the realizations in ω. By Theorem 3.1, conditioned on ω, the expected cost
+µi(ω) of the permutation Li(ω) is at most α·OPT(ω) where α = O(1
+rQ1/r log Q). Note that the cost
+39
+
+of the set-based round is at most 4 · µi(ω). Hence, the (unconditional) expected cost in round i is
+at most
+4
+X
+ω∈Ωi
+Pr[ω] · µi(ω) ≤4α
+X
+ω∈Ωi
+Pr[ω] · OPT(ω) = 4α · OPT,
+where we used that Ωi is a partition of all outcomes.
+It follows that the expected cost of the
+set-based algorithm is at most 2r · 4α · OPT = 8rα · OPT as claimed.
+Completion probability.
+Consider any round i and state ω ∈Ωi. Recall that T denotes the
+realizations from prior rounds. The stopping rule for the permutation Li(ω) in ParCA is that the
+residual target drops by a factor δ = Q−1/r. In other words, if S denotes the realizations observed
+in permutation Li(ω) then the stopping rule is Q −f(T ∪S) < δ · (Q −f(T)). Recall that the
+set-based round-i involves probing the preﬁx Ri(ω) of Li(ω) having cost 4 · µi(ω). This round is
+said to be a success if the stopping rule applies by the end of Ri(ω). By the choice of Ri and
+Markov’s inequality, the probability that this round is a success is at least 3
+4. So the expected
+number of successful rounds is at least 2r · 3
+4 = 3
+2r. Moreover, the success events in diﬀerent rounds
+i = 1, . . . , 2r are independent. Hence, by a Chernoﬀbound, the probability of seeing less than r
+successes out of 2r rounds is at most e−Ω(r). Finally, note that if there are at least r successes
+then the function f gets covered completely as each success reduces the residual target by a factor
+Q−1/r. It follows that our algorithm covers f with probability 1 −e−Ω(r) as claimed.
+The proof for scenario submodular cover is identical, except for the use of SParCA (Corol-
+lary 6.6) instead of ParCA.
+B
+Items realizing to subsets
+Here, we consider a seemingly more general model for stochastic submodular cover, where each item
+realizes to a subset of elements. As before, there is a monotone submodular function f : 2U →Z≥0
+with Q := f(U). There are m items, where each item Xi has cost ci and realizes to a random
+subset of U. (In the basic model, each item realizes to a single element.) The goal is to select a
+set of items such that the union S of their corresponding realizations satisﬁes f(S) = Q, and the
+expected cost is minimized. We can reduce this model to the usual one (considered in the paper)
+as follows. Let W := 2U denote an expanded groundset consisting of all subsets of U. Let function
+g : 2W →Z≥0 be deﬁned as g(R) = f(∪r∈Rr) for any R ⊆W. Note that g is monotone submodular
+as f is. Note that each item Xi realizes to a single element of the expanded set W. Moreover,
+covering function g is equivalent to covering f, and both have maximal value Q. So it suﬃces to
+solve the usual model with single-element realizations. However, the diﬃculty with this reduction
+is that the number of elements |W| is exponential. Using the fact that our algorithm’s runtime is
+independent of the size of the groundset (see remark after Algorithm 2), it follows that we obtain
+a polynomial (in m, Q, cmax) time algorithm for this more general model as well.
+C
+Estimating Scores in Algorithm ParCA
+The partial covering algorithm ParCA (Algorithm 1) relies on computing the maximum score
+according to (1). We are not aware of a closed-form expression to calculate the score for general
+functions f. Instead, we show that sampling can be used to estimate these scores, which suﬃces
+for the overall algorithm. At any point in algorithm ParCA, let S ⊆X denote the items already
+40
+
+added to the non-adaptive list L. Then, we need to compute the maximum score(Xe) = ge
+ce over
+Xe ∈X \ S, where
+ge :=
+X
+S∼S:f(S)≤τ
+P(S = S) · EXe∼Xe
+f(S ∪Xe) −f(S)
+Q −f(S)
+
+= ES,Xe
+
+1f(S)≤τ · f(S ∪Xe) −f(S)
+Q −f(S)
+
+.
+To this end, we use K = O(m2cmax log(mcmax)) independent samples to obtain an estimate ¯ge for
+each item e. Then, we choose the item that maximizes
+¯ge
+ce . Note that the time taken in each step
+is O(m · K), so the overall time taken by algorithm ParCA is O(m2K) = poly(m, cmax).
+Let L denote the list produced by the (sampling based) ParCA algorithm, and let NA be the
+resulting non-adaptive solution. We now show that the expected cost of NA is O(1
+δ log 1
+δ) · OPT. As
+before, OPT is the cost of an optimal fully-adaptive solution. This would prove Theorem 3.1 even
+for the sampling-based ParCA algorithm.
+Lemma C.1. At any step, with already added items S, we have Pr[f(S) ≤τ] ≤P
+Xe∈X\S ge.
+Proof. We can write:
+X
+Xe∈X\S
+ge =
+X
+Xe∈X\S
+ES,Xe
+
+1f(S)≤τ · f(S ∪Xe) −f(S)
+Q −f(S)
+
+= EX
+
+1f(S)≤τ ·
+X
+Xe∈X\S
+f(S ∪Xe) −f(S)
+Q −f(S)
+
+
+≥EX
+
+1f(S)≤τ · f(X) −f(S)
+Q −f(S)
+
+= EX
+
+1f(S)≤τ
+
+= Pr[f(S) ≤τ].
+Above, the inequality is by submodularity and the second-last equality uses the fact that f(X) = Q
+with probability one.
+Let L′ denote the maximal preﬁx of list L where maxe ge ≥ε :=
+1
+m2cmax at each step. Let NA′
+denote the cost incurred by the non-adaptive solution on items in L′ and NA′′ be the cost incurred
+on items L \ L′. Clearly, E[NA] = E[NA′] + E[NA′′].
+By Lemma C.1, it follows that after L′ ends, we have Pr[f(S) ≤τ] ≤m·maxe ge ≤mε ≤
+1
+mcmax .
+In other words, Pr[NA continues after L′] ≤
+1
+mcmax and hence
+E[NA′′] ≤Pr[NA continues after L′] · mcmax = O(1).
+It now remains to bound E[NA′].
+Let ¯NA denote any non-adaptive solution obtained by algorithm ParCA assuming that it always
+selects an item Xe with score(Xe) ≥1
+4 maxi score(Xi). In words, ¯NA is built using items having 1
+4-
+approximately maximum score. It can be easily veriﬁed that the analysis in §3.1 can be extended to
+prove E[ ¯NA] ≤O(1
+δ log 1
+δ) · OPT. (The only change is an additional factor of 1
+4 in the right-hand-side
+of (13).) We now bound E[NA′] using E[ ¯NA].
+Lemma C.2. Consider any item Xe in L′ (with S denoting all previous items). Then, we have
+score(Xe) ≥1
+4 maxXi∈X\S score(Xi) with probability at least 1 −
+1
+m2cmax .
+Proof. We partition the remaining items X \ S into I+ = {i : gi ≥ε/4} and I−= {j : gj < ε/4}.
+Consider any item i ∈I+: so gi ≥ε/4. As ¯gi is the average of K independent samples each of
+mean gi, using a Chernoﬀbound we obtain Pr[1
+2gi ≤¯gi ≤2gi] ≥1 −e−Ω(εK) ≥1 −
+1
+m3cmax . Now
+41
+
+consider an item j ∈I−: so gj < ε/4. By a Chernoﬀbound again, Pr[ ¯gj > ε/2] ≤e−Ω(εK) ≤
+1
+m3cmax .
+So, with probability at least 1 −
+1
+m2cmax ,
+1
+2gi ≤¯gi ≤2gi for all i ∈I+, and ¯gj ≤ε
+2 for all j ∈I−.
+Below, we condition on this event.
+As item e is in L′, we know that maxi gi ≥ε. So I+ ̸= ∅. Recall that ¯ge = maxi ¯gi. Combined
+with the above, it follows that e ∈I+. Moreover,
+ge ≥1
+2 ¯ge = 1
+2 max
+i
+¯gi = 1
+2 max
+i∈I+ ¯gi ≥1
+4 max
+i∈I+ gi = 1
+4 max
+i
+gi.
+This completes the proof.
+We say that the sampling was successful if the event in Lemma C.2 occurs for every item in
+L′.
+As there are at most m items, sampling is successful with probability at least 1 −
+1
+mcmax .
+Conditioned on the sampling being successful, L′ is a preﬁx of some non-adaptive solution ¯NA that
+always selects an item having 1
+4-approximately maximum score. Hence,
+E[NA′ |sampling successful] ≤E[ ¯NA] ≤O(1
+δ log 1
+δ ) · OPT.
+If sampling is not successful then NA′ costs at most mcmax. So,
+E[NA′] ≤E[NA′ |sampling successful] + Pr(sampling not successful) · mcmax ≤O
+1
+δ log 1
+δ
+
+· OPT.
+It now follows that E[NA] = E[NA′] + E[NA′′] ≤O(1
+δ log 1
+δ) · OPT as desired.
+D
+Additional Plots
+In the main body of the paper, we only include plots related to the ﬁrst dataset for the WISER −U
+and WISER −R cases. The trends observed in the other datasets are similar. We include plots for
+all 10 datasets here for completeness.
+42
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.6
+8.8
+9.0
+9.2
+9.4
+9.6
+9.8
+10.0
+10.2
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.6
+8.8
+9.0
+9.2
+9.4
+9.6
+9.8
+10.0
+10.2
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.6
+8.8
+9.0
+9.2
+9.4
+9.6
+9.8
+10.0
+10.2
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+10.50
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.6
+8.8
+9.0
+9.2
+9.4
+9.6
+9.8
+10.0
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+8.75
+9.00
+9.25
+9.50
+9.75
+10.00
+10.25
+Cost
+Our Algorithm
+Fully Adaptive
+Information-theoretic lower bound
+Figure 7: Computational results for ODT on WISER −U
+43
+
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+28
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+28
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+22
+24
+26
+28
+30
+32
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+16
+18
+20
+22
+24
+26
+28
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+26
+28
+30
+32
+34
+36
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+22
+24
+26
+28
+30
+32
+34
+Cost
+Our Algorithm
+Fully Adaptive
+1
+2
+3
+4
+5
+6
+7
+8
+9
+Rounds of adaptivity
+18
+20
+22
+24
+26
+28
+30
+Cost
+Our Algorithm
+Fully Adaptive
+Figure 8: Computational results for ODT on WISER −R
+44

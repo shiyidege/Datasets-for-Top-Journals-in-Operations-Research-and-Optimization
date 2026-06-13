@@ -1,0 +1,2474 @@
+TITLE: From Proper Scoring Rules to Max-Min Optimal Forecast Aggregation
+JOURNAL: Operations_Research
+YEAR: 2023
+DOI: https://doi.org/10.1287/opre.2022.2414
+---
+
+From Proper Scoring Rules to Max-Min Optimal Forecast
+Aggregation
+Eric Neyman, Tim Roughgarden
+August 22, 2023
+Abstract
+This paper forges a strong connection between two seemingly unrelated forecasting problems:
+incentive-compatible forecast elicitation and forecast aggregation. Proper scoring rules are the
+well-known solution to the former problem. To each such rule s we associate a corresponding
+method of aggregation, mapping expert forecasts and expert weights to a “consensus forecast,”
+which we call quasi-arithmetic (QA) pooling with respect to s. We justify this correspondence
+in several ways:
+• QA pooling with respect to the two most well-studied scoring rules (quadratic and log-
+arithmic) corresponds to the two most well-studied forecast aggregation methods (linear
+and logarithmic).
+• Given a scoring rule s used for payment, a forecaster agent who sub-contracts several
+experts, paying them in proportion to their weights, is best off aggregating the experts’
+reports using QA pooling with respect to s, meaning this strategy maximizes its worst-case
+profit (over the possible outcomes).
+• The score of an aggregator who uses QA pooling is concave in the experts’ weights. As a
+consequence, online gradient descent can be used to learn appropriate expert weights from
+repeated experiments with low regret.
+• The class of all QA pooling methods is characterized by a natural set of axioms (general-
+izing classical work by Kolmogorov on quasi-arithmetic means).
+1
+arXiv:2102.07081v2 [cs.GT] 19 Aug 2023
+
+1.
+Introduction and motivation
+1.1.
+Probabilistic opinion pooling
+You are a meteorologist tasked with advising the governor of Florida on hurricane preparations. A
+hurricane is threatening to make landfall in Miami, and the governor needs to decide whether to
+order a mass evacuation. The governor asks you what the likelihood is of a direct hit, so you decide
+to consult several weather models at your disposal. These models all give you different answers:
+10%, 25%, 70%. You trust the models equally, but your job is to come up with one number for
+the governor — your best guess, all things considered. What is the most sensible way for you to
+aggregate these numbers?
+This is one of many applications of probabilistic opinion pooling. The problem of probabilis-
+tic opinion pooling (or forecast aggregation) asks: how should you aggregate several probabilities,
+or probability distributions, into one? This question is relevant in nearly every domain involving
+probabilities or risks: meteorology, national security, climate science, epidemiology, and economic
+policy, to name a few.
+For a different example of opinion pooling, suppose that you are a consultant tasked with
+determining the likelihood of your party winning various races in the upcoming election, as part
+of helping optimally allocate resources. There are many election forecasting models, such as those
+produced by FiveThirtyEight and The Economist. Again, these models give somewhat different
+probabilities; what is the most sensible way to aggregate these numbers into a single probability
+for each race?
+In some sense this example is isomorphic to the previous one, but there are domain-specific
+considerations which might lead to different pooling methods being desirable in the two settings.
+We will elaborate on this later.
+As a third example, consider websites that rely on the “wisdom of crowds” to arrive at a reason-
+able forecast. One such website is metaculus.com, which elicits probabilistic forecasts from users
+on a variety of subjects. In this setting, the goal is to produce an aggregate forecast that reflects the
+opinion of a large, moderately informed crowd, as opposed to a small, well-informed pool of experts.
+All of these examples fall into the following framework: there are m experts, who report prob-
+ability distributions p1, . . . , pm over n possible outcomes (we call these reports, or forecasts). Ad-
+ditionally, each expert i has a non-negative weight wi (with weights adding to 1); this weight
+represents the expert’s quality, i.e. how much the aggregator trusts the expert. A pooling method
+takes these distributions and weights as input and outputs a single distribution p. (Where do these
+weights come from? How can one learn weights for experts? More on this later.)
+Linear pooling is arguably the simplest of all reasonable pooling methods: a weighted arith-
+metic mean of the probability distributions.
+p =
+m
+X
+i=1
+wipi
+Linear pooling is the most frequently used opinion pooling method across a wide range of appli-
+cations, including meteorology, economics, and medical diagnoses [RG10]. Indeed, linear pooling
+1
+
+frequently outperforms attempts at more sophisticated pooling methods, which often lead to over-
+fitting [Win+18].
+Logarithmic pooling (sometimes called log-linear or geometric pooling) consists of taking a
+weighted geometric mean of the probabilities and scaling appropriately.
+p(j) = c
+m
+Y
+i=1
+(pi(j))wi.
+Here, p(j) denotes the probability of the j-th outcome and c is a normalizing constant to make the
+probabilities add to 1. The logarithmic pool has a natural interpretation as an average the experts’
+Bayesian evidence (see Appendix A for details).
+The linear and logarithmic pooling methods are by far the two most studied ones, see e.g.
+[GZ86], [PR00], [KR08]. This is because they are simple and follow certain natural rules, which
+we briefly discuss in Section 2. Furthermore, they are each optimal according to some natural
+optimality metrics, see e.g. [Abb09].
+1.2.
+Proper scoring rules
+A seemingly unrelated topic within probabilistic forecasting is the truthful elicitation of forecasts:
+how can a principal structure a contract so as to elicit an expert’s probability distribution in a way
+that incentivizes truthful reporting? This is usually done using a proper scoring rule.
+A scoring rule is a function s that takes as input (1) a probability distribution over n outcomes1
+and (2) a particular outcome, and assigns a score, or reward. The interpretation is that if the expert
+reports a distribution p and event j comes to pass, then the expert receives reward s(p; j) from
+the principal. A scoring rule is called proper if the expert’s expected score is strictly maximized by
+reporting their probability distribution truthfully. That is, s is proper if
+n
+X
+j=1
+p(j)s(p; j) ≥
+n
+X
+j=1
+p(j)s(x; j)
+for all x, with equality only for x = p. It is worth noting that properness is preserved under positive
+affine transformations. That is, if s is proper, then s′(p; j) := as(p; j) + b is proper if a > 0.
+Quadratic scoring rule
+One example of a proper scoring rule is Brier’s quadratic scoring rule,
+introduced in [Bri50]. It is given by
+squad(p; j) := 2p(j) −
+n
+X
+k=1
+p(k)2.
+The quadratic scoring rule can be interpreted as penalizing the expert by an amount equal to the
+squared distance from their report p to the “true answer” δj (i.e. the vector with a 1 in the j-th
+position and zeros elsewhere).
+1We specify the domain of s more precisely in Section 3.
+2
+
+Logarithmic scoring rule
+Another example of a proper scoring rule is the logarithmic scoring
+rule, introduced in [Goo52]. It is given by
+slog(p; j) := ln p(j).
+The logarithmic rule is the only proper scoring rule for which an expert’s score only depends on the
+probability assigned to the eventual outcome and not other outcomes [SAM66]. The quadratic and
+logarithmic scoring rules are by far the most studied and most frequently used ones in practice.
+Choice of scoring rule as a value judgment
+There are infinitely many proper scoring rules.
+How might a principal go about deciding which one to use? To gain some intuition, we will take
+a closer look at the quadratic and logarithmic scoring rules in the case of n = 2 outcomes. In
+Figure 1, for both of these scoring rules, we show the difference between the expert’s reward if a
+given outcome happens and their reward if it does not happen, as a function of the probability that
+they assign to the outcome.2
+Figure 1: Difference between expert’s reward if an outcome happens and if it does not happen, as a function of the
+expert’s report, for the quadratic and logarithmic scoring rules. For example, if the expert reports a 70% probability
+of an outcome, then under the quadratic rule they receive a score of 2·0.7−0.72 −0.32 = 0.82 if the outcome happens
+and 2 · 0.3 −0.72 −0.32 = 0.02 if it does not: a difference of 0.8. If rewarded with the logarithmic rule, this difference
+would be 0.61.
+This difference scales linearly with the expert’s report for the quadratic rule. Meanwhile, for
+the logarithmic rule, the difference changes more slowly than for the quadratic rule for probabilities
+in the middle, but much more quickly at the extremes. Informally speaking, this means that the
+logarithmic rule indicates a preference (of the elicitor) for high precision close to 0 and 1, while
+the quadratic rule indicates a more even preference for precision across [0, 1]. Put another way, an
+elicitor who chooses to use the logarithmic scoring rule renders a judgment that the probabilities
+0.01 and 0.001 are quite different; one who uses the quadratic rule indicates that these probabilities
+are very similar.
+On its surface, the elicitation of forecasts has seemingly little to do with their aggregation.
+However, given that the choice of scoring rule implies a subjective judgment about how different
+probabilities compare to one another, it makes sense to apply this judgment to the aggregation of
+forecasts as well.
+2We scale down the logarithmic rule by a factor of 2 ln 2 to make the two rules comparable. The factor 2 ln 2 was
+chosen to make the range of values taken on by the Savage representations of the two scoring rules the same (see
+Section 1.3).
+3
+
+As an example, consider the setting of weather prediction, with models playing the role of
+experts. In such contexts we often care about low-probability extreme events: a 0.1% chance of
+an imminent major hurricane may not be worth preparing for; a 1% chance could mean significant
+preparations, and a 10% chance could mean mandatory evacuations. The need to distinguish very
+unlikely events from somewhat unlikely events has two consequences. First, as discussed above,
+this is a reason to use the logarithmic scoring rule to assess the quality of weather models. Second,
+we wish to avoid the failure mode in which an ill-informed forecaster assigns a high probability
+due to lack of evidence and thereby drowns out a better-informed low-probability forecast. We
+would expect to encounter this failure mode with linear pooling; for example, if the more informed
+model predicts a 0.1% chance and the less informed model predicts a 20% chance, linear pooling
+with equal weights3 would predict roughly a 10% chance. Logarithmic pooling, by contrast, assigns
+roughly a 1.6% chance to the event, avoiding this failure mode. In general, a calibrated model that
+predicts a very low probability must have good evidence, so it may make sense to give the model
+more weight.
+By contrast, a consultant whose job is to determine the closest races in an election may not
+much care about the difference between a 0.1% and a 1% chance of victory. After all, attention and
+resources are generally devoted to races with highly uncertain outcomes. As such, it might make
+sense to assess the qualities of forecast models using the quadratic scoring rule. Similarly, without
+a compelling reason to pay extra attention to extreme probabilities, it may make more sense to
+simply take the average of the forecasts’ opinions.
+In the case of extreme weather prediction, we have argued in favor of using the logarithmic
+scoring rule to assess the models and the logarithmic pooling method to aggregate them, for similar
+reasons. In the case of political prediction for targeting close races, we have argued in favor of
+the quadratic scoring rule and linear pooling, also for similar reasons. Could there be a formal
+connection between proper scoring rules and opinion pooling methods that captures this intuition?
+This brings us to the main focus of our paper: namely, we prove a novel correspondence between
+proper scoring rules and opinion pooling methods.
+1.3.
+Our definitions
+Before introducing the aforementioned correspondence, we need to introduce the Savage represen-
+tation of a proper scoring rule.
+Savage representation
+A proper scoring rule has a unique representation in terms of its ex-
+pected reward function G, i.e.
+the expected score on an expert who believes (and reports) a
+distribution p:
+G(p) := Ej←p [s(p; j)] =
+n
+X
+j=1
+p(j)s(p; j).
+This representation of s, introduced in [Sav71], is known as the Savage representation, though we
+will usually refer to it as the expected reward function. Given that s is proper, G is strictly convex;
+and conversely, given a strictly convex function G, one can re-derive s with the formula
+s(p; j) = G(p) + ⟨g(p), δj −p⟩,
+(1)
+3Assigning equal weights make sense when there is not enough information to predict in advance which model will
+be less informed.
+4
+
+where g is the gradient4 of G [GR07]. Pictorially, draw the tangent plane to G at p; then the
+expert’s score if outcome j is realized is the height of the plane at δj.
+The Savage representation of the quadratic scoring rule is Gquad(p) = Pn
+j=1 p(j)2. The Savage
+representation of the logarithmic scoring rule is Glog(p) = Pn
+j=1 p(j) ln p(j).
+The function g, which will be central to our paper, describes the difference in the expert’s
+score depending on which outcome happens. More precisely, the vector (s(p; j1), . . . , s(p; jn)) is
+exactly the vector g(p), except possibly for a uniform translation in all coordinates. For example,
+s(p; j1)−s(p; j2) = g1(p)−g2(p); this is precisely the quantity plotted in Figure 1 for the quadratic
+and logarithmic scoring rules. This observation about the function g motivates the connection that
+we will establish between proper scoring rules and opinion pooling methods.
+Quasi-arithmetic opinion pooling
+We can now define our correspondence between proper
+scoring rules and opinion pooling methods.
+Given a proper scoring rule s used for elicitation,
+and given m probability distributions p1, . . . , pm and expert weights w1, . . . , wm, the aggregate
+distribution p∗that we suggest is the one satisfying
+g(p∗) =
+m
+X
+i=1
+wig(pi).
+(In Section 3 we will define this notion more precisely using subgradients of G instead of gradients;
+this will ensure that p∗is well defined, i.e. that it exists and is unique.) This definition of p∗can
+be restated as the forecast that minimizes the weighted average Bregman divergence (with respect
+to G) to all experts’ forecasts.
+We refer to this pooling method as quasi-arithmetic pooling with respect to g (or the scoring
+rule s), or QA pooling for short.5 To get a sense of QA pooling, let us determine what this method
+looks like for the quadratic and logarithmic scoring rules.
+QA pooling with respect to the quadratic scoring rule
+We have gquad(x) = (2x1, . . . , 2xn),
+so we are looking for the p∗such that
+(2p∗(1), . . . , 2p∗(n)) =
+m
+X
+i=1
+wi(2pi(1), . . . , 2pi(n)).
+This is p∗= Pm
+i=1 wipi. Therefore, QA pooling for the quadratic scoring rule is precisely linear
+pooling.
+QA pooling with respect to the logarithmic scoring rule
+We have glog(x) = (ln x1 +
+1, . . . , ln xn + 1), so we are looking for the p∗such that
+(ln p∗(1) + 1, . . . , ln p∗(n) + 1) =
+m
+X
+i=1
+wi(ln pi(1) + 1, . . . , ln pi(n) + 1).
+By exponentiating the components on both sides, we find that p∗(j) = c Qn
+i=1(pi(j))wi for all j, for
+some proportionality constant c. This is precisely the definition of the logarithmic pooling method.
+(The constant c comes from the fact that values of g(·) should be interpreted modulo translation
+4Or a subgradient, if G is not differentiable.
+5This term comes from the notion of quasi-arithmetic means: given a continuous, strictly increasing function f
+and values x1, . . . , xm , the quasi-arithmetic mean with respect to f of these values is f −1(1/m P
+i f(xi)).
+5
+
+by the all-ones vector; see Remark 3.12.)
+The fact that this pooling scheme maps the two most well-studied scoring rules to the two
+most well-studied opinion pooling methods has not been noted previously, to our knowledge. This
+correspondence suggests that — beyond just our earlier informal justification — QA pooling with
+respect to a given scoring rule may be a fundamental concept. The rest of this paper argues that
+this is indeed the case.
+This correspondence may have practical implications for forecasters. While the quadratic and
+logarithmic scoring rules are both ubiquitous in practice, linear pooling is far more common than
+logarithmic pooling [RG10].
+This is despite empirical evidence that logarithmic pooling often
+outperforms linear pooling [Sat+14b]. The connection that we establish between the logarithmic
+scoring rule and logarithmic pooling provides further reason to think that logarithmic pooling has
+been somewhat overlooked.
+1.4.
+Our results
+(Section 4) Max-min optimality
+Suppose that a principal asks you to issue a forecast and will
+pay you according to s. You are not knowledgeable on the subject but know some experts whom
+you trust on the matter (perhaps to varying degrees). You sub-contract the experts, promising
+to pay each expert i according to wi · s. By using QA pooling according to s on the experts’
+forecasts, you guarantee yourself a profit; in fact, this strategy maximizes your worst-case profit,
+and is the unique such report. Furthermore, this profit is the same for all outcomes. This fact can
+be interpreted to mean that you have, in a sense, pooled the forecasts “correctly”: you do not care
+which outcome will come to pass, which means that you have correctly factored the expert opinions
+into your forecast. We give an additional interpretation of this optimality notion as maximizing an
+aggregator’s guaranteed improvement over choosing an expert at random.
+(Section 5) Learning expert weights
+Opinion pooling entails assigning weights to experts.
+Where do these weights come from? How might one learn them from experience?
+Suppose we have a fixed proper scoring rule s, and further consider fixing the reports of the
+m experts as well as the eventual outcome. One can ask: what does the score of the aggregate
+distribution (per QA pooling with respect to s) look like as a function of w, the vector of expert
+weights? We prove that this function is concave. This is useful because it allows for online convex
+optimization over expert weights.
+Theorem (informal). Let s be a bounded proper scoring rule.6
+For time steps t = 1 . . . T, m
+experts report forecasts to an aggregator, who combines them into a forecast pt using QA pooling
+with respect to s and suffers a loss of −s(pt; jt), where jt is the outcome at time step t. If the
+aggregator updates the experts’ weights using online gradient descent, then the aggregator’s regret
+compared to the best weights in hindsight is O(
+√
+T).
+The aforementioned concavity property is a nontrivial fact that demonstrates an advantage of
+QA pooling over e.g. linear and logarithmic pooling: these pooling methods satisfy the concavity
+property for some proper scoring rules s but not others.
+(Section 6) Natural axiomatization for QA pooling methods
+[Kol30] and [Nag30] inde-
+pendently came up with a simple axiomatization of quasi-arithmetic means.
+We show how to
+6For which QA pooling is well defined (we discuss this below).
+6
+
+change these axioms to allow for weighted means; the resulting axiomatization is a natural char-
+acterization of all quasi-arithmetic pooling methods in the case of n = 2 outcomes. Furthermore,
+although quasi-arithmetic means are typically defined for scalar-valued functions, we demonstrate
+that these axioms can be extended to describe quasi-arithmetic means with respect to vector-valued
+functions, as is necessary for our purposes if n > 2. This extension is nontrivial but natural, and
+to our knowledge has not previously been described.7
+2.
+Related work
+Opinion pooling
+[CW07] categorize mathematical approaches to opinion pooling as either Bayesian
+or axiomatic. A Bayesian approach to this problem is one that entails Bayes updating on each ex-
+pert’s opinion.
+While quite natural, Bayesian opinion pooling is difficult to apply and, in full
+generality, computationally intractable. This is because the Bayes updates must fully account for
+interdependencies between expert opinions.
+By contrast, axiomatic approaches do not make assumptions about the structure of information
+underlying the experts’ opinions; instead, they aim to come up with pooling methods that satisfy
+certain axioms or desirable properties.
+Such axioms include unanimity preservation, eventwise
+independence, and external Bayesianality; see e.g. [DL14] for statements of these axioms. For
+n > 2 outcomes, linear pooling is the only method that is both unanimity preserving and eventwise
+independent [AW80]; however, it is not externally Bayesian. On the other hand, logarithmic pooling
+is both unanimity preserving and externally Bayesian [Gen84]. It is not the only such method, but it
+is arguably the most natural. Our approach has an axiomatic flavor (though it differs substantially
+from previous axiomatic approaches).
+The earliest comprehensive treatment of opinion pooling in a mathematical setting was by
+Genest and Zidek [GZ86].
+See [CW07] and [DL14] for more recent high-level overviews of the
+subject, including discussion of both Bayesian and axiomatic approaches, as well as discussion of
+the axioms we discussed in Section 1.1. Recent work on Bayesian opinion pooling includes [CL13],
+[Sat+14a], [FCK15], and [ABS18]. Finally, see [FES20] for work on learning weights for linear
+pooling under a quadratic loss function; this is an instance of our more general theory in Section 5.
+For a more detailed discussion of axiomatic approaches, see [ACR12]. See also [Abb09] for a non-
+Bayesian approach that is closely related to ours; our work generalizes [Abb09, Proposition 4].
+Part of our work provides an alternative interpretation of prior work on pooling via minimizing
+Bregman divergence, see e.g. [Ada14] and [Pet19]. (We define Bregman divergence in Section 3.)
+Concretely, [Pet19, §4] defines a notion of pooling analogous to ours, though in a different context.
+The main focus of their line of work is on connecting opinion pooling to Bregman divergence; our
+approach connects opinion pooling to proper scoring rules, and a connection to Bregman divergence
+falls naturally out of this pursuit.
+Scoring rules
+The literature on scoring rules is quite large; we recommend [GR07] for a thorough
+but technical overview, or [Car16] for a less technical overview that focuses more on applications
+(while still introducing the basic theory). Seminal work on the theory behind scoring rules includes
+Brier’s paper introducing the quadratic rule [Bri50], Good’s paper introducing the logarithmic rule
+[Goo52], and Savage’s work on the general theory of proper scoring rules [Sav71]. Additionally, see
+[DM14] for an overview of various families of proper scoring rules.
+7For n > 2, these axioms characterize the class of all QA pooling methods with respect proper scoring rules that
+satisfy convex exposure, a natural condition that we introduce in Section 3.
+7
+
+Max-min optimality
+Gr¨unwald and Dawid establish a connection between minimizing worst-
+case expected loss and maximizing a generalized notion of entropy [GD04]. The application of
+their quite general work to the domain of proper scoring rules states that a forecaster who seeks
+to maximize their worst-case score (over outcomes) ought to report the minimizer of the expected
+reward function of the scoring rule. Although they do not discuss opinion pooling, their work is
+closely related to our Theorem 4.1; we discuss the connection in more detail in Section 4.
+Dual averaging
+One perspective on QA pooling is that, instead of directly averaging experts’
+forecasts, QA pooling prescribes considering forecasts as elements in the dual space of gradients
+(of the function G) and taking the average in this space before converting the result back to the
+primal space of probabilities. Gradient methods in online machine learning often take the sum of
+gradients of losses. Taking the average is of gradients is a less ubiquitous technique known as dual
+averaging, which was introduced by Nesterov [Nes09] and generalized further by Xiao [Xia10]. The
+contexts or QA pooling and dual averaging are quite different, and interpretations of QA pooling
+in the context of dual averaging appear to be fairly unnatural.
+Aggregation via prediction markets
+One common way to aggregate probabilistic forecasts is
+through prediction markets, some of which are based on scoring rules. [Han03] introduced market
+scoring rules (MSRs), in which experts are sequentially presented with an opportunity to update
+an aggregate forecast and are rewarded (or penalized) by the amount that their update changed the
+aggregate prediction’s eventual score. [CP07] introduced cost-function markets, in which a market
+maker sells n types of shares — one for each outcome — where the price of a share depends on
+the number of shares sold thus far according to some cost function. They established a connection
+between cost-function markets and MSRs, where a market with a given cost function will behave
+the same way as a certain MSR. In particular, the cost function C of a cost function market is
+the convex dual of the expected reward function G of the proper scoring rule associated with the
+corresponding MSR [ACV13, §8.3].
+Subsequent work explored this area further, tying cost-function market making to online learning
+of probability distributions [CV10] [ACV13]. This work differs from ours in that the goal of their
+online learning problem is to learn a probability distribution over outcomes, whereas our goal in
+Section 5 is to learn expert weights.
+QA pooling has a simple interpretation in terms of cost function markets: for the cost function
+market corresponding to the scoring rule s, let qi be the quantity vector that implies each expert
+i’s probability pi (or in other terms, i would buy a bundle qi of shares as the first participant in the
+market). Then the QA pool with respect to s is the probability implied by the weighted average
+quantity vector P
+i wiqi.
+This interpretation stands in contrast to most past work on MSRs and cost function markets.
+Typically experts trade in series rather than in parallel, and incentives are set up so that an expert
+brings the market into alignment with their own opinion, rather than an aggregate. Thus, in the
+well-studied setting of traders whose beliefs do not depend on previous traders’ actions, the final
+state of such a market reflects only the beliefs of the most recent trader, rather than an aggregate
+of beliefs. One exception to this paradigm is [Hei+18], which studies traders who trade in series,
+although in a completely different context.
+Arbitrage from collusion
+Part of our work can be viewed as a generalization of previous work
+by Chun and Shachter done in a different context: namely, preventing colluding experts from
+exploiting arbitrage opportunities [CS11]. The authors show that for the case of n = 2 outcomes,
+8
+
+if experts are rewarded with the same scoring rule s, preventing this is impossible: the experts can
+successfully collude by all reporting what we are calling the QA pool of their reports with respect
+to s. Our Theorem 4.1 recovers this result as a special case. See [Che+14] for related work in
+the context of wagering mechanisms and [Fre+20] for follow-up work on preventing arbitrage from
+colluding experts.
+Prediction with expert advice
+In Section 5 we discuss learning expert weights online. The
+online learning literature is vast, but our approach fits into the framework of prediction with expert
+advice. In this setting, at each time step each expert submits a report (in our context a probability
+distribution). The agent then submits a report based on the experts’ submissions, and suffers a
+loss depending on this report and the eventual outcome. See [CBL06] for a detailed account of this
+setting; the authors prove a variety of no-regret bounds in this setting, ranging (depending form
+the setting) from O(
+√
+T) to O(1). Our setting is an ambitious one: while typically one desires low
+regret compared to the best expert in hindsight, we desire low regret compared to the best mixture
+of experts in hindsight. In [CBL06, §3.3], the authors discuss this more ambitious goal, proving (in
+our terminology) that for a certain class of losses — bounded exp-concave losses — it is possible
+to achieve O(log T) regret in comparison with the best linear pool of experts in hindsight. This
+setting is different from ours in two important ways: first, the losses that we consider are not in
+general exp-concave (e.g. the quadratic loss); and second, the authors consider linear pooling for
+any loss, whereas we consider QA pooling with respect to the loss function.
+Quasi-arithmetic means
+Our notion of quasi-arithmetic pooling is an adaptation (and exten-
+sion to higher dimensions) of the existing notion of quasi-arithmetic means. These were originally
+defined and axiomatized independently in [Kol30] and [Nag30]. Acz´el generalized this work to in-
+clude weighted quasi-arithmetic means [Acz48], though these means have weights baked in rather
+than taking them as inputs, which is different from our setting. See [Gra+11, §3.1] for an overview
+of this topic.
+3.
+Preliminaries
+Throughout this paper, we will let m be the number of experts and use the index i to refer to any
+particular expert. We will let n be the number of outcomes and use the index j to refer to any
+particular outcome. We will also let ∆n be the standard simplex in Rn, i.e. the one with vertices
+δ1, . . . , δn. (Here, δj denotes the vector with a 1 in the j-th coordinate and zeros elsewhere.)
+3.1.
+Proper scoring rules
+A scoring rule is a function s : ∆n × [n] →R ∪{−∞}. The interpretation of s is that an expert
+receives reward s(p; j) if they report p and outcome j happens. A scoring rule s is proper if for all
+p ∈∆n, we have
+Ej←p [s(p; j)] ≥Ej←p [s(x; j)]
+for all x ∈∆n, with equality only when x = p. (Here, j ←p means that j is drawn randomly from
+the probability distribution p.)8 We will henceforth assume that s is regular, meaning that s(·; j)
+is real-valued for all j, except possibly that s(p; j) = −∞if pj = 0 [GR07, Definition 2].
+8Some authors refer to such scoring rules as strictly proper while others define “proper” to entail strictness; we
+choose the latter convection.
+9
+
+We define the forecast domain D associated with s to be the set of forecasts p such that s(p; j)
+is real-valued for all j. When discussing forecast aggregation, we will assume that all forecasts
+belong to D.9
+Given a proper scoring rule s, we define its expected reward function G : ∆n →R by
+G(p) := Ej←p [s(p; j)] =
+n
+X
+j=1
+p(j)s(p; j).
+We will frequently be relying on an alternative representation of s – sometimes known as the
+Savage representation – in terms of G.
+Proposition 3.1 ([GR07, Theorem 2]). A regular scoring rule s is proper if and only if
+s(p; j) = G(p) + ⟨g(p), δj −p⟩,
+(2)
+for some convex function G : ∆n →R and subgradient function10 g of G. The function G is then
+the expected reward function of s.
+We will henceforth assume that s(·; j) is continuous on ∆n for all j, as is G(·); to our knowledge,
+this is the case for all frequently-used proper scoring rules.11 By Equation 2, this means that g is
+also continuous on ∆n.12 A convex function with a continuous finite subgradient is differentiable
+[BC11, Proposition 17.41], which means that G is differentiable on the interior of ∆n, with gradient
+g.
+The important intuition to keep in mind for Equation 2 is that the score of an expert who
+reports p is determined by drawing the tangent plane to G at p; the value of this plane at δj, where
+j is the outcome that happens, is the expert’s score.
+We refer to g as the exposure function of s. We borrow this term from finance, where exposure
+refers to how much an agent stands to gain or lose from various possible outcomes — informally
+speaking, how much the agent cares about which outcome will happen. If we view G(p)−⟨g(p), p⟩
+as the agent’s “baseline profit,” then the j-th component of g(p) is the amount that the agent
+stands to gain (or lose) on top of the baseline profit if outcome j happens.
+Following e.g. [GR07], we give a geometric intuition for Proposition 3.1 to help explain why the
+properness of s corresponds to the convexity of G; this intuition will be helpful for understanding
+Bregman divergence (below) and the proofs in Section 4.
+Consider Figure 2, which depicts some G in the n = 2 outcome case, with the x-axis corre-
+sponding to the probability of Outcome 1 (see Remark 3.5 for formal details). Suppose that the
+expert believes that the probability Outcome 1 is 0.7. If the expert reports p = 0.7, then their
+reward in the cases of Outcome 1 and Outcome 2 are the y-values of the rightmost and leftmost
+points on the red line, respectively. Thus, in expectation, the expert’s reward is the y-value of the
+red point. If instead the expert lies and reports p = 0.4 (say), then the y-values of the rightmost
+and leftmost points on the blue line represent the expert’s rewards in the cases of Outcome 1 and
+9This choice removes from consideration cases such as two experts reporting (1, 0) and (0, 1) under the logarithmic
+scoring rule; aggregating these forecasts using our method is tantamount to adding positive and negative infinity.
+10That is, g satisfies G(y) ≥G(x) + ⟨g(x), y −x⟩for all x, y. Note that gi(x) may be −∞if xi = 0; see [Wag21]
+for an examination of subgradients of functions to the extended reals.
+11For s, continuity is with respect to the standard topology on R ∪{−∞}, i.e. the one that includes sets of the
+form [−∞, r) as open sets.
+12Continuity of each component gℓof g is (as with s) with respect to the standard topology on R ∪{−∞}. To see
+that gℓis continuous at a given p, consider the limit of Equation 2 as x →p with j = ℓif pj = 0 and j ̸= ℓif pj ̸= 0.
+10
+
+Outcome 2, respectively. In this case, since Outcome 1 is still 70% likely, the expert’s expected
+reward is the y-value of the blue point. Because G is strictly convex, the blue point is strictly below
+the red point; that is, the expert is strictly better off reporting p = 0.7. This argument holds in
+full generality: for any strictly convex function G in any number of dimensions.
+Figure 2: A convex function G, with tangent lines drawn at x = 0.7 and x = 0.4. If an expert believes that the
+probability of an event is 0.7, their expected score if they report p = 0.7 is the y-value of the red point; if they instead
+report p = 0.4, their expected score is the y-value of the blue point. Because G is convex, the red point is guaranteed
+to be above the blue point, so the expert is incentivized to be truthful.
+We will find Bregman divergence to be a useful concept for some of our proofs.
+Definition 3.2 (Bregman divergence). Given a differentiable, strictly convex function G : S →R
+with gradient g, where S is a convex subset of Rn, and given p, q ∈S, the Bregman divergence
+between p and q with respect to G is
+DG(p ∥q) := G(p) −G(q) −⟨g(q), p −q⟩.
+(Note that Bregman divergence is not symmetric.) A geometric interpretation of DG(p ∥q)
+is: if you draw the tangent plane to G at q, how far below G(p) the value of that plane will
+be at p. For example, the distance between the red and blue points in Figure 2 is the Bregman
+divergence between the expert’s belief (0.7, 0.3) and their report (0.4, 0.6). This gives the following
+interpretation of Bregman divergence in the context of proper scoring rules:
+Remark 3.3. If G is the expected reward function of a proper scoring rule, then DG(p ∥q) is the
+expected reward lost by reporting q when your belief is p. Put otherwise, DG(p ∥q) measures the
+“wrongness” of the report q relative to a correct answer of p.
+Proposition 3.4 (Well-known facts about Bregman divergence).
+• DG(p ∥q) ≥0, with equality only when p = q.
+• For any q, DG(x ∥q) is a strictly convex function of x.
+Finally, we make a note about interpreting the n = 2 outcome case in one dimension.
+Remark 3.5. Because ∆n is (n −1)-dimensional, we can think of the case of n = 2 outcomes
+in one dimension. All probabilities in are of the form (p, 1 −p); we map ∆2 to [0, 1] via the first
+coordinate. Thus, we let G(p) := G(p, 1 −p). We let g(p) := G′(p) = ⟨g(p, 1 −p), (1, −1)⟩. The
+tangent line to G at p, e.g. as in Figure 2, will intersect the line x = 1 at s(p; 1) (i.e. the score if
+Outcome 1 happens) and intersect the line x = 0 at s(p; 2) (i.e. the score if Outcome 2 happens).
+This formulation will be helpful when discussing the two-outcome case, e.g. in Section 6.
+11
+
+3.2.
+Quasi-arithmetic pooling
+We now introduce the central concept of this paper, quasi-arithmetic pooling.
+Definition 3.6 (quasi-arithmetic pooling). Let s be a proper scoring rule with expected reward
+function G and exposure function g. Given forecasts p1, . . . , pm ∈D with non-negative weights
+w1, . . . , wm adding to 1, the quasi-arithmetic (QA) pool of these forecasts with respect to s (or
+with respect to g), denoted by
+m
+M
+g
+i=1
+(pi, wi), is the unique p∗∈∆n such that Pm
+i=1 wig(pi) is a
+subgradient of G at p∗.
+If the forecasts and weights are clear from context, we may simply write p∗to refer to their
+quasi-arithmetic pool; or, if only the forecasts are clear, we may write p∗
+w, where w is the vector of
+weights.
+Remark 3.7. Equivalently [Roc70b, Theorem 23.5], we can define
+m
+M
+g
+i=1
+(pi, wi) := arg min
+x G(x) −⟨x,
+m
+X
+i=1
+wig(pi)⟩.
+(3)
+Also equivalently, we can define
+m
+M
+g
+i=1
+(pi, wi) := arg min
+x
+m
+X
+i=1
+wiDG(x ∥pi).
+This expression differs from the one in Equation 3 by a constant: namely, P
+i wi(⟨pi, g(pi)⟩−G(pi)).
+The QA-pool is well-defined, i.e. exists and is unique. It is unique because a strictly convex
+function cannot have the same subgradient at two different points [Wag21, Lemma 3.11]. It exists
+because G(x) −⟨x, P
+i wig(pi)⟩is continuous and thus attains its minimum on the (compact)
+domain ∆n.
+In light of the fact that DG(p ∥q) is the expected reward lost by an expert who, believing
+p, reports q (see Remark 3.3), the Bregman divergence formulation of QA pooling gives another
+natural interpretation.
+Remark 3.8. Consider a proper scoring rule s with forecasts p1, . . . , pm with weights w1, . . . , wm.
+The QA pool of these forecasts is the forecast p∗that, if it is the correct answer (i.e. if the outcome
+is drawn according to p∗), would minimize the expected loss of a randomly chosen (according to
+w) expert relative to reporting p∗.
+In this sense, QA pooling reflects a compromise between experts: it is the probability that, if
+it were correct, would make the experts’ forecast least wrong overall.
+Remark 3.9. Since the Bregman divergence is convex in its first argument, computing the QA
+pool is a matter of convex optimization. In particular, given oracle access to g, the ellipsoid method
+can be used to efficiently find the QA pool of a list of forecasts.
+Note that although Definition 3.6 only specifies that p∗∈∆n, in fact it lies in D:
+Claim 3.10. For any p1, . . . , pm and w1, . . . , wm, the QA pool p∗lies in D.
+12
+
+Proof. Let x ∈∆n \ D. We show that P
+i wig(pi) is not a subgradient of G at x.
+We have s(x; j) = −∞for some j (satisfying xj = 0), so ⟨g(x), δj −x⟩= −∞. Since g is
+continuous, for sufficiently small ϵ, we have
+⟨g(x + ϵ′(δj −x)), δj −x⟩< ⟨
+X
+i
+wig(pi), δj −x⟩
+for all ϵ′ ≤ϵ. This means that
+G(x + ϵ(δj −x)) −G(x) < ⟨
+X
+i
+wig(pi), ϵ(δj −x)⟩,
+so P
+i wig(pi) is not a subgradient of G at x, as desired.
+While our max-min optimality result (Section 4) holds unconditionally, our results in Section 5
+and 6 require that our proper scoring rule s satisfy a property that we term convex exposure.
+Definition 3.11 (convex exposure). A proper scoring rule s with forecast domain D has convex
+exposure if the range of its exposure function g on D is a convex set.
+The key fact about proper scoring rules with convex exposure is that for all p1, . . . , pm and
+w1, . . . , wm, P
+i wig(pi) = g(x) for some x ∈D. This means that P
+i wig(pi) is a subgradient of
+G at x, so x is the weighted QA pool of the pi’s. In other words, we may write
+g(p∗) =
+X
+i
+wig(pi),
+(4)
+where p∗is the weighted QA pool of the given forecasts. The convex exposure property thus allows
+us to write down relations between exposures of forecasts that would otherwise not necessarily be
+true.
+The quadratic and logarithmic scoring rules, as well as all proper scoring rules for binary
+outcomes, have convex exposure. In Appendix D we explore in more depth the question of which
+commonly used proper scoring rules have convex exposure property.
+Remark 3.12. Because the domain of G is a subset of ∆n (and thus lies in a plane that is
+orthogonal to the all-ones vector 1n), it makes the most sense to think of its gradient function g
+as taking on values in Rn modulo translation by the all-ones vector 1n; we will denote this space
+by Rn/T(1n). Sometimes we find it convenient to treat G as a function of n variables rather than
+n −1 variables out of convenience, thus artificially extending the domain of G outside of the plane
+containing ∆n. The component of the gradient of G that is parallel to 1n is not relevant.13
+4.
+QA pooling as a max-min optimal method
+Our goal is to give a formal justification for quasi-arithmetic pooling. Remark 3.8 established that
+the QA pool is optimizes (i.e. minimizes) the weighted average Bregman divergence to the experts’
+forecasts. This section gives another justification for QA pooling in terms of max-min optimality.
+We will give additional justifications in later sections.
+13Formally, consider the change of coordinates given by zj = xn −xj for j ≤n −1 and zn = P
+j xj, so that the
+domain of G lies in the plane zn = 1. Then for j ≤n −1,
+∂G
+∂zj at a given point in the domain of G does not change
+if 1 is substituted for zn; only
+∂G
+∂zn changes (to zero). Equivalently in terms of our original coordinates, the change
+that g undergoes when we consider G to be a function only defined on D instead of Rn is precisely a projection of g
+onto {x ∈Rn : P
+i xi = 0}.
+13
+
+Theorem 4.1. Let s be a proper scoring rule and let g be the exposure function of s. Fix any
+forecasts p1, . . . , pm ∈D with non-negative weights w1, . . . , wm adding to 1. Define
+u(p; j) := s(p; j) −
+m
+X
+i=1
+wis(pi; j).
+Then the quantity minj u(p; j) is uniquely maximized by setting p to p∗:=
+m
+M
+g
+i=1
+(pi, wi). Further-
+more, this minimum (across outcomes j) is achieved simultaneously by all j with p∗
+j > 0. This
+quantity is non-negative, and is positive unless all reports pi with positive weights are equal.
+One interpretation for this theorem statement is as follows. Consider an agent who is tasked
+with submitting a forecast, and who will be paid according to s. The agent decides to sub-contract
+m experts to get their opinions, paying expert i the amount wis(pi; j) if the expert reports pi and
+outcome j happens. (Perhaps experts whom the agent trusts more have higher wi’s.) Finally, the
+agent reports some (any) forecast p. Then u(p; j) is precisely the agent’s profit (utility).
+The quantity minj u(p; j) is the agent’s minimum possible profit over all outcomes. It is natural
+to ask which report p maximizes this quantity. Theorem 4.1 states that this maximum is achieved
+by the QA pool of the experts’ forecasts with respect to s, and that this is the unique maximizer.
+A possible geometric intuition to keep in mind for the proof (below): for each expert i, draw
+the plane tangent to G at pi. For any j, the value of this plane at δj is s(pi; j). Now take the
+weighted average of all m planes; this is a new plane whose intersection with any δj is the total
+reward received by the experts if j happens. Since G is convex, this plane lies below G. To figure
+out which point maximizes the agent’s guaranteed profit, push the plane upward until it hits G. It
+will hit G at p∗and the agent’s worst-case profit will be the vertical distance that the plane was
+pushed.
+Proof of Theorem 4.1. By Equation 3, computing the QA pool amounts to finding the minimizer
+p∗of the function G(x) −⟨x, Pm
+i=1 wig(pi)⟩over ∆n. If p∗is in the interior of ∆n, then this
+expression is differentiable at p∗. If p∗is on the boundary, then the expression can be extended
+to a differentiable function in a neighborhood around p∗.14 Thus, applying the KKT conditions
+[BV04, §5.5.3] tells us that
+g(p∗) =
+m
+X
+i=1
+wig(pi) + λ1n + µ
+for some λ ∈R and µ ∈Rn such that µj ≥0 and µj = 0 if p∗
+j > 0. We therefore have
+u(p∗; j) = s(p∗; j) −
+X
+i
+wis(pi; j)
+= G(p∗) + ⟨g(p∗), δj −p∗⟩−
+X
+i
+wi(G(pi) + ⟨g(pi), δj −pi⟩)
+= G(p∗) −
+X
+i
+wiG(pi) + ⟨
+X
+i
+wig(pi) + λ1n + µ, δj −p∗⟩−
+X
+i
+wi⟨g(pi), δj −pi⟩
+= G(p∗) −
+X
+i
+wiG(pi) +
+X
+i
+wi⟨g(pi), pi −p∗⟩+ ⟨λ1n + µ, δj −p∗⟩
+14This follows e.g. from [AM15, Theorem 1.8], where we take C in the theorem statement to be a compact subset
+of ∆n containing p∗where G is differentiable. Here we use that p∗∈D; by continuity of g, such a subset necessarily
+exists.
+14
+
+= G(p∗) −
+X
+i
+wiG(pi) +
+X
+i
+wi⟨g(pi), pi −p∗⟩+ µj
+=
+X
+i
+wiDG(p∗∥pi) + µj.
+The second-to-last step follows from the fact that ⟨λ1n, δj −p∗⟩= 0 and ⟨µ, p∗⟩= 0, and the last
+step follows by the definition of Bregman divergence. Since µj = 0 for every j such that p∗
+j > 0
+(of which there is at least one), the minimum of u(p∗; j) over j is achieved simultaneously for all j
+with p∗
+j > 0, and this minimum is equal to P
+i wiDG(p∗∥pi). This quantity is non-negative, and
+positive except when all pi’s with positive weights are equal.
+Finally we show that x = p∗maximizes minj u(x; j). Suppose that for some report q we have
+that minj u(q; j) ≥minj u(p∗; j). Then u(q; j) ≥u(p∗; j) for every j such that p∗
+j > 0. But this
+means that the expected score (according to s) of an expert who believes p∗is larger if the expert
+reports q than if the expert reports p∗. This contradicts the fact that s is proper.
+Remark 4.2. We can reformulate Theorem 4.1 as follows: suppose that an agent has access to
+forecasts p1, . . . , pm and needs to issue a forecast, for which the agent will be rewarded using a
+proper scoring rule s. The agent can improve upon selecting an expert at random according to
+weights w1, . . . , wm, no matter the outcome j, by reporting p∗. This improvement is the same no
+matter the outcome – so long as the outcome is assigned positive probability by p∗– and is a strict
+improvement unless all forecasts with positive weights are the same.
+Remark 4.3. Theorem 4.1 is closely related to work by Gr¨unwald and Dawid that establishes
+a connection between entropy maximization and worst-case expected loss minimization [GD04].
+Their work studies a generalized notion of entropy functions that, for the case of a proper scoring
+rule s, is equal to the negative of the expected reward function G. They show that the forecast x
+that maximizes entropy (minimizes G) also maximizes an expert’s worst-case score (over outcomes
+j). Considering instead the entropy function ⟨x, P
+i wig(pi)⟩−G(x) yields results that are very
+similar to our Theorem 4.1.
+In particular, if D is a closed set or an open set, then the max-
+min result in Theorem 4.1 can be derived from [GD04, Theorem 5.2] and [GD04, Theorem 6.2],
+respectively. However, our proof below captures cases that their results do not address. See also
+[CHL19, Lemma 1], from which (upon considering the scoring rule with expected reward function
+G(x) −⟨x, P
+i wig(pi)⟩) yields the simultaneity result of Theorem 4.1 if p∗lies in the interior of
+∆n.
+5.
+Convex losses and learning expert weights
+Thus far, when discussing QA pooling, we have regarded expert weights as given. Where do these
+weights come from? As demonstrated by the results in this section, if the proper scoring rule s has
+convex exposure (see Definition 3.11), these weights can be learned from experience. This learning
+property for weights falls out of the following key observation, which states that an agent’s score is
+a concave function of the weights it uses for the experts.
+Theorem 5.1. Let s be a proper scoring rule with convex exposure and forecast domain D, and fix
+any p1, . . . , pm ∈D. Given a weight vector w = (w1, . . . , wm) ∈∆m, define the weight-score of w
+for an outcome j as
+WSj(w) := s
+
+
+m
+M
+g
+i=1
+(pi, wi); j
+
+.
+15
+
+Then for every j ∈[n], WSj(w) a concave function of w.
+We defer the proof, along with related commentary and results, to Appendix B. The basic idea
+of the proof is that for any two weight vectors v and w and any c ∈[0, 1], the quantity
+WSj(cv + (1 −c)w) −cWSj(v) −(1 −c)WSj(w)
+can be expressed as a sum of Bregman divergences, and is therefore non-negative.
+Remark 5.2. Theorem 5.1 would not hold if the pooling operator in the definition of WS were
+replaced by linear pooling or by logarithmic pooling.15 This is an advantage of QA pooling over
+using the linear or logarithmic method irrespective of the scoring rule.
+We now state the no-regret result that we have alluded to. The algorithm referenced in the
+statement is an application of the standard online gradient descent algorithm (see e.g. [Haz19,
+Theorem 3.1]) to our particular setting. We defer both the algorithm and the proof of Theorem 5.3
+to Appendix B.
+Theorem 5.3. Let s be a bounded proper scoring rule with convex exposure and forecast domain
+D. For time steps t = 1 . . . T, an agent chooses a weight vector wt ∈∆m. The agent then receives
+a score of
+s
+
+
+m
+M
+g
+i=1
+(pt
+i, wt
+i); jt
+
+,
+where pt
+1, . . . , pt
+m ∈D and jt ∈[n] are chosen adversarially. By choosing wt according to Algo-
+rithm B.3 (online gradient descent on the experts’ weights), the agent achieves O(
+√
+T) regret in
+comparison with the best weight vector in hindsight. In particular, if M is an upper bound16 on
+∥g∥2, then for every w∗∈∆m we have
+T
+X
+t=1
+s
+
+
+m
+M
+g
+i=1
+(pt
+i, w∗
+i ); jt
+
+−s
+
+
+m
+M
+g
+i=1
+(pt
+i, wt
+i); jt
+
+≤3√mM
+√
+T.
+This result is quite strong in that it does not merely achieve low regret compared to the best
+expert, but in fact compared to the best possible weighted pool of experts in hindsight. This is a
+substantial distinction, as it is possible for a mixture of experts to substantially outperform any
+individual expert.
+6.
+Axiomatization of QA pooling
+In this section, we aim to show that the class of all quasi-arithmetic pooling operators is a natural
+one, by showing that these operators are precisely those which satisfy a natural set of axioms.
+[Kol30] and [Nag30] independently considered the class of quasi-arithmetic means. Given an
+interval I ⊆R and a continuous, injective function f : I →R, the quasi-arithmetic mean with
+15For a counterexample to logarithmic pooling, consider n = 2, let s be the quadratic scoring rule, p1 = (0.1, 0.9),
+p2 = (0.5, 0.5), j = 1, v = (1, 0), w = (0, 1), and c = 1
+2. For a counterexample to linear pooling, consider n = 2, let
+s be given by G(p1, p2) =
+p
+p2
+1 + p2
+2 (this is known as the spherical scoring rule), p1 = (0, 1), p2 = (0.2, 0.8), j = 1,
+v = (1, 0), w = (0, 1), and c = 1
+2.
+16This bound M exists because s is bounded by assumption, and so g is also bounded (this follows from Equation 2).
+16
+
+respect to f, or f-mean, is the function Mf that takes as input x1, . . . , xm ∈I (for any m ≥1) and
+outputs
+Mf(x1, . . . , xm) := f−1
+f(x1) + · · · + f(xm)
+m
+
+.
+For example, the arithmetic mean corresponds to f(x) = x; the quadratic to f(x) = x2; the
+geometric to f(x) = log x; and the harmonic to f(x) = −1
+x .
+Kolmogorov proved that the class of quasi-arithmetic means is precisely the class of functions
+M : S∞
+m=1 Im →I satisfying the following natural properties:17
+(1) M(x1, . . . , xm) is continuous and strictly increasing in each variable.
+(2) M is symmetric in its arguments.
+(3) M(x, x, . . . , x) = x.
+(4) M(x1, . . . , xk, xk+1, . . . , xm) = M(y, . . . , y, xk+1, . . . , xm), where y := M(x1, . . . , xk) appears
+k times on the right-hand side. Informally, a subset of arguments to the mean function can
+be replaced with their mean.
+The four properties listed above can be viewed as an axiomatization of quasi-arithmetic means.
+Our notion of quasi-arithmetic pooling is exactly that of a quasi-arithmetic mean, except that
+it is more general in two ways. First, it allows for weights to accompany the arguments to the
+mean. Second, we are considering quasi-arithmetic means with respect to vector-valued functions
+g. In the n = 2 outcome case, g can be considered a scalar-valued function since it is defined
+on a one-dimensional space (see Remark 3.5 for details); but in general we cannot treat g as
+scalar-valued.18
+Our goal is to extend the above axiomatization of quasi-arithmetic means in these two ways:
+first (in Section 6.1) to include weights as arguments, and second (in Section 6.2) to general n
+(while still allowing arbitrary weights).
+6.1.
+Generalizing to include weights as arguments
+The objects that we will be studying in this section are ones of the form (p, w), where w ≥0 and
+p ∈D. In this subsection, D is a two-outcome forecast domain, whose elements we will identify
+with by the probability of the first outcome (see Remark 3.5).19
+We will fix the set D for the
+remainder of the subsection. Our results generalize to any interval of R (as in Kolmogorov’s work),
+but we focus on forecast domains since that is our application.
+Definition 6.1. A weighted forecast is an element of D ×R>0: a probability and a positive weight.
+Given a weighted forecast Π = (p, w) we define pr(Π) := p and wt(Π) := w.
+We will thinking of the output of pooling operators as weighted forecasts. This is a simple
+extension of our earlier definition of quasi-arithmetic pooling (Definition 3.6), which only output a
+probability.
+17Nagumo also provided a characterization, though with slightly different properties.
+18Another difference is that in the n = 2 case, we are restricting D to be an interval from 0 to 1, though this is not
+a fundamental difference for the purposes of this section.
+19Proper scoring rules for two outcomes can have four possible forecast domains: [0, 1], [0, 1), (0, 1], and (0, 1).
+17
+
+Definition 6.2 (Quasi-arithmetic pooling with arbitrary weights (n = 2)). Given a continuous,
+strictly increasing function g : D →R, and weighted forecasts Π1 = (p1, w1), . . . , Πm = (pm, wm),
+define the quasi-arithmetic pool of Π1, . . . , Πm with respect to g as
+m
+M
+g
+i=1
+(pi, wi) :=
+ 
+g−1
+P
+i wig(pi)
+P
+i wi
+
+,
+X
+i
+wi
+!
+.
+Remark 6.3. The equivalence of this notion to our earlier one uses the fact that all (continuous)
+proper scoring rules for binary outcomes have convex exposure (Proposition D.1), so the relationship
+between g(p∗) and g(p) may be written as in Equation 4.
+In the case that P
+i wi = 1, Definition 6.2 reduces to Definition 3.6. In general, by linearly
+scaling the weights in Definition 6.2 to add to 1, we recover quasi-arithmetic pooling as previously
+defined.
+We find the following fact useful.
+Proposition 6.4. Given two continuous, strictly increasing functions g1 and g2, ⊕g1 and ⊕g2 are
+the same if and only if g2 = ag1 + b for some a > 0 and b ∈R.
+Proof. Clearly if g2 = ag1 + b for some a > 0 and b ∈R then ⊕g1 and ⊕g2 are the same. For the
+converse, suppose that no such a and b exist. Let x < y be such that g1 and g2 are not equal (even
+up to positive affine transformation) on [x, y]. Let g′
+2 be the positive affine transformation of g2 that
+makes it equal to g1 at x and y, and let z ∈(x, y) be such that g1(z) ̸= g′
+2(z). Let α be such that
+g1(z) = αg1(x) + (1 −α)g1(y). Then (x, α) ⊕g1 (y, 1 −α) = (z, 1), but (x, α) ⊕g2 (y, 1 −α) ̸= (z, 1),
+so ⊕g1 and ⊕g2 are different.
+We now define properties (i.e. axioms) of a pooling operator ⊕, such that these properties are
+satisfied if and only if ⊕is ⊕g for some g. Our axiomatization will look somewhat different from
+Kolmogorov’s, in part because we choose to define ⊕as a binary operator that (if it satisfies the
+associativity axiom) extends to the m-ary case. This is a simpler domain and will simplify notation.
+In Appendix C we exhibit an equivalent set of axioms that more closely resembles Kolmogorov’s.
+Definition 6.5 (Axioms for pooling operators (n = 2)). For a pooling operator ⊕on D (i.e. a
+binary operator on weighted forecasts), we define the following axioms.
+1. Weight additivity: wt(Π1 ⊕Π2) = wt(Π1) + wt(Π2) for every Π1, Π2.
+2. Commutativity: Π1 ⊕Π2 = Π2 ⊕Π1 for every Π1, Π2.
+3. Associativity: Π1 ⊕(Π2 ⊕Π3) = (Π1 ⊕Π2) ⊕Π3 for every Π1, Π2, Π3.
+4. Continuity: For every p1, p2, the quantity20 pr((p1, w1) ⊕(p2, w2)) is a continuous function
+of (w1, w2) on R2
+≥0 \ {(0, 0)}.
+5. Idempotence: For every Π1, Π2, if pr(Π1) = pr(Π2) then pr(Π1 ⊕Π2) = pr(Π1).
+6. Monotonicity: Let w > 0 and let p1 > p2 ∈D. Then for x ∈(0, w), the quantity pr((p1, x)⊕
+(p2, w −x)) is a strictly increasing function of x.
+20We allow one weight to be 0 by defining (p, w) ⊕(q, 0) = (q, 0) ⊕(p, w) = (p, w).
+18
+
+The motivation for the weight additivity axiom is that the weight of a weighted forecast can
+be thought of as the amount of evidence for its prediction. When pooling weighted forecasts, the
+weight of an individual forecast can be thought of as the strength of its vote in the aggregate.
+The monotonicity axiom essentially states that if one pools two forecasts with different proba-
+bilities and a fixed total weight, then the larger the share of the weight belonging to the larger of
+the two probabilities, the larger the aggregate probability.
+We now state and prove this section’s main result: these axioms describe the class of QA pooling
+operators.
+Theorem 6.6. A pooling operator is a QA pooling operator (as in Definition 6.2) with respect to
+some g if and only if it satisfies the axioms in Definition 6.5.21
+We will use ⊕(without a g subscript) to denote an arbitrary pooling operator that satisfies the
+axioms in Definition 6.5. Before presenting the proof of Theorem 6.6, we will note a few important
+facts about weighted forecasts and pooling operators. First, we find it natural to define a notion
+of multiplying a weighted forecast pair by a positive constant.
+Definition 6.7. Given a weighted forecast Π = (p, w) and c > 0, define cΠ := (p, cw).
+Note that mΠ = Lm
+i=1 Π for any positive integer m, by idempotence; this definition is a natural
+extension to all c > 0. We note the following (quite obvious) fact.
+Proposition 6.8. For every weighted forecast Π and c1, c2 > 0, we have c1(c2Π) = (c1c2)Π.
+A natural property that is not listed in Definition 6.5 is scale invariance, i.e. that pr((p1, w1) ⊕
+(p2, w2)) = pr((p1, cw1)⊕(p2, cw2)) for any positive c; or, equivalently, that c(Π1⊕Π2) = cΠ1⊕cΠ2.
+This in fact follows from the listed axioms.
+Proposition 6.9 (Distributive property/scale invariance). For every Π1, Π2 and any operator ⊕
+satisfying the axioms in Definition 6.5, we have c(Π1 ⊕Π2) = cΠ1 ⊕cΠ2.
+Proof. First suppose c is an integer. Then
+cΠ1 ⊕cΠ2 =
+c
+M
+i=1
+Π1 ⊕
+c
+M
+i=1
+Π2 =
+c
+M
+i=1
+(Π1 ⊕Π2) = c(Π1 ⊕Π2).
+Here, the first and last steps follow by weight additivity and idempotence. Now suppose that c = k
+ℓ
+is a rational number. Let Π′
+1 = 1
+ℓΠ1 and Π′
+2 = 1
+ℓΠ2. We have
+k
+ℓ(Π1 ⊕Π2) = k
+ℓ(ℓΠ′
+1 ⊕ℓΠ′
+2) = k
+ℓ· ℓ(Π′
+1 ⊕Π′
+2) = k(Π′
+1 ⊕Π′
+2) = kΠ′
+1 ⊕kΠ′
+2 = k
+ℓΠ1 ⊕k
+ℓΠ2.
+Here, the second and second-to-last steps follow from the fact that the distributive property holds
+for integers.
+Finally, make use of the continuity axiom to extend our proof to all positive real numbers c. In
+particular, it suffices to show that pr(Π1 ⊕Π2) = pr(cΠ1 ⊕cΠ2). Let p be the former quantity; note
+that pr(rΠ1 ⊕rΠ2) = p for positive rational numbers r. Since the rationals are dense among the
+reals, it follows that for every ϵ > 0, we have |pr(cΠ1 ⊕cΠ2) −p| ≤ϵ. Therefore, pr(cΠ1⊕cΠ2) = p.
+This completes the proof.
+21As we mentioned, for an associative pooling operator ⊕, Π1⊕Π2 · · ·⊕Πm is a well-specified quantity, even without
+indicating parenthesization. This lets us use the notation Lm
+i=1 Πi. This is why the statement of Theorem 6.6 makes
+sense despite pooling operators not being m-ary by default.
+19
+
+Armed with these facts, we present a proof of Theorem 6.6.
+Proof of Theorem 6.6. We first prove that any QA pooling operator ⊕g satisfies the axioms in
+Definition 6.5. Weight additivity, commutativity, and idempotence are trivial. Associativity is also
+clear: given Π1 = (p1, w1) and likewise Π2, Π3, we have
+g(pr((Π1 ⊕g Π2) ⊕g Π3)) = (w1 + w2)g(pr(Π1 ⊕g Π2)) + w3g(p3)
+(w1 + w2) + w3
+=
+(w1 + w2)w1g(p1)+w2(p2)
+w1+w2
++ w3g(p3)
+w1 + w2 + w3
+= w1g(p1) + w2g(p2) + w3g(p3)
+w1 + w2 + w3
+and likewise for g(pr(Π1 ⊕g (Π2 ⊕g Π3))), so pr((Π1 ⊕g Π2) ⊕g Π3) = pr(Π1 ⊕g (Π2 ⊕g Π3)) (since g
+is strictly increasing and therefore injective). The fact that the weights are also the same is trivial.
+Continuity follows from the fact that
+pr(Π1 ⊕g Π2) = g−1
+w1g(p1) + w2g(p2)
+w1 + w2
+
+is continuous in (w1, w2) (when w1, w2 are not both zero). Here we are using the fact that g is
+strictly increasing, which means that g−1 is continuous.
+Finally, regarding the monotonicity axiom, for any fixed w and p1 > p2 (as in the axiom
+statement), we have
+g(pr((p1, x) ⊕g (p2, w −x))) = xg(p1) + (w −x)g(p2)
+x + w −x
+= xg(p1) + (w −x)g(p2)
+w
+.
+Since p1 > p2, we have g(p1) > g(p2), so the right-hand side strictly increases with x. Since g−1 is
+also strictly increasing, it follows that pr((p1, x) ⊕g (p2, w −x)) strictly increases with x.
+The converse — that every pooling operator satisfying the axioms in Definition 6.5 is ⊕g for
+some g — works by constructing g by fixing it at two points and constructing g at all other points.
+Right now we show how to do this when the forecast domain is [0, 1]; see the proof of Theorem C.7
+for the argument in full generality.
+Let ⊕be a pooling operator that satisfies our axioms. Define g as follows: let g(0) = 0 and
+g(1) = 1. For 0 < p < 1, define g(p) = w where (1, w) ⊕(0, 1 −w) = (p, 1). (This w exists by
+continuity and the intermediate value theorem; it is unique by the “strictly” increasing stipulation
+of monotonicity.) Note that g is continuous and increasing by monotonicity.22
+We wish to show that for any Π1 = (p1, w1) and Π2 = (p2, w2), we have that Π1⊕Π2 = Π1⊕gΠ2.
+Clearly the weight of both sides is w1 + w2, so we wish to show that the probabilities on each side
+are the same. We have23
+pr(Π1 ⊕Π2) = pr(w1(p1, 1) ⊕w2(p2, 1))
+= pr(w1((1, g(p1)) ⊕(0, 1 −g(p1))) ⊕w2((1, g(p2)) ⊕(0, 1 −g(p2))))
+= pr(w1(1, g(p1)) ⊕w1(0, 1 −g(p1)) ⊕w2(1, g(p2)) ⊕w2(0, 1 −g(p2)))
+22As a matter of fact, g is strictly increasing because it is impossible for g(p1) to equal g(p2) for p1 ̸= p2, as that
+would mean that (1, g(p1)) ⊕(0, 1 −g(p1)) = (p1, 1) = (p2, 1). Another way to look at this is that it comes from the
+fact that (1, w) ⊕(0, 1 −w) is continuous in w by the continuity axiom. In a sense, the continuity of g corresponds to
+the strictness of increase in the monotonicity axiom and the strictness of increase of g corresponds to the continuity
+axiom.
+23Steps 3 and 7 uses the distributive property (Proposition 6.9).
+20
+
+= pr((1, w1g(p1)) ⊕(0, w1(1 −g(p1))) ⊕(1, w2g(p2)) ⊕(0, w2(1 −g(p2))))
+= pr((1, w1g(p1) + w2g(p2)) ⊕(0, w1(1 −g(p1)) + w2(1 −g(p2))))
+= pr
+
+1
+w1 + w2
+((1, w1g(p1) + w2g(p2)) ⊕(0, w1(1 −g(p1)) + w2(1 −g(p2))))
+
+= pr
+
+1, w1g(p1) + w2g(p2)
+w1 + w2
+
+⊕
+
+0, w1(1 −g(p1)) + w2(1 −g(p2))
+w1 + w2
+
+,
+which by definition of g is equal to the probability p such that g(p) = g(p1)w1+g(p2)w2
+w1+w2
+. That is,
+pr(Π1 ⊕Π2) = pr(Π1 ⊕g Π2).
+Showing that ⊕and ⊕g are equivalent for more than two arguments is now trivial:
+m
+M
+g
+i=1
+Πi = Π1 ⊕g Π2 ⊕g Π3 · · · ⊕g Πm = Π1 ⊕Π2 ⊕g Π3 · · · ⊕g Πm = · · · =
+m
+M
+i=1
+Πi.
+(Here we are implicitly using the fact that ⊕g is associative, as we proved earlier.) This completes
+the proof.
+6.2.
+Generalizing to higher dimensions
+In Appendix C.1, we generalize our axioms from n = 2 outcomes to arbitrary values of n. An impor-
+tant challenge is extending the monotonicity axiom: in higher dimensions, what is the appropriate
+generalization of an increasing function? We show that the correct notion is cyclical monotonicity,
+which we define and discuss. We then present our axiomatization (Definition C.2) and prove that
+the axioms constitute a characterization of the class of QA pooling operators (Theorem C.7). On a
+high level, the proof is not dissimilar to that of Theorem 6.6, though the details are fairly different
+and more technical.
+In conclusion, in Definition 6.5 we made a list of natural properties that a pooling operator
+may satisfy. Theorem 6.6 shows that the pooling operators satisfying these properties are exactly
+the QA pooling operators. In Appendix C.1, we generalize this theorem to higher dimensions, thus
+fully axiomatizing QA pooling. This result gives us an additional important reason to believe that
+QA pooling with respect to a proper scoring rule is a fundamental notion.
+7.
+Conclusions and future work
+While in this work we have focused on scoring rules for probability distributions over outcomes,
+scoring rules can be used to elicit various other properties, such as the expectation or the median
+of a random variable [Sav71] [GR07] [LPS08]. The topic of property elicitation studies such scoring
+rules. The representation of a proper scoring rule in terms of its expected reward function ([GR07,
+Theorem 2], our Proposition 3.1) generalizes to arbitrary linear properties [FK15, Theorem 11].
+That is, consider a random variable (or n-tuple of random variables) X and a convex function G
+whose domain is (a superset of) the possible values of X. If p is an expert’s forecast for E [X] and
+x is the realized outcome, then the scoring rule s(p; x) := G(p)+⟨g(p), x−p⟩is proper.24 Modulo
+a fairly straightforward generalization, all proper scoring rules for E [X] take this form.
+24In the setting of this paper, X is the vector of random variables, where the j-th variable is 1 if outcome j happens
+and 0 otherwise; and x = δj where j is the outcome that happens.
+21
+
+Our definition of QA pooling extends verbatim to the setting of eliciting linear properties. In
+this more general setting, for any proper scoring rule that has convex exposure (see Definition 3.11),
+it remains the case g(p∗) = P
+i wig(pi); as a consequence, Theorems 4.1, 5.1, and 5.3 generalize.
+There are several other interesting directions for generalization and future work:
+• As mentioned in Section 2, QA pooling can be interpreted in terms of cost function markets:
+if qi denotes the quantity of shares that each expert would buy in order to bring a market
+into line with the experts’ probabilities, then the QA pool is the probability corresponding to
+the quantity vector q∗:= P
+i wiqi. This follows from [ACV13, Eq. 22]; the underlying reason
+is the convex duality between an expected reward function G and the corresponding cost
+function C. Exploring this connection further may yield insights into forecast aggregation
+through market mechanisms.
+• While idempotence is a fairly natural axiom, Bayesian approaches to aggregation often violate
+this axiom: for example, an aggregator who receives two independent estimates with the same
+probability should act differently than an aggregator who only received one of the estimates.
+It would be interesting to explore whether our results and techniques are applicable to notions
+of pooling that do not satisfy idempotence, or to other (perhaps Bayesian) settings.
+• As we discussed in Section 2, there is a fair amount of work on aggregating forecasts with
+prediction markets — often ones that are based on proper scoring rules. Is there a natural
+trading-based interpretation of QA pooling?
+• Although our proof of Theorem 5.1 (that the QA pool of forecasts is concave in the experts’
+weights) relies on the convex exposure property, we have not ruled out the possibility that
+the result holds even without this assumption. Is this the case? Even if not, are no-regret
+algorithms for learning weights still possible?
+• Our no-regret algorithm for learning weights relies on s being bounded, because this allows
+us to place a concrete upper bound on
+∇Lt(·)
+
+2. If s is unbounded, in a fully adversarial
+setting it is impossible to achieve a no-regret guarantee. On the other hand, [NR22] show
+that if experts are assumed to be calibrated, then learning the optimal weights for logarithmic
+pooling is possible when using the log scoring rule. Does this result generalize to learning
+optimal weights for QA pooling with respect to other unbounded proper scoring rules?
+• We have presented a list of axioms characterizing QA pooling operators. Is there an alternative
+axiomatization that uses equally natural but fewer axioms?
+• Do our results extend to probability distributions over infinitely many outcomes (e.g. for
+experts who wish to forecast a real number)?
+Acknowledgments
+This work was partially supported by the NSF under CCF-1813188 and DGE-2036197 and by the
+ARO under W911NF1910294.
+22
+
+References
+[Abb09]
+Ali E. Abbas. “A Kullback-Leibler View of Linear and Log-Linear Pools”. In: Decision
+Analysis 6.1 (Mar. 2009), pp. 25–37. doi: 10.1287/deca.1080.0133. url: https:
+//ideas.repec.org/a/inm/ordeca/v6y2009i1p25-37.html.
+[ABS18]
+Itai Arieli, Yakov Babichenko, and Rann Smorodinsky. “Robust forecast aggregation”.
+In: Proceedings of the National Academy of Sciences 115.52 (2018), E12135–E12143.
+issn: 0027-8424. doi: 10.1073/pnas.1813934115. url: https://www.pnas.org/
+content/115/52/E12135.
+[ACR12]
+D Allard, A Comunian, and Philippe Renard. “Probability aggregation methods in
+geoscience”. In: Mathematical Geosciences 44.5 (2012), pp. 545–581.
+[ACV13]
+Jacob D. Abernethy, Yiling Chen, and Jennifer Wortman Vaughan. “Efficient Mar-
+ket Making via Convex Optimization, and a Connection to Online Learning”. In:
+ACM Trans. Economics and Comput. 1.2 (2013), 12:1–12:39. doi: 10.1145/2465769.
+2465777.
+[Acz48]
+J. Acz´el. “On mean values”. In: Bull. Amer. Math. Soc. 54.4 (Apr. 1948), pp. 392–400.
+url: https://projecteuclid.org:443/euclid.bams/1183511892.
+[Ada14]
+M. Adamˇc´ık. “Collective reasoning under uncertainty and inconsistency”. PhD thesis.
+University of Manchester, 2014.
+[AK14]
+Aaron Archer and Robert Kleinberg. “Truthful germs are contagious: A local-to-global
+characterization of truthfulness”. In: Games and Economic Behavior 86.C (2014),
+pp. 340–366. url: https://EconPapers.repec.org/RePEc:eee:gamebe:v:86:
+y:2014:i:c:p:340-366.
+[AM15]
+D. Azagra and Carlos Mudarra. “Whitney extension theorems for convex functions
+of the classes C1 and C1,ω”. In: Proceedings of the London Mathematical Society 114
+(2015).
+[Ash+10]
+Itai Ashlagi, Mark Braverman, Avinatan Hassidim, and Dov Monderer. “Monotonicity
+and Implementability”. In: Econometrica 78.5 (2010), pp. 1749–1772. doi: https :
+//doi.org/10.3982/ECTA8882. url: https://onlinelibrary.wiley.com/doi/abs/
+10.3982/ECTA8882.
+[AW80]
+J. Acz´el and C. Wagner. “A Characterization of Weighted Arithmetic Means”. In:
+SIAM Journal on Algebraic Discrete Methods 1.3 (1980), pp. 259–260. doi: 10.1137/
+0601029.
+[BB20]
+Shalev Ben-David and Eric Blais. “A New Minimax Theorem for Randomized Algo-
+rithms (Extended Abstract)”. In: 61st IEEE Annual Symposium on Foundations of
+Computer Science, FOCS 2020, Durham, NC, USA, November 16-19, 2020. Ed. by
+Sandy Irani. IEEE, 2020, pp. 403–411. doi: 10.1109/FOCS46700.2020.00045. url:
+https://doi.org/10.1109/FOCS46700.2020.00045.
+[BC11]
+Heinz H. Bauschke and Patrick L. Combettes. Convex Analysis and Monotone Operator
+Theory in Hilbert Spaces. 1st. Springer Publishing Company, Incorporated, 2011. isbn:
+1441994661.
+[Bri50]
+G. W. Brier. “Verification of forecasts expressed in terms of probability”. In: Monthly
+Weather Review 78 (1950), pp. 1–3.
+23
+
+[BV04]
+Stephen P. Boyd and Lieven Vandenberghe. Convex Optimization. Cambridge Uni-
+versity Press, 2004. isbn: 978-0-521-83378-3. doi: 10.1017/CBO9780511804441. url:
+https://web.stanford.edu/\%7Eboyd/cvxbook/.
+[Car16]
+Arthur Carvalho. “An Overview of Applications of Proper Scoring Rules”. In: Decision
+Analysis 13 (Nov. 2016). doi: 10.1287/deca.2016.0337.
+[CBL06]
+Nicol`o Cesa-Bianchi and G´abor Lugosi. Prediction, Learning, and Games. Jan. 2006.
+isbn: 978-0-521-84108-5. doi: 10.1017/CBO9780511546921.
+[Che+14]
+Yiling Chen, Nikhil R. Devanur, David M. Pennock, and Jennifer Wortman Vaughan.
+“Removing arbitrage from wagering mechanisms”. In: ACM Conference on Economics
+and Computation, EC ’14, Stanford , CA, USA, June 8-12, 2014. Ed. by Moshe
+Babaioff, Vincent Conitzer, and David A. Easley. ACM, 2014, pp. 377–394. doi: 10.
+1145/2600057.2602876.
+[CHL19]
+Christopher P. Chambers, Paul J. Healy, and Nicolas S. Lambert. “Proper scoring rules
+with general preferences: A dual characterization of optimal reports”. In: Games and
+Economic Behavior 117 (2019), pp. 322–341. issn: 0899-8256. doi: https://doi.org/
+10.1016/j.geb.2019.07.012. url: https://www.sciencedirect.com/science/
+article/pii/S0899825619301101.
+[CL13]
+Arthur Carvalho and Kate Larson. “A Consensual Linear Opinion Pool”. In: IJCAI
+2013, Proceedings of the 23rd International Joint Conference on Artificial Intelligence,
+Beijing, China, August 3-9, 2013. Ed. by Francesca Rossi. IJCAI/AAAI, 2013, pp. 2518–
+2524. url: http://www.aaai.org/ocs/index.php/IJCAI/IJCAI13/paper/view/
+6447.
+[CP07]
+Yiling Chen and David M. Pennock. “A Utility Framework for Bounded-Loss Market
+Makers”. In: UAI 2007, Proceedings of the Twenty-Third Conference on Uncertainty in
+Artificial Intelligence, Vancouver, BC, Canada, July 19-22, 2007. Ed. by Ronald Parr
+and Linda C. van der Gaag. AUAI Press, 2007, pp. 49–56. url: https://dl.acm.
+org/doi/abs/10.5555/3020488.3020495.
+[CS11]
+SangIn Chun and Ross D. Shachter. “Strictly Proper Mechanisms with Cooperating
+Players”. In: UAI 2011, Proceedings of the Twenty-Seventh Conference on Uncertainty
+in Artificial Intelligence, Barcelona, Spain, July 14-17, 2011. Ed. by F´abio Gagliardi
+Cozman and Avi Pfeffer. AUAI Press, 2011, pp. 125–134. url: https://dslpitt.
+org/uai/displayArticleDetails.jsp?mmnu=1\&smnu=2\&article\_id=2168\
+&proceeding\_id=27.
+[CV10]
+Yiling Chen and Jennifer Wortman Vaughan. “A new understanding of prediction
+markets via no-regret learning”. In: Proceedings 11th ACM Conference on Electronic
+Commerce (EC-2010), Cambridge, Massachusetts, USA, June 7-11, 2010. Ed. by David
+C. Parkes, Chrysanthos Dellarocas, and Moshe Tennenholtz. ACM, 2010, pp. 189–198.
+doi: 10.1145/1807342.1807372.
+[CW07]
+R.T. Clemen and R.L. Winkler. “Aggregating probability distributions”. In: Advances
+in Decision Analysis: From Foundations to Applications (Jan. 2007), pp. 154–176. doi:
+10.1017/CBO9780511611308.010.
+[Daw+95]
+A. Dawid, M. DeGroot, J. Mortera, R. Cooke, S. French, C. Genest, M. Schervish, D.
+Lindley, K. McConway, and R. Winkler. “Coherent combination of experts’ opinions”.
+In: Test 4 (2 1995), pp. 263–313.
+24
+
+[DL14]
+Franz Dietrich and Christian List. Probabilistic Opinion Pooling. Oct. 2014. url: http:
+//philsci-archive.pitt.edu/11349/.
+[DM14]
+Alexander Dawid and Monica Musio. “Theory and Applications of Proper Scoring
+Rules”. In: METRON 72 (Jan. 2014). doi: 10.1007/s40300-014-0039-y.
+[FCK15]
+Rafael M. Frongillo, Yiling Chen, and Ian A. Kash. “Elicitation for Aggregation”. In:
+Proceedings of the Twenty-Ninth AAAI Conference on Artificial Intelligence, January
+25-30, 2015, Austin, Texas, USA. Ed. by Blai Bonet and Sven Koenig. AAAI Press,
+2015, pp. 900–906. url: http://www.aaai.org/ocs/index.php/AAAI/AAAI15/
+paper/view/9770.
+[FES20]
+Christian Feldbacher-Escamilla and Gerhard Schurz. “Optimal probability aggregation
+based on generalized brier scoring”. In: Annals of Mathematics and Artificial Intelli-
+gence 88 (July 2020). doi: 10.1007/s10472-019-09648-4.
+[FK14]
+Rafael Frongillo and Ian Kash. “General Truthfulness Characterizations via Convex
+Analysis”. In: Web and Internet Economics. Ed. by Tie-Yan Liu, Qi Qi, and Yinyu Ye.
+Cham: Springer International Publishing, 2014, pp. 354–370. isbn: 978-3-319-13129-0.
+[FK15]
+Rafael M. Frongillo and Ian A. Kash. “Vector-Valued Property Elicitation”. In: Pro-
+ceedings of The 28th Conference on Learning Theory, COLT 2015, Paris, France, July
+3-6, 2015. Ed. by Peter Gr¨unwald, Elad Hazan, and Satyen Kale. Vol. 40. JMLR
+Workshop and Conference Proceedings. JMLR.org, 2015, pp. 710–727. url: http:
+//proceedings.mlr.press/v40/Frongillo15.html.
+[Fre+20]
+Rupert Freeman, David M. Pennock, Dominik Peters, and Bo Waggoner. “Preventing
+Arbitrage from Collusion When Eliciting Probabilities”. In: The Thirty-Fourth AAAI
+Conference on Artificial Intelligence, AAAI 2020, The Thirty-Second Innovative Appli-
+cations of Artificial Intelligence Conference, IAAI 2020, The Tenth AAAI Symposium
+on Educational Advances in Artificial Intelligence, EAAI 2020, New York, NY, USA,
+February 7-12, 2020. AAAI Press, 2020, pp. 1958–1965. url: https://aaai.org/ojs/
+index.php/AAAI/article/view/5566.
+[GD04]
+Peter D. Gr¨unwald and A. Philip Dawid. “Game theory, maximum entropy, minimum
+discrepancy and robust Bayesian decision theory”. In: The Annals of Statistics 32.4
+(2004), pp. 1367 –1433. doi: 10.1214/009053604000000553. url: https://doi.org/
+10.1214/009053604000000553.
+[Gen84]
+Christian Genest. “A Characterization Theorem for Externally Bayesian Groups”. In:
+Ann. Statist. 12.3 (Sept. 1984), pp. 1100–1105. doi: 10.1214/aos/1176346726.
+[Goo52]
+I. J. Good. “Rational Decisions”. In: Journal of the Royal Statistical Society. Series B
+(Methodological) 14.1 (1952), pp. 107–114. issn: 00359246. url: http://www.jstor.
+org/stable/2984087.
+[GR07]
+Tilmann Gneiting and Adrian E Raftery. “Strictly proper scoring rules, prediction,
+and estimation”. In: Journal of the American Statistical Association 102.477 (2007),
+pp. 359–378.
+[Gra+11]
+Michel Grabisch, Jean-Luc Marichal, Radko Mesiar, and Endre Pap. “Aggregation
+functions: Means”. In: Information Sciences 181.1 (2011), pp. 1 –22. issn: 0020-0255.
+doi: https : / / doi . org / 10 . 1016 / j . ins . 2010 . 08 . 043. url: http : / / www .
+sciencedirect.com/science/article/pii/S002002551000424X.
+25
+
+[GZ86]
+Christian Genest and James V. Zidek. “Combining Probability Distributions: A Cri-
+tique and an Annotated Bibliography”. In: Statistical Science 1.1 (1986), pp. 114–135.
+issn: 08834237. url: http://www.jstor.org/stable/2245510.
+[Han03]
+Robin Hanson. “Combinatorial Information Market Design”. In: Information Systems
+Frontiers 5.1 (Jan. 2003), pp. 107–119. doi: 10.1023/A:1022058209073. url: https:
+//ideas.repec.org/a/spr/infosf/v5y2003i1d10.1023_a1022058209073.html.
+[Haz19]
+Elad Hazan. “Introduction to Online Convex Optimization”. In: CoRR abs/1909.05207
+(2019). arXiv: 1909.05207. url: http://arxiv.org/abs/1909.05207.
+[Hei+18]
+Hoda Heidari, S´ebastien Lahaie, David M. Pennock, and Jennifer Wortman Vaughan.
+“Integrating Market Makers, Limit Orders, and Continuous Trade in Prediction Mar-
+kets”. In: ACM Trans. Econ. Comput. 6.3–4 (Oct. 2018). issn: 2167-8375. doi: 10.
+1145/3274643. url: https://doi.org/10.1145/3274643.
+[Kol30]
+A.N. Kolmogorov. Sur la notion de la moyenne. G. Bardi, tip. della R. Accad. dei
+Lincei, 1930. url: https://books.google.com/books?id=iUqLnQEACAAJ.
+[KR08]
+Christian Kascha and Francesco Ravazzolo. Combining inflation density forecasts. Work-
+ing Paper 2008/22. Norges Bank, Dec. 2008. url: https://ideas.repec.org/p/bno/
+worpap/2008_22.html.
+[LPS08]
+Nicolas S. Lambert, David M. Pennock, and Yoav Shoham. “Eliciting properties of
+probability distributions”. In: Proceedings 9th ACM Conference on Electronic Com-
+merce (EC-2008), Chicago, IL, USA, June 8-12, 2008. Ed. by Lance Fortnow, John
+Riedl, and Tuomas Sandholm. ACM, 2008, pp. 129–138. doi: 10.1145/1386790.
+1386813. url: https://doi.org/10.1145/1386790.1386813.
+[LS07]
+Ron Lavi and Chaitanya Swamy. “Truthful Mechanism Design for Multi-Dimensional
+Scheduling via Cycle Monotonicity”. In: Proceedings of the 8th ACM Conference on
+Electronic Commerce. EC ’07. San Diego, California, USA: Association for Computing
+Machinery, 2007, 252–261. isbn: 9781595936530. doi: 10.1145/1250910.1250947.
+[Nag30]
+Mitio Nagumo. “¨Uber eine Klasse der Mittelwerte”. In: Japanese journal of mathemat-
+ics :transactions and abstracts 7 (1930), pp. 71–79. doi: 10.4099/jjm1924.7.0_71.
+[Nes09]
+Yurii E. Nesterov. “Primal-dual subgradient methods for convex problems”. In: Math.
+Program. 120.1 (2009), pp. 221–259. doi: 10.1007/s10107-007-0149-x. url: https:
+//doi.org/10.1007/s10107-007-0149-x.
+[NR22]
+Eric Neyman and Tim Roughgarden. “No-Regret Learning with Unbounded Losses:
+The Case of Logarithmic Pooling”. In: CoRR abs/2202.11219 (2022). arXiv: 2202.
+11219. url: https://arxiv.org/abs/2202.11219.
+[Pet19]
+Richard Pettigrew. “Aggregating incoherent agents who disagree”. In: Synthese 196
+(July 2019). doi: 10.1007/s11229-017-1613-7.
+[PR00]
+David Poole and Adrian E. Raftery. “Inference for Deterministic Simulation Models:
+The Bayesian Melding Approach”. In: Journal of the American Statistical Association
+95.452 (2000), pp. 1244–1255. doi: 10.1080/01621459.2000.10474324. url: https:
+//www.tandfonline.com/doi/abs/10.1080/01621459.2000.10474324.
+[RG10]
+Roopesh Ranjan and Tilmann Gneiting. “Combining Probability Forecasts”. In: Jour-
+nal of the Royal Statistical Society. Series B (Statistical Methodology) 72.1 (2010),
+pp. 71–91. issn: 13697412, 14679868. url: http://www.jstor.org/stable/40541575.
+26
+
+[Roc70a]
+R. T. Rockafellar. “On the maximal monotonicity of subdifferential mappings.” In:
+Pacific J. Math. 33.1 (1970), pp. 209–216. url: https://projecteuclid.org:443/
+euclid.pjm/1102977253.
+[Roc70b]
+R. Tyrrell Rockafellar. Convex Analysis. Princeton University Press, 1970. isbn: 9780691015866.
+url: http://www.jstor.org/stable/j.ctt14bs1ff.
+[SAM66]
+Emir Shuford, Arthur Albert, and H. Edward Massengill. “Admissible probability mea-
+surement procedures”. In: Psychometrika 31.2 (1966), pp. 125–145. url: https://
+EconPapers.repec.org/RePEc:spr:psycho:v:31:y:1966:i:2:p:125-145.
+[Sat+14a]
+Ville Satop¨a¨a, Jonathan Baron, Dean Foster, Barbara Mellers, Philip Tetlock, and
+Lyle Ungar. “Combining multiple probability predictions using a simple logit model”.
+In: International Journal of Forecasting 30 (Apr. 2014), 344–356. doi: 10.1016/j.
+ijforecast.2013.09.009.
+[Sat+14b]
+Ville A. Satop¨a¨a, Jonathan Baron, Dean P. Foster, Barbara A. Mellers, Philip E. Tet-
+lock, and Lyle H. Ungar. “Combining multiple probability predictions using a simple
+logit model”. In: International Journal of Forecasting 30.2 (2014), pp. 344–356. issn:
+0169-2070. doi: https://doi.org/10.1016/j.ijforecast.2013.09.009. url:
+https://www.sciencedirect.com/science/article/pii/S0169207013001635.
+[Sav71]
+Leonard J. Savage. “Elicitation of Personal Probabilities and Expectations”. In: Journal
+of the American Statistical Association 66.336 (1971), pp. 783–801. issn: 01621459.
+url: http://www.jstor.org/stable/2284229.
+[SY05]
+Michael Saks and Lan Yu. “Weak monotonicity suffices for truthfulness on convex
+domains”. In: Jan. 2005, pp. 286–293. doi: 10.1145/1064009.1064040.
+[Tsa88]
+Constantino Tsallis. “Possible generalization of Boltzmann-Gibbs statistics”. In: Jour-
+nal of Statistical Physics 52 (July 1988), pp. 479–487. doi: 10.1007/BF01016429.
+[Voh07]
+Rakesh V. Vohra. Paths, Cycles and Mechanism Design. 2007.
+[Wag21]
+Bo Waggoner. “Linear functions to the extended reals”. In: arXiv preprint arXiv:2102.09552
+(2021).
+[Wik18]
+Wikipedia contributors. Mahler’s inequality — Wikipedia, The Free Encyclopedia. [On-
+line; accessed 07-February-2021]. 2018. url: https://en.wikipedia.org/wiki/
+Mahler\%27s\_inequality.
+[Win+18]
+R. L. Winkler, Y. Grushka-Cockayne, K. C. Lichtendahl, and V. R. Jose. “Averaging
+Probability Forecasts: Back to the Future”. In: 2018.
+[Xia10]
+Lin Xiao. “Dual Averaging Methods for Regularized Stochastic Learning and Online
+Optimization”. In: J. Mach. Learn. Res. 11 (2010), pp. 2543–2596. url: http://
+portal.acm.org/citation.cfm?id=1953017.
+A.
+Details omitted from Section 1
+Logarithmic pooling as averaging Bayesian evidence
+We discuss for simplicity the binary
+outcome case, though this discussion holds in general. Suppose that an expert assigns a probability
+to an event X occurring by updating on some prior (50%, say, though this does not matter).
+Suppose that the expert receives evidence E. Bayesian updating works as such:
+Pr [X | E]
+Pr [¬X | E] = Pr [X]
+Pr [¬X] · Pr [E | X]
+Pr [E | ¬X].
+27
+
+That is, the expert multiplies their odds of X (i.e. the probability of X divided by the probability of
+¬X) by the relative likelihood that E would be the case conditioned on X versus ¬X. Equivalently,
+we can take the log of both sides; this tells us that the posterior log odds of X is equal to the prior
+log odds plus log Pr[E|X]
+Pr[E|¬X]. For every piece of evidence Ek that the expert receives, they make this
+update (assuming that the Ek’s are mutually independent conditioned on X).
+This means that for any Ek, we can view the quantity log Pr[Ek|X]
+Pr[Ek|¬X] as the strength of evidence
+that Ek gives in favor of X. We call this the “Bayesian evidence” in favor of X given by Ek. The
+total Bayesian evidence that the expert has in favor of X (i.e. the sum of these values over all Ek)
+is the expert’s log odds of X (i.e. log Pr[X]
+Pr[¬X]).
+Logarithmic pooling takes the average of experts’ log odds of X. As we have shown, if the experts
+are Bayesian, this amounts to taking the average of all experts’ amounts of Bayesian evidence in
+favor of X.
+B.
+Details omitted from Section 5
+Proof of Theorem 5.1. Let v and w be two weight vectors. We wish to show that for any c ∈[0, 1],
+we have
+WSj(cv + (1 −c)w) −cWSj(v) −(1 −c)WSj(w) ≥0.
+Recall the notation p∗
+w from Definition 3.6. Note that
+g(p∗
+cv+(1−c)w) =
+m
+X
+i=1
+(cvi + (1 −c)wi)g(pi) = cg(p∗
+v) + (1 −c)g(p∗
+w).
+(5)
+We have
+WSj(cv + (1 −c)w) −cWSj(v) −(1 −c)WSj(w)
+= s(p∗
+cv+(1−c)w; j) −cs(p∗
+v; j) −(1 −c)s(p∗
+w; j)
+= G(p∗
+cv+(1−c)w) + ⟨g(p∗
+cv+(1−c)w), δj −p∗
+cv+(1−c)w⟩
+−c(G(p∗
+v) + ⟨g(p∗
+v), δj −p∗
+v⟩) −(1 −c)(G(p∗
+w) + ⟨g(p∗
+w), δj −p∗
+w⟩)
+= G(p∗
+cv+(1−c)w) −⟨g(p∗
+cv+(1−c)w), p∗
+cv+(1−c)w⟩
+−c(G(p∗
+v) −⟨g(p∗
+v), p∗
+v⟩) −(1 −c)(G(p∗
+w) −⟨g(p∗
+w), p∗
+w⟩)
+Step 1 follows from the definition of WS. Step 2 follows from Equation 2. Step 3 follows from
+Equation 5, and specifically that the inner product of each side with δj is the same (so the δj terms
+cancel out, leaving a quantity that does not depend on j). Continuing where we left off:
+WSj(cv + (1 −c)w) −cWSj(v) −(1 −c)WSj(w)
+= G(p∗
+cv+(1−c)w) −c⟨g(p∗
+v), p∗
+cv+(1−c)w⟩−(1 −c)⟨g(p∗
+w), p∗
+cv+(1−c)w⟩
+−c(G(p∗
+v) −⟨g(p∗
+v), p∗
+v⟩) −(1 −c)(G(p∗
+w) −⟨g(p∗
+w), p∗
+w⟩)
+= c(G(p∗
+cv+(1−c)w) −G(p∗
+v) −⟨g(p∗
+v), p∗
+cv+(1−c)w −p∗
+v⟩)
++ (1 −c)(G(p∗
+cv+(1−c)w) −G(p∗
+w) −⟨g(p∗
+w), p∗
+cv+(1−c)w −p∗
+w⟩)
+= cDG(p∗
+cv+(1−c)w ∥p∗
+v) + (1 −c)DG(p∗
+cv+(1−c)w ∥p∗
+w) ≥0.
+28
+
+Step 4 again follows from Equation 5. Step 5 is a rearrangement of terms. Finally, step 6 follows
+from the definition of Bregman divergence, and step 7 follows from the fact that Bregman divergence
+is always non-negative. This completes the proof.
+Remark B.1. Theorem 5.1 can be stated in more generality: s need not have convex exposure; it
+suffices to have that for the particular p1, . . . , pm, the QA pool of these forecasts exists for every
+weight vector.
+Beyond Theorem 5.1’s instrumental use for no-regret online learning of expert weights (Theo-
+rem 5.3 below), the result is interesting in its own right. For example, the following fact — loosely
+speaking, that QA pooling cannot benefit from weight randomization — follows as a corollary.
+(Recall the definition of p∗
+w from Definition 3.6.)
+Corollary B.2. Consider a randomized algorithm A with the following specifications:
+• Input: a proper scoring rule s with convex exposure, expert forecasts p1, . . . , pm.
+• Output: a weight vector w ∈∆m.
+For any input s, p1, . . . , pm and for every j, we have
+s(p∗
+EA[w]; j) ≥EA [s(p∗
+w; j)] ,
+where p∗
+x denotes the QA pool of p1, . . . , pm with weight vector x.
+Algorithm B.3 (Online gradient descent algorithm for Theorem 5.3). We proceed as follows:
+• For t ≥1, define ηt :=
+1
+M
+√
+mt.
+• Start with an arbitrary guess w1 ∈∆m.
+• At each time step t from 1 to T:
+– Play wt and observe loss Lt(wt).
+– Let ˜wt+1 = wt −ηt∇Lt(wt). If ˜wt+1 ∈∆m, let wt+1 = ˜wt+1. Otherwise, let wt+1 be
+the orthogonal projection of ˜wt+1 onto ∆m.
+The above algorithm is an adaptation of the online gradient descent algorithm (as presented
+in [Haz19, §3.1]) for the setting of Theorem 5.3.
+In our context, the loss function is Lt(w) =
+−WSjt(w), where WS is as in Theorem 5.1, relative to forecasts pt
+1, . . . , pt
+m.
+Below, we prove that Theorem 5.3, i.e. that Algorithm B.3 satisfies the details of Theorem 5.3.
+The proof amounts to applying the standard bounds for online gradient descent, though with an
+extra step: we use the bound M on ∥g∥to bound the gradient of the loss as a function of expert
+weights.
+Proof of Theorem 5.3. We apply [Haz19, Theorem 3.1]; this theorem tells us that in order to prove
+the stated bound, it suffices to show that for all t and w,
+∇Lt(w)
+
+2 ≤
+√
+2mM.
+Let L be an arbitrary loss function, i.e. L(w) = −WSj(w) for some j, p1, . . . , pm. Let p∗(w) =
+m
+M
+g
+i=1
+(pi, wi). We claim that
+∇L(w) =
+
+
+
+g(p1)
+...
+g(pm)
+
+
+(p∗(w) −δj),
+(6)
+29
+
+where this m-dimensional vector should be interpreted modulo translation by 1m (see Remark 3.12).
+To see this, observe that
+∇L(w) = −∇WSj(w) = −∇ws(p∗(w); j) = −∇w(G(p∗(w)) + ⟨g(p∗(w)), δj −p∗(w)⟩),
+where ∇w denotes the gradient with respect to change in the weight vector w (as opposed to change
+in the probability vector). Now, by the chain rule for gradients, we have
+∇wG(p∗(w)) = (Jp∗(w))⊤g(p∗(w)),
+where Jp∗denotes the Jacobian matrix of the function p∗(w). Also, we have
+g(p∗(w)) =
+m
+X
+i=1
+wig(pi),
+so (again by the chain rule) we have
+∇w(⟨g(p∗(w)), δj −p∗(w)⟩) =
+
+
+
+g(p1)
+...
+g(pm)
+
+
+(δj −p∗(w)) −(Jp∗(w))⊤g(p∗(w)).
+This gives us Equation 6.25
+Now, for any i, we have
+|⟨g(pi), p∗(w) −δj⟩| ≤∥g(pi)∥2 ∥p∗(w) −δj∥2 ≤
+√
+2M.
+Therefore,
+∥∇L(w)∥2 ≤
+q
+m · (
+√
+2M)2 =
+√
+2mM,
+completing the proof.
+C.
+Details omitted from Section 6
+We claim that our axioms in Definition 6.2 can be restated equivalently in a form similar to that
+of Kolmogorov introduced at the top of Section 6 (though with weights.)
+Claim C.1. Given a pooling operator ⊕on D satisfying Definition 6.2, the function M defined on
+arbitrary tuples of weighted forecasts defined by M(Π1, . . . , Πm) := Lm
+i=1 Πi satisfies the following
+axioms:
+(1) M(Π1, . . . , Πm) is strictly increasing in each pr(Πi) and continuous in its inputs.26
+(2) M is symmetric in its arguments.
+(3) M((p, w1), . . . , (p, wm)) = (p, P
+i wi).
+25Note that the cancellation of the Jacobian terms stems not from the specific relationship between p∗and w
+but from the nature of proper scoring rules. We obtain the same cancellation if we consider ∇s(p; j), where after
+differentiating G(p) + ⟨g(p), δj −p⟩we find that the g(p) terms cancel.
+26That is, it is a continuous function of its input in Dm × (Rm
+≥0 \ 0), where weighted forecasts with weight 0 are
+ignored when computing M.
+30
+
+(4) M(Π1, . . . , Πk, Πk+1, . . . , Πm) = M(Π′, Πk+1, . . . , Πm), where y := M(Π1, . . . , Πk).
+(5) M((p1, w1), . . . , (pm, wm)) has weight w1 + · · · + wm.
+Additionally, given any M defined on arbitrary tuples of weighted forecasts, the operator ⊕defined
+by Π1 ⊕Π2 := M(Π1, Π2) satisfies Definition 6.2.
+Proof. We first prove that given ⊕satisfying Definition 6.2, M satisfies the stated axioms. The
+last four axioms are clear, so we prove the first one. The fact that M is strictly increasing in
+each probability follows immediately by considering the continuous, strictly increasing function g
+such that ⊕= ⊕g, which exists by Theorem 6.6. Continuity likewise follows, since the quantity in
+Definition 6.2 is continuous.
+We now prove that given M satisfying the stated axioms, ⊕satisfies Definition 6.2. Weight
+additivity, commutativity, continuity, and idempotence are clear. To prove associativity, note that
+Π1 ⊕(Π2 ⊕Π3) = M(Π1, M(Π2, Π3)) = M(Π1, Π2, Π3) = M(M(Π1, Π2), Π3) = (Π1 ⊕Π2) ⊕Π3.
+To prove monotonicity, let p1 > p2 and w > x > y. We wish to prove that pr((p1, x)⊕(p2, w−x)) >
+pr((p1, y) ⊕(p2, w −y)). We have
+pr((p1, x) ⊕(p2, w −x)) = pr(M((p1, x), (p2, w −x))) = pr(M((p1, y), (p1, x −y), (p2, w −x)))
+> pr(M((p1, y), (p2, x −y), (p2, w −x))) = pr(M((p1, y), (p2, w −y)))
+= pr((p1, y) ⊕(p2, w −y)).
+C.1.
+Extending the results of Section 6 to n > 2 outcomes
+We now discuss extending our axiomatization to arbitrary values of n in a way that, again, describes
+the class of QA pooling operators. Just as we fixed a two-outcome forecast domain D in Section 6,
+we now fix an n-outcome forecast domain D for any n ≥2. Our definition of weighted forecasts
+remains the same (except that now pr(Π) is a vector). Our definition of quasi-arithmetic pooling,
+however, needs to change to make g vector-valued. This raises the question: what is the analogue
+of “increasing” for vector-valued functions? It turns out that the relevant notion for us is cyclical
+monotonicity, introduced by Rockafellar [Roc70a] (see also [Roc70b, §27]).
+We will define this
+notion shortly, but first we give the definition of quasi-arithmetic pooling with arbitrary weights
+(analogous to Definition 6.2) for this setting. Throughout this section, we will use the notation
+Hn(c) := {x ∈Rn : P
+i xi = c}. Recall from Remark 3.12 that the range of the gradient of a
+function defined on D is a subset of Hn(0).
+Definition C.2 (Quasi-arithmetic pooling with arbitrary weights). Given a continuous, strictly
+cyclically monotone vector-valued function g : D →Hn(0) whose range is a convex set, and weighted
+forecasts Π1 = (p1, w1), . . . , Πm = (pm, wm), define the quasi-arithmetic pool of Π1, . . . , Πm with
+respect to g as
+m
+M
+g
+i=1
+(pi, wi) :=
+ 
+g−1
+P
+i wig(pi)
+P
+i wi
+
+,
+X
+i
+wi
+!
+.
+Note that QA pooling as defined in Definition 3.6 can be written in the form of Definition C.2 if
+and only if the scoring rule has convex exposure; if it does not, then for some choices of parameters,
+P
+i wig(pi) will be equal to a subgradient – but not the gradient – of G at some point.
+31
+
+Definition C.3 (Cyclical monotonicity). A function g : U ⊆Rn →Rn is cyclically monotone if
+for every list of points x0, x1, . . . , xk−1, xk = x0 ∈U, we have
+k
+X
+i=1
+⟨g(xi), xi −xi−1⟩≥0.
+We also say that g is strictly cyclically monotone if the inequality is strict except when x0 = · · · =
+xk−1.
+To gain an intuition for this notion, consider the case of k = 2; then this condition says that
+⟨g(x1) −g(x0), x1 −x0⟩≥0. In other words, the change in g from x0 to x1 is in the same general
+direction as the direction from x0 to x1. This property is called 2-cycle (or weak) monotonicity.
+Cyclical monotonicity is a stronger notion, which may be familiar to the reader for its appli-
+cations in mechanism design and revealed preference theory, see e.g. [LS07], [Ash+10], [FK14],
+[Voh07, §2.1]. In such settings, it is usually the case that two-cycle and cyclical monotonicity are
+equivalent. Indeed, Saks and Yu showed that these conditions are equivalent in settings where the
+set of outcomes (i.e. the range of g) is finite [SY05]. However, cyclical monotonicity is substantially
+stronger than two-cycle monotonicity when the range of g is infinitely large, as in our setting. In
+fact, the difference between these two conditions is that a two-cycle monotone function is cyclically
+monotone if and only if it is also vortex-free [AK14, Theorem 3.9]. Vortex-freeness means that the
+path integral of g along any triangle vanishes. See [AK14] for a deteailed comparison of these two
+notions.
+The immediately relevant fact for us is that cyclically monotone functions are gradients of
+convex functions (and vice versa). Speaking more precisely:
+Theorem C.4. A vector-valued function g is continuous and strictly cyclically monotone if and
+only if it is the gradient of a differentiable, strictly convex function G.
+Proof of Theorem C.4. Per a theorem of Rockafellar ([Roc70a], see also Theorem 24.8 in [Roc70b]),
+a function g is cyclically monotone if and only if it is a subgradient of a convex function G. The
+proof of this fact shows just as easily that a function is strictly cyclically monotone if and only if
+it is a subgradient of a strictly convex function.
+Consider a differentiable, strictly convex function G. Its gradient is continuous (see [Roc70b,
+Theorem 25.5]). Conversely, consider a continuous, strictly cyclically monotone vector-valued func-
+tion g. As we just discussed, it is a subgradient of some strictly convex function G. A convex
+function with a continuous subgradient is differentiable [BC11, Proposition 17.41].
+This means that the conditions on g in Definition C.2 are precisely those necessary to let g be
+any function that it could be in our original definition of quasi-arithmetic pooling (Definition 3.6).
+Our new definition is thus equivalent to the old one (after normalizing weights to add to 1).
+We now discuss our axioms for pooling operators that will again capture the class of QA pooling
+operators. We will keep the weight additivity, commutativity, associativity, and idempotence ver-
+batim from our discussion of the n = 2 case. We will slightly strengthen the continuity argument
+(see below).
+We will also add a new axiom, subtraction, which states that if Π1⊕Π2 = Π1⊕Π3 then Π2 = Π3.
+Subtraction in the n = 2 case follows from monotonicity; in this case, however, we the subtraction
+axiom will help us state the monotonicity axiom. In particular, it allows us to make the following
+definition, which essentially extends the notion of pooling to allow for negative weights.
+32
+
+Definition C.5. Let ⊕be a pooling operator satisfying weight additivity, commutativity, associa-
+tivity, and subtraction. Fix p1, . . . , pk ∈D. Define a function p : ∆k →D (with p1, . . . , pk serving
+as implicit arguments) defined by
+p(w1, . . . , wk) = pr
+ k
+M
+i=1
+(pi, wi)
+!
+.
+We extend the definition of p to a partial function on Hk(1), as follows: given input (w1, . . . , wk),
+let S ⊆[k] be the set of indices i such that wi < 0 and T ⊆[k] be the set of indices i such that
+wi > 0. We define p(w1, . . . , wk) to be the q ∈D such that
+(q, 1) ⊕
+ M
+i∈S
+(pi, −wi)
+!
+=
+M
+i∈T
+(pi, wi).
+Note that q is not guaranteed to exist, which is why we call p a partial function. However, if q
+exists then it is unique, by the subtraction axiom.
+We can now state the full axiomatization, including the monotonicity axiom.
+Definition C.6 (Axioms for pooling operators). For a pooling operator ⊕on D, we define the
+following axioms.
+1. Weight additivity: wt(Π1 ⊕Π2) = wt(Π1) + wt(Π2) for every Π1, Π2.
+2. Commutativity: Π1 ⊕Π2 = Π2 ⊕Π1 for every Π1, Π2.
+3. Associativity: Π1 ⊕(Π2 ⊕Π3) = (Π1 ⊕Π2) ⊕Π3 for every Π1, Π2, Π3.
+4. Continuity: For every positive integer k and p1, . . . , pk, the quantity27
+pr
+ k
+M
+i=1
+(pi, wi)
+!
+is a continuous function of (w1, . . . , wk) on Rk
+≥0 \ {0}.
+5. Idempotence: For every Π1 and Π2, if pr(Π1) = pr(Π2) then pr(Π1 ⊕Π2) = pr(Π1).
+6. Subtraction: If Π1 ⊕Π2 = Π1 ⊕Π3 then Π2 = Π3.
+7. Monotonicity: There exist vectors p1, . . . , pn ∈D such that p (as in Definition C.5) is a
+strictly cyclically monotone function from its domain to Rn.
+This monotonicity axiom essentially extends our previous monotonicity axiom (in Definition 6.5)
+to a multi-dimensional setting. It states that there are n “anchor points” in D such that the func-
+tion p from weight vectors to D that pools the anchor points with the weights given as input obeys
+a notion of monotonicity (namely cyclical monotonicity). Informally, this means that the vector
+of weights that one would need to give to the anchor points in order to arrive at a forecast p
+“correlates” with the forecast p itself.
+We now state the main theorem of our axiomatization.
+27The continuity axiom is only well-defined conditioned on ⊕being associative, which is fine for our purposes. We
+allow a proper subset of weights to be zero by defining the aggregate to ignore forecasts with weight zero.
+33
+
+Theorem C.7. A pooling operator satisfies the axioms in Definition C.6 if and only if it is a QA
+pooling operator as in Definition C.2.28.
+Proof. We begin by noting the following fact, which follows from results in [Roc70b, §26].
+Proposition C.8. A strictly cyclically monotone function g : D →Rn is injective, and its inverse
+g−1 is strictly cyclically monotone and continuous.29
+We provide a partial proof below; it relies on the following observation.
+Remark C.9. We can instead write the condition as
+k
+X
+i=1
+(g(xi) −g(xi−1)) · xi ≥0.
+This is equivalent to the condition in Definition C.3, because it is the same statement (with rear-
+ranged terms) when the xi’s are listed in reverse order.
+Proof. First, suppose that g(x) = g(y). Then
+g(x)(x −y) + g(y)(y −x) = 0.
+Since g is strictly cyclically monotone, this implies that x = y. (Note that we only use two-cycle
+monotonicity.)
+We now show that g−1 is strictly cyclically monotone. That is, we wish to show that
+k
+X
+i=1
+xi · (g−1(xi) −g−1(xi−1)) > 0
+for any x1, . . . , xk = x0 that are not all the same. (See Remark C.9.) By the cyclical monotonicity
+of g, we have that
+k
+X
+i=1
+g(pi) · (pi −pi−1) > 0
+(the strictness of the inequality follows by the injectivity of g: if xi ̸= xj then pi ̸= pj). This
+means that
+k
+X
+i=1
+xi · (g−1(xi) −g−1(xi−1)) > 0,
+as desired. As for continuity, we defer to [Roc70b, Theorem 26.5].
+28Recall that Definition C.2 is narrower than Definition 3.6, since it excludes QA pools with respect to scoring
+rules that do not have convex exposure. Without convex exposure, the associativity, subtraction, and monotonicity
+axioms may be violated. For example, consider Πi = (δi, 1) for i = 1, 2, 3, for the scoring rule with expected reward
+function G(x) = x4
+1 +x4
+2 +x4
+3. We have that (Π1 ⊕g Π2)⊕g Π3 = ((1/2, 1/2, 0), 2)⊕g (δ3, 1) ≈((0.182, 0.182, 0.635), 3),
+whereas Π1 ⊕g (Π2 ⊕g Π3) = ((0.635, 0.182, 0.182), 3)
+29Why can’t we apply this result again to g−1 to conclude that g is continuous, even though we did not assume it
+to be? The reason is that the proof of continuity relies on the convexity of D; if g is discontinuous then the domain
+of g−1 may not be convex (or even connected), so we cannot apply the result to g−1.
+34
+
+Back to the proof of Theorem C.7, we first prove that any such ⊕g satisfies the stated axioms.
+Weight additivity, commutativity, associativity, and idempotence are clear. Continuity follows from
+the formula
+pr((p1, w1) ⊕g (p2, w2)) = g−1
+w1g(p1) + w2g(p2)
+w1 + w2
+
+,
+noting that g−1 is continuous by Proposition C.8. Likewise, subtraction follows from the fact that
+g is injective (by Proposition C.8), as is g−1 (likewise). Monotonicity remains.
+The range of g contains an open subset30 of Hn(0), so in particular it contains the vertices of
+some translated and dilated copy of the standard simplex. That is, there are n points x1, . . . , xn in
+the range of g for which there is a positive scalar a and vector b such that aδi + b = xi for every
+i. (Here δi is the i-th standard basis vector in Rn.) We will let pi be the pre-image of xi under g,
+so that g(pi) = aδi + b.
+Observe that for any w in the domain of p, we have
+g(p(w)) =
+n
+X
+i=1
+wig(pi) =
+n
+X
+i=1
+wi(aδi + b) = aw + b,
+so
+p(w) = g−1(aw + b).
+We have that g−1 is strictly cyclically monotone (by Proposition C.8), and it is easy to verify that
+for any strictly cyclically monotone function f and any a > 0 and b, f(ax+b) is a strictly cyclically
+monotone function of x. Therefore, p(w) = g−1(aw+b) is strictly cyclically monotone, as desired.
+Now we prove the converse. Assume that we have a pooling operator ⊕satisfying the axioms
+in Definition C.6. We wish to show that ⊕is ⊕g for some g : D →Hn(0).
+For the remainder of this proof, let p1, . . . , pn be vectors certifying the monotonicity of ⊕, and
+let p(·) be as in Definition C.5.
+For any q ∈D, let g(q) := w −1
+n1n, where w ∈Hn(1) is such that p(w) = q and 1n is the
+all-ones vector. This raises the question of well-definedness: does this w necessarily exist, and if
+so, is it unique? The following claim shows that this is indeed the case.
+Claim C.10. The function p, from the subset of Hn(1) where it is defined to D, is bijective.
+Proof. The fact that p is injective follows from the fact that it is strictly cyclically monotone (see
+Proposition C.8). We now show that p is surjective.
+Let q ∈D. Define the function ˜p : ∆n+1 →D by
+˜p(w1, . . . , wn+1) := pr
+ n
+M
+i=1
+(pi, wi)
+!
+⊕(q, wn+1)
+!
+.
+Since ˜p is a continuous map31 from ∆n+1 (an n-dimensional manifold) to D (an (n−1)-dimensional
+manifold), ˜p is not injective.32 So in particular, let w1 ̸= w2 ∈∆n+1 be such that ˜p(w1) = ˜p(w2).
+That is, we have
+30This follows from the invariance of domain theorem, which states that the image of an open subset of a manifold
+under an injective continuous map is open.
+31By the continuity axiom; here we use the more generalized form we stated earlier.
+32This follows e.g. from the Borsuk-Ulam theorem.
+35
+
+ n
+M
+i=1
+(pi, w1,i)
+!
+⊕(q, w1,n+1) =
+ n
+M
+i=1
+(pi, w2,i)
+!
+⊕(q, w2,n+1).
+(7)
+Observe that w1,n+1 ̸= w2,n+2; for otherwise it would follows from the subtraction axiom that
+two different combinations of the pi’s would give the same probability, contradicting the fact that p
+is injective. Without loss of generality, assume that w1,n+1 > w2,n+1. We can rearrange the terms
+in Equation 7 to look as follows.
+(q, w1,n+1 −w2,n+1) ⊕
+ M
+i∈S
+(pi, vi)
+!
+=
+M
+i∈T⊆[n]\S
+(pi, vi)
+for some positive v1, . . . , vn. By the distributive property, we may multiply all weights by
+1
+w1,n+1−w2,n+1 .
+The result will be an equation as in Definition C.5, certifying that q is in the range of the function
+p, as desired.
+We return to our main proof, now that we have shown that our function g(q) := w−1
+n1, where
+w ∈Hn(1) is such that p(w) = q, is well-defined. In fact, we can simply write g(q) = p−1(q)−1
+n1.
+(The vector 1
+n1 is fairly arbitrary; it only serves the purpose of forcing the range of g to lie in Hn(0)
+instead of Hn(1).)
+We first show that the equation that defines ⊕g holds – that is, that if (q1, v1) ⊕(q2, v2) =
+(q, v1 + v2) (with v1, v2 ≥0, not both zero), then
+g(q) = v1g(q1) + v2g(q2)
+v1 + v2
+.
+Let w1, w2 ∈Hn(1) be such that q1 = p(w1) and q2 = p(w2).
+It is intuitive that q =
+p
+
+v1w1+v2w2
+v1+v2
+
+, but we show this formally.
+Claim C.11. Given q1, q2 ∈D with q1 = p(w1), q2 = p(w2), and 0 ≤α ≤1, we have
+p(αw1 + (1 −α)w2) = (q1, α) ⊕(q2, 1 −α).
+Proof. Note that
+(q1, 1) ⊕
+
+M
+i:w1,i<0
+(pi, w1,i)
+
+=
+M
+i:w1,i>0
+(pi, w1,i)
+(q2, 1) ⊕
+
+M
+i:w2,i<0
+(pi, w2,i)
+
+=
+M
+i:w2,i>0
+(pi, w2,i).
+Applying the distributive property to the two above equations with constants α and 1 −α, respec-
+tively, and adding them, we get that
+(q1, α) ⊕(q2, 1 −α) ⊕
+
+M
+i:w1,i<0
+(pi, αw1,i)
+
+⊕
+
+M
+i:w2,i<0
+(pi, (1 −α)w2,i)
+
+
+=
+
+M
+i:w1,i>0
+(pi, αw1,i)
+
+⊕
+
+M
+i:w2,i>0
+(pi, (1 −α)w2,i)
+
+.
+36
+
+We have that (q1, α)⊕(q2, 1 −α) = (q, 1). It follows (after rearranging terms, from Definition C.5)
+that q = p
+
+v1w1+v2w2
+v1+v2
+
+.
+Applying Claim C.11 with α =
+v1
+v1+v2 , we find that
+g(q) = v1w1 + v2w2
+v1 + v2
+−1
+n1 = v1
+ g(q1) + 1
+n1
+
++ v2
+ g(q2) + 1
+n1
+
+v1 + v2
+−1
+n1 = v1g(q1) + v2g(q2)
+v1 + v2
+,
+as desired.
+It remains to show that g is continuous, strictly cyclically monotone, and has convex range. By
+the monotonicity axiom, p is strictly cyclically monotone. It follows by Proposition C.8 that its
+inverse its continuous and strictly cyclically monotone. Therefore, g is continuous and cyclically
+monotone (as it is simply a translation of p−1(q) by 1
+n1).
+Finally, to show that g has convex range, we wish to show that p−1 has convex range; or, in other
+words, that the domain on which p is defined is convex. And indeed, this follows straightforwardly
+from Claim C.11. Let w1, w2 be in the domain of p, with p(w1) = q1, p(w2) = q2. Then for any
+0 ≤α ≤1, we have that
+p(αw1 + (1 −α)w2) = (q1, α) ⊕(q2, 1 −α),
+so in particular αw1 + (1 −α)w2 is in the domain of p. This concludes the proof.
+D.
+The convex exposure property
+Several of our results have been contingent on the convex exposure property. In this e-companion,
+we consider when the convex exposure property holds. Our first result is that it always holds in
+the case of a binary outcome (i.e. n = 2).
+Proposition D.1. If n = 2, every (continuous) proper scoring rule has convex exposure.
+Proof. Consider a proper scoring rule s with forecast domain D. Since D is connected and g is
+continuous on D, the range of g over D is connected. In the n = 2 outcome case, the range of g
+lies on the line {(x1, x2) : x1 + x2 = 0}, and a connected subset of a line is convex.
+As we shall see, the convex exposure property holds for nearly all of the most commonly used
+scoring rules even in higher dimensions.
+(A note on notation: in this section we use pj instead of p(j) to refer to the j-th coordinate of
+a probability distribution p.)
+We now show that scoring rules that — like the logarithmic scoring rule — “go off to infinity”
+have convex exposure.
+Proposition D.2. Let s be a proper scoring rule whose forecast domain is the interior of ∆n,
+such that for any point x on the boundary of ∆n, and for any sequence x1, x2, . . . converging to x,
+limk→∞∥g(xk)∥2 = ∞.33 Then s has convex exposure.
+33[ACV13] say that G is a pseudo-barrier function if this condition is satisfied.
+37
+
+This is a statement of convex analysis — namely that if ∥g∥2 approaches ∞on the boundary
+of a convex set, then the range of g is convex (assuming g is the gradient of a differentiable convex
+function). We refer the reader to [Roc70b, Theorem 26.5] for the proof. In non-pathological cases,
+the basic intuition is that every v ∈{x : P
+i xi = 0} is the gradient of G at some point. In these
+cases, ∇G(x) = v where x minimizes G(v)−v ·x; the limk→∞∥g(xk)∥2 = ∞condition means that
+this minimum does not occur on the boundary of ∆n.
+Corollary D.3. The following scoring rules have convex exposure:
+• The logarithmic scoring rule.
+• The scoring rule given by G(p) = −P
+j pγ
+j for γ ∈(0, 1).
+• The scoring rule given by G(p) = −P
+j ln pj, which can be thought of as the limit of the G
+in the previous bullet point as γ →0.34
+• The scoring rule hs given by Ghs(p) = −Q
+j p1/n
+j
+.
+The hs scoring rule
+The last of these scoring rules is a generalization of the scoring rule hs(q) =
+1 −
+q
+1−q
+q
+used in [BB20] as part of proving their minimax theorem for randomized algorithms.35
+The authors used this scoring rule as a key ingredient in their minimax theorem for randomized
+algorithms.
+The key property of the scoring rule was a result about its amplification [BB20,
+Lemma 3.10]. The authors define a forecasting algorithm to be a generalization of a randomized
+algorithm that outputs an estimated probability that an output should be accepted. Then, roughly
+speaking, the authors show that given a forecasting algorithm R, it is possible to create a forecasting
+algorithm R′ that has a much larger expected score from the scoring rule hs by combining running R
+a small number of times and combining the outputs. This is an important new result in theoretical
+computer science and suggests that hs deserves more attention.
+Since additive and multiplicative constants are irrelevant, we may treat hs(q) = −1
+2
+q
+1−q
+q .
+Observe that (in the case of two outcomes), the expected score Ghs on a report of q is
+Ghs(q) = q
+
+−1
+2
+r1 −q
+q
+
++ (1 −q)
+
+−1
+2
+r1 −q
+q
+
+= −
+p
+q(1 −q).
+That is, Ghs is precisely negative the geometric mean of q and 1−q. This motivates us to generalize
+hs to a setting with n outcomes by setting
+Ghs(p) := −
+n
+Y
+i=1
+p1/n
+i
+.
+It should not be obvious that this function is convex, but it turns out to be; this is the precise
+statement of an inequality known as Mahler’s inequality [Wik18].
+Next we note that the quadratic scoring rule has convex exposure, since its exposure function
+g(p) = 2p (modulo 1n as discussed in Remark 3.12 of the main article) maps any convex set to a
+convex set.
+Proposition D.4. The quadratic scoring rule has convex exposure.
+34This is a natural way to think of this scoring rule because ∇G(p) = −(p−1
+1 , . . . , p−1
+n ).
+35Here we are using the shorthand notation for the n = 2 outcome case discussed in Remark 3.5 of the main article.
+38
+
+Spherical scoring rules — the third most studied proper scoring rules, after the quadratic and
+logarithmic rules — also have convex exposure.
+Definition D.5 (Spherical scoring rules). [GR07, Example 2] For any α > 1, define the spherical
+scoring rule with parameter α to be the scoring rule given by
+Gsph,α(p) :=
+ n
+X
+i=1
+pα
+i
+!1/α
+.
+If the “spherical scoring rule” is referenced with no parameter α given, α is presumed to equal 2.
+Proposition D.6. For any α > 1, the spherical scoring rule with parameter α has convex exposure.
+Proof. Fix α > 1. We will write G in place of Gsph,α. We have36
+g(p) =
+
+
+n
+X
+j=1
+pα
+j
+
+
+(1/α)−1
+(pα−1
+1
+, . . . , pα−1
+n
+).
+(8)
+Now, define the n-dimensional unit β-sphere, i.e. {x : P
+j xβ
+j = 1}, and define the n-dimensional
+unit β-ball correspondingly (i.e. with ≤in place of =). The range of g is precisely the part of the
+n-dimensional unit
+α
+α−1-sphere with all non-negative coordinates. Indeed, on the one hand, for any
+p we have
+X
+j
+gj(p)α/(α−1) =
+
+X
+j
+pα
+j
+
+
+−1
+·
+X
+j
+pα
+j = 1
+(where gj(p) denotes the j-th coordinate of g(p) as in Equation 8). On the other hand, given a
+point x on the unit
+α
+α−1-sphere with all non-negative coordinates,
+p =
+
+X
+j
+x1/(α−1)
+j
+
+
+−1 
+x1/(α−1)
+1
+, . . . , x1/(α−1)
+n
+
+lies in ∆n and satisfies g(p) = x.
+The crucial point for us is that for β > 1, the unit β-ball is convex. This means that for any such
+β, the convex combination of any number of points on the unit β-sphere will lie in the unit β-ball.
+Since
+α
+α−1 > 1 for α > 1, we have that for arbitrary p, q ∈∆n and w ∈[0, 1], wg(p) + (1 −w)g(q)
+lies in the unit β-ball — in fact, in the part with all non-negative coordinates. Now, consider
+casting a ray from this convex combination point in the positive 1n direction. All points on this
+ray are equivalent to this point modulo T(1n), and this ray will intersect the unit β-sphere at some
+point x with all non-negative coordinates. The point p ∈∆n with g(p) = x satisfies
+g(p) = g(p) + (1 −w)g(q).
+This completes the proof.
+Remark D.7. The above proof gives a geometric interpretation of the QA pooling with respect
+to the spherical scoring rule, particularly for α = 2. In the α = 2 case, pooling amounts to taking
+the following steps:
+36As discussed in Remark 3.12 of the main article, the range of g should be thought of as modulo T(1n). However,
+we find it convenient for this proof to think of it as lying in Rn and project later.
+39
+
+(1) Scale each forecast so it lies on the unit sphere.
+(2) Take the weighted average of the resulting points in Rn.
+(3) Shift the resulting point in the positive 1n direction to the unique point in that direction that
+lies on the unit sphere.
+(4) Scale this point so that its coordinates add to 1.
+Finally we consider the parametrized family known as Tsallis scoring rules, defined in [Tsa88].
+Definition D.8 (Tsallis scoring rules). For γ > 1, the Tsallis scoring rule with parameter γ is the
+rule given by
+GTsa,γ(p) =
+m
+X
+j=1
+pγ
+j .
+Setting γ = 2 above yields the quadratic scoring rule. Note also that we have already addressed
+the scoring rule given by G(p) = ± P
+j pγ
+j for γ ≤1 (except γ = 0, 1, which are degenerate), with
+the sign chosen to make G convex: these scoring rules have convex exposure by Proposition D.2.
+The following proposition completes our analysis for this natural class of scoring rules.
+Proposition D.9. For γ ≤2, the Tsallis scoring rule with parameter γ has convex exposure. For
+γ > 2, this is not the case if n > 2.
+Proof of Proposition D.9. Fix γ > 1. We will write G in place of GTsa,γ. Up to a multiplicative
+factor of γ that we are free to ignore, we have
+g(p) = (pγ−1
+1
+, . . . , pγ−1
+n
+).
+Let p, q ∈∆n and w ∈[0, 1]. We wish to find an x ∈∆n such that g(x) = wg(p) + (1 −w)g(q),
+i.e.
+wpγ−1
+j
++ (1 −w)qγ−1
+j
++ c = xγ−1
+j
+,
+for all j ∈[n], for some c. Since P
+j xj = 1, this c must satisfy
+X
+j
+(wpγ−1
+j
++ (1 −w)qγ−1
+j
++ c)1/(γ−1) = 1.
+(9)
+Let h(x) := P
+j(wpγ−1
+j
++ (1 −w)qγ−1
+j
++ x)1/(γ−1). Note that h is increasing in x.
+First consider the case that γ ≤2. By concavity, we have that wpγ−1
+j
++ (1 −w)qγ−1
+j
+≤(wpj +
+(1 −w)qj)γ−1. This means that
+h(0) =
+X
+j
+(wpγ−1
+j
++ (1 −w)qγ−1
+j
+)1/(γ−1) ≤
+X
+j
+(wpj + (1 −w)qj) = 1.
+On the other hand, limx→∞h(x) = ∞. Since h is continuous, there must be some x ∈[0, ∞) such
+that h(x) = 1; call this value c. Then let
+xj = (wpγ−1
+j
++ (1 −w)qγ−1
+j
++ c)1/(γ−1).
+Then every xj is nonnegative and P
+j xj = 1, so we have succeeded.
+40
+
+Now consider the case that γ > 2, and consider as a counterexample p = (1, 0, . . . , 0), q =
+(0, 1, 0, . . . , 0), and w = 1
+2. To satisfy Equation 9, we are looking for c such that
+h(c) = 2
+1
+2 + c
+1/(γ−1)
++ (n −2)c1/(γ−1) = 1.
+Note that h(0) = 2 · 2−1/(γ−1) = 2(γ−2)/(γ−1) > 1, so c < 0 (as h is increasing). But in that case
+xγ−1
+j
+< 0 for any j ≥3, a contradiction (assuming n > 2).
+Note that because ∇GTsa,γ(p) = (pγ−1
+1
+, . . . , pγ−1
+n
+) (up to a constant factor), QA pooling with
+respect to the Tsallis scoring rule can be thought of as an appropriately scaled coordinate-wise
+(γ −1)-power mean. For γ = 2 it is the coordinate-wise arithmetic average. For γ = 3 it is the
+coordinate-wise root mean square, but with the average of the squares scaled by an appropriate
+additive constant so that, upon taking the square roots, the probabilities add to 1. (However, as
+the Tsallis score with parameter 3 does not have convex exposure, this is not always well-defined.)
+In Corollary D.3 we mentioned that the scoring rule given by G(p) = −P
+j ln pj can be thought
+of as an extension to γ = 0 of (what we are now calling) the Tsallis score, because the derivative of
+ln x is x−1. QA pooling with respect to this scoring rule is, correspondingly, the −1-power mean,
+i.e. the harmonic mean. This pooling method is appropriately referred to as harmonic pooling, see
+e.g. [Daw+95, §4.2].
+Finally, we note that the logarithmic scoring rule can likewise be thought of as an extension of
+the Tsallis score to γ = 1, in that the second derivative of x ln x is x−1. It is likewise natural to call
+the geometric mean the 0-power mean; notice that logarithmic pooling is precisely an appropriately
+scaled coordinate-wise geometric mean.
+41

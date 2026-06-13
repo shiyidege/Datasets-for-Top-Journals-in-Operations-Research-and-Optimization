@@ -1,0 +1,2728 @@
+TITLE: On choosing the number of look-ahead stages in the rolling-horizon procedure for multistage stochastic programming
+JOURNAL: Annals_OR
+YEAR: 2026
+DOI: https://doi.org/10.1007/s10479-026-07289-5
+---
+
+Annals of Operations Research
+https://doi.org/10.1007/s10479-026-07289-5
+ORIGINAL RESEARCH
+On choosing the number of look-ahead stages in the
+rolling-horizon procedure for multistage stochastic
+programming
+Murwan Siddig1 · Yongjia Song2
+· Amin Khademi2
+Received: 5 April 2024 / Accepted: 14 May 2026
+© The Author(s) 2026
+Abstract
+Multistagestochasticprogramming(MSP)isaclassofmodelsforsequentialdecision-making
+under uncertainty. MSP problems are known for their computational difﬁculties, and one
+common approach to ﬁnd an approximate decision policy is to resort to the rolling-horizon
+procedure (RHP). The RHP is a method that involves solving an MSP problem at each roll of
+its procedure, which is referred to as a look-ahead model. The look-ahead model is typically
+deﬁned with a smaller number of stages than the original MSP, making them computationally
+less demanding to solve. However, the reduction in the number of stages may compromise
+the quality of the resulting decision policy. This leads to an important question of how many
+stages to use for each look-ahead model in the RHP. In this paper, we propose two alternative
+approaches to address this question. First, we propose a surrogate model to the original MSP
+as an inﬁnite-horizon MSP problem with a certain discount factor, from which we derive a
+bound which can be used to prescribe an appropriate number of stages. Alternatively, we
+propose a supervised learning approach that learns how to choose an appropriate number of
+stages for each look-ahead model based on the state of the system in each roll of the RHP,
+using data collected from ofﬂine experiments. Our numerical experiments demonstrate the
+effectiveness of the proposed approaches on these problems.
+Keywords Multistage stochastic programming · Rolling-horizon procedure · Approximate
+dynamic programming
+B Yongjia Song
+yongjis@clemson.edu
+Murwan Siddig
+msiddig@uﬂ.edu
+Amin Khademi
+khademi@clemson.edu
+1
+Department of Systems and Industrial Engineering, University of Florida, 303 Weil Hall,
+Gainesville 32603, Florida, USA
+2
+Department of Industrial Engineering, Clemson University, 211 Fernow St., Clemson 29631, SC, USA
+123
+
+Annals of Operations Research
+1 Introduction
+Multistage Stochastic Programming (MSP) is a class of mathematical programming models
+for sequential decision-making under uncertainty. The goal of the decision-maker (DM) in
+MSP problems is to construct an optimal policy for controlling the behavior of a probabilistic
+system, sequentially over time, under some performance criterion. More precisely, given a
+planning horizon of T ∈Z+ periods, in each period t ∈{1, 2, . . . , T }, the DM observes the
+state of the system st and makes a decision xt according to an optimal policy.
+To ﬁnd an optimal policy, one may apply the dynamic programming (DP) principle and
+formulate the optimality conditions for such a policy using the Bellman equations (Bellman,
+1957). This approach, however, could become impractical when the dimension of the state
+variable st and/or the length of the planning horizon T is large. This is known as the curse
+of dimensionality, as it renders an exponential growth in computational resources required
+to solve the problem to optimality. One common way to address this challenge is to apply
+a rolling-horizon procedure (RHP). The general idea of the RHP is that for each period
+in the planning horizon t ∈{1, 2, . . . , T }, the DM observes the system state st, solves
+a computationally less demanding problem Pt(st) to produce an immediate decision xt
+of satisfactory quality for the current period t, rolls forward one period and repeats the
+process starting from a new state st+1 (Powell, 2014; Sethi and Sorger, 1991). In this context,
+each period is referred to as a roll, justifying the name rolling-horizon, as the horizon gets
+“rolled over” in each period we repeat the process (Sethi and Sorger, 1991). In addition to its
+popularity in solving large-scale dynamic optimization problems, the RHP is also extensively
+studied in the control community, under the realm of model predictive control (Rawlings,
+2000).
+The problem Pt(st) is referred to as a look-ahead model and is typically constructed with
+a certain approximation based on the system state st (Powell, 2014). There is a considerable
+amount of literature in stochastic programming on how to construct the look-ahead model
+Pt(st) at each roll t (Chand et al., 2002; Powell, 2014). One popular approach is to rely on
+a deterministic approximation of future uncertain information. In Maggioni et al. (2014),
+the authors use a deterministic approximation where all the uncertain future information is
+replaced by a point estimator. The authors also provide bounds on the suboptimality of the
+corresponding solution, and in Maggioni and Pﬂug (2016) the authors extend these bounds
+to a stochastic approximation. A generalized framework to this deterministic approxima-
+tion is the partial approximation considered in Pantuso and Boomsma (2020) where the
+authors incorporate stochastic information up to a certain future period and replace uncertain
+information beyond that period with a point estimator. Another common approach is stage
+aggregation where multiple periods are aggregated into a single decision stage (Zou et al.,
+2018).
+Unlike these prior works, we do not consider aggregating any of the future exogenous
+uncertain information or the stages. As we are concerned with the computational efﬁciency
+of MSP problems with a long planning horizon, we focus on deﬁning the look-ahead model
+Pt(st) by reducing the horizon from (t, T ) to (t, t + τ −1), where τ is an appropriately
+chosen number. We refer to τ as the number of look-ahead stages (NLS).
+The choice of the NLS is a delicate issue. On the one hand, the NLS needs to be small
+enough to ensure the computational viability of the corresponding look-ahead model. On the
+other hand, the NLS needs to be large enough to prevent the quality of the corresponding
+decision from deteriorating signiﬁcantly. In fact, Bertazzi and Maggioni (2018) have shown
+that the optimality gap associated with the rolling-horizon policy can be arbitrarily large
+123
+
+Annals of Operations Research
+for a certain class of MSP problems in the worst case. The main goal of this paper is to
+provide systematic approaches for choosing an appropriate NLS for MSP problems with a
+long horizon T .
+We study the selection of the NLS from two different perspectives that lead to different
+selection strategies. First, we take the perspective of approximating the original ﬁnite-horizon
+MSP problem, with potentially non-stationary data, by solving a discounted inﬁnite-horizon
+MSP problem, with stationary data, as a way to obtain approximate decision policies. We
+show that under certain assumptions, the optimality gap associated with the online RHP
+policy corresponding to a static choice of NLS, compared to an optimal policy to the inﬁnite-
+horizon MSP, can be upper bounded by a function of the NLS. This helps provide an explicit
+guidance on how to make the static choice for the NLS according to the desired solution
+quality. Alternatively, without resorting to such inﬁnite-horizon MSP approximation, we
+propose a supervised learning approach that learns a dynamic selection strategy for the NLS
+based on the state of the system in each roll of the RHP, using data collected from ofﬂine
+experiments. This proposed approach does not rely on any assumption other than being able
+to ﬁnd a feasible solution for the look-ahead model with various choices of the NLS. We
+note that machine learning methods have been extensively applied to make the adaptive
+choice on the length of the predictive horizon, an analogy of the NLS in the RHP for model
+predictive control (Bøhn et al., 2021; Gardezi and Hasan, 2018; Krener, 2018). However, to
+our knowledge, our paper is the ﬁrst that applies machine learning approaches for choosing
+the NLS in the context of MSP.
+Contributions. The main contributions of this paper are summarized as follows.
+• We propose a new perspective on constructing the look-ahead model for the RHP in MSP.
+In contrast to existing approaches that rely on deterministic or partial approximations of
+future uncertain information (Maggioni et al., 2014; Maggioni and Pﬂug, 2016; Pantuso
+and Boomsma, 2020) or on stage aggregation (Zou et al., 2018), we neither aggregate
+stages nor replace future uncertainty with point estimators. Instead, we directly reduce
+the planning horizon from (t, T ) to (t, t + τ −1) and focus on the selection of NLS τ as
+the central design choice of the look-ahead model.
+• We analyze the static selection of the NLS by approximating the original ﬁnite-horizon
+MSP problem, with potentially non-stationary data, by a discounted inﬁnite-horizon MSP
+problem with stationary data. Under certain assumptions, we derive an upper bound,
+expressed as a function of the NLS, on the optimality gap of the online RHP policy
+relative to an optimal policy of the inﬁnite-horizon MSP.
+• We propose a supervised learning approach that selects the NLS dynamically, based
+on the state of the system in each roll of the RHP, using data collected from ofﬂine
+experiments. Whereas prior work in MSP typically ﬁxes the structure of the look-ahead
+model a priori, our approach adapts the NLS to the evolving system state and does not
+rely on any assumption other than the feasibility of the look-ahead model under various
+choices of the NLS.
+• We conduct computational experiments on the hydrothermal power operation planning
+problem and the multistage newsvendor problem (see Appendix B). The numerical results
+empirically conﬁrm the diminishing effect of distant stages on imminent decisions and
+demonstrate the value of our proposed approach.
+The rest of this paper is organized as follows. In Section 2, we describe the key components
+of an MSP model, discuss some basic assumptions, and provide a detailed description of the
+RHP. In Section 3, we provide the main theoretical result for the inﬁnite-horizon discounted
+MSP model that guides on choosing a static NLS. In Section 4, we describe the proposed
+123
+
+Annals of Operations Research
+machine learning-based approach for constructing a dynamic selection strategy for the NLS.
+In Section 5, we present the results of our numerical experiments using problem instances
+from a class of hydro-thermal power generation planning problem. We conclude in Section 6
+with discussions and outlooks on future research.
+2 Preliminaries on multistage stochastic programming and rolling
+horizon procedure
+We consider a generic MSP problem of the form
+min
+x1∈X1(x0,ξ1) f1(x1, ξ1) + E|ξ[1]
+
+min
+x2∈X2(x1,ξ2) f2(x2, ξ2)
++ E|ξ[2]
+
+· · · + E|ξ[T −1]
+
+min
+xT ∈XT (xT−1,ξT ) fT (xT , ξT )
+
+,
+(1)
+where the initial vector x0 and data ξ1 are assumed to be deterministic. Furthermore, the
+exogenous random data (ξ2, . . . , ξT ) ∈2 × · · · × T is modeled by a stochastic process
+where each random vector ξt is associated with a known probability distribution supported
+on a set t ⊂Rk, and we denote the history of the stochastic process up to stage t by
+ξ[t] := (ξ1, ξ2, . . . , ξt). The decision variable xt ∈Rm
++ is referred to as the post-decision
+state variable. Given a post-decision state variable xt−1, the state of the system st in stage t
+is fully resolved after the realization of the random vector ξt is observed: st := St(xt−1, ξt)
+with a state transition function St : Xt−1 × t →St ⊆Rm
++. Note that xt depends on the
+history ξ[t] := (ξ1, ξ2, . . . , ξt) and past decisions x1, x2, . . . , xt−1 implicitly through the state
+variable st.
+We make the following assumptions:
+Assumption 1 (Stage-wise independence) ξt+1 is independent of ξ[t], ∀t = 1, 2, . . . , T −1.
+Assumption 2 (Relatively complete recourse)
+∀xt−1 ∈Xt−1 and ξt
+∈t, the set
+Xt(xt−1, ξt) ̸= ∅, ∀t = 1, 2, . . . , T .
+Assumption 3 (Boundedness) The functions | ft(xt, ξt)| ≤U < ∞, ∀(xt, ξt) ∈Xt × t
+and t = 1, 2, . . . , T .
+Assumption 1 and 3 are made for simplicity and the proposed approaches can be extended
+to situations where these assumptions do not hold. Assumption 2 is made for the simplicity
+of applying the RHP.
+Under Assumption 1, problem (1) can be written using the Bellman equations as:
+Qt(xt−1, ξt) :=
+min
+xt∈Xt(xt−1,ξt) ft(xt, ξt) + Qt+1(xt),
+(2)
+∀t = 1, 2, . . . , T , where Qt+1(xt) := E[Qt+1(xt, ξt+1)], ∀t = 1, 2, . . . , T −1 and
+QT +1(xT ) := 0 are referred to as the expected cost-to-go functions.
+A standard technique to proceed with computing the expectation E[·] is to approximate the
+distribution of ξt by a ﬁnite sample. The sample can be obtained, for instance, using sampling
+techniques such as Monte Carlo methods in which the expectation in (2) is approximated
+by a sample average. Because of the curse of dimensionality, the viability of decomposition
+schemes such as the stochastic dual dynamic programming (SDDP) algorithm (Pereira and
+Pinto, 1991) could be easily undermined in MSP problems where the number of stages in the
+123
+
+Annals of Operations Research
+planning horizon T is large. Alternatively, one might consider using an RHP where an online
+policy is given by solving an MSP problem on the ﬂy at each decision stage t = 1, 2, . . . , T ,
+which is referred to as the RHP online policy.
+To demonstrate how the RHP works, let us deﬁne a roll as a decision stage at which the
+DM implements actions. For any trajectory of the stochastic process ξk = (ξk
+2 , . . . , ξk
+T ), at
+the beginning of every roll t = 1, . . . , T , based on the post-decision state xt−1 from the
+previous stage and the observed realization ξk
+t , the DM deﬁnes a new MSP problem of the
+form (1) for the system state st := St(xt−1, ξt) with τ being the NLS. The newly deﬁned
+problem is then solved (e.g., using the SDDP algorithm) and only the immediate decision
+xt is implemented. The immediate cost ft(xt, ξk
+t ) is then incurred and the procedure moves
+forward to the next stage. At that stage (t + 1), given the system state st+1 and a chosen NLS
+τ, a new problem is deﬁned and the process is repeated. The RHP online policy is evaluated
+for a collection of scenarios {ξk}k∈K by collecting all the immediate costs ft(xt, ξk
+t ) incurred
+at every roll t. These scenarios are referred to as the out-of-sample scenarios used to test the
+performance of any given policy. An algorithmic description is provided in Algorithm 1.
+Algorithm 1 The rolling horizon procedure.
+Input: Initial value x0 and an out-of-sample path ξ = (ξ1, ξ2, . . . , ξT ).
+STEP 0: Set z(ξ) = 0 and s1 = S1(x0, ξ1).
+STEP 1: For t = 1, 2, . . . , T
+• Given xt−1 and ξt, specify the NLS τ, which may depend on st = St(xt−1, ξt).
+• Deﬁne a look-ahead model Pt(st) with NLS τ.
+• Solve Pt(st) to obtain a new post-decision state xt, which will be carried over to the next stage.
+• Update z(ξ) ←z(ξ) + ft(xt, ξt).
+STEP 2: return z(ξ).
+3 Static selection of the NLS
+In this section, we consider an RHP where a static selection of NLS is made in each roll.
+We explicitly characterize an error bound for the suboptimality of such RHP online policy
+for the special case of the stationary discounted inﬁnite-horizon MSP problems. This error
+bound can be used for guiding the NLS selection in the RHP for solving these problems.
+3.1 Stationary discounted infinite-horizon MSP problems
+Consider an inﬁnite-horizon MSP problem of the form (1) introduced in Shapiro and Ding
+(2020), where T = ∞and the stochastic process has the following stationarity assumption.
+Assumption 4 (Stationarity) The random vector ξt has the same probability distribution for
+all t = 2, 3, . . . , T . Also, the cost function ft(·, ξt) and the feasible region Xt(·) stay the
+same for all t = 2, 3, . . . , T .
+Unlike the ﬁnite horizon case, where the solvability of the DP formulation (2) is guaranteed
+by the ﬁniteness of the terminal stage value function, inﬁnite-horizon MSP problems require
+an evaluation of an inﬁnite sequence of costs for every state st. As such, it is necessary to
+establish some notion of ﬁniteness for the expected cost-to-go functions Qt(·).
+123
+
+Annals of Operations Research
+One approach for establishing a notion of ﬁniteness for Qt(·) is to introduce a discount fac-
+tor γ ∈(0, 1) and ﬁnd a policy π = (x1, x2(ξ[2]), . . . , xT (ξ[T ])) that satisﬁes the feasibility
+constraints and minimizes the expected total discounted cost, that is,
+min
+x1,x2,··· ,xT f1(x1, ξ1) + lim
+T →∞E
+ T
+ 
+t=2
+γ t−1 ft(xt, ξt)
+
+.
+(3a)
+s.t. xt ∈Xt(xt−1, ξt), ∀t = 1, 2, . . . , T .
+(3b)
+Note that, since ξt’s are assumed to follow the same probability distribution and function ft’s
+and regions Xt’s are assumed to be identical for all t ≥2, we can omit the stage subscript t and
+obtain the following discounted inﬁnite-horizon stationary variant of the DP formulation (2):
+Q(x, ξ) :=
+min
+x′∈X(x,ξ) f (x′, ξ) + γ Q(x′),
+(4)
+where Q(x) := E[Q(x, ξ)] and ξ has the same distribution as ξt.
+The popularity of discounted models for inﬁnite-horizon MSPs stems from their appli-
+cability in real-life economic problems where the DM accounts for the time value of future
+costs. Their solvability, however, relies on the existence of a unique ﬁxed point solution for
+a function Q(·) that satisﬁes (4). The existence of such a unique ﬁxed point can be asserted
+using the Banach ﬁxed-point theorem. We next summarize this result from the literature for
+the sake of completeness, and readers are referred to Shapiro and Ding (2020) for a detailed
+discussion.
+• Let B := B(X) be the Banach space of bounded functions g := g(x), which is equipped
+with the sup-norm ∥g∥B = supx∈X |g(x)|.
+• A mapping T : B →B deﬁned as T(g)(x) := E[ψg(x, ξ)] where
+ψg(x, ξ) :=
+min
+x′∈X(x,ξ)
+
+f (x′, ξ) + γ g(x′)
+
+.
+(5)
+We note that the mapping T maps from B to B because of the boundedness assumption
+on f (Assumption 3) and the assumption that X(x, ξ) is nonempty for all x and ξ
+(Assumption 2).
+Proposition 1 (Contraction Mapping) The mapping T is a contraction mapping, that is, for
+every g, g′ ∈B the following inequality holds:
+∥T(g) −T(g′)∥B ≤γ ∥g −g′∥B.
+(6)
+Theorem 1 (Fixed point (Shapiro and Ding, 2020)) Under Assumptions 2, 3 and 4, the
+following results hold:
+• Uniqueness: there exists a unique function Q(·, ·) satisfying the DP formulation (4).
+• Convergence: for any g0 ∈B the sequence of functions {gk}∞
+k=0 obtained iteratively by:
+gk(x) = T(gk−1)(x) = E
+
+min
+xk∈X(x,ξ)
+
+f (xk, ξ) + γ gk−1(xk)
+
+, ∀x ∈X,
+(7)
+converges (in the norm ∥· ∥B) to Q(·).
+• Convexity: if set X is convex and function f (x, ξ) is convex in x ∈X, then function
+Q : X →R, is also convex.
+123
+
+Annals of Operations Research
+The uniqueness and convergence assertions of Theorem 1 imply that the unique solution
+g∗= T(g∗) obtained iteratively using (7) is the optimal solution to the DP formula-
+tion (4). Moreover, under the convexity assertion, Shapiro and Ding (2020) show that Q(x)
+is piece-wise linear and convex with respect to x, and provides an SDDP-type (cutting-plane)
+algorithm that gives an optimal policy to the corresponding inﬁnite-horizon problem (3). We
+refer readers to Shapiro and Ding (2020) for the proofs of Proposition 1 and Theorem 1, a
+detailed description of the SDDP-type algorithm, and further discussions on the topic.
+3.2 An error bound for RHP online policies used for solving stationary
+infinite-horizon discounted MSP models
+In this subsection, our goal is to construct an error bound for the performance of the RHP
+online policy using a static NLS τ to solve problem (4). This bound can then be used to
+choose an NLS to ensure that the optimality gap of the corresponding RHP online policy is
+within a given threshold ϵ > 0 for the underlying inﬁnite-horizon discounted MSP problem.
+Our work is inspired by that of Hernández-Lerma and Lasserre (1990) where the authors
+apply this idea for discrete-time Markov control processes.
+Let πτ denote the RHP online policy with a static NLS τ in every roll t = 1, 2, . . . , ∞,
+and let vπτ be the corresponding total expected discounted cost deﬁned in (3) evaluated using
+policy πτ. Additionally, let π∞be an optimal policy for (3), and we let g∗= vπ∞, the optimal
+objective value of (3) under this optimal policy π∞.
+Deﬁnition 1 (ϵ-sufﬁcient NLS ˇτ) Let ϵ > 0 be an error bound threshold. We deﬁne an NLS
+ˇτ as ϵ-sufﬁcient for an RHP policy used in solving (4) if vπτ −vπ∞≤ϵ, ∀τ ≥ˇτ.
+Let Tk(g0) ≡gk be the function obtained by applying the mapping T to function g0 for k
+consecutive times, that is, gk = T(gk−1) = T2(gk−2) = · · · = Tk(g0). Under the contraction
+mapping assertion of Proposition 1, we have the following lemma.
+Lemma 1 For any g0 ∈B and k = 1, . . . , ∞, the value function gk obtained iteratively
+using (7) satisﬁes ∥g∗−gk∥≤γ k∥g∗−g0∥.
+Proof ∥g∗−gk∥= ∥T(g∗) −T(gk−1)∥= ∥Tk(g∗) −Tk(g0)∥≤γ k∥g∗−g0∥.
+⊓⊔
+Let us deﬁne g0 ≡0, and suppose we solve (7) recursively for k = τ iterations. We claim
+that value function gτ is equivalent to the value function associated with the online RHP
+policy πτ in terms of providing the same optimal ﬁrst-stage decision in each roll of the RHP.
+To see why this is the case, note that since g0 ≡0, value function g1 is equivalent to the
+terminal stage value function Qτ(·) deﬁned in (2) obtained under policy πτ. Similarly, since
+g2 is the minimizer of E[ f (x2, ξ) + γ g1(x2)], we have that g2 is equivalent to Qτ−1(·).
+We can then use the same argument by doing a backward induction to show the equivalence
+between gk+1 and Qτ−k(·) for k = 0, 1 . . . , τ −1, so that gτ is equivalent to Q1(·), which
+induces policy πτ according to (2).
+Theorem 2 Let γ ∈(0, 1) be the discount factor of the stationary discounted inﬁnite-horizon
+MSP, and let vπ∞and vπτ be optimal objective value under policy π∞and πτ, respectively.
+Under Assumptions 2, 3 and 4, we have the following results:
+(a) If f (x, ξ) ≤0, then vπτ −vπ∞≤γ τ
+U
+1−γ .
+(b) For any general f (x, ξ) : X ×  →R, we have that vπτ −vπ∞≤2γ τ
+U
+1−γ .
+123
+
+Annals of Operations Research
+Proof (a) Letting ˇxτ(x) ∈X(x, ξ) be the minimizer of (7) for all x ∈X, we have that
+gτ(x) = E
+
+f (ˇxτ(x), ξ) + γ gτ−1(ˇxτ(x))
+
+, ∀x ∈X.
+(8)
+Moreover, since f (x, ξ) ≤0, we claim that:
+gτ(x) ≤gτ−1(x).
+(9)
+We can show this by mathematical induction. First, since g0 ≡0 and f (x, ξ) ≤0,
+we have: g1(x) ≤g0(x). Then assume that gn(x) ≤gn−1(x) for n > 1, we show that
+gn+1(x) ≤gn(x). In fact, we have:
+gn+1(x) = E
+
+f (ˇxn+1(x), ξ) + γ gn(ˇxn+1(x))
+
+≤E
+
+f (ˇxn(x), ξ) + γ gn(ˇxn(x))
+
+≤E
+
+f (ˇxn(x), ξ) + γ gn−1(ˇxn(x))
+
+= gn(x),
+where the ﬁrst inequality comes from the deﬁnition of ˇxn+1(x) being the minimizer
+of (7), and the second inequality comes from the induction hypothesis.
+Therefore, from (8) and (9), we have:
+gτ(x) ≥E
+
+f (ˇxτ(x), ξ) + γ gτ(ˇxτ(x))
+
+, ∀x ∈X.
+(10)
+Now apply (10) for gτ(x) recursively to (10) for k = 1, 2, . . . times, we get:
+gτ(x) ≥E
+ k
+ 
+t=1
+γ t−1 f (ˇxτ(x), ξ) + γ kgτ(ˇxτ(x))
+
+, ∀x ∈X, k = 1, 2, . . . .
+By letting k →∞, we get that
+gτ(x) ≥E
+ ∞
+ 
+t=1
+γ t−1 f (ˇxτ(x), ξ)
+
+= vπτ , ∀x ∈X,
+since the second term in the expectation above converges to 0 as γ ∈(0, 1) and ∥gτ∥is
+bounded due to Assumption 3. Therefore,
+vπτ −vπ∞= vπτ −g∗≤gτ −g∗≤γ τ∥g∗−g0∥
+≤γ τ
+
+∞
+ 
+t=1
+γ t−1 f (ˇxτ(x), ξ)
+ ≤γ τ
+U
+1 −γ .
+Note that the third last inequality comes from Lemma 1, the second last inequality comes
+from the fact that g0 ≡0 and ˇxτ(x) is a feasible policy, and the last inequality comes
+from replacing f (ˇxτ(x), ξ) by the upper bound U.
+(b) Let us deﬁne another (immediate) cost function ¯f (x, ξ) = f (x, ξ)−U. Since this newly
+deﬁned function −2U ≤¯f (x, ξ) ≤0, the result follows from (a) by replacing U with
+2U.
+⊓⊔
+We note that Assumption 4 in Theorem 2 can be relaxed. In particular, we extend the
+results to the setting where the input of the problem has a periodical behavior.
+Assumption 5 (Periodicity) Assume that:
+123
+
+Annals of Operations Research
+• The distribution of ξt and ξt+m are the same for all t ≥2.
+• The function ft(·, ·) has a period of m, i.e., ft(·, ·) = ft+m(·, ·) for all t ≥0 and
+Xt = Xt+m for all t.
+Let m denote the period of the problem.
+Under Assumption 5 the value functions will be given by the following Bellman equations:
+Vt(xt−1) = EVt(xt−1, ξt)
+(11)
+Vt(xt−1, ξt) = inf{ ft(xt, ξt) + γ Vt+1(xt) : xt ∈Xt}
+(12)
+for V2(·), . . . Vm+1(·), noting that for t ≥m + 2 we have Vt(·) = Vt−m(·), and the value of
+V1 is produced by:
+min
+x1∈X1 f1(x1) + γ V2(x1).
+Now, we argue that the formulation (11)–(12) has a unique solution. Extend the deﬁnition of
+the supremum norm to ∥g∥:= max{∥g2∥, ∥g3∥, . . . , ∥gm+1∥} for g = (g2, g3, . . . , gm+1),
+as well as the mapping T to:
+T(g)(x) := (E g3(x1, ξ2), . . . , E gm+1(xm−1, ξm), E g2(xm, ξm+1)),
+(13)
+for m ≥2, where x = (x1, x2, . . . , xm) and
+ gt+1(xt−1, ξt) := inf{ ft(xt, ξt) + γ gt+1(xt) : xt ∈Xt(xt−1, ξt)}
+(14)
+for t = 2, 3, . . . , m and gm+2(·) = g2(·) for t = m + 1. By our assumptions, the mapping
+T is well-deﬁned and (V2, V3, . . . , Vm+1) is a solution to the extended optimality equations
+if and only if it is a ﬁxed point of T. Theorem 3.2 in Shapiro and Ding (2020) shows that it
+is true.
+Next, we show how the results of Theorem 2 will extend to this setting. Recall that in
+the non-periodic case vπτ denoted the total discounted cost under the rolling horizon policy
+with the NLS being τ. Similar to the extension of the value function to the periodic case, we
+extend vπτ to vπτ
+t
+for t = 2, 3, . . . , m + 1 to denote the total discounted cost at time t under
+the rolling horizon policy, with the caveat that now τ denotes the total number of blocks of
+length m into the future. For example, if m = 3 and t = 3, by τ = 2 we mean the time
+horizon between t = 3 to t = 9. Let Vπτ = (vπτ
+2 , vπτ
+3 , . . . , vπτ
+m , vπτ
+m+1).
+Corollary 1 Let γ ∈(0, 1) be the discount factor of the periodic discounted inﬁnite-horizon
+MSP with period m, and let Vπ∞and Vπτ be optimal objective value under policy π∞and
+πτ, respectively, where τ denotes the total number of blocks of length m into the future. Under
+Assumptions 2, 3 and 5, we have the following results:
+(a) If ft(x, ξ) ≤0, then ∥Vπτ −Vπ∞∥≤γ τ
+U
+1−γ .
+(b) For any general ft(x, ξ) : X ×  →R, we have that ∥Vπτ −Vπ∞∥≤2γ τ
+U
+1−γ .
+Proof We provide the proof below assuming ft(x, ξ) ≤0, and with a similar argument as in
+Theorem 2, we can extend this result to the case where ft(x, ξ) : X ×  →R.
+Using the periodic mapping in (13) we have:
+gk+1(x) = T(gk)(x) =
+
+E gk
+3(x1, ξ2), . . . , E gk
+m+1(xm−1, ξm), E gk
+2(xm, ξm+1)
+
+.
+(15)
+Now for any x let ˇx(x) be a minimizer to (15), then gτ(x) will be given by:
+gτ(x) =
+
+E[ f2(ˇxτ(x2), ξ2) + γ gτ−1
+3
+(ˇxτ(x2))], . . . , E[ fm(ˇxτ(xm), ξm) + γ gτ−1
+m+1(ˇxτ(xm))],
+123
+
+Annals of Operations Research
+E[ f1(ˇxτ(x1), ξm+1) + γ gτ−1
+2
+(ˇxτ(x1))]
+
+.
+(16)
+Now, take g0 ≡0 and ft(·, ·) ≤0. Then, g1(x) ≤g0(x). Assuming that gn(x) ≤gn−1(x) for
+all x, following similar steps as in Theorem 2, we can show that gn+1(x) ≤gn(x) for all x and
+n. Therefore, for each x we have:
+gτ(x) ≥
+
+E[ f2(ˇxτ(x2), ξ2) + γ gτ
+3(ˇxτ(x2))], . . . , E[ fm(ˇxτ(xm), ξm) + γ gτ
+m+1(ˇxτ(xm))],
+E[ f1(ˇxτ(x1), ξm+1) + γ gτ
+2(ˇxτ(x1))]
+
+.
+(17)
+Next, let k = 1, 2, . . . denote the number of blocks of length m (note that in the stationary
+case k denotes time index but now it denotes the block index). A recursive application of the
+above results in:
+gτ(x) ≥
+
+E
+
+k
+ 
+l=1
+γ m(l−1) f2(ˇxτ(x2), ξ2) + γ kmgτ
+3(ˇxτ(x2))
+
+, . . . ,
+E
+
+k
+ 
+l=1
+γ m(l−1) fm(ˇxτ(xm), ξm) + γ kmgτ
+m+1(ˇxτ(xm))
+
+,
+E
+
+k
+ 
+l=1
+γ m(l−1) f1(ˇxτ(x1), ξm+1) + γ kmgτ
+2(ˇxτ(x1))
+
+,
+(18)
+which holds true because all parameters of the model are periodic. Now by letting k →∞,
+we have:
+gτ(x) ≥
+
+E
+ ∞
+ 
+l=1
+γ m(l−1) f2(ˇxτ(x2), ξ2)
+
+, . . . , E
+ ∞
+ 
+l=1
+γ m(l−1) fm(ˇxτ(xm), ξm)
+
+,
+E
+ ∞
+ 
+l=1
+γ m(l−1) f1(ˇxτ(x1), ξm+1)
+
+,
+(19)
+wheretheright-handsideisthevalueofapplyingtheRHpolicy,i.e.,Vπτ = (vπτ
+2 , vπτ
+3 , . . . , vπτ
+m ,
+vπτ
+m+1). We have shown that Vπτ ≤gτ and g∗is the ﬁxed point of (11)-(12), thus,
+∥Vπτ −g∗∥≤∥gτ −g∗∥≤γ τ∥g∗−g0∥.
+(20)
+Note that in this case g∗and g0 are m-vectors, and each element of g∗points to the inﬁnite-
+horizon discounted cost, which is obviously bounded by
+U
+1−γ . Therefore, the difference
+between each element of g∗and g0 is bounded by
+U
+1−γ (recall that we assume g0 ≡0), which
+implies ∥g∗−g0∥≤
+U
+1−γ and consequently:
+∥Vπτ −g∗∥≤γ τ
+U
+1 −γ .
+(21)
+⊓⊔
+Theorem 2 provides an upper bound on the optimality gap of an online RHP policy using
+NLS τ compared to an optimal policy for a stationary discounted inﬁnite-horizon MSP
+123
+
+Annals of Operations Research
+problem. This bound can be used to obtain the following formula for an ϵ-sufﬁcient NLS ˇτ:
+ˇτ = log ( ϵ(1−γ )
+U
+)
+log (γ )
+,
+(22)
+which guarantees that the suboptimality of the respective policy πτ is within an optimality
+gap of ϵ, for all τ ≥ˇτ.
+While Theorem 2 does provide a cue on how to choose NLS in the RHP policies, the
+formula for an ϵ-sufﬁcient NLS ˇτ provided in (22) indicates that ˇτ could grow quickly as γ
+gets close to 1 for any given ϵ > 0. Theorem 2 formally establishes the relationship between
+the choice of discount factor γ and the choice of the NLS τ. This bound also depends on the
+original MSP problem only through the (constant valued) upper bound U on the immediate
+cost function ft. This static choice of the employed ϵ-sufﬁcient NLS may lose the opportunity
+to exploit the information related to the system state and may lead to an unnecessarily long
+NLS as we observe in our numerical experiments. In Section 4, we construct a dynamic
+selection policy for the NLS. In particular, we use the notation τ(st) to indicate the dynamic
+nature and dependency of the NLS on the state of the system st.
+4 Dynamic selection of the NLS
+In this section, we consider an RHP where at each period t = 1, 2, . . . , T , the DM solves
+a look-ahead model Pt(st) where the NLS is dynamically selected based on the system
+state st. We will propose a machine learning-based solution approach for constructing the
+mapping τ(st). Although novel in MSP, to the best of our knowledge, such ideas have been
+discussed in the MDP literature. For instance, Bès and Lasserre (1986) construct a dynamic
+look-ahead policy for the inﬁnite-horizon discounted MDP as follows. First, the authors show
+the existence of a ﬁnite sufﬁcient NLS ˇτ for any given system state. Second, they identify the
+optimalﬁrst-stagedecision x ˇτ whichcorrespondstothis ˇτ.Finally,theyproposeanoptimality
+criterion to this x ˇτ, and then use this result to provide a procedure for detecting the smallest
+sufﬁcient NLS. The high-level idea of the procedure is to go through every possible system
+state and increase the length of the NLS one stage at a time until ˇτ is identiﬁed. To do this, for
+each step, the algorithm loops over every feasible action and solves a DP problem, where all
+actions that do not satisfy the (predetermined) optimality criterion for x ˇτ are eliminated. This
+process is repeated until the ﬁnite action space is reduced to a single element, in which case
+the corresponding NLS is considered sufﬁcient. Similar procedures have also been discussed
+in Hernández-Lerma and Lasserre (1988) for a more general class of MDPs.
+Showing the existence of ˇτ and ﬁnding the corresponding x ˇτ are readily accessible for the
+MDP setting because of the ﬁniteness assumptions on the state/action space. Extending the
+same to the continuous state/action space of MSP might not be possible. Instead, we propose
+a more practical approach, and we note that this proposed approach does not rely on any
+assumptions other than the feasibility assumption (see Assumption 2).
+4.1 Designing a dynamic NLS selection policy (st)
+Our goal is to construct a dynamic NLS selection policy τ(st) where, in each roll t =
+1, 2, . . . , T , we choose the NLS through a mapping τ : St →Ht := {1, 2, . . . , T −t + 1}.
+To circumvent the computational challenges of MSP problems with a large number of stages
+inmind,thechosenNLS,whichinducesthechoiceofalook-aheadmodelPt(st),shouldstrike
+123
+
+Annals of Operations Research
+a balance between computational efﬁciency and producing a high-quality initial solution to
+be implemented in stage t.
+Let xτ
+t (st) denote the immediate decision vector in an optimal solution of a look-ahead
+model Pt(st), which is obtained using the RHP with τ being the choice of the NLS. As
+previously noted, when using the RHP, at each roll t = 1, 2, . . . , T , only the immediate
+decision xτ
+t (st) is implemented. Motivated by this fact, we say that a chosen NLS is a
+solution-based sufﬁcient NLS if increasing the NLS does not signiﬁcantly inﬂuence solution
+xτ
+t (st) obtained by solving the look-ahead model with τ, that is:
+ˇτ(st) := min
+τ∈Ht
+
+τ | ∥xτ
+t (st) −xτ ′
+t (st)∥2 < ϵ, ∀τ ′ ≥τ
+
+.
+(23)
+The high-level idea of our proposed approach is to construct a dynamic NLS selection
+policy τ(·) with the help of supervised learning:
+1. Generate a set of N sampled states {sn
+t }N
+n=1.
+2. Find a solution-based sufﬁcient NLS ˇτ(sn
+t ) for each sample sn
+t .
+3. Construct mapping τ(·) based on the collected data {(sn
+t , ˇτ(sn
+t ))}N
+n=1.
+The ﬁrst step can be achieved using any appropriate sampling technique. The second and
+third steps are more involved, and we discuss them next.
+4.1.1 Finding a solution-based sufﬁcient ˇ(st) for a given state st
+To ﬁnd a solution-based sufﬁcient ˇτ(st) for a given state st, we adopt a heuristic that resembles
+the apparent-NLS termination criterion (Morton, 1981) by increasing the value of τ gradually
+until the immediate decision vector xτ
+t (st) in an optimal solution associated with stage t from
+the look-ahead model Pt(st) has stopped ﬂuctuating. Speciﬁcally, we ﬁrst limit the search
+for ˇτ(st) to a subset H ⊆Ht and let τmax := max(H). We then search for the smallest τ ∈H
+such that
+ˇτ(st) := min
+
+τ ∈H | ||xτ
+t (st) −xτmax
+t
+(st)|| < ϵ
+
+.
+A pseudocode of the procedure for ﬁnding ˇτ(st) for a given state st is provided in Algorithm 2.
+Algorithm 2 Finding ˇτ(st) for a given state st.
+Input: st, H.
+Initialization:
+• Set ˇτ = τmax := max(H).
+• Deﬁne a look-ahead model Pt(st) and solve it to obtain x ˇτt (st).
+for τ ∈H\{τmax} do
+• Deﬁne a look-ahead model Pt(st) and solve it to obtain xτt (st).
+• If ||xτt (st) −x ˇτt (st)|| < ϵ, let ˇτ = τ and break.
+end for
+Output: The NLS ˇτ(st).
+123
+
+Annals of Operations Research
+4.1.2 A linear regression approach for dynamic selection of (st)
+To learn a dynamic NLS selection policy τ(·) from data {(sn
+t , ˇτ n(sn
+t )}N
+n=1 using supervised
+learning techniques, we deﬁne a set of basis functions φ0(·), φ1(·), . . . , φL(·), and let
+R(st) =
+L
+ 
+ℓ=0
+θiφℓ(st)
+(24)
+where φℓ(·) : Rm →R, ∀ℓ= 0, . . . , L, and we let
+τ(st) := min (max (1, ⌊R(st)⌋) , T −t + 1)
+(25)
+These basis functions are also known as features in the machine learning literature, and the
+motivationforusingthemistohaveacompactapproximationforτ(st).Thechoiceofthebasis
+functions {φℓ(·)}L
+ℓ=0 is problem-speciﬁc, and we discuss some examples in our numerical
+experiments. Once we deﬁne the set of basis functions, we calculate φℓ(sn
+t ), ∀n = 1, . . . , N,
+and use the corresponding ˇτ n(sn
+t ) values to estimate the coefﬁcients θℓ, ∀ℓ= 0, . . . , L
+using standard techniques in statistical learning (James et al., 2013). In the next section, we
+showcase how this is done via a linear regression approach on a class of MSP problems. A
+pseudocode description for ﬁnding the estimates ( ˆθ0, ˆθ1, . . . , ˆθL) is provided in Algorithm 3.
+Algorithm 3 An ofﬂine regression approach for learning τ(st)
+Input: N, T , H.
+Step 1: Training data generation.
+for n ∈{1, 2, . . . , N} do
+• Sample an xt−1 from Xt−1 and an ξt from t.
+• Compute the system state snt = St(xt−1, ξt).
+• Obtain ˇτ(snt ) using Algorithm 2 and set rn =
+
+φℓ(snt )
+L
+ℓ=0.
+end for
+Step 2: Fitting the regression model (24).
+• Estimate (θℓ)L
+ℓ=0 using the data {(ˇτ(snt ),rn)}N
+n=1.
+Output: The estimated coefﬁcients ( ˆθℓ)L
+ℓ=0.
+5 Numerical experiments
+In this section, we test the performance of our proposed approaches through numerical exper-
+iments based on a multistage hydro-thermal power generation planning problem described
+in Ackooij et al. (2019). This section is organized as follows. In Section 5.1, we describe the
+hydrothermal energy planning problem formulation. In Section 5.2, we provide an overview
+of the implementation details of different RH policies used in our numerical experiments.
+Afterwards, we compare the performance of various approaches considered in the experi-
+ment in Section 5.3. In Appendix B, we present additional numerical experiment results on
+a class of multistage newsvendor problems.
+123
+
+Annals of Operations Research
+5.1 An illustrating example: the hydrothermal power operation planning problem
+The hydrothermal power generation system is one of the main energy sources in many
+countries. For example, the Brazilian hydrothermal power system is a large scale network of
+facilities that can be used to produce and distribute energy by circulating H2O ﬂuids (water).
+The power plants in the Brazilian network can be categorized into two types:
+1. A set of hydro plants H, which has no production cost, but for each hydro plant h ∈H
+there is an upper limit ¯qh, which is the maximum allowed amount of turbined ﬂow that
+can be used for power generation. These hydro plants can also be categorized further into
+two types:
+(a) Hydro plants with reservoirs HR, and for each h ∈HR there is an upper and lower
+limit on the level of water allowed in the reservoirs, denoted by vh,t and ¯vh,t, respec-
+tively.
+(b) Hydro plants without reservoirs (run-of-river) HI , and thus no water storage is pos-
+sible.
+Moreover, for each hydro plant h, a unit of released water will generate rh units of power,
+also known as efﬁciency rate. The set of immediate upper and lower stream plants for
+hydro plant h in the network is given by U(h) and L(h), respectively.
+2. A set of thermal plants F, where for each thermal plant f ∈F, the minimum and
+maximum amount of power generation allowed is g f ,t and ¯g f ,t, respectively, ∀t =
+1, . . . , T . Additionally, each plant f ∈F is associated with an operating cost of c f ,t for
+each unit of thermal power generated. We denote the cost vector of generating thermal
+power at time t by cg,t.
+In the hydrothermal power operation planning (HPOP) problem, the goal of the DM is
+to ﬁnd an operation strategy π, in order to meet production targets (demands) dt for each
+decision stage t, ∀t = 1, . . . , T , while minimizing the overall production cost. To do this, at
+each decision stage t and given the state of the system st (i.e., the water level at each hydro
+plant h ∈HR), the DM has to decide on how much water to turbine by each hydro plant
+h ∈H and how much thermal power to generate by each plant f ∈F. In the event where
+the energy production level using hydro/thermal plants does not meet the demand, the DM
+must pay a penalty of cp,t for each unit of unsatisﬁed demand. Such penalty can also be
+thought of as a cost of buying energy from an external market, which typically has a higher
+cost compared to the cost of generating energy using internal resources (thermal plants), i.e.,
+cp,t > max f ∈F{c f ,t}.
+The HPOP problem can be modeled as an MSP problem because of the uncertainty in the
+problem data, such as the future water inﬂows (amount of rainfall) ˜bt, demand ˜dt, fuel costs
+˜ct and equipment availability (Shapiro et al., 2011). For simplicity, in this paper we only
+consider the situation where the only source of uncertainty is the future water inﬂow and all
+other parameters are deterministic. To introduce a mathematical programming formulation
+for the decision problem which the DM has to solve at every decision staget, for t = 1, . . . , T ,
+consider the following decision variables:
+• xt ∈R|HR|
++
+: where xh,t is the amount of water stored at each hydro plant with a reservoir
+h ∈HR.
+• yt ∈R|H|
++ : where yh,t is the amount of water turbined by each hydro plant h ∈H.
+• gt ∈R|F|
++ : where g f ,t is the amount of thermal power generated by each thermal plant
+f ∈F.
+123
+
+Annals of Operations Research
+• v+
+t , v−
+t
+∈R|HR|
++
+: where v+
+h,t, v−
+h,t is the amount of spilled/pumped-back water (without
+generating power) in hydro plant h ∈HR
+• pt ∈R+: the amount of unsatisﬁed demand at stage t.
+The local optimization problem (without the inclusion of the expected future cost) at every
+decision stage t = 1, . . . , T is deﬁned as follows: (see Table 5 in the appendix for a summary
+of all the notations used in the HPOP problem.)
+min
+xt,yt,gt,v+
+t ,v−
+t ,pt
+c⊺
+g,tgt + ˜cp,t pt
+(26a)
+s.t.
+xh,t = xh,t−1 + ˜bh,t +
+ 
+m∈U(h)
+(ym,t + v+
+m,t)
+−
+ 
+m∈L(h)
+v−
+m,t −(yh,t + v+
+h,t −v−
+h,t), ∀h ∈HR
+(26b)
+yh,t + v+
+h,t −v−
+h,t = ˜bh,t +
+ 
+m∈U(h)
+(ym,t + v+
+m,t) −
+ 
+m∈L(h)
+v−
+m,t, ∀h ∈HI
+(26c)
+ 
+h∈H
+yh,trh +
+ 
+f ∈F
+g f ,t + pt ≥dt
+(26d)
+vh,t ≤xh,t ≤¯vh,t, ∀h ∈HR
+(26e)
+yh,t ≤¯qh, ∀h ∈H
+(26f)
+g f ,t ≤g f ,t ≤¯g f ,t, ∀f ∈F
+(26g)
+xt, yt, gt, v+
+t , v−
+t , pt ≥0.
+(26h)
+Constraints (26b) describe the ﬂow balance constraints in the hydro plants with reservoirs,
+which give the water level xh,t stored in a reservoir h ∈HR at the end of stage t (post-decision
+state). Constraints (26c) describe the ﬂow balance constraints in the run-of-river plants and
+they are similar to the ﬁrst set except that the state variables representing the water levels in the
+reservoirs are excluded. Constraint (26d) models the demand requirement. Constraints (26e)
+to (26g) correspond to the capacity constraints for the reservoirs, the amount of water that
+can be turbined, and the thermal power generation, respectively. Note that in this context, the
+(pre-decision) state variable is given by sh,t = St(xh,t−1, ˜bh,t) = xh,t−1 + ˜bh,t for a hydro
+plant with a reservoir h ∈HR and sh,t = ˜bh,t for each run-of-river hydro plant h ∈HI .
+5.2 Implementation details
+Two important implementation details are the deﬁnition of the basis functions in (24) and
+the estimation method applied in Step 2 of Algorithm 3. The basis functions are typically
+deﬁned such that they have a descriptive connection to the state of the system. Hence, as
+noted earlier, engineering a basis function requires knowledge about the problem. In the
+context of the hydro-thermal power generation planning problem, st represents the amount
+of water at different hydro plants before deciding how the water should be circulated through
+the network. As such, we let L = 1, deﬁne φ0(st) := 1, φ1(st) := 
+h∈H rhsh,t, and
+R(st) = θ0 + θ1
+ 
+h∈H
+rhsh,t.
+(27)
+The descriptive connection to st in (27) is that φ1(st) = 
+h∈H rhst,h represents the total
+amount of energy that can be generated by the hydro plants, given their current levels of water.
+123
+
+Annals of Operations Research
+The linear form of (27) allows us to use linear regression to estimate θ0 and θ1. We note
+that other learning approaches are also applicable here, but we observe from our preliminary
+experiments that linear regression yields the best results.
+Test instances
+To create a variety of instances, we consider different number of hydro plants in the
+network |H| ∈{1, 3, 6}, number of realizations |t| ∈{6, 12} and probability distribution of
+the random process ξt as shown in Table 6 and Table 7 (in the appendix). Note that these tables
+show the distribution for |H| = 6 hydro-plants, where hydro plants that have reservoirs are
+given by HR = {1, 3, 4}, and the run-of-river hydro plants are given by HI = {2, 5, 6}. For
+instances where |H| = 1 or 3, only the ﬁrst |H| hydro-plants from these tables were used.
+The problem parameters are given in Table 8 (in the appendix). We also consider a set of
+four thermal plants F with maximum power generation capacity ¯g f ,t and cost c f ,t for each
+thermal plant f ∈F as shown in Table 9 (in the appendix). The demand per stage dt = 800,
+dt = 850 and dt = 2000 for the instances with H = 1, H = 3 and H = 6, respectively.
+Finally, we use cp,t = 200 as the penalty parameter for each unit of unsatisﬁed demand and
+c0 = 2.592 as the parameter for converting the amount of water ﬂow into the water level in
+the reservoirs.
+Parameters
+We consider a planning horizon of T = 1000 stages and solve the look-ahead models
+using the SDDP algorithm (Pereira and Pinto, 1991), which we terminate as soon as any of the
+following conditions is met: (i) a maximum number of 107 iterations; (ii) a time-limit of 3600
+seconds (one hour); or (iii) the optimal value of the ﬁrst stage problem in Pτ
+t does not progress
+(in relative terms) by more than ϵ for more than It consecutive iterations. The stationarity
+of ξt implies that one can then reuse cuts generated in each roll at future rolls (Silva et al.,
+2021). Our preliminary experiments showed that the algorithm always terminates because of
+criterion (iii). Furthermore, when we reuse the cuts, the algorithm requires more iterations
+at early rolls and almost always terminates as soon as the number of iterations reaches It.
+As such, we set the I1 = 1024, I2 = 512, and It = max(10, It−1/2) if during the last 10
+iterations the algorithm always terminates after It−1. We also set ϵ = 10−4 wherever it is
+applicable, use N = 10 as the sample size for generating the training data, and deﬁne the set
+H = {1, 8, 15, . . . , 50}.
+Implemented policies
+In addition to choosing the NLS dynamically, we implemented several static NLS choices
+τ ∈H.Wenote,givenaconstantstaticchoiceτ,theactualNLSusedineachrollt = 1, . . . , T
+is given by min(τ, T −t + 1). In addition, as an approximate policy, we consider stationary
+policies trained in an inﬁnite-horizon setting, using the SDDP-like algorithm described in
+Shapiro and Ding (2020), with different discount factor values γ ∈{0.05, 0.15, . . . , 0.95},
+and compare them with the RHP with the static and dynamic NLS selection strategies.
+For each instance and implemented policy, we calculate the long-run average cost
+¯z =
+T
+ 
+t=1
+ft(xτ
+t , ξt)/T ,
+(28)
+where xτ
+t denotes the stage-t solution resulting from the corresponding policy with an NLS
+selection of τ. We use the smallest ¯z value obtained across all policies as the benchmark for
+the respective instance, and report by ¯zgap the relative difference in the long-run average cost
+for each policy compared to this benchmark. We note that ¯zgap does not correspond to the
+optimality gap of the associated policy, or an overestimation of the optimality gap, since the
+123
+
+Annals of Operations Research
+Fig. 1 The regression samples vs. model of the dynamic NLS selection strategies
+123
+
+Annals of Operations Research
+Table 1 The regression model and performance of the dynamic look-ahead policies
+Model
+Performance
+|H|
+|t|
+ˆθ0
+ˆθ1
+R2
+¯z
+¯zgap
+Time (secs)
+¯τ
+1
+6
+–1.035
+0.003
+0.975
+19879.59
+0.00
+559.93
+7.06
+12
+–0.711
+0.003
+0.975
+22212.13
+0.00
+1482.44
+5.96
+3
+6
+–0.355
+0.003
+0.941
+16396.63
+0.00
+1377.47
+10.58
+12
+–3.370
+0.004
+0.955
+18814.61
+0.00
+2433.62
+6.47
+6
+6
+10.528
+0.003
+0.490
+27220.31
+0.02
+9136.14
+21.42
+12
+13.797
+0.003
+0.402
+32583.99
+0.01
+27280.76
+21.26
+benchmark used here is a statistical upper bound on the optimal value obtained by a feasible
+policy.
+Computational settings
+We implemented all algorithms in Julia v1.9.3 using package JuMP v1.15.1 (Dunning et
+al., 2017) with commercial solver Gurobi version 10.0 (Gurobi Optimization, 2019). All the
+tests were conducted on a high-performance computing cluster supported by a Supermicro-
+1029GP-TR, running on 2.10 GHz, 24 cores, and 384 GB memory. The code and the test
+instances can be found at https://github.com/murwansiddig/rolling-horizon-msp.
+5.3 Numerical results
+Figure 1 and Table 1 show the ofﬂine training results (based on regression) for the dynamic
+NLS selection strategy, as well as their corresponding performances in terms of the long-run
+average cost. In particular, we present the long-run average cost of the dynamic NLS policy
+¯z, the relative difference ¯zgap between this average cost ¯z and the average cost obtained by
+the benchmark policy, and the average NLS ¯τ during the evaluation over the total number
+of T = 1000 stages. Table 2 shows the results for the static NLS selection strategies under
+different τ values. Table 3 shows the results for the stationary policy obtained by solving
+an inﬁnite-horizon MSP problem under different discount factors γ . Figure 2 depicts the
+long-run average (¯z) values obtained using the different static NLS strategies under different
+τ values and the stationary policy under different γ values. Figure 3 shows the trade-off
+in computational time and solution quality between the different NLS selection strategies
+(both dynamic and static) and the stationary policy under different γ values. Table 4 shows
+the values of the ϵ−sufﬁcient NLS ˇτ obtained by (22). From these results, we discuss our
+ﬁndings in the next few subsections.
+5.3.1 The dynamic NLS selection strategy estimation ﬁt
+From Table 1, we see that based on the R2 value, which is a statistical measure that represents
+the proportion of the variance for a dependent variable that is explained by an independent
+variable in a regression model, the linear regression model is a reasonable estimate for the
+function R(·) as deﬁned in (27) for instances where |H| ∈{1, 3}. Indeed, the positive slope
+suggests that the more energy the network can produce, the more we are able to satisfy future
+demands and, therefore, the more we should look into the future. However, in instances
+where |H| = 6 where the dimensionality of the state variables is large, the simplicity of
+123
+
+Annals of Operations Research
+Table 2 Performance of the static NLS selection strategies under different τ values
+|t| = 6
+|t| = 12
+|H|
+τ
+¯z
+¯zgap
+Time (secs)
+¯z
+¯zgap
+Time (secs)
+1
+1
+35027.64
+0.76
+33.90
+37422.26
+0.68
+33.61
+8
+20245.15
+0.02
+2876.92
+22336.49
+0.01
+7851.41
+15
+19974.79
+0.00
+7913.97
+22225.84
+0.00
+16970.01
+22
+19890.00
+0.00
+10917.80
+22212.13
+0.00
+22010.76
+29
+19879.59
+0.00
+13567.27
+22212.13
+0.00
+25038.50
+36
+19879.59
+0.00
+12406.08
+22212.13
+0.00
+28555.22
+43
+19879.60
+0.00
+14166.53
+22212.13
+0.00
+29620.80
+50
+19879.59
+0.00
+14806.11
+22212.12
+0.00
+29363.67
+3
+1
+33873.04
+1.07
+23.57
+36383.82
+0.93
+27.25
+8
+17139.32
+0.05
+2768.36
+19104.16
+0.02
+19370.23
+15
+16664.63
+0.02
+9486.73
+18860.68
+0.00
+22989.35
+22
+16514.23
+0.01
+14317.85
+18824.21
+0.00
+28104.77
+29
+16425.43
+0.00
+15800.83
+18814.61
+0.00
+32157.47
+36
+16399.03
+0.00
+19740.17
+18814.61
+0.00
+35979.19
+43
+16396.63
+0.00
+21075.36
+18814.61
+0.00
+38651.79
+50
+16396.63
+0.00
+21464.33
+18814.61
+0.00
+39202.70
+6
+1
+52904.00
+0.98
+23.77
+61223.61
+0.91
+23.10
+8
+29247.73
+0.10
+6216.23
+33793.11
+0.05
+52973.53
+15
+28145.83
+0.06
+20505.86
+32914.31
+0.02
+98304.75
+22
+27249.49
+0.02
+31751.83
+32486.45
+0.01
+89729.86
+29
+26992.64
+0.01
+38290.82
+32312.46
+0.01
+98620.30
+36
+26857.95
+0.01
+44740.38
+32214.75
+0.00
+103520.76
+43
+26733.50
+0.00
+48307.96
+32220.02
+0.00
+110897.45
+50
+26657.13
+0.00
+51440.77
+32115.34
+0.00
+112706.47
+the linear transformation through the basis function becomes a limitation and struggles to
+capture the more complex relationship between the different hydro-plants in the network. As
+we can see from Table 1, the R2 value is negatively correlated with the number of hydro-
+plants in the network, where it drops from 0.975 to 0.948 to 0.446 when |H| is 1, 3 and
+6, respectively. Additionally, recall that the candidate NLS we consider comes from set
+H = {1, 8, 15, . . . , 50}, implying that the maximum NLS considered is 50. The fact that
+it is often the case that the NLS reaches 50 when |H| = 6 underscores the challenges in
+these higher-dimensional problems, where NLS = 50 may be insufﬁcient, which has led to
+a poorer result for linear regression.
+5.3.2 The plateauing effect
+From Figure 2, we can see that, across all instances, the long-run average ¯z plateaus as the
+value of τ used in the static NLS selection policy increases. The plateauing effect starts
+when τ ≈8 for the instances where |H| ∈{1, 3} and τ ≈22 for the instances where
+|H| = 6. This observation supports the hypothesis that distant stages have a diminishing
+effect on the current-stage solution xτ
+t and consequently the overall performance. The same
+123
+
+Annals of Operations Research
+Table 3 Performance of the stationary policy obtained by solving an inﬁnite-horizon MSP problem, using the
+SDDP-like algorithm described in Shapiro and Ding (2020), under different discount factors (γ )
+|t| = 6
+|t| = 12
+|H|
+γ
+¯z
+¯zgap
+Time (secs)
+¯z
+¯zgap
+Time (secs)
+1
+0.05
+26321.88
+0.32
+18.05
+28595.77
+0.29
+23.23
+0.15
+22983.67
+0.16
+29.29
+26880.95
+0.21
+42.49
+0.25
+22979.19
+0.16
+41.47
+25264.72
+0.14
+65.17
+0.35
+21289.31
+0.07
+55.60
+23621.12
+0.06
+91.88
+0.45
+21289.31
+0.07
+93.05
+23621.12
+0.06
+123.35
+0.55
+21289.31
+0.07
+92.87
+23621.12
+0.06
+157.39
+0.65
+19881.03
+0.00
+118.82
+23621.12
+0.06
+205.04
+0.75
+19879.59
+0.00
+150.74
+22212.13
+0.00
+264.21
+0.85
+19879.59
+0.00
+201.29
+22212.13
+0.00
+357.31
+0.95
+19879.59
+0.00
+329.92
+22212.13
+0.00
+621.12
+3
+0.05
+23755.00
+0.45
+18.62
+25984.93
+0.38
+24.95
+0.15
+21696.05
+0.32
+49.47
+23986.09
+0.27
+46.77
+0.25
+19985.02
+0.22
+44.93
+22205.94
+0.18
+76.30
+0.35
+19816.56
+0.21
+60.96
+20333.20
+0.08
+104.23
+0.45
+18027.88
+0.10
+80.77
+20333.20
+0.08
+139.84
+0.55
+18005.17
+0.10
+102.08
+20333.20
+0.08
+179.66
+0.65
+18005.17
+0.10
+131.75
+20333.20
+0.08
+233.79
+0.75
+16396.63
+0.00
+167.12
+18816.33
+0.00
+302.93
+0.85
+16396.63
+0.00
+225.15
+18816.33
+0.00
+408.63
+0.95
+16396.63
+0.00
+368.88
+18816.33
+0.00
+708.20
+6
+0.05
+38688.38
+0.45
+23.91
+43370.02
+0.35
+29.18
+0.15
+36250.88
+0.36
+42.93
+39989.70
+0.25
+58.05
+0.25
+33124.52
+0.24
+56.31
+37559.51
+0.17
+88.55
+0.35
+30127.51
+0.13
+73.86
+34884.21
+0.09
+120.08
+0.45
+30203.38
+0.13
+97.65
+34857.10
+0.09
+163.11
+0.55
+30011.83
+0.13
+123.79
+34857.10
+0.09
+208.41
+0.65
+29436.68
+0.10
+159.49
+33069.22
+0.03
+271.56
+0.75
+27408.01
+0.03
+224.51
+33029.99
+0.03
+372.40
+0.85
+27261.87
+0.02
+276.19
+33029.99
+0.03
+477.88
+0.95
+27261.87
+0.02
+459.18
+33029.99
+0.03
+797.59
+plateauing effect can also be observed for the behavior with respect to the discount factor γ
+in the inﬁnite-horizon setting, in which case the plateauing effect starts when γ ≈0.75. This
+indicates that when the discount factor is large enough, i.e., sufﬁciently close to 1, then the
+myopic behavior of the policy is adequately mitigated by the expected (discounted) future
+cost, making the associated inﬁnite-horizon stationary policies to behave similarly.
+123
+
+Annals of Operations Research
+5.3.3 The performance in comparison to the benchmark
+From Tables 2 and 3, we can see that, with a sufﬁciently large discount factor, the inﬁnite-
+horizon policy is able to reach the benchmark solution in the instances where |H| ∈{1, 3}
+and yields a relative difference of at most 3% with respect to the benchmark solution when
+|H| = 6. Furthermore, from Table 1, we can see that the dynamic NLS selection strategy
+is able to reach the benchmark solution in all but two instances, and in the instances where
+it did not reach the benchmark solution, the relative difference compared to the benchmark
+solution is at most 2%. The column ¯τ in Table 1 shows the average NLS used in every roll. We
+can see that ¯τ values are close to their static counterparts where the plateauing effect starts to
+take place (see Subsection 5.3.2). Speciﬁcally, on average ¯τ ≈7.52 for the instances where
+|H| ∈{1, 3} and ¯τ ≈21.34 for the instances where |H| = 6. This observation supports the
+hypothesis that the NLS in which the plateauing effect starts to take place corresponds to the
+NLS in which the corresponding immediate decisions xτ
+t stop ﬂuctuating, which is how we
+choose the ˇτ(st) values that were used in training R(st) (see Algorithm 2) in the ﬁrst place.
+5.3.4 Solution quality vs. computational time trade-off
+From Figure 3, we can see that inﬁnite-horizon policies have the smallest run time compared
+to the dynamic and static NLS selection strategies. Furthermore, we can see that the solution
+time increases exponentially as the value of the τ and γ increases. However, the increase in
+the solution time leads to a very limited (if any) reduction in the relative difference compared
+to the benchmark solution. On the other hand, we can see that the dynamic NLS selection
+strategy τ(st) is able to reach the same solution quality as the static selection strategy with
+τ = 50 but with signiﬁcantly less computational time.
+5.3.5 RHP policies vs. stationary ofﬂine policies
+Table 4 shows the ϵ−sufﬁcient NLS ˇτ suggested by Theorem 2 for the inﬁnite-horizon
+setting. Note that the upper bound U on the immediate cost function ft(·, ·) is calculated as
+the maximum value of the objective function of (26) by: (i) setting sh,t = 0, ∀h ∈H and
+setting bh,t = 0, which corresponds to the worst-case scenario of empty inventory level in the
+hydropower plants with reservoirs and no rainfall for the run-of-river hydropower plants; and
+(ii) converting constraints (26d) into equality constraints to prevent the objective value from
+being inﬁnite when maximizing. From this table, we see that the ϵ-sufﬁcient NLS suggested
+by Theorem 2 is signiﬁcantly larger than the solution-based sufﬁcient NLS used in the static
+and dynamic NLS. For instance, from the discussion in Subsection 5.3.2, we know that using
+τ ≈8 for the instances where |H| ∈{1, 3} and τ ≈22 for the instances where |H| = 6
+would be sufﬁcient. However, if we consider an ϵ = 10−4 and a discount factor γ = 0.75,
+which is when the plateauing effect starts to occur for the inﬁnite-horizon case, Theorem 2
+suggests setting the value of τ to be 78.49, 78.7, and 81.67 for the instances where the value
+of |H| is 1, 3 and 6, respectively.
+6 Discussion
+We have studied the question of how to deﬁne a look-ahead model for the RHP. In particular,
+we have studied the question of how many stages should we include in the look-ahead model
+123
+
+Annals of Operations Research
+Fig. 2 Long-run average performance of the stationary policy obtained by solving an inﬁnite-horizon MSP
+with discount factor
+123
+
+Annals of Operations Research
+Fig. 3 The long-run average vs. computational time trade-off between the different NLS strategies. The x-axis
+shows the (1−zgap)% values and the y-axis shows the logarithm values of the computational time (in seconds)
+Table 4 The value of the
+ϵ−sufﬁcient NLS ˇτ obtained
+by (22), where ϵ = 10−4 and U
+is 160000, 170000 and 400000
+for the instances where |H| is 1, 3
+and 6, respectively
+γ
+|H| = 1
+|H| = 3
+|H| = 6
+0.05
+7.09
+7.11
+7.40
+0.15
+11.26
+11.29
+11.74
+0.25
+15.5
+15.54
+16.16
+0.35
+20.6
+20.66
+21.47
+0.45
+27.29
+27.37
+28.44
+0.55
+36.79
+36.89
+38.32
+0.65
+51.63
+51.77
+53.76
+0.75
+78.49
+78.7
+81.67
+0.85
+142.08
+142.45
+147.72
+0.95
+471.58
+472.76
+489.45
+123
+
+Annals of Operations Research
+used in every roll in the RHP. We referred to this number of stages as the sufﬁcient number
+of look-ahead stages. To address this question, we proposed a systematic machine-learning
+approach for determining a sufﬁcient look-ahead policy. Our proposed method chooses the
+look-ahead policy dynamically based on the state of the system in each roll. Our computa-
+tional experiments on the hydrothermal power operation planning problem and multistage
+newsvendor problem (see Appendix B) emphasized the diminishing effect of distant stages
+on imminent decisions and highlighted the competitiveness of our proposed approach.
+We have identiﬁed several avenues for future research. First, we anticipate that the pro-
+posed approaches can be extended to various strategies to address the “end-of-horizon” effect
+during the RHP. Second, we expect that some assumptions made for the sake of simplicity
+in experiments and analysis can be relaxed, allowing the proposed approaches to be applied
+to a broader class of MSPs. Lastly, we expect that the proposed approaches can be more
+appealing for multi-stage stochastic integer programs with a ﬁnite action/control space.
+Acknowledgements The authors acknowledge partial support from the National Science Foundation [Grant
+CMMI 1854960]. Any opinions, ﬁndings, conclusions, or recommendations expressed in this material are
+those of the authors and do not necessarily reﬂect the views of the National Science Foundation.
+Funding Open access funding provided by the Carolinas Consortium. This study received partial support from
+the National Science Foundation [Grant CMMI 1854960].
+Declarations
+Ethical Approval This article does not contain any studies with human participants or animals performed by
+any of the authors.
+Conﬂicts of Interest The authors declare that they have no conﬂict of interest.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+Appendix A
+Additional details on the HPOP instances
+In this section, we present additional details in the HPOP instances: Table 5 provides the
+notation for the parameters of the HPOP stage-t problem, Table 6 and Table 7 provide the
+realizations of ξt for instances with |t| = 6 and |t| = 12, respectively, and Table 8 and
+Table 9 provide detailed data on the hydro plants and thermo plants, respectively.
+Appendix B
+Additional experiments on multi-stage newsvendor
+problems
+In this section, we present additional experiment results on a set of multi-stage newsvendor
+problem instances. This set of instances is adapted from Ju and Lan (2023).
+123
+
+Annals of Operations Research
+Table 5 Notation for the
+parameters of the HPOP stage-t
+problem (26)
+Notation
+Description
+H, F
+The set of hydro/thermal plants in the HPOP
+problem
+h, f
+A hydro/thermal plant index in the set of
+hydro/thermal plants
+cg,t
+Cost vector of generating thermal power at time t
+cp,t, ˜cp,t
+Unit penalty cost and random unit penalty cost
+for unsatisﬁed demand at time t
+bh,t
+Amount of inﬂows to hydro plant h during stage
+t
+rh
+Amount of power generated by releasing one
+unit of water ﬂow in hydro plant h
+dt, ˜dt
+Demand and random demand in stage t
+¯qh
+Maximum allowed amount of turbined ﬂow in
+hydro plant h in stage t
+vh,t, ¯vh,t
+Minimum/Maximum level of water allowed in
+hydro plant h
+g f ,t, ¯g f ,t
+Minimum/Maximum allowed amount of power
+generated by thermal plant f in stage t
+U(h), L(h)
+Set of immediate upper/lower stream hydro
+plants of h in the network
+Table 6 Realizations of ξt for
+instances with |t| = 6
+h1
+h2
+h3
+h4
+h5
+h6
+ξ0
+319.00
+87.00
+84.00
+73.00
+17.00
+22.00
+ξ1t
+1383.75
+121.10
+239.00
+115.50
+15.65
+28.55
+ξ2t
+1166.60
+104.60
+212.90
+97.40
+13.45
+23.85
+ξ3t
+949.40
+88.15
+186.90
+79.35
+11.25
+19.15
+ξ4t
+732.30
+71.65
+160.90
+61.25
+9.15
+14.45
+ξ5t
+515.10
+55.20
+134.90
+43.20
+6.95
+9.75
+ξ6t
+297.90
+38.70
+108.90
+25.10
+4.75
+5.05
+B.1
+Problem formulation
+Let I = {1, . . . , m} be the set of items and T = {1, . . . , T } the planning horizon. For each
+item i ∈I, let ci denote the purchase cost, hi the holding cost, bi the shortage penalty, and ¯yi
+the maximum order quantity. We assume that there is a one-period order lead time: an order
+placed in period t arrives in period t + 1. The random demand vector in period t is denoted
+by ξt. The ﬁrst-stage demand ξ1 is deterministic, while for t ≥2 the demand is sampled
+uniformly from a ﬁnite set of possibilities. Inventory is allowed to become negative and is
+decomposed into positive inventory and shortage through xi,t = x+
+i,t −x−
+i,t.
+The multistage stochastic program can therefore be written as
+min E
+ T
+ 
+t=1
+ 
+i∈I
+
+ci yi,t + hi x+
+i,t + bi x−
+i,t
+
+(29a)
+123
+
+Annals of Operations Research
+Table 7 Realizations of ξt for
+instances with |t| = 12
+h1
+h2
+h3
+h4
+h5
+h6
+ξ0
+319.00
+87.00
+84.00
+73.00
+17.00
+22.00
+ξ1t
+1438.00
+125.20
+245.50
+120.00
+16.20
+29.70
+ξ2t
+1329.50
+117.00
+232.50
+111.00
+15.10
+27.40
+ξ3t
+1220.90
+108.70
+219.40
+101.90
+14.00
+25.00
+ξ4t
+1112.30
+100.50
+206.40
+92.90
+12.90
+22.70
+ξ5t
+1003.70
+92.30
+193.40
+83.90
+11.80
+20.30
+ξ6t
+895.10
+84.00
+180.40
+74.80
+10.70
+18.00
+ξ7t
+786.60
+75.80
+167.40
+65.80
+9.70
+15.60
+ξ8t
+678.00
+67.50
+154.40
+56.70
+8.60
+13.30
+ξ9t
+569.40
+59.30
+141.40
+47.70
+7.50
+10.90
+ξ10
+t
+460.80
+51.10
+128.40
+38.70
+6.40
+8.60
+ξ11
+t
+352.20
+42.80
+115.40
+29.60
+5.30
+6.20
+ξ12
+t
+243.60
+34.60
+102.40
+20.60
+4.20
+3.90
+Table 8 A summary of the hydro plants data
+h1
+h2
+h3
+h4
+h5
+h6
+rh
+0.75
+0.35
+0.18
+0.32
+0.56
+0.15
+gh,t
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+¯gh,t
+1688.00
+585.00
+220.00
+5220.00
+2028.00
+1480.00
+¯vh,t
+17217.00
+–
+672.00
+2500.00
+–
+–
+x0/¯vh,t
+0.60
+–
+0.50
+0.50
+–
+–
+U(h)
+∅
+{1}
+∅
+{3}
+{2, 4}
+{5}
+Table 9 A summary of the
+thermal plants data
+f1
+f2
+f3
+f4
+¯g f ,t
+20.00
+20.00
+20.00
+20.00
+cg,t
+10.00
+20.00
+40.00
+80.00
+s.t.
+xi,t = xi,t−1 + yi,t−1 −ξi,t,
+i ∈I, t = 1, . . . , T ,
+(29b)
+xi,t = x+
+i,t −x−
+i,t,
+i ∈I, t = 1, . . . , T ,
+(29c)
+0 ≤yi,t ≤¯yi,
+i ∈I, t = 1, . . . , T ,
+(29d)
+x+
+i,t ≥0,
+x−
+i,t ≥0,
+i ∈I, t = 1, . . . , T ,
+(29e)
+xi,0 = x0
+i ,
+yi,0 = y0
+i ,
+i ∈I.
+(29f)
+Theobjectivefunctionin(29)minimizestheexpectedtotalpurchase,holding,andshortage
+costs over the planning horizon. Constraint (29b) is the inventory balance equation with one-
+period lead time: end-of-period inventory equals the previous inventory plus the order placed
+in the previous period minus realized demand. Constraint (29c) decomposes net inventory
+into on-hand inventory and shortage. Constraint (29d) enforces the item-speciﬁc upper bound
+123
+
+Annals of Operations Research
+Table 10 Description of the
+parameters and decision variables
+in the multistage newsvendor
+problem
+Parameter
+Description
+I
+Set of items.
+T
+Set of time periods, T = {1, . . . , T }.
+ci
+Unit purchase cost for item i ∈I.
+hi
+Unit holding cost for item i ∈I.
+bi
+Unit shortage penalty for item i ∈I.
+¯yi
+Maximum order quantity for item i ∈I.
+x0
+i
+Initial inventory level for item i ∈I.
+y0
+i
+Initial pipeline order for item i ∈I arriving
+in period 1.
+ξi,t
+Demand for item i ∈I in period t ∈T .
+Decision Variables
+xi,t
+Net inventory level of item i ∈I at the end
+of period t ∈T .
+x+
+i,t
+Positive inventory of item i ∈I at the end of
+period t ∈T .
+x−
+i,t
+Shortage amount of item i ∈I at the end of
+period t ∈T .
+yi,t
+Order quantity of item i ∈I placed in period
+t ∈T .
+θt
+Approximation of the expected downstream
+cost-to-go used in the stage-t SDDP
+subproblem.
+on each order quantity. Constraint (29e) deﬁnes the positive and negative parts of inventory.
+Constraint (29f) ﬁxes the initial inventory and the initial pipeline order that arrives in period
+1. The ordering decision yt is adaptive: it is chosen after observing the demand realized up
+to period t, so it is measurable with respect to the ﬁltration generated by (ξ1, . . . , ξt). The
+terminal cost is zero, so the ﬁnal stage contributes only purchase, holding, and shortage costs.
+To train the dynamic policy, we deﬁne the basis function as the sum of the components of
+the state vector
+R(xt) =
+ 
+i∈I
+xi,t.
+B.2
+Instance data
+Table 11 summarizes the instance parameters. We consider two sets of instances, with one
+item and three items, namely the 1D and 3D instances, using the ﬁrst column and all three
+columns of the table, respectively. The demand scenarios for the 3D instances are shown
+in Tables 12 and 13 for the cases with |t| = 6 and |t| = 12, respectively. The ﬁrst row
+of each table corresponds to the deterministic ﬁrst-stage demand ξ1. The remaining rows
+correspond to the sampled demand scenarios for t ≥2. For each t ≥2, the demand ξt is
+sampled uniformly from the rows of the corresponding table. For example, for the |I| = 3
+and |t| = 6 instance family, the demand ξt for t ≥2 is sampled uniformly from the six
+rows of Table 12. The 1D instances use the ﬁrst column of the corresponding table, so the
+123
+
+Annals of Operations Research
+Table 11 Summary of the 3D
+instance data
+i = 1
+i = 2
+i = 3
+ci
+20.00
+30.00
+10.00
+hi
+0.20
+1.00
+2.50
+bi
+5.00
+50.00
+8.00
+xmin
+i
+–100.00
+–40.00
+–120.00
+xmax
+i
+300.00
+100.00
+250.00
+¯yi
+150.00
+60.00
+140.00
+Table 12 Realizations of ξt for
+instances with |t| = 6
+i = 1
+i = 2
+i = 3
+ξ0t
+7.50
+4.20
+8.40
+ξ1t
+32.50
+27.00
+21.40
+ξ2t
+57.50
+36.40
+41.40
+ξ3t
+82.50
+43.70
+65.50
+ξ4t
+107.50
+49.80
+92.60
+ξ5t
+132.50
+55.10
+122.20
+ξ6t
+157.50
+60.00
+154.00
+Table 13 Realizations of ξt for
+instances with |t| = 12
+i = 1
+i = 2
+i = 3
+ξ0t
+7.50
+4.20
+8.40
+ξ1t
+20.00
+20.30
+13.50
+ξ2t
+32.50
+27.00
+21.40
+ξ3t
+45.00
+32.10
+30.80
+ξ4t
+57.50
+36.40
+41.40
+ξ5t
+70.00
+40.20
+53.10
+ξ6t
+82.50
+43.70
+65.50
+ξ7t
+95.00
+46.80
+78.70
+ξ8t
+107.50
+49.80
+92.60
+ξ9t
+120.00
+52.50
+107.10
+ξ10
+t
+132.50
+55.10
+122.20
+ξ11
+t
+145.00
+57.60
+137.90
+ξ12
+t
+157.50
+60.00
+154.00
+demand ξt for t ≥2 is sampled uniformly from the six or twelve values in the ﬁrst column
+of Table 12 or 13, respectively.
+B.3
+Computational results
+This section presents results for the instance families with |t| ∈{6, 12} and |I| ∈{1, 3}
+for instances with 5000 stages. Figure 4 reports the quality of the regression-ﬁt for the linear
+123
+
+Annals of Operations Research
+Fig. 4 Regression samples versus the ﬁtted linear model with T = 5000. Each panel corresponds to one pair
+(|I|, |t|) ∈{1, 3} × {6, 12}
+regression function used by the dynamic NLS policies. Unlike the results presented for the
+HPOP instances, the linear regression ﬁt appears to be relatively weak for this set of instances.
+The strongest linear regression ﬁts occur for the |I| = 3 instances, with R2 ≈0.726 for both
+|t| = 6 and |t| = 12. The |I| = 1 cases exhibit much weaker linear regression ﬁts, with
+R2 ≈0.274 and 0.484, respectively. This motivates us to perform tree-based ﬁts to create
+the NLS policies. Figure 5 shows the corresponding tree-based ﬁts, which interpolate the
+samples in all four instance families.
+Figure 7 shows the trade-off between the solution quality and runtime. In this ﬁgure, points
+farther to the right have smaller optimality gaps, while higher points correspond to larger
+runtimes. Ideal points therefore lie in the bottom-right corner. The grid reports representative
+static settings with τ ≈{1, 8, 29, 49} and representative inﬁnite-horizon settings with γ ∈
+{0.05, 0.35, 0.65, 0.95}. The fastest points are the very myopic static policy with τ = 1 and
+the smallest-γ inﬁnite-horizon policy with γ = 0.05. For example, the static policy with
+τ ≈1 runs in about 3–4 seconds but has very large gaps in every panel, and the inﬁnite-
+horizon policy with γ = 0.05 runs in about 4–6 seconds but also produces very large gaps.
+Moving upward along the static family improves solution quality at a clear runtime cost. For
+the inﬁnite-horizon family, however, the relationship is not monotone: performance improves
+substantially from γ = 0.05 to intermediate values, but deteriorates again for γ = 0.95. We
+will address this counterintuitive phenomenon later separately.
+123
+
+Annals of Operations Research
+Fig. 5 Regression samples versus the ﬁtted tree-based surrogate with T = 5000. Each panel corresponds to
+one pair (|I|, |t|) ∈{1, 3} × {6, 12}
+Static policies with τ as small as 8 can already achieve essentially zero gap, but only
+at substantially higher runtimes. For the representative points shown in the ﬁgure, τ ≈8,
+τ ≈29, and τ ≈49 require about 91, 368, and 607 seconds for (|I|, |t|) = (1, 6), about
+158, 660, and 1030 seconds for (1, 12), about 146, 649, and 1209 seconds for (3, 6), and about
+333, 1120, and 2571 seconds for (3, 12). The inﬁnite-horizon policies offer a milder trade-
+off, but they remain less accurate than the near-optimal dynamic and tuned static policies for
+most values of γ . For |I| = 1, the representative point γ = 0.35 yields gaps of about 1.47
+and 1.37 in only 11.6 and 16.6 seconds for |t| = 6 and 12, respectively. For |I| = 3, the
+stronger representative point γ = 0.65 lowers the gaps to about 3.44 and 3.39 in 36.4 and
+80.1 seconds.
+Both dynamic NLS based methods (linear regression-based and tree-based) remain near
+the right edge of every panel, indicating consistently negligible gaps. Among them, the tree-
+based method provides the better computational compromise: it achieves essentially the same
+near-zero gaps as the regression-based policy while reducing runtime from about 240 to 75
+seconds for (|I|, |t|) = (1, 6), from about 1137 to 390 seconds for (1, 12), from about
+1275 to 778 seconds for (3, 6), and from about 1681 to 958 seconds for (3, 12).
+Overall, the dynamic policies achieve near-optimal performance across all four instance
+families, with the tree-based method offering the most favorable quality-time trade-off in
+this batch. Static policies can match that solution quality, but only at substantially higher
+runtimes and with greater sensitivity to the choice of τ. Inﬁnite-horizon policies are cheaper
+123
+
+Annals of Operations Research
+Fig. 6 Policy-comparison grid. The plots compare the static benchmark, inﬁnite-horizon policies, dynamic
+regression, and dynamic tree across the available instance families
+Table 14 The regression model and performance of the dynamic look-ahead policies
+Model
+Performance
+|I|
+|t|
+ˆθ0
+ˆθ1
+R2
+¯z
+¯zgap
+Time (s)
+¯τ
+1
+6
+12.200
+0.0655
+0.274
+108.409
+0.0000
+413.01
+15.71
+1
+12
+16.400
+0.1162
+0.484
+102.735
+0.0003
+2455.14
+23.77
+3
+6
+24.800
+0.0581
+0.726
+1148.276
+0.0008
+1673.70
+30.77
+3
+12
+24.800
+0.0581
+0.726
+1094.708
+0.0005
+4771.24
+31.69
+to evaluate, but they require careful tuning of γ to attain competitive solution quality. The
+overall performance on this set of newsvendor instances is consistent with what we present
+in the main text for the HPOP instances.
+Performance of inﬁnite horizon policies with large γ values Figure 8 isolates the behavior
+of the inﬁnite-horizon policy as both the horizon length T and the discount parameter γ vary.
+Across all four panels, the same unexpected qualitative pattern appears: once γ enters the
+range {0.65, 0.75, 0.85, 0.95}, the relative gap increases monotonically with γ .
+The most notable effect comes from increasing the horizon to T = 10000. The green
+curve lies below the other two in every panel, showing that the longer-horizon calibration
+123
+
+Annals of Operations Research
+Fig. 7 Gap-time comparison grid for representative static and inﬁnite-horizon parameter values together with
+the two dynamic policies, where ˜zstd
+gap =
+˜zgap−min(˜zgap)
+max(˜zgap)−min(˜zgap) . Points farther to the right have smaller optimality
+gaps, while higher points correspond to larger runtimes
+Table 15 The tree-based model
+and performance of the dynamic
+look-ahead policies
+Model
+Performance
+|I|
+|t|
+R2
+¯z
+¯zgap
+Time (s)
+¯τ
+1
+6
+1.000
+108.409
+0.0000
+170.22
+7.99
+1
+12
+1.000
+102.739
+0.0004
+819.63
+18.53
+3
+6
+1.000
+1147.482
+0.0001
+2467.20
+29.10
+3
+12
+1.000
+1094.840
+0.0006
+2651.94
+32.23
+substantially improves the quality of the inﬁnite-horizon policy. This improvement is espe-
+cially large at γ = 0.95: for (|I|, |t|) = (3, 6) the gap drops from about 56.37 at T = 1000
+and 42.86 at T = 5000 to about 6.58 at T = 10000, and for (3, 12) it falls from about 55.90
+and 41.78 to about 6.52. The same trend holds in the one-dimensional instances, where the
+gap at γ = 0.95 decreases to roughly 16.04 for (1, 6) and 15.74 for (1, 12) when T = 10000.
+At the same time, the comparison between T = 1000 and T = 5000 is not uniformly
+monotone. For intermediate values such as γ ∈{0.65, 0.75, 0.85}, the T = 5000 curve
+typically lies above the T = 1000 curve, indicating slightly worse relative gaps. However,
+123
+
+Annals of Operations Research
+Table 16 Performance of the static look-ahead policies under different τ values
+|t| = 6
+|t| = 12
+|I|
+τ
+¯z
+¯zgap
+Time (s)
+¯z
+¯zgap
+Time (s)
+1
+1
+1185145.25
+10931.17
+4.10
+1110819.91
+10815.16
+6.30
+8
+108.41
+0.00
+205.19
+102.70
+0.00
+484.45
+15
+108.41
+0.00
+397.37
+102.70
+0.00
+1034.11
+22
+108.41
+0.00
+594.55
+102.70
+0.00
+1441.45
+29
+108.41
+0.00
+811.49
+102.76
+0.00
+1962.35
+36
+108.41
+0.00
+981.65
+102.70
+0.00
+2384.67
+43
+108.41
+0.00
+1232.79
+102.92
+0.00
+2984.89
+50
+108.41
+0.00
+1341.17
+102.73
+0.00
+3338.82
+3
+1
+8497838.04
+7405.65
+4.75
+8081447.69
+7384.95
+4.22
+8
+1147.33
+0.00
+368.43
+1094.23
+0.00
+628.21
+15
+1147.47
+0.00
+719.57
+1094.45
+0.00
+1098.95
+22
+1148.07
+0.00
+1109.89
+1094.87
+0.00
+1644.02
+29
+1147.63
+0.00
+1595.14
+1094.16
+0.00
+2287.05
+36
+1147.34
+0.00
+1924.46
+1096.33
+0.00
+2949.39
+43
+1147.75
+0.00
+2458.59
+1096.41
+0.00
+3963.14
+50
+1147.90
+0.00
+2868.87
+1095.38
+0.00
+4442.89
+Table 17 Performance of the inﬁnite-horizon policies under different γ values
+|t| = 6
+|t| = 12
+|I|
+γ
+¯z
+¯zgap
+Time (s)
+¯z
+¯zgap
+Time (s)
+1
+0.05
+1185145.25
+10931.17
+5.67
+1110819.91
+10815.16
+8.42
+0.15
+1185145.25
+10931.17
+6.77
+1110819.91
+10815.16
+13.60
+0.25
+240.42
+1.22
+11.88
+219.63
+1.14
+25.20
+0.35
+285.49
+1.63
+18.35
+266.61
+1.60
+34.71
+0.45
+353.60
+2.26
+24.10
+340.55
+2.32
+47.63
+0.55
+419.03
+2.87
+35.12
+365.55
+2.56
+69.86
+0.65
+543.20
+4.01
+58.34
+511.43
+3.98
+123.93
+0.75
+873.65
+7.06
+88.30
+783.99
+6.63
+148.76
+0.85
+1125.39
+9.38
+175.30
+1028.97
+9.02
+292.74
+0.95
+4061.18
+36.46
+451.43
+3813.97
+36.14
+876.05
+3
+0.05
+8497838.04
+7405.65
+5.42
+8081447.69
+7384.95
+7.03
+0.15
+8497838.04
+7405.65
+6.66
+8081447.69
+7384.95
+11.71
+0.25
+1654803.99
+1441.31
+10.82
+1533816.80
+1400.81
+22.29
+0.35
+1654990.94
+1441.48
+17.64
+1534023.28
+1401.00
+34.55
+0.45
+1655202.22
+1441.66
+23.75
+1534104.40
+1401.08
+45.14
+0.55
+1655441.27
+1441.87
+32.57
+1534404.89
+1401.35
+60.34
+0.65
+5628.88
+3.91
+58.50
+5306.45
+3.85
+110.09
+0.75
+8600.90
+6.50
+86.68
+8102.94
+6.41
+165.65
+0.85
+12114.14
+9.56
+145.29
+11309.00
+9.34
+282.15
+0.95
+50320.40
+42.86
+422.82
+46812.69
+41.78
+762.47
+123
+
+Annals of Operations Research
+Fig. 8 Comparison of the average optimality gap ¯zgap across representative inﬁnite-horizon parameters for
+T ∈{1000, 5000, 10000}. Each panel corresponds to one pair (|I|, |t|) ∈{1, 3} × {6, 12}
+at γ = 0.95 the T = 5000 horizon already improves on the T = 1000 case in each panel.
+Overall, the ﬁgure suggests that the inﬁnite-horizon policy becomes much more competitive
+only when the planning horizon is increased substantially, and that larger values of γ should
+be used with caution because they quickly amplify the gap.
+A plausible explanation for this behavior is that the policies with larger discount factors are
+being evaluated in a setting that is still too short to reﬂect the objective they were designed for.
+Although the policy is trained from an inﬁnite-horizon viewpoint, it is ultimately tested on a
+ﬁnite horizon T . As γ increases, the policy places more weight on downstream consequences
+and therefore relies more heavily on the long-run portion of the horizon. When γ is high,
+evaluating the policy in a truncated horizon with T = 1000, or even at T = 5000, does not
+reﬂect the inﬁnite horizon setting in which the policy was trained on. From this perspective,
+the weaker performance of γ = 0.75, 0.85, and 0.95 at shorter horizons is less surprising:
+these policies are optimized for a problem that is closer to T = ∞than to the ﬁnite-horizon
+tests used to assess them.
+This interpretation is consistent with the direction of change in the ﬁgure. As the evaluation
+horizon grows from T = 1000 to T = 5000 and then to T = 10000, the larger-γ curves
+improve substantially, especially at γ = 0.95. In that sense, the longer horizons provide a
+progressively fairer test of policies that place greater emphasis on downstream consequences.
+The evidence therefore suggests that the observed deterioration with increasing γ is not
+simply a sign that large discount factors are intrinsically poor choices; rather, it reﬂects
+a mismatch between an inﬁnite-horizon training objective and a ﬁnite-horizon evaluation
+environment that becomes less severe as T increases.
+123
+
+Annals of Operations Research
+References
+Ackooij, W., Oliveira, W., & Song, Y. (2019). On level regularization with normal solutions in decomposition
+methods for multistage stochastic programming problems. Computational Optimization and Applica-
+tions, 74(1), 1–42.
+Bellman, R. (1957). Dynamic programming. Princeton University Press.
+Bertazzi, L., & Maggioni, F. (2018). A stochastic multi-stage ﬁxed charge transportation problem: Worst-case
+analysis of the rolling horizon approach. European Journal of Operational Research, 267(2), 555–569.
+Bès, C., & Lasserre, J. B. (1986). An on-line procedure in discounted inﬁnite-horizon stochastic optimal
+control. Journal of Optimization Theory and Applications, 50(1), 61–67.
+Bøhn, E., Gros, S., Moe, S., & Johansen, T. A. (2021). Reinforcement learning of the prediction horizon in
+model predictive control. IFAC-PapersOnLine, 54(6), 314–320.
+Chand, S., Hsu, V. N., & Sethi, S. (2002). Forecast, solution, and rolling horizons in operations management
+problems: A classiﬁed bibliography. Manufacturing & Service Operations Management, 4(1), 25–43.
+Dunning, I., Huchette, J., & Lubin, M. (2017). Jump: A modeling language for mathematical optimization.
+SIAM Review, 59(2), 295–320.
+Gardezi, M. S. M., & Hasan, A. (2018). Machine learning based adaptive prediction horizon in ﬁnite control
+set model predictive control. IEEE Access, 6, 32392–32400.
+Hernández-Lerma, O., & Lasserre, J. B. (1988). A forecast horizon and a stopping rule for general Markov
+decision processes. Journal of Mathematical Analysis and Applications, 132(2), 388–400.
+Hernández-Lerma, O., & Lasserre, J. B. (1990). Error bounds for rolling horizon policies in discrete-time
+Markov control processes. IEEE Transactions on Automatic Control, 35(10), 1118–1124.
+James, G., Witten, D., Hastie, T., & Tibshirani, R. (2013). An introduction to statistical learning. Springer.
+Ju, C., & Lan, G. (2023). Dual dynamic programming for stochastic programs over an inﬁnite horizon
+arXiv:2303.02024 arXiv preprint.
+Krener, A. J. (2018). Adaptive horizon model predictive control. IFAC-PapersOnLine, 51(13), 31–36.
+Maggioni, F., Allevi, E., & Bertocchi, M. (2014). Bounds in multistage linear stochastic programming. Journal
+of Optimization Theory and Applications, 163(1), 200–229.
+Maggioni, F., & Pﬂug, G. C. (2016). Bounds and approximations for multistage stochastic programs. SIAM
+Journal on Optimization, 26(1), 831–855.
+Morton,T.E.(1981).Forwardalgorithmsforforwardthinkingmanagers.ApplicationsofManagementScience,
+1, 1–55.
+Pantuso, G., & Boomsma, T. K. (2020). On the number of stages in multistage stochastic programs. Annals
+of Operations Research, 292(2), 581–603.
+Pereira, M. V., & Pinto, L. M. (1991). Multi-stage stochastic optimization applied to energy planning. Math-
+ematical Programming, 52(1–3), 359–375.
+Powell, W. B. (2014). Clearing the jungle of stochastic optimization. INFORMS TutORials in Operations
+Research: Bridging data and decisions, 109–137.
+Rawlings, J. B. (2000). Tutorial overview of model predictive control. IEEE control systems magazine, 20(3),
+38–52.
+Sethi, S., & Sorger, G. (1991). A theory of rolling horizon decision making. Annals of Operations Research,
+29(1), 387–415.
+Shapiro, A., & Ding, L. (2020). Periodical multistage stochastic programs. SIAM Journal on Optimization,
+30(3), 2083–2102.
+Shapiro, A., Tekaya, W., Costa, J. P., & Soares, M. P. (2011). Report for technical cooperation between Georgia
+Institute of Technology and ONS-Operador Nacional do Sistema Elétrico. Citeseer.
+Silva, T., Valladão, D., & Homem-de-Mello, T. (2021). A data-driven approach for a class of stochastic dynamic
+optimization problems. Computational Optimization and Applications, 80, 687–729.
+Zou, J., Ahmed, S., & Sun, X. A. (2018). Partially adaptive stochastic optimization for electric power generation
+expansion planning. INFORMS Journal on Computing, 30(2), 388–401.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

@@ -1,0 +1,1492 @@
+TITLE: Gaussian Markov Random Fields for Discrete Optimization via Simulation: Framework and Algorithms
+JOURNAL: Operations_Research
+YEAR: 2019
+DOI: https://doi.org/10.1287/opre.2018.1778
+---
+
+Submitted to Operations Research
+manuscript (Please, provide the manuscript number!)
+Authors are encouraged to submit new papers to INFORMS journals by means of
+a style ﬁle template, which includes the journal title. However, use of a template
+does not certify that the paper has been accepted for publication in the named jour-
+nal. INFORMS journal templates are for the exclusive purpose of submitting to an
+INFORMS journal and should not be used to distribute the papers in print or online
+or to submit the papers to another publication.
+Gaussian Markov Random Fields for Discrete
+Optimization via Simulation:
+Framework and Algorithms
+Peter Salemi
+The MITRE Corporation, McLean, VA 22102, psalemi@mitre.org
+Eunhye Song
+Department of Industrial and Manufacturing Engineering, The Pennsylvania State University, University Park, PA 16802,
+eus358@psu.edu
+Barry L. Nelson, Jeremy Staum
+Department of Industrial Engineering and Management Sciences, Northwestern University, Evanston, IL 60208,
+nelsonb@northwestern.edu, j-staum@northwestern.edu
+We consider optimizing the expected value of some performance measure of a dynamic stochastic simulation
+with a statistical guarantee for optimality when the decision variables are discrete, in particular integer-
+ordered, the number of feasible solutions is large, and the model execution is too slow to simulate even a
+substantial fraction of them. Our goal is to create algorithms that stop searching when they can provide
+inference about the remaining optimality gap similar to the correct-selection guarantee of ranking and
+selection when it simulates all solutions. Further, our algorithm remains competitive with ﬁxed-budget
+algorithms that search eﬃciently but do not provide such inference. To accomplish this we learn and exploit
+spatial relationships among the decision variables and objective function values using a Gaussian Markov
+random ﬁeld (GMRF). Gaussian random ﬁelds on continuous domains are already used in deterministic and
+stochastic optimization because they facilitate the computation of measures like expected improvement that
+balance exploration and exploitation. We show that GMRFs are particularly well suited to the discrete-
+decision-variable problem, both from a modeling and a computational perspective. Speciﬁcally, GMRFs
+permit the deﬁnition of a sensible neighborhood structure, and they are deﬁned by their precision matrices
+which can be constructed to be sparse. Using this framework we create both single and multiresolution
+algorithms, prove the asymptotic convergence of both, and evaluate their ﬁnite-time performance empirically.
+Key words : large-scale discrete optimization via simulation, inferential optimization, Gaussian Markov
+Random Fields
+History : First submitted on May 2016; revisions submitted on March 2017, July 2017, October 2017.
+1
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+2
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+1. Introduction
+Optimization plays a central role in operations research. For many practical stochastic optimization
+problems the objective function cannot be evaluated exactly and instead must be estimated using
+simulation. Such problems require optimization via simulation (OvS). OvS problems in which the
+decision variables can only assume discrete values are called discrete optimization via simulation
+(DOvS) problems, and they present particular challenges. In this paper, we focus on DOvS with
+integer-ordered decision variables.
+Due to its practical importance, DOvS has been an active area of research for many years.
+Remarkable theoretical and practical success has been achieved using exhaustive search algorithms
+known collectively as ranking and selection (R&S). R&S simulates all feasible solutions and termi-
+nates with either a guaranteed probability of correct selection (frequentist) or posterior assessment
+of the relative quality of the selected solution (Bayesian); see Kim (2013) and Frazier (2012),
+respectively, for surveys. These guarantees are comforting because even when all feasible solutions
+are simulated it is not possible to promise optimality in ﬁnite time except in very special cases.
+When the number of feasible solutions is too large to exhaust, then many DOvS algorithms
+employ adaptive random search (ARS). These algorithms attempt to leverage, in an informal way,
+anticipated spatial structure such as “good feasible solutions tend to be clustered.” ARS algorithms
+are usually proven to be either globally or locally convergent as the simulation eﬀort increases
+without bound. See, for example, the survey in Nelson (2010).
+In this paper we provide a DOvS framework to formally learn spatial relationships, to balance
+exploration and exploitation, and to facilitate a stopping criterion that considers the uncertainty at
+feasible solutions that have and have not been simulated for large-scale problems. Loosely speaking,
+we want eﬃcient search with R&S-like conclusions when we stop. We will represent the objective-
+function response surface as a Gaussian random ﬁeld (GRF), because GRFs support assessments of
+the beneﬁt of expending simulation eﬀort in various ways, and statistical inference on the potential
+of unseen solutions. GRF-based optimization methods were introduced for deterministic computer
+experiments in Jones et al. (1998), followed by Huang et al. (2006) which considered computer
+experiments with noisy output. Recently, Xie et al. (2016) and Quan et al. (2013) created GRF-
+based optimization methods for DOvS. All of these methods use a GRF with a continuous domain
+and then project the problem into the discrete setting. Unfortunately, the standard covariance
+functions for continuous domains lead to a dense covariance matrix, and the inverse of this matrix is
+used for ﬁtting the GRF and generating inference that guides the search. Therefore, methods based
+on a continuous covariance function can encounter diﬃculties for large-scale problems with many
+feasible solutions due to slow and ill-conditioned numerical computations, and (more importantly
+for this paper) can give misleading inference upon stopping.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+3
+A central contribution of this paper is creating a GRF that is appropriate for the DOvS problem.
+Speciﬁcally, we model the objective function values at the feasible solutions as a realization of a
+discrete Gaussian Markov random ﬁeld (GMRF) (Rue and Held 2005). The Markov structure of
+GMRFs is intuitive for problems in operations research (Salemi et al. 2013). For example, if we are
+interested in predicting the value of the objective function at a feasible solution, then the values
+of the objective function at the feasible solutions in a neighborhood of it would often be suﬃcient;
+other feasible solutions would provide little additional information. This type of structure can be
+represented in a GMRF, and the neighborhood is user selected. Further, GMRFs can be deﬁned
+on a lattice so the use of GMRFs in DOvS problems is more natural than using a GRF with a
+continuous domain. Most importantly, the Markov structure lends itself to eﬃcient and numerically
+stable calculations for large-scale problems. The dependence in a GMRF is deﬁned by its precision
+matrix, which is the inverse of the covariance matrix. Using the Markov structure of GMRFs,
+the precision matrix can be constructed to be sparse. Thus, we can use sparse-matrix methods to
+calculate expressions that involve the precision matrix.
+Although our GMRF framework facilitates the use of sparse-matrix methods that support algo-
+rithms for large numbers of feasible solutions, there will nevertheless be a computational limit on
+the size of problem we can handle directly. A second contribution of this paper is to extend the
+GMRF approach to a multiresolution framework that can be used to solve DOvS problems with vast
+numbers of solutions. The multiresolution framework exploits a region-level GMRF to learn about
+the quality of disjoint regions of the solution space, and solution-level GMRFs to learn about the
+quality of individual feasible solutions within each region.
+A third contribution is to demonstrate that expected improvement (EI) combined with our frame-
+work can provide eﬀective inference for terminating the search when the estimated optimality gap is
+small enough. Jones et al. (1998) ﬁrst introduced EI for optimization problems with deterministic
+computer experiments. In their setting the objective function can be observed without noise, so
+their EI criterion does not incorporate the uncertainty in the output from a stochastic simula-
+tion. We show how to correctly calculate EI for a GMRF+noise, which turns out to be similar
+to Williams et al. (2000). To distinguish our result from EI for deterministic experiments, we call
+it complete expected improvement (CEI); it is “complete” in the sense that it incorporates the
+uncertainty in stochastic simulation by treating the value at the current sample-best solution as a
+random variable, just like the values of the feasible solutions being considered to improve it.
+The paper presents both a GMRF framework within which algorithms can be designed, and speciﬁc
+solution-level and multiresolution DOvS algorithms. Both algorithms are shown to converge to a
+globally optimal solution as simulation eﬀort increases under very mild conditions (essentially ﬁnite
+variance). More importantly, however, these algorithms can self-terminate well short of inﬁnite
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+4
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+eﬀort with statistical assurance about the optimality gap; this inference, which depends on the
+GMRF assumptions, is a central feature of our work.
+In the next section we present the GMRF framework, which includes deﬁning GMRFs and
+explaining how they can represent a DOvS problem. Section 3 details a speciﬁc solution-level DOvS
+algorithm, including parameter estimation and sparse-matrix calculation techniques. For problems
+with vast numbers of feasible solutions, we extend the framework to a multiresolution algorithm
+in Section 4. Results of numerical experiments are found in Section 5.
+2. A Framework for DOvS using GMRFs
+A GMRF is a non-degenerate multivariate Gaussian random vector Y = (Y1,Y2,...,Yn)⊤that is
+associated with an undirected and labeled graph G = (V,E), where V denotes the set of nodes and
+E denotes the set of edges; see Rue and Held (2005). Each node in V is associated with a unique
+element of Y. Two nodes in the graph are called neighbors if they are connected by an edge. If we
+denote the mean vector and precision matrix of Y by µ and Q, respectively, then we can write the
+probability density function of the GMRF as
+f(y | µ,Q) = (2π)−n/2|Q|1/2 exp
+
+−1
+2(y −µ)⊤Q(y −µ)
+
+,
+where the positive-deﬁnite precision matrix Q is the inverse of the covariance matrix. The diagonal
+entries of the precision matrix are the conditional precisions Prec(Yi | YV\{i}) = Qii, where YV\{i}
+is the vector of values of the GMRF observed only at the nodes V \ {i}. The scalar precision
+Qii is the reciprocal of the conditional variance. The oﬀ-diagonal elements are proportional to
+conditional correlations; speciﬁcally Corr(Yi,Yj | YV\{i,j}) = −Qij/
+p
+QiiQjj, where YV\{i,j} is the
+vector of values of the GMRF observed only at the nodes V \ {i,j}. The graph G determines the
+non-zero pattern of the precision matrix Q, and vice versa, since for a GMRF Qij ̸= 0 if and only
+if {i,j} ∈E. Thus, the precision matrix will be sparse if the set of edges is small, and vice versa.
+GMRFs are “Markov” because they possess the local Markov property:
+Yi ⊥YV\{i,N(i)} | YN(i)
+for every
+i ∈V,
+where N(i) is the set of neighbors of node i in G; that is, N(i) = {j : {i,j} ∈E}.
+To better understand the local Markov property, consider the left-hand graph G in Figure 1,
+which represents a portion of a feasible region where the nodes correspond to solutions x⊤= (x1,x2)
+with constraint x1 < x2. If we observe the values of the GMRF at x = (0,3), (1,4), (2,3) and (1,2),
+then our prediction of the value of the GMRF at (1,3), conditional on that information, does not
+depend on the GMRF at any other lattice point in the graph. The Markov property does not imply
+that nodes far away from one another are independent, but rather that if we know the value of the
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+5
+(0,4)
+(0,3)
+(0,2)
+(0,1)
+(1,2)
+(1,3)
+(1,4)
+(2,4)
+(2,3)
+(3,4)
+(0,4)
+(0,3)
+(0,2)
+(0,1)
+(1,2)
+(1,3)
+(1,4)
+(2,4)
+(2,3)
+(3,4)
+Figure 1
+A portion of two graphs G = (V,E) corresponding to a subset of the integer lattice Z2 with the constraint
+x1 < x2 and illustrating the neighborhoods N(x) (left) and N +(x) (right).
+GMRF at nodes close by, then we can ignore nodes farther away conditional on those values. To
+completely specify a GMRF we only need to specify the mean µ and the precision matrix Q, whose
+non-zero pattern is associated with the structure of the graph G. A problem-appropriate GRF is
+important since our stopping inference will be with respect to it.
+2.1. A Precision Matrix for DOvS
+In a DOvS problem with integer-ordered decision variables, the feasible region X is a ﬁnite subset of
+the d-dimensional integer lattice Zd. Thus, the straightforward construction of the graph G = (V,E)
+starts with deﬁning the nodes of the graph V to be X. To ﬁnish the construction of G, we must
+specify the neighborhood structure for any given node/solution.
+Two sensible neighborhoods for a solution x ∈X are N(x) = {x′ ∈X : ||x −x′||2 = 1}, which has
+up to 2d neighbors in d dimensions, and N +(x) = {x′ ∈X : ||x−x′||∞= 1}, which has up to 3d −1
+neighbors in d dimensions. Both are illustrated in Figure 1 for d = 2.
+Since we are particularly interested in DOvS problems with large feasible regions, and because
+(roughly speaking) the more sparse Q is the larger the DOvS problems we can solve, our algorithm
+will use the neighborhood structure N(x). For this neighborhood the fraction of non-zero entries
+in the precision matrix Q is bounded above by (2d+1)/|X|, which is very small for large problems.
+Although we assume this speciﬁc neighborhood for eﬃcient computations, our GMRF framework
+allows any neighborhood structure and our convergence proofs do not depend on it.
+Deﬁning the graph G, and thus the non-zero pattern of the precision matrix, does not specify
+the values of the non-zero entries of Q. A standard approach is to have the entries of Q given by a
+function p(x,x′;θ), where θ is a vector of parameters; i.e., Qij ≜p(xi,xj;θ). For the neighborhood
+N(x), we propose θ = (θ0,θ1,θ2,...,θd)⊤and
+p(x,x′;θ) =
+
+
+
+θ0,
+if x = x′
+−θ0θj, if |x −x′| = ej
+0,
+otherwise
+(1)
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+6
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+for x,x′ ∈Zd, where ej is the jth standard basis vector. Recall that Qii is the conditional precision
+of solution i, and −Qij/
+p
+QiiQjj is the conditional correlation between solutions i and j. Thus, θ0
+is the conditional precision of each solution, and θj is the conditional correlation between solutions
+that diﬀer by 1 in the jth coordinate direction. That the conditional correlations can depend on
+the coordinate direction is important to allow for response surfaces that change more rapidly in
+one direction as compared to another.
+Since the conditional precisions must be positive, it follows that θ0 > 0. We also want neighbors
+to have non-negative conditional correlations, so we restrict the values of θ1,θ2,...,θd to be non-
+negative as well. Furthermore, we need θj ≤1 for j = 1,2,...,d, since the conditional correlations
+must be less than one. Lastly, Q should be positive-deﬁnite. Exploiting these restrictions, we
+calculate the maximum likelihood estimates of the parameters; see EC.2 in the e-companion to
+this paper. With this parameterization and these restrictions, Q is a non-singular M-matrix so
+its inverse is nonnegative, i.e., [Q−1]ij ≥0 for all i and j. In other words, there are no negative
+unconditional correlations among nodes in the GMRF, which is a property that makes sense in
+many DOvS problems.
+In summary, this parameterization is compact (d+1 parameters), captures key features we expect
+in DOvS problems, and all but θ0 are upper and lower bounded which facilitates estimation. Notice
+that even though we construct the precision matrix Q(θ) to be sparse, the covariance matrix it
+implies, Q(θ)−1, will typically be dense, as it should be.
+2.2. A GMRF Representation of DOvS
+We consider the DOvS problem, minimize y(x) ≜E[Y (x)] subject to x ∈X, where X is a ﬁnite
+subset of the d-dimensional integer lattice Zd and n ≜|X|. The distribution of the random variable
+Y (x), as a function of the feasible solution x is unknown. However, the expectation y(x) ≜E[Y (x)]
+can be estimated via stochastic simulation. Formally, we are able to observe
+Yj(x) = y(x) + ϵj(x)
+(2)
+for any feasible solution x on replication j = 1,2,..., where {ϵj(x)} are i.i.d. with mean 0 and ﬁnite
+variance that may depend on x. Below we will also assume that the ϵj(x) are normally distributed.
+While we assume the ability to make replications in this paper, a single-run steady-state simulation
+setting could be accommodated with, say, batch means playing the role of Yj(x).
+Let y denote the vector of objective function values
+ y(x1),y(x2),...,y(xn)
+⊤. Of course y is
+unknown, so we model it as a realization of the GMRF
+Y ≜
+ Y(x1),Y(x2),...,Y(xn)
+⊤∼N(µ,Q(θ)−1)
+(3)
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+7
+with mean vector µ and precision matrix Q(θ), as deﬁned above.
+Similar to virtually all methods for optimization based on GRFs, the essence of our approach is
+to use the conditional distribution of the GMRF after having simulated some feasible solutions as
+the guidance and inference engine for our search. Throughout the paper we use the term “design
+point” to refer to a feasible solution x that has been simulated for any number of replications, and
+we use the terms “point” and “feasible solution” interchangeably. Therefore, we are interested in
+the conditional distribution of the GMRF given simulation output at the design points.
+Let Ξ2 ⊆X denote the current set of design points and partition X into the two disjoint sets Ξ2
+and Ξ1 = X \ Ξ2. Thus, Ξ2 is the set of feasible solutions that have been simulated, and Ξ1 is the
+set of feasible solutions that have not. For simplicity, we use “1” as a subscript to denote quantities
+associated with the set Ξ1 and “2” as a subscript to denote quantities associated with the set Ξ2.
+For instance, n1 = |Ξ1| and n2 = |Ξ2| are the numbers of solutions in each set.
+Using these disjoint sets, we can partition the vectors y,Y,µ, and the precision matrix Q(θ),
+and rewrite expression (3) as
+Y1
+Y2
+
+∼N
+ µ1
+µ2
+
+,
+
+Q11(θ) Q12(θ)
+Q12(θ)⊤Q22(θ)
+−1!
+.
+Let ¯Y2 be the vector of sample means of the simulation output at the design points. Consistent
+with the output model (2), we represent ¯Y2 as a realization of the GMRF Yϵ
+2 = Y2 + ϵ, with Y2
+and ϵ independent, and ϵ ∼N(⃗0n2×1,Q−1
+ϵ ), where Qϵ is the intrinsic precision matrix of the noise
+inherent to the stochastic simulation output ¯Y2. When we simulate design points independently,
+Qϵ is a diagonal matrix, whereas when we simulate with common random numbers (CRN), Qϵ is a
+dense matrix. The values in Qϵ also depend on how many replications have been averaged, which
+need not be the same at all design points. In EC.1 we prove the following:
+Theorem 1. The conditional distribution of Y given Yϵ
+2 = ¯Y2 is
+N
+ µ1
+µ2
+
++ ¯Q(θ)−1
+
+⃗0n1×1
+Qϵ(¯Y2 −µ2)
+
+, ¯Q(θ)−1
+!
+,
+(4)
+where
+¯Q(θ) ≜
+
+Q11(θ) Q12(θ)
+Q12(θ)⊤Q22(θ)
+
++
+0n1×n1 0n1×n2
+0⊤
+n1×n2
+Qϵ
+
+is the conditional precision matrix, and 0ni×nj is the ni × nj matrix of zeros.
+Remark: The sparsity of ¯Q(θ) is inherited from the sparsity of Q(θ) and Qϵ. Furthermore, as will
+be discussed in Section 3.2, we can avoid direct inversion of ¯Q(θ) using sparse-matrix methods.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+8
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+2.3. Indiﬀerence-Zone R&S and Expected Improvement
+Our goal is to create a framework for DOvS algorithms that are self-stopping with inference similar
+in spirit to that of indiﬀerence-zone (IZ) R&S but only simulating a small fraction of the feasible
+solutions. This is clearly impossible without a useful model of the unknown objective function,
+and we propose a GMRF—with appropriate neighborhood structure and parameterization—that
+is observed with noise.
+Let x⋆denote the unknown best of the n feasible solutions, which we assume for simplicity
+of exposition is unique: x⋆= argminxy(x). Let ˜x be the selected solution by whatever method.
+Two standard objectives in IZ R&S are attaining a desired probability of correct selection (PCS)
+Pr
+˜x = x⋆minx̸=x⋆y(x) −y(x⋆) ≥δ
+ 
+≥1 −α, and attaining a desired probability of a good selec-
+tion (PGS) Pr{y(˜x) −y(x⋆) ≤δ} ≥1−α. Both statements refer to properties of the R&S procedure
+averaged over the stochastic (intrinsic) simulation noise. Our approach is more akin to PGS than
+PCS in that we make no assumption about the gap between the best and next-best feasible solu-
+tion, but we do require the user to provide a smallest practically signiﬁcant diﬀerence δ measured
+in the same units as the response y(x).
+Using our notation, the standard deﬁnition of “EI” for a feasible solution x is
+EIt(x) = E
+
+max{0,Y(˜xt) −Y(x)}|¯Yt
+2
+
+(5)
+where we have appended a superscript t to indicate quantities available at the end of the tth iteration
+of an algorithm. In the original EI criterion for deterministic computer experiments of Jones et al.
+(1998), Y(˜xt) = y(˜xt), the true value of the best solution simulated through iteration t (which is
+unambigously known); and the only uncertainty in Y(x) is due to the conditional distribution of
+the GRF Y(x). Clearly this is inappropriate when the output is from a stochastic simulation, so
+there have been attempts to account for noise, most prominently MNEI (Quan et al. 2013) and
+Augmented EI (Huang et al. 2006). However, these attempts are incomplete in the sense that do
+not average over all sources of uncertainty.
+To distinguish it from these other versions, we use the term complete expected improvement (CEI)
+for the mathematically correct evaluation of (5) under our GMRF+noise model. CEI averages over
+both the full conditional joint distribution of the GMRF Y(x), and the simulation noise, given
+the observed simulation outputs up through the current iteration. It is, in this sense, “complete,”
+but it is still EI. Because we intend to use EI for stopping inference it is important to evaluate it
+correctly. See EC.8 for further analysis of how CEI is diﬀerent from deterministic EI.
+Given the simulation output ¯Yt
+2, the conditional joint distribution of Y(˜xt) and Y(x) is bivariate
+normal with parameters from the rows and columns of Equation (4) corresponding to ˜xt and x.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+9
+Denote the conditional means by M t(˜xt) and M t(x), the conditional variances by V t(˜xt) and
+V t(x), and the conditional correlation by ρt(˜xt,x). Let
+V t(˜xt,x) ≜V t(˜xt) + V t(x) −2ρt(˜xt,x)
+p
+V t(˜xt)V t(x)
+be the conditional variance of the diﬀerence Y(˜xt) −Y(x). Then the CEI of solution x, CEI(x), is
+CEIt(x) = (M t(˜xt) −M t(x))Φ
+ 
+M t(˜xt) −M t(x)
+p
+V t(˜xt,x)
+!
++
+p
+V t(˜xt,x) φ
+ 
+M t(˜xt) −M t(x)
+p
+V t(˜xt,x)
+!
+,
+(6)
+where φ and Φ are the density and cumulative distribution function, respectively, of a standard
+normal random variable. We used the expression for EI in Jones et al. (1998) to derive (6) by
+noting that conditional on ¯Yt
+2 the diﬀerence Y(˜xt)−Y(x) is a Gaussian random variable with mean
+M t(˜xt) −M t(x) and variance V t(˜xt,x).
+We propose stopping when
+max
+x̸=˜xt CEIt(x) ≤δ
+(7)
+where ˜xt is the sample best solution (smallest sample mean) through iteration t, and simulating the
+feasible solution with the largest CEI(x) when it is not. This stopping criterion has been suggested
+in other EI-based methods, such as Huang et al. (2006). Here is why we adopt it:
+• We chose this deﬁnition of ˜xt because it is the solution we would actually select if we stopped;
+˜xt = minx M t(x) is another viable choice, but we consider ˜xt = minx ¯Y (x) more reliable in
+that our GMRF, like any GRF, is a useful model, but ¯Y (x) is a direct estimator free of the
+estimated parameters of GMRF.
+• PCS/PGS provide guarantees averaged over the stochastic simulation noise; CEIt(x) goes
+further by averaging over the remaining uncertainty about the values of y(x), both simulated
+and not simulated, as represented by the conditional distribution of the GMRF. Both relate
+to the optimality gap between the selected and best solution. Thus, EI is a logical extension
+when not all n solutions have been simulated, as they are in R&S.
+• Since EI evaluates improvement of each solution x, we take the maximum of EIs to decide
+whether to stop. One can choose to stop when improvement from the smallest possible response
+value given by the GMRF is less than δ, i.e, E[max{0,Y(˜xt)−minx∈X Y(x)}|¯Yt
+2] ≤δ. However,
+this criterion can be overly conservative for large X.
+While EI is consistent with IZ R&S, other measures could be employed. For instance, the knowl-
+edge gradient (KG) chooses the next solution to simulate by looking forward to the impact on the
+estimated value of the optimal solution via the predictive distribution obtained from allocating one
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+10
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+or more observations to x. In our notation, assuming a ﬁxed number of replications per iteration,
+and formulated so that the KG is positive like EI,
+KGt(x) = min
+x′ E
+
+Y(x′)
+Yt
+2
+
+−E
+
+min
+x′ Y(x′)
+Yt
+2, xt+1 = x
+
+.
+(8)
+In words, EI estimates the optimality gap given the current data, while KG seeks the steepest descent
+direction to improve the optimal solution in the next iteration. One could stop a search when all
+of the KG’s are small implying that little additional improvement is possible, i.e., maxx KG(x) ≤ϵ
+for some small ϵ. However, it is not appropriate to choose ϵ = δ as the improvement from a single
+iteration is small, although the optimality gap of the current optimal solution is bigger than δ.
+KG-based stopping is more natural when there is a cost to continued simulation and one wants to
+know if it is worth the eﬀort.
+3. A Solution-Level Algorithm
+In this section we present an instance of our framework, the Gaussian Markov improvement algo-
+rithm (GMIA). We refer to it as a “solution-level algorithm” because the nodes of the GMRF
+correspond to individual feasible solutions x, and we employ the neighborhood structure N(x)
+described in Section 2.1. An outline is given in Section 3.1. We then describe eﬃciently calculating
+the conditional distribution (4) using sparse matrix techniques in Section 3.2. GMIA represents
+speciﬁc choices that we have made and found eﬀective, but additional enhancements, other neigh-
+borhood structures, and ﬁne-tuning using known properties of a speciﬁc problem, are certainly
+possible. Even using sparse matrix techniques, |X| can be so large that direct application of GMIA
+is computationally impossible. To address such cases we describe a multiresolution algorithm in
+Section 4 that exploits a region-level GMRF as well as solution-level GMRFs; to the best of our
+knowledge this is the ﬁrst such algorithm.
+3.1. GMIA Outline
+GMIA utilizes CEI to search for solutions to simulate, and to stop when it drops below a speciﬁed
+threshold δ.
+GMIA
+0. Generate a set of ks design points. Simulate r replications for each design point and use
+the simulation output to calculate the maximum likelihood estimates (MLEs) for the GMRF
+parameters using the method in EC.2.
+1. Let ˜x, the current sample-best solution, be the design point with the smallest sample mean.
+2. Calculate the CEI with respect to ˜x, deﬁned in Section 2.3, for each candidate feasible solution.
+If maxx̸=˜x CEI(x) ≤δ, then go to Step 5. Otherwise, go to Step 3.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+11
+3. Simulate r replications at both ˜x and the candidate feasible solution x∗
+CEI that maximizes the
+CEI over the set of all candidate feasible solutions.
+4. Update the simulation output at ˜x with the new replications. If x∗
+CEI is a design point then
+update the simulation output at x∗
+CEI and go to Step 1. If x∗
+CEI is not a design point, then add
+x∗
+CEI to the set of design points, add the simulation output obtained at x∗
+CEI to the collection
+of simulation output, and go to Step 1.
+5. Return ˜x as the estimated optimal solution.
+The inputs to the algorithm are the initial number of design points ks, the number of replications
+to be allocated each time a solution is simulated r (which can be adaptive provided r > 0), and
+the smallest practically important optimality gap δ.
+3.2. Calculating the Conditional Distribution and CEI
+Substituting the plug-in estimate bQϵ for the intrinsic precision matrix, and the MLEs bθ and bβ0
+for the parameters of the GMRF (see EC.2), into the conditional distribution (4), we obtain the
+estimated conditional distribution
+N
+ 
+bβ01n×1 + ¯Q(bθ)−1
+
+⃗0n1×1
+bQϵ(¯Y2 −bβ01n2×1)
+
+, ¯Q(bθ)−1
+!
+(9)
+where
+¯Q(bθ) ≜
+
+Q11(bθ) Q12(bθ)
+Q12(bθ)⊤Q22(bθ)
+
++
+0n1×n1 0n1×n2
+0⊤
+n1×n2
+bQϵ
+
+.
+In this conditional distribution, we ignore the variability that is added from estimating the mean
+β0, so the conditional covariance matrix is still ¯Q(bθ)−1.
+The computationally expensive calculation required to compute the conditional distribution is
+inversion of the matrix ¯Q(bθ). Inverting a dense n × n matrix is, in general, O(n3). However, our
+matrix is sparse, and with our proposed neighborhood structure the fraction of non-zero elements
+is bounded above by (2d + 1)/n. To compute all n −1 CEI’s we only need the n diagonal elements
+of ¯Q−1(bθ), and the n −1 oﬀ-diagonal elements of one column. Methods for computing selected
+elements of diagonal-dominant sparse matrices can be used to get the diagonal elements and very
+few others. Most such methods are based on the pioneering paper by Takahashi et al. (1973),
+with more recent variations and applications found in Erisman and Tinney (1975), Niessner and
+Reichert (1983) and Vanhatalo and Vehtari (2012), and implemented in packages such as PARDISO
+(http://www.pardiso-project.org/). The one column we need can be obtained by a direct back-
+solve. Further, using sparse-matrix format the storage required to retain ¯Q is linear in the (small)
+number of non-zero elements. In EC.7 we provide some additional insight into how our speciﬁc
+neighborhood structure can be exploited. For our proof-of-concept GMIA and MR-GMIA (below)
+we used the general-purpose sparse matrix methods in Matlab, but custom code can fully exploit
+the techniques described above.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+12
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+3.3. Asymptotic Convergence of GMIA
+GMIA exploits the GMRF framework to terminate when the expected improvement from additional
+searching is small. Under very mild conditions GMIA, without any stopping condition, converges
+with probability 1 to a globally optimal solution. This result does not depend in any way on the
+validity of the GMRF framework, but only on the following assumptions: (A) y(x) > −∞for all
+x ∈X; (B) 0 < Var[Y (x)] < +∞for all x ∈X; and (C) the initial estimated precision matrix Q(bθ)
+is positive deﬁnite and is not updated thereafter. In EC.3 we prove the following theorem:
+Theorem 2. The GMIA algorithm without a stopping condition simulates each solution x ∈X
+inﬁnitely often with probability 1 as the number of iterations goes to inﬁnity.
+As a consequence of Theorem 2, the fact that the number of feasible solutions n is ﬁnite, and
+that the estimated optimal solution is the simulated solution with the smallest sample mean, the
+asymptotic convergence of GMIA follows by the strong law of large numbers.
+Theorem 2 does not depend on our chosen neighborhood structure being “correct,” nor does it
+depend on having “good” parameter estimates for the GMRF. In fact, the result will hold with
+any neighborhood and GMRF parameterization that satisﬁes Assumption C. The eﬃciency of the
+CEI computations, and the validity of the CEI inference, will be improved by good choices and
+estimates, however. Further, we can relax Assumption C and allow bµ and bθ, and therefore Q(bθ),
+to be updated a ﬁnite number of times.
+4. The Multiresolution Framework and Algorithm
+The core problem in DOvS is balancing exploration and exploitation. Gaussian-process-based opti-
+mization obtains this balance by incorporating measures like EI to guide the search. Although a
+local search can be used to ﬁnd a point that maximizes EI or KG locally (Xie et al. 2016), to fully
+beneﬁt from this approach we a need to compute an EI or KG measure for every feasible solution
+on every iteration. There will always be feasible regions X that are too large for this to be possible.
+What constitutes “too large” depends on a number of implementation-speciﬁc and problem-speciﬁc
+factors.
+In this section we show that our GMRF framework lends itself to a powerful multiresolution
+extension: We ﬁrst partition X into m disjoint regions P1,P2,...,Pm, where each region is a subset
+of X that is connected in the graph G. Then we let the nodes of a region-level GMRF represent
+a measure of the overall solution quality within each region, with a neighborhood structure again
+deﬁned by proximity (i.e., adjacent regions). The region-level GMRF provides global guidance by
+facilitating a CEI comparison among regions. As in the previous section, the quality of individual
+solutions within a region Pj is represented by a solution-level GMRF, except that the GMRFs for
+Pj and Pℓfor j ̸= ℓare assumed to be independent.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+13
+(0,4)
+(0,3)
+(0,2)
+(0,1)
+(1,2)
+(1,3)
+(1,4)
+(2,4)
+(2,3)
+(3,4)
+(1,1)
+(2,1)
+(3,1)
+(2,2)
+(3,2)
+(3,3)
+[1,1]
+[2,1]
+[2,2]
+[1,2]
+Figure 2
+Illustration of a region-level GMRF and four solution-level GMRFs in two dimensions.
+In this framework the solutions across regions are connected by the region-level GMRF, rather
+than by their neighboring individual solutions, and the solutions within a region are connected
+by their solution-level GMRF. We want the regions to have a large number of feasible solutions,
+to make the independence approximation reasonable, but not so many that we cannot eﬃciently
+calculate the CEI for each individual solution within a region. Further, it is beneﬁcial (but not
+required) that the regions be of similar shape and contain a similar number of feasible solutions.
+Figure 2 shows a (very small) region-level and four solution-level GMRFs of a rectangular feasible
+region for (x1,x2). Conceptually, we are not limited to just two resolutions: a GMRF for regions of
+regions could also be deﬁned. Fortunately, region-level and solution-level GMRFs will be suﬃcient
+for many problems of practical interest.
+In the multiresolution framework the region-level GMRF describing the quality and spatial
+structure of regions has its own mean and precision matrix, as described below. The solution-level
+and the region-level GMRFs work together to balance exploration and exploitation, and terminate
+when the joint CEIs fall below a threshold. The speciﬁc multiresolution algorithm described in this
+section is a ﬁrst step toward realizing this general framework, and it is particularly well-suited to
+low-dimension problems with vast number of solutions. In Section 5.3, we demonstrate a variation
+that facilitates solving higher dimensional problems.
+The response associated with the region Pℓis
+z(Pℓ) = |Pℓ|−1 X
+x∈Pℓ
+y(x).
+That is, the measure of region-level quality z(Pℓ) is the average of the objective-function values of
+all solutions in Pℓ. Similar to the solution-level GMRF, we model z = (z(P1),z(P2),...,z(Pm))⊤as
+a realization of a region-level GMRF Z ≜(Z(P1),Z(P2),...,Z(Pm))⊤∼N(η,T(τ)−1) with mean
+vector η and precision matrix T(τ) as a function of parameters τ, which are analogous to µ,Q(θ),
+and θ at the solution level. Similar to the solution-level GMRF, our main interest is to ﬁnd the
+conditional distribution of Z given observations from design regions.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+14
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+Let P = {P1,P2,...,Pm} denote the set of region-level “feasible solutions.” A “design region”
+Pℓis any region for which at least one of its feasible solutions x has been simulated; that is, there
+exists x ∈Pℓsuch that x ∈Ξ2. The set of design regions is denoted by Π2, and Π1 = P\Π2. We
+can partition z,Z,η, and T(τ) using Π1 and Π2 as we did at the solution level. Within design
+region Pℓ, let Ξ2(Pℓ) ⊆Pℓbe the set of feasible solutions in Pℓthat have been simulated, and
+let Ξ1(Pℓ) = Pℓ\Ξ2(Pℓ). See EC.4 for a justiﬁcation and complete speciﬁcation of the region-level
+GMRF.
+For the solution-level GMRFs, we may choose to ﬁt a diﬀerent set of parameters for each region—
+µℓand θℓfor Pℓ—or assume all regions share the same solution-level parameters µ and θ, which
+substantially reduces the computation for parameter estimation. We employ the latter approach
+in experiments.
+In EC.4, we present a detailed version of MR-GMIA. On each iteration of the algorithm, we select
+three regions in which to run simulations: (i) the design region Pmin that contains the solution with
+the smallest sample mean among all simulated solutions in X, (ii) the design region ˜P that has the
+smallest region-level estimator ¯Z(Pℓ) among Pℓ∈Π2 (see EC.4), and (iii) the region P⋆
+CEI that has
+the largest region-level CEI among all regions in P. Since it is possible that Pmin is the same as ˜P
+or P⋆
+CEI, we may only select two regions on some iterations. Notice that P⋆
+CEI may be a region in
+which no solution has yet been simulated, in which case we simulate ks initial design points from
+P⋆
+CEI. For Pmin and ˜P, and for P⋆
+CEI if it already is a design region, we apply the same method as in
+the solution-level GMIA algorithm: at each iteration, we simulate two solutions, the solution with
+the smallest sample mean and the solution with the largest solution-level CEI in that region. The
+algorithm stops when both largest region-level CEI and solution-level CEI fall below δ.
+In EC.4 we prove the following theorem:
+Theorem 3. The MR-GMIA algorithm in EC.4 without a stopping condition simulates each solu-
+tion x ∈X inﬁnitely often with probability 1 as the number of iterations goes to inﬁnity.
+Therefore, the MR-GMIA ﬁnds the global optimal solution with probability 1 as the simulation
+budget increases. More generally, such global convergence result can be obtained for any MR-
+GMIA that guarantees a “solution” in a GMRF at each resolution is simulated inﬁnitely often. In
+Section 5.3, we deﬁne a three-resolution GMIA to solve a 15-dimensional problem whose global
+convergence can be shown by a simple extension of the proof of Theorem 3.
+5. Numerical Experiments
+In this section we present three examples to demonstrate the performance of GMIA and MR-
+GMIA. The main goals of this section are to show (i) GMIA combined with expected improvement
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+15
+provides valid inference on the remaining optimality gap at termination while achieving good ﬁnite-
+budget performance for a DOvS problem, and (ii) MR-GMIA can solve a large-scale DOvS problem
+eﬃciently and eﬀectively. We also provide a proof-of-concept demonstration of applying MR-GMIA
+to a ﬁfteen-dimensional problem by using a three-resolution GMRF model.
+The ﬁrst example is an (s,S) inventory optimization problem that exhibits behavior like a
+practical DOvS problem. We use this example to demonstrate (i) above by comparing performance
+of GMIA and a continuous GRF-based procedure with Gaussian correlation function. We also
+compare three sampling criteria, EI, CEI, and KG, combined with GMIA and with the continuous
+GRF-based procedure. For EI and CEI, the stopping conditions EI/CEI≤δ were tested. Because
+KG≤δ is interpreted diﬀerently from EI/CEI≤δ as discussed in Section 2.3, we did not test KG
+as a stopping criterion. Instead, we examined the ﬁnite-budget performance of GMIA and GRF-
+based procedures to compare EI, CEI, and KG for search guidance. We also apply the MR-GMIA
+presented in EC.4 to the same (s,S) inventory problem to show its improvement in eﬃciency
+compared to GMIA while still achieving the target optimality gap.
+To achieve goal (ii) we tested the MR-GMIA on the second test problem with two diﬀerent
+numbers of feasible solutions, 10,000 and 1,000,000, to examine the impact of the problem size
+on the performance of the MR-GMIA. This problem is created by adding stochastic noise to the
+two-dimensional Griewank function, a well-known test function for a global optimization problem
+with many local minima, but evaluated only on a lattice to test the performance of MR-GMIA on
+a diﬃcult DOvS problem.
+Finally, we devise a three-resolution GMIA to demonstrate that we can add a higher resolution
+to the two-resolution GMRF structure presented in EC.4 to solve a high-dimensional problem
+with a large number of solutions. The response function for this test case is a ﬁfteen-dimensional
+inverted Gaussian density function, which we converted to a DOvS problem in the same way as
+the Griewank function, on an integer lattice with 415 = 1,073,741,824 solutions.
+In all examples in this section, MLEs are computed only once at the beginning of each algorithm.
+5.1. (s,S) Inventory Problem
+The objective function for the (s,S) inventory problem suggested in Koenig and Law (1985) is the
+expected average cost per period of the inventory system over 30 periods. We assume the demand
+for inventory in each period is a sequence of i.i.d. Poisson random variables with a common mean of
+25. To obtain a simple rectangular feasible region as in Figure 2, we chose our decision variables to
+be s and S −s, where the feasible region is deﬁned by constraints, 1 ≤s ≤100 and 1 ≤S −s ≤100,
+which leads to 10,000 feasible solutions. The optimal solution to this DOvS problem is s = 17 and
+S −s = 36 with an expected average cost per period of $106.12 based on 1 million replications
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+16
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+of Monte Carlo simulation at each feasible solution. We assume the minimum diﬀerence in the
+objective function that is worth detecting is δ = $1, which is used for the stopping criterion in the
+algorithms.
+If one simulation run of the inventory problem takes a long time, 10,000 feasible solutions can
+be considered large. On the other hand, if each run takes a short time, then we may apply an
+IZ R&S procedure that simulates all solutions in the feasible region. A main takeaway from this
+example is that GMIA provides similar inference on the optimality gap as the IZ R&S procedure
+by simulating many fewer feasible solutions when combined with EI or CEI.
+5.1.1. Comparison of GMIA and Continuous GRF-based Algorithm
+To compare
+with GMIA, we constructed a continuous GRF-based procedure by changing the metamodel of the
+response surface in GMIA from GMRF to continuous GRF with a Gaussian correlation function.
+We used the Matlab fitrgp library to ﬁt the GRF regression. For both algorithms, we tested
+EI, CEI, and KG for search guidance, which we computed for all 10,000 feasible solutions at
+each iteration. To compute KG for the feasible solutions, we used the MatlabKG library provided
+by Frazier (2009–2010), where the exact algorithm is presented in Frazier et al. (2009). Note that
+we assume the cost of sampling a solution is constant for all solutions. For the stopping criterion, we
+tested EI/CEI≤δ for both the GMIA and GRF-based procedures. Because KG≤δ has a diﬀerent
+interpretation than EI/CEI≤δ, performance of KG as a stopping criterion was not tested. Instead,
+we compared the ﬁnite-budget performances of GMIA + EI/CEI/KG and GRF + EI/CEI/KG.
+Although we claim the strength of GMIA is its inference about the optimality gap at stopping,
+good ﬁxed-budget performance of GMIA will reassure users.
+For all six algorithms, ks = 20 initial design points in the feasible region were selected by Latin
+hypercube sampling and r = 10 replications were simulated for each sampled design point. For
+GMIA, the solution with the smallest sample mean among the simulated solutions was chosen as
+the current best solution at each iteration when EI or CEI is used as a criterion. On the other
+hand, the solution with the best conditional mean was selected as the current best when KG is
+used to be consistent with the deﬁnition of KG. For the GRF-based procedure, a solution with the
+best conditional mean was selected as the current best regardless of the sampling criterion.
+We ﬁrst present the ﬁnite-budget performance comparisons. Figure 3 shows boxplots of optimal-
+ity gaps from 400 runs of all six algorithms stopped after 100 iterations, where for each run the
+same random number seed was used for all six algorithms. Below the boxplots, the sample means
+and their standard errors of the optimality gap are presented. Notice that all algorithms based on
+GMRF have lower medians and means than those based on the continuous GRF. When combined
+with GMIA, EI, CEI, and KG show very similar performance. On the other hand, GMIA + CEI
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+17
+GMIA+EI
+GMIA+CEI
+GMIA+KG
+GRF+EI
+GRF+CEI
+GRF+KG
+0
+5
+10
+15
+Optimality gap
+1.124
+0.081
+1.090
+0.078
+1.257
+0.092
+1.341
+0.075
+2.627
+0.412
+2.034
+0.100
+Mean
+Std. err.
+Figure 3
+Boxplots and the sample averages and their standard errors of the optimality gaps of six algorithms
+applied to the (s,S) inventory problem stopped after 100 iterations. For each algorithm, 400 runs were
+made. The whiskers of boxplots are extended to the observations within 1.5 times the inter-quartile
+range. We omitted three observations (two with optimality gap 112.26 and one with 24.51) from the
+boxplot of GRF + CEI for better scaling of other boxplots.
+has statistically signiﬁcantly smaller average optimality gap than GRF + KG, which is a popular
+current method to solve a DOvS problem. The performance of GRF + EI is comparable to GMIA’s,
+whereas, GRF + CEI has the largest average optimality gap among all six algorithms and several
+of its runs have high optimality gaps.
+We also present the progress each algorithm made during the ﬁrst 100 iterations averaged over
+400 runs in Figure 4. The trajectory of GMIA + EI is very similar to that of GMIA + CEI, and
+therefore was omitted from Figure 4 for better comparisons to the other the algorithms. GRF-
+based procedures exhibit faster convergence at the beginning but slow down substantially as the
+algorithms progresses, especially for GRF + CEI and GRF + KG, whereas GMIA + CEI/KG
+show more steady progress.
+We observed a few runs of GMIA and the GRF-based procedure to see which solutions are
+selected to sample at each iteration and discovered that GMIA tends to sample solutions closer
+to the current optimal solution, whereas the GRF-based procedure tends to sample solutions far-
+ther away from the current optimal. This diﬀerence in behaviors makes the GRF-based algorithm
+converge faster initially as it explores the feasible solution space more broadly, but slow down as
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+18
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+0
+20
+40
+60
+80
+100
+0
+2
+4
+6
+8
+10
+12
+14
+Iterations
+Optimality gap
+GMIA + CEI
+GMIA + KG
+GRF + CEI
+GRF + EI
+GRF + KG
+Figure 4
+The trajectory of optimality gap at each iteration of each algorithm included in Figure 3 (except for
+GMIA + EI) averaged over 400 runs. GMIA + EI is omitted since it has a very similar trajectory as
+GMIA + CEI.
+the algorithm proceeds since it does not exploit the neighborhood containing the current optimal
+solution as much. GMIA, on the other hand, makes slower progress at the beginning as it explores
+less globally compared to the GRF-based procedure, however, it improves steadily by making local
+improvements from the current optimal solution.
+Now we move to examine whether GMIA and the GRF-base procedures make valid inference on
+the remaining optimality gap at termination when EI and CEI are used as stopping criteria. From
+the deﬁnition of EI (CEI), EI (CEI) ≤δ indicates that the expected optimality gap of the current
+best solution is less than δ. For the benchmark, we applied the KN R&S procedure (Kim and Nelson
+2001) to the same (s,S) inventory problem; it simulates all feasible solutions at the beginning and
+sequentially eliminates solutions from contention. We adopted CRN for the KN procedure, set the
+number of ﬁrst-stage replications of each feasible solution to n0 = 10, 1−α = 0.95 for the PCS and
+δ = $1. Table 1 shows the average and maximum optimality gaps at termination from 50 runs of
+all ﬁve procedures including KN. The average number of solutions that each algorithm visited as
+well as the average number of replications spent until termination are also presented. All standard
+errors are in the parentheses.
+Notice that both average and maximum optimality gaps of GMIA + EI and GMIA + CEI are
+less than the desired optimality gap δ = $1. Moreover, their average optimality gaps are statistically
+indistinguishable from the optimality gap of KN, while spending about a half of the simulation
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+19
+Table 1
+Average and maximum of optimality gaps at termination of 50 runs of GMIA + EI/CEI,
+GRF + EI/CEI, and KN given δ = $1. The average number of sampled solutions and the average number of
+replications spent by each algorithm until termination are also presented. The standard errors are presented in
+parentheses.
+GMIA + EI GMIA + CEI GRF + EI GRF + CEI
+KN
+Average optimality gap
+0.089
+0.096
+3.283
+3.401
+0.097
+(0.009)
+(0.012)
+(0.346)
+(0.343)
+(0.009)
+Max optimality gap
+0.271
+0.348
+8.545
+8.545
+0.271
+Average number of
+sampled solutions
+2,775
+2,750
+20.9
+20.3
+10,000
+(82)
+(76)
+(0.2)
+(0.1)
+-
+Average number of
+replications
+55,314
+54,854
+218
+207
+108,111
+(1,633)
+(1,526)
+(4)
+(2)
+(185)
+budget KN spent and without simulating all feasible solutions. On the other hand, GRF + EI and
+GRF + CEI stopped prematurely when the optimality gap is still much larger than δ after sampling
+a few solutions. These results indicate that the GMRF metamodel lets GMIA correctly assess the
+remaining optimality gap via EI/CEI, whereas the continuous GRF underestimates it. This shows
+that a GMRF is a better model to represent the responses of the discrete feasible solutions of this
+DOvS problem.
+In Figure EC.1 of EC.5, we present heatmaps of the variance-covariance matrices of the under-
+lying GMRF and the continuous GRF for this problem, which provides an intuitive explanation
+for such a performance diﬀerence. Although the initial variance-covariance matrices of the two
+Guassian processes are based on the MLEs computed from the same set of initial observations,
+the continuous GRF has a much thicker diagonal band with high variances and covariances rel-
+ative to GMRF. However, the continuous GRF’s variances and covariances decrease signiﬁcantly
+after updating the distribution of the GRF conditional on the initial observations because the high
+correlations among nearby solutions makes the variances and covariances of the solutions near the
+initial design points greatly reduced. This causes the GRF to quickly decide that there is not much
+variability left in the random ﬁeld resulting in small EI or CEI of solutions. On the other hand,
+the Markovian assumption of GMRF combined with our choice of neighborhood structure makes
+the precision matrix Q(θ) very sparse and as a result, the oﬀ-diagonal elements of the variance-
+covariance matrix of the GMRF (inverse of Q(θ)) decay faster than the continuous GRF’s. Hence,
+the variance-covariance matrix of GMRF updated conditional on the initial observations still has
+higher variances and covariances compared to the continuous GRF, which helps us make better
+inference on the remaining optimality gap.
+Note that fitrgp ﬁts the parameters of GRF’s prior distribution using maximum likelihood
+estimation. One may consider taking a fully Bayesian approach using hyperparameters, which will
+increase uncertainty about the response surface and as a result, may delay the stopping decision for
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+20
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+the continuous GRF. Also recall that we used a Gaussian correlation function for the continuous
+GRF, which models an inﬁnitely diﬀerentiable response surface. Thus, the modeled response surface
+may be too smooth to represent a discrete surface. A Mat´ern correlation function can be an
+alternative to a Gaussian correlation function as it lets one control the diﬀerentiability of the
+surface. Nevertheless, it still models a continuous surface.
+The results presented in this section show that GMIA combined with EI or CEI provides good
+ﬁnite-budget performance and valid inference on the remaining optimality gap at termination when
+EI or CEI is used as a stopping criterion. As the no free lunch theorem in Wolpert and Macready
+(1997) proves, we may ﬁnd an instance of a DOvS problem on which the continuous GRF-based
+procedure has better ﬁnite-budget performance than GMIA. However, the valid stopping decision
+of GMIA is a valuable feature of GMIA independently from its ﬁnite-budget performance. Although
+CEI is the expected improvement that correctly averages over all remaining sources of uncertainty,
+the empirical performance of deterministic EI and CEI in this example were statistically indistin-
+guishable.
+5.1.2. Comparison of GMIA and MR-GMIA
+We also ran the version of MR-GMIA
+in EC.4 combined with CEI and EI on the same (s,S)-inventory problem with region-level neighbor-
+hood structure as depicted in Figure 5b. We divided the same feasible region with 10,000 solutions
+into 25 square regions including 400 feasible solutions numbered bottom to top starting from the
+lower-left corner. The true optimal solution (17,36) is contained in region P2, while P3 has the
+smallest region-level response.
+We have two precision matrices: region-level precision matrix T(τ) and solution-level precision
+matrix Q(θ). The former, in this example, is a 25 by 25 matrix and the latter is 400 × 400,
+both much smaller than the 10,000 × 10,000 precision matrix used in the GMIA run. As Cholesky
+decomposition of a sparse n × n matrix is O(n2), the smaller dimensions of the precision matrices
+signiﬁcantly reduces the computation time involved in both MLE and CEI calculations.
+We chose kr = 5 initial design regions by Latin hypercube sampling. To select the design points
+within each region, we used the same Latin hypercube sample of size ks = 10 for all design regions;
+for this reason some of the regions in Figure 5b show the same light grey pattern. From each
+selected design point we simulated 10 replications and used the result to compute the MLEs. At
+each iteration, region-level CEIs are calculated for all regions. The solution-level CEIs are calculated
+for all solutions within the currently sampled region at the iteration if the region was simulated
+previously. The algorithm stops if the largest region-level CEI and the largest solution-level CEIs
+of the regions that are sampled at the current iteration drop below δ = $1.
+Figure 5 compares the simulation replications allocated across the feasible solutions by GMIA
+and MR-GMIA from one sample path of both algorithms when CEI is used as the sampling and
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+21
+ 
+ 
+20
+40
+60
+80
+100
+10
+20
+30
+40
+50
+60
+70
+80
+90
+100
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+4
+(a) GMIA
+ 
+ 
+20
+40
+60
+80
+100
+10
+20
+30
+40
+50
+60
+70
+80
+90
+100
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+(b) MR-GMIA: Regions are numbered 1–25 bottom to top
+from the lower left corner.
+Figure 5
+Allocations of simulation replications at feasible solutions for the (s,S) inventory problem in base-10
+log scale.
+stopping criterion (CEI ≤$1). The large light grey area in Figure 5a indicates the solutions that
+were sampled only once, i.e., one time allocation of 10 replications. Points with darker shades were
+selected as the current sample best for one or more iterations and simulated repeatedly. The darkest
+point (18,36) is the solution that GMIA chose as optimal on this run. Notice that the design points
+are clustered with each other except for a few initial design points obtained from Latin hypercube
+sampling. The algorithm did not simulate any solutions near the upper right and the lower left
+corners of the feasible region where the objective function increases steeply. This indicates that the
+estimated GMRF structure guides the algorithm to rule out inferior solutions. In EC.6, we present
+the plots of the conditional means of the GMRF at diﬀerent iterations to show how the GMRF
+updates its belief about the response surface as the algorithm proceeds.
+Figure 5b shows that MR-GMIA allocated most of the simulation replications within P2,P3,P4,
+and P7. The surrounding regions of these four regions were selected once or a few more times before
+the algorithm stopped. After the initial sampling, MR-GMIA quickly ﬁnds the region that is likely
+to contain the global optimal solution using the region-level CEI. Notice that P25 at the upper
+right corner whose response z(P25) is the largest among all regions was simulated only once and
+never selected again. Also, the neighboring regions of P25 were not simulated. This shows that the
+region-level GMRF informed the algorithm correctly that the regions close to P25 are not likely
+to contain the optimal solution. Compared to the simulation replication allocation of GMIA in
+Figure 5a, the biggest diﬀerence is that MR-GMIA ﬁrst chooses regions to simulate then selects
+the solutions within those regions; therefore, sampling solutions is restricted within the boundaries
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+22
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+Table 2
+Average and maximum of optimality gaps at termination of 50 runs of MR-GMIA + EI/CEI. The
+average number of sampled solutions and the average number of replications spent by each algorithm until
+termination are also presented. The standard errors are presented in parentheses.
+MR-GMIA + EI MR-GMIA + CEI
+Average optimality gap
+0.505 (0.065)
+0.321 (0.054)
+Max optimality gap
+1.886
+2.218
+Average number of sampled solutions
+303 (36)
+525 (73)
+Average number of replications
+6,071 (901)
+13,214 (2,188)
+of selected regions. This, in fact, helps MR-GMIA concentrate on the regions that are likely to
+contain the global optimal solution.
+Table 2 shows the average and maximum optimality gaps of 50 runs of MR-GMIA when EI and
+CEI are used as stopping criteria. Compared to the performance of GMIA + EI/CEI in Table 1,
+MR-GMIA + EI/CEI have larger average and maximum optimality gaps at termination, however,
+their average optimiality gaps are less than δ, which means that MR-GMIA still achieves the target
+optimality gap on average. Moreover, the average numbers of replications MR-GMIA + EI/CEI
+spent are much lower than those of GMIA + EI/CEI (2,775/2,750) and KN (108,111) in Table 1.
+Also, the average numbers of solutions that MR-GMIA + EI/CEI visited are also much lower
+than that of GMIA + EI/CEI (55,314/54,854), which conﬁrms the behavior observed in Figure 5b;
+MR-GMIA concentrates its eﬀort on the regions likely to contain the optimal. MR-GMIA sampled
+a larger number of solutions and spent more replications when CEI is used as a stopping criterion
+than EI. As a result, we have smaller average optimality gap for CEI.
+Another advantage of MR-GMIA over GMIA is the matrix computation time. For the GMIA
+runs of this problem, the Cholesky decomposition of the 10,000 × 10,000 precision matrix, the
+additional multiplications to invert it, and computing the conditional mean of all feasible solutions,
+took 13.61 (standard error = 0.23), 78.00 (0.92) and 6.9 × 10−5 (2 × 10−6) seconds, respectively.
+For the MR-GMIA runs, the same calculation times for the region-level GMRF took 2.6 × 10−5
+(2 × 10−6), 5.3 × 10−5 (3 × 10−6), and 1.2 × 10−4 (8 × 10−5) seconds, respectively, and those for the
+solution-level GMRF took 2.4 × 10−3 (1 × 10−4), 9.0 × 10−3 (2 × 10−4), and 6.3 × 10−4 (3 × 10−5)
+seconds, respectively. Even after considering that MR-GMIA performs the solution-level matrix
+calculations for up to three regions at each iteration, the total time MR-GMIA spends on matrix
+computation is far less than that of GMIA.
+5.2. Griewank Function
+The Griewank function (http://www.sfu.ca/~ssurjano/griewank.html) has many local min-
+ima, which makes it a challenging test function for optimization algorithms. Figure 6 shows the
+two-dimensional Griewank function on the domain [−5,5] × [−5,5]. Within this domain the range
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+23
+−5
+0
+5
+−5
+0
+5
+0
+0.5
+1
+1.5
+2
+2.5
+Figure 6
+Two-dimensional Griewank function on [−5,5] × [−5,5].
+of the function is [0,2.0044], and the global minimum is at (0,0). Notice that there are four local
+minima near the four corners of the domain and their response values are 0.0086.
+To create a DOvS problem, we take as feasible solutions the 100×100 lattice on [−5,5]×[−5,5]
+where the response at each solution is given by the Griewank function in Figure 6. Normally
+distributed simulation noise with mean 0 and variance σ2 is added to the response function to make
+it stochastic. As depicted in Figure 7a, we divided the feasible solutions into 25 square regions, each
+of which contains 400 solutions. To analyze the impact of δ on the performance of the algorithm,
+we tested three values of δ: 0.005,0.01, and 0.02. We chose these values relative to 0.0086, the
+diﬀerence between the responses at the local minima and the global minimum, so that we can
+test the eﬀect of δ on the solution quality of the algorithm. We adjusted the standard error of the
+sample mean at each design point when it is ﬁrst visited to be relative to δ. Given r = 16, the
+number of replications at each solution, and δ, we tested three values of σ/√r: δ/2,δ, and 2δ. For
+each run, we used Latin hypercube samples of kr = 5 and ks = 20 to select the initial design regions
+and design points, respectively.
+Figure 7a shows how simulation replications were allocated across the feasible region in one
+sample path of MR-GMIA. Notice that all regions were visited at least once, unlike the (s,S)
+inventory problem in Figure 5b. Compared to the (s,S) inventory problem, the response surface of
+the Griewank function is harder to predict as the region-level response z(Pℓ) for all 25 regions do
+not vary much. Therefore, the region-level CEI did not rule out any region before it was visited at
+least once. However, once the regions were visited, the algorithm correctly found the regions that
+either contain the global and local minima or are close to them and concentrated the simulation
+eﬀort there. Notice that the algorithm simulated solutions in the ellipsoidal area that contains the
+global optimal solution most frequently.
+Table 3 presents the results of 50 runs of MR-GMIA with the chosen δ and σ values. For each
+run of all nine cases of (δ,σ) in Table 3, common random numbers were adopted. Notice that our
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+24
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+ 
+ 
+20
+40
+60
+80
+100
+10
+20
+30
+40
+50
+60
+70
+80
+90
+100
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+4
+4.5
+(a) 100 × 100 lattice.
+ 
+ 
+200
+400
+600
+800
+1000
+100
+200
+300
+400
+500
+600
+700
+800
+900
+1000
+0
+0.5
+1
+1.5
+2
+2.5
+3
+3.5
+4
+(b) 1,000 × 1,000 lattice.
+Figure 7
+Allocations of simulation replications at feasible solutions of the Griewank function in Figure 6 in base-10
+log scale.
+algorithm returned the global optimal solution in all 50 runs of all settings except for (δ,σ) =
+(0.02,0.08), and (0.02,0.16). Even in these two cases, the average response at the solution is within
+δ from 0. As expected, both the number of simulated solutions and the number of replications
+spent tend to increase as δ decreases and as σ increases. However, MR-GMIA is not very sensitive
+to the choice of δ for smaller σ.
+To test the impact of the number of feasible solutions on the performance of the algorithm,
+we ran MR-GMIA with (δ,σ) = (0.005,0.01) but using a ﬁner lattice, as depicted in Figure 7b: a
+1,000×1,000 grid instead of 100×100, which results in 1,000,000 feasible solutions. These solutions
+are divided into 2,500 regions, each of which contains 400 feasible solutions. Figure 7b is a map of
+replications spent in the feasible region in one run of MR-GMIA. Notice that the areas in white,
+which indicate that they were never simulated, correspond to the peaks of the Griewank function
+in Figure 6. Unlike in the 100 × 100 case, the region-level responses actually diﬀer in this case as
+we have a ﬁner grid. The region-level CEI eﬀectively rules out the regions that are not likely to
+contain the optimal solution using the region-level GMRF structure. Most of the simulation eﬀort
+is concentrated in the regions near the global minimum and a local minimum in the lower-left
+corner.
+The average optimality gap of 50 runs of MR-GMIA applied to the 1,000 × 1,000 Griewank
+problem is 0.0002 (standard error = 0.00004) and the maximum response was 0.0016, which is
+smaller than δ = 0.005. The average number of simulated solutions is 24,696 (1307), which is only
+2.5% of the 1 million feasible solutions. Compared to the 100 × 100 case, which simulated 19% of
+the feasible solutions on average, we can conﬁrm that the algorithm works eﬃciently even if we have
+a large number of feasible solutions. The average number of replications spent is 89,079 (2775),
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+25
+Table 3
+Results from 50 runs of MR-GMIA applied to the Griewank functions with diﬀerent δ and σ. Standard
+errors are provided in parentheses.
+δ
+0.005
+0.01
+0.02
+σ
+0.01
+0.02
+0.04
+0.02
+0.04
+0.08
+0.04
+0.08
+0.16
+Average response
+0.0000
+0.0000
+0.0000
+0.0000
+0.0000
+0.0000
+0.0000
+0.0002
+0.0015
+at optimal solution
+(0.0001) (0.0006)
+Max response
+at optimal solution
+0.0000
+0.0000
+0.0000
+0.0000
+0.0000
+0.0000
+0.0000
+0.0025
+0.0219
+Average number
+1,927
+1,945
+2065
+1,945
+2065
+2444
+2065
+2509
+2837
+of simulated solutions
+(26)
+(25)
+(27)
+(25)
+(27)
+(29)
+(27)
+(28)
+(81)
+Average number
+108,955 111,229 122,036 111,229 121,974 155,254 121,974
+157,207
+184,147
+of replications
+(2417)
+(2377)
+(2877)
+(2377)
+(2872)
+(2742)
+(2872)
+(3007)
+(6,634)
+which is less than 8 times larger than that of the 100×100 case in Table 3. These results show the
+multiresolution algorithm scales well as the number of feasible solutions increases.
+5.3. Inverted Multivariate Normal Density Function
+Lastly, we present a proof-of-concept study that applies MR-GMIA based on a three-resolution
+GMRF model to solve a high-dimensional DOvS problem. The response function is the inverted
+Gaussian density function suggested in Xu et al. (2010):
+f(x1,x2,...,xd) = −β exp
+(
+−γ
+d
+X
+j=1
+jx2
+j
+)
+, x⊤= (x1,x2,...,xd).
+(10)
+The function is minimized at x⊤= (0,0,...,0) and does not have any local minima. We chose β =
+1000 and γ = 0.001, which makes the optimal objective function value −1000. Normally distributed
+noise with mean 0 and variance 16 is added to the response function to make it stochastic. We
+chose d = 15 and considered solutions within the integer lattice in [0,3]15 as the feasible solution
+set containing 415 = 1,073,741,824 solutions within which the range of (10) is [−1000,−861.29].
+In Section 5.2, we designed the regions of the MR-GMIA to have the same dimension as the
+feasible solution space. However, in this example, the smallest hyper-rectangular region with the
+same dimension has 215 = 32,768 solutions and a 32,768 × 32,768 solution-level precision matrix.
+Even with the sparse-matrix method in Matlab, this is a large matrix. Another problem for such a
+region is that all solutions within the region are corner solutions, and hence, we cannot fully take
+advantage of the inference from their neighbors.
+We overcome the ﬁrst issue by adding an additional resolution; instead of a two-resolution
+GMRF we discussed in Section 4, we have a three-resolution GMRF consisting of super-region-
+level, region-level, and solution-level GMRFs. A super-region-level “solution” represents a region
+of regions just as a region-level “solution” represents a region of solutions. This extension reduces
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+26
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+the number of “solutions” within the GMRF at each level. Moreover, we reduced the dimension
+of higher-level GMRFs by projection. For instance, a “solution” of the super-region-level GMRF
+represents an average quality of regions of solutions whose ﬁrst ﬁve coordinates in [0,3]15 are
+[1,0,1,3,1] and among these regions, a region represents solutions whose ﬁrst ten coordinates are
+[1,0,1,3,1,1,0,0,0,2]. Therefore, we have 45 regions of regions in the super-region-level GMRF, 45
+regions in each of 45 region-level GMRFs, and 45 solutions in each of 410 solution-level GMRFs.
+There are two advantages of designing the GMRFs in this way. Firstly, it reduces the number of
+corner solutions, and hence lets us better utilize inference from the neighboring solutions. Secondly,
+we have more ﬂexibility in choosing the number of layers of GMRFs versus how many solutions to
+include in each GMRF. For instance, we may decide to have ﬁve layers of GMRFs instead of three
+and it is easier to design which “solutions” to include in each layer of GMRF by projection rather
+than preserving all 15 dimensions in each layer.
+We applied the MR-GMIA described above to this problem and observed 10,000 iterations of
+200 sample paths. For the initial design, 5 solutions per region, 5 regions per super-region, and 5
+super-regions were sampled. In total, 125 solutions are sampled initially, which is only 1.16×10−6%
+of the feasible solutions. Each time a solution is selected we simulated r = 4 replications and CEI
+was used as the sampling guidance. Similar to the two-resolution GMIA in EC.4, we selected
+three super-regions at each iteration; the super-region with the smallest super-region-level mean,
+the super-region that contains the current optimal solution, and the super-region with the largest
+super-region-level CEI. In each selected super-region, two regions were sampled; the region with the
+largest region-level mean and the region with the largest region-level CEI. Similarly, two solutions
+were sampled in each selected region.
+The average optimality gap of 200 runs after 10,000 iterations is 1.27 (standard error = 0.12), and
+the average number of solutions that the algorithm visited is 73,344 (1,046), which is only 0.0068%
+of the feasible solution space. We also tested the stopping condition of CEI ≤δ for δ = 1 and let the
+algorithm stop either when all super-region-level, region-level, and solution-level CEIs fall below
+δ or after 10,000 iterations. Among the 200 runs, 58 runs stopped by the stopping criterion and
+their average optimality gap is 1.23 (0.24), which shows good performance.
+This experiment explores a diﬀerent way to construct multi-resolution GMRFs to solve a high-
+dimensional problems. There are various design questions including, but not limited to the number
+of resolutions to use and which projection function to deﬁne “solutions” in each level of GMRF.
+We defer the answers to these questions to future research, but the potential is clear.
+Acknowledgments
+This article is based upon work supported by the National Science Foundation under Grant No.
+CMMI-0900354. We would also like to thank H˚avard Rue, the Area Editor, Associate Editor
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+27
+and two conscientious referees for feedback that improved the paper. Portions of this work were
+previously published in Salemi et al. (2014).
+Author Biographies
+Peter Salemi is a Modeling and Simulation Engineer/Data Scientist in the Operations Research
+Department at The MITRE Corporation. His research interests are simulation optimization and
+simulation metamodeling. He received his Ph.D. in Industrial Engineering and Management Sci-
+ences from Northwestern University, his M.S. in Operations Research from the University of Cali-
+fornia, Berkeley, and his B.S. in Mathematics and Finance from the University of Massachusetts,
+Amherst.
+Eunhye Song is the Harold and Inge Marcus Early Career Assistant Professor in the Depart-
+ment of Industrial and Manufacturing Engineering at Penn State University. Her research area is
+simulation analysis methodology with emphasis on large-scale optimization via simulation, sim-
+ulation uncertainty quantiﬁcation and optimization via simulation under input model risk. Her
+website is www.eunhyesong.info.
+Barry L. Nelson is the Walter P. Murphy Professor of the Department of Industrial Engineering
+and Management Sciences at Northwestern University and a Distinguished Visiting Scholar at
+Lancaster University in England. His research focus is on the design and analysis of computer
+simulation experiments on models of discrete-event, stochastic systems, including methodology for
+simulation optimization, quantifying and reducing model risk, variance reduction, output analysis,
+metamodeling and multivariate input modeling. He has published numerous papers and three
+books, including Foundations and Methods of Stochastic Simulation: A First Course (Springer,
+2013). Nelson is a Fellow of INFORMS and IIE. Further information can be found at www.iems.
+northwestern.edu/~nelsonb/.
+Jeremy Staum is a former Associate Professor of Industrial Engineering and Management
+Sciences at Northwestern University. His research interests include simulation metamodeling, opti-
+mization via simulation, and risk management. His website is users.iems.northwestern.edu/
+staum.
+References
+Amemiya T (1985) Advanced Econometrics (Cambridge, MA: Harvard University Press).
+Ankenman B, Nelson BL, Staum J (2010) Stochastic kriging for simulation metamodeling. Operations
+Research 58(2):371–382.
+Benassi R, Bect J, Vazquez E (2011) Robust gaussian process-based global optimization using a fully bayesian
+expected improvement criterion. Learning and Intelligent Optimization, 176–190 (Springer).
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+28
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+Chen K (2005) Matrix Preconditioning Techniques and Applications (Cambridge, UK: Cambridge University
+Press).
+Chen Y, Davis TA, Hager WW (2008) Algorithm 887: CHOLMOD, supernodal sparse cholesky factorization
+and update/downdate. ACM TOMS 35(3):1–14.
+Cochran W (1977) Sampling Techniques (New York: Wiley).
+Diggle PJ, Menezes R, Su T (2010) Geostatistical inference under preferential sampling. Journal of the Royal
+Statistical Society: Series C 59(2):191–232.
+Erisman A, Tinney W (1975) On computing certain elements of the inverse of a sparse matrix. Communi-
+cations of the ACM 18(3):177–179.
+Frazier P (2012) Tutorial: Optimization via simulation with Bayesian statistics and dynamic programming.
+Laroque C, Himmelspach J, Pasupathy R, Rose O, Uhrmacher AM, eds., Proceedings of the 2012
+Winter Simulation Conference, 1–16 (Piscataway, NJ: IEEE).
+Frazier P, Powell W, Dayanik S (2009) The knowledge-gradient policy for correlated normal beliefs.
+INFORMS Journal on Computing 21(4):599–613.
+Frazier PI (2009–2010) URL https://people.orie.cornell.edu/pfrazier/src.html.
+Huang D, Allen TT, Notz WI, Zeng N (2006) Global optimization of stochastic black-box systems via
+sequential kriging metamodels. Journal of Global Optimization 34(3):441–466.
+Jalali H, Van Nieuwenhuyse I, Picheny V (2015) Comparison of Kriging-based methods for simulation opti-
+mization with heterogeneous noise. Technical report, KU Leuven.
+Jones DR, Schonlau M, Welch WJ (1998) Eﬃcient global optimization of expensive black-box functions.
+Journal of Global Optimization 13(4):455–492.
+Kim S (2013) Statistical ranking and selection. Encyclopedia of Operations Research and Management Sci-
+ence, 1459–1469 (New York: Springer).
+Kim S, Nelson BL (2001) A fully sequential procedure for indiﬀerence-zone selection in simulation. ACM
+TOMACS 11(3):251–273.
+Koenig LW, Law AM (1985) A procedure for selecting a subset of size m containing the l best of k independent
+normal populations, with applications to simulation. Communications in Statistics B14(3):719–734.
+Miller KS (1981) On the inverse of the sum of matrices. Mathematics Magazine 54(2):67–72.
+Nelson BL (2010) Optimization via simulation over discrete decision variables. TutORials in Operations
+Research 7:193–207.
+Niessner H, Reichert K (1983) On computing the inverse of a sparse matrix. International journal for
+numerical methods in engineering 19(10):1513–1526.
+Quan N, Yin J, Ng SH, Lee LH (2013) Simulation optimization via kriging: A sequential search using expected
+improvement with computing budget constraints. IIE Transactions 45(7):763–780.
+
+Salemi, Song, Nelson and Staum: Gaussian Markov Random Fields for DOvS
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+29
+Rue H, Held L (2005) Gaussian Markov Random Fields: Theory and Applications (New York: Chapman and
+Hall/CRC).
+Saad Y (2003) Iterative Methods for Sparse Linear Systems (Philadelphia: Society for Industrial and Applied
+Mathematics (SIAM)), second edition.
+Salemi P, Nelson BL, Staum J (2014) Discrete optimization via simulation using Gaussian Markov random
+ﬁelds. Tolk A, Diallo SY, I O Ryzhov LY, Buckley S, Miller JA, eds., Proceedings of the 2014 Winter
+Simulation Conference, 3809–3820 (Piscataway, NJ: IEEE).
+Salemi P, Staum J, Nelson BL (2013) Generalized integrated Brownian ﬁelds for simulation metamodeling.
+Pasupathy R, Kim SH, Tolk A, Hill R, Kuhl ME, eds., Proceedings of the 2013 Winter Simulation
+Conference, 543–554 (Piscataway, NJ: IEEE).
+Santner TJ, Williams BJ, Notz W (2003) The Design and Analysis of Computer Experiments (New York:
+Springer).
+Sasena MJ, Papalambros P, Goovaerts P (2002) Exploration of metamodeling sampling criteria for con-
+strained global optimization. Engineering optimization 34(3):263–278.
+S´obester A, Leary SJ, Keane AJ (2005) On the design of optimization strategies based on global response
+surface approximation models. Journal of Global Optimization 33(1):31–59.
+Takahashi K, Fagan J, Chin MS (1973) Formation of a sparse bus impedance matrix and its application to
+short ciruit study. 8th PICA Conference Proceedings, 16–29 (IEEE Power Engineering Society).
+Vanhatalo J, Vehtari A (2012) Modelling local and global phenomena with sparse gaussian processes. arXiv
+preprint arXiv:1206.3290 .
+Williams BJ, Santner TJ, Notz WI (2000) Sequential design of computer experiments to minimize integrated
+response functions. Statistica Sinica 10:1133–1152.
+Wolpert DH, Macready WG (1997) No free lunch theorems for optimization. Trans. Evol. Comp 1(1):67–82,
+ISSN 1089-778X.
+Xie J, Frazier PI, Chick SE (2016) Bayesian optimization via simulation with pairwise sampling and corre-
+lated prior beliefs. Operations Research 64(2):542–559.
+Xu J, Nelson BL, Hong LJ (2010) Industrial strength COMPASS: A comprehensive algorithm and software
+for optimization via simulation. ACM TOMACS 20(1):3:1–3:29.

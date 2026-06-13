@@ -1,0 +1,2675 @@
+TITLE: Adaptive Matching for Expert Systems with Uncertain Task Types
+JOURNAL: Operations_Research
+YEAR: 2020
+DOI: https://doi.org/10.1287/opre.2019.1954
+---
+
+Adaptive Matching for Expert Systems with Uncertain Task
+Types
+Virag Shah1, Lennart Gulikers2, Laurent Massouli´e2, and Milan Vojnovi´c3
+1Stanford University
+2Microsoft Research-INRIA Joint Centre
+3London School of Economics
+October 30, 2018
+Abstract
+A matching in a two-sided market often incurs an externality: a matched resource may
+become unavailable to the other side of the market, at least for a while. This is especially
+an issue in online platforms involving human experts as the expert resources are often scarce.
+The eﬃcient utilization of experts in these platforms is made challenging by the fact that the
+information available about the parties involved is usually limited.
+To address this challenge, we develop a model of a task-expert matching system where a
+task is matched to an expert using not only the prior information about the task but also
+the feedback obtained from the past matches. In our model the tasks arrive online while the
+experts are ﬁxed and constrained by a ﬁnite service capacity. For this model, we characterize
+the maximum task resolution throughput a platform can achieve. We show that the natural
+greedy approaches where each expert is assigned a task most suitable to her skill is suboptimal,
+as it does not internalize the above externality. We develop a throughput optimal backpressure
+algorithm which does so by accounting for the ‘congestion’ among diﬀerent task types. Finally,
+we validate our model and conﬁrm our theoretical ﬁndings with data-driven simulations via
+logs of Math.StackExchange, a StackOverﬂow forum dedicated to mathematics.
+1
+Introduction
+Online platforms that enable matches between trading partners in two-sided markets have recently
+blossomed in many areas: LinkedIn and Upwork facilitate matches between employers and employ-
+ees; Uber allows matches between passengers and car drivers; Airbnb and Booking.com connect
+travelers and housing facilities; Quora and Stack Exchange facilitate matches between questions
+and either answers, or experts able to provide them.
+These platforms often propose matches based on imperfect knowledge of the characteristics of
+the two parties to be matched. Such uncertainty may result into inferior matches and may incur
+negative externalities of the following kind: If a constrained resource is matched sub-optimally then
+it becomes unavailable to a more suitable match for a while. For example, in online labour platforms
+and Q&A platforms if an expert is matched to a task which does not meet her expertise then
+1
+arXiv:1703.00674v3 [cs.AI] 26 Oct 2018
+
+the tasks which meet her expertise may suﬀer. Similarly, in hospitality platforms an economical
+accommodation becomes unavailable to a ﬁnancially constrained customer if it is matched to a
+ﬂexible customer.
+This naturally leads to the following questions:
+• How to quantify the loss in eﬃciency resulting from such uncertainty?
+• Which matching recommendation algorithms can lead to the most eﬃcient platform operation
+in presence of such uncertainty?
+A natural measure of eﬃciency is the throughput that the platform achieves, i.e.
+the rate of
+successful matches it allows.
+In this paper, we progress towards answering these questions as follows. In what follows, we
+will anchor our discussion to task-expert systems but the insights developed are more generally
+applicable.
+First, we propose a simple model of such platforms, which features a static collection of servers,
+or experts on the one hand, and a continuous stream of arrivals of tasks, or jobs, on the other
+hand. In our model, the platform’s operation consists of servers iteratively attempting to solve
+tasks. After being processed by some server, a task leaves the system if solved; otherwise it remains
+till successfully treated by some server. To model uncertainty about task types, we assume that for
+each incoming task we are given the prior distribution of this task’s “true type”. Servers’ abilities
+are then represented via the probability that each server has to solve a task of given type after one
+attempt at it.
+In a Q&A platform scenario, tasks are questions, and servers are experts; a server processing a
+task corresponds to an expert providing an answer to a question. A task being solved corresponds
+to an answer being accepted. In an online labour platform, tasks could be job oﬀers, and a server
+may be a pool of workers with similar abilities. A server processing a task then corresponds to a
+worker being interviewed for a job, and the task is solved if the interview leads to a hire. We could
+also consider the dual interpretation when the labour market is constrained by workers rather than
+job oﬀers. Then a task is a worker seeking work, while a server is a pool of employers looking for
+hires.
+An important feature of our model consists in the fact that when a task’s processing does not
+lead to success, it does however aﬀect uncertainty about the task’s type. Indeed, the a posteriori
+distribution of the task’s type after a failed attempt on it by some server diﬀers from its prior
+distribution. For instance in a Q&A scenario, a question which an expert in Calculus failed to
+answer either is not about Calculus, or is very hard. Further, the feedback from the expert may
+reveal some information about the task’s type.
+For our model, we then determine necessary and suﬃcient conditions for an incoming stream of
+task arrivals to be manageable by the servers, or in other words, determine achievable throughputs
+of the system.
+In the process we introduce candidate policies, in particular the greedy policy
+according to which a server choses to serve tasks for which its chance of success is highest. This
+scheduling strategy is both easy to implement and is based on a natural motivation. Surprisingly
+perhaps, we show that it is not optimal in the throughput it can handle. In contrast, we introduce
+a so-called backpressure policy inspired from the wireless networking literature [42], which we prove
+to be throughput-optimal.
+We summarize contributions of this paper as follows:
+• We propose a new model of a generic task-expert system that allows for uncertainty of task
+types, heterogeneity of skills, and recurring attempts of experts in solving tasks.
+2
+
+• We provide a full characterization of the stability region, or sustainable throughputs, of the
+task-expert system under consideration. We establish that a particular backpressure policy
+is throughput-optimal, in the sense that it supports maximum task arrival rate under which
+the system is stable.
+• We show that there exist instances of task-expert systems under which simple matching
+policies such as a natural greedy policy and a random policy can only support a much smaller
+maximum task arrival rate, than the backpressure policy.
+• We report the results of empirical analysis of the popular Math.StackExchange Q&A platform
+which establish heterogeneity of skills of experts, with experts knowledgeable across diﬀerent
+types of tasks and others specialized in particular types of tasks. We also show numerical
+evaluation results that conﬁrm the beneﬁts of the backpressure policy on greedy and random
+matchmaking policies.
+The remainder of the paper is structured as follows. In Section 2 we present our system model.
+In Section 3 we present the throughput optimal algorithm as well as the characterization of task
+arrival rates that can be supported by the system. In Section 4, we present a case study where
+we compare performance of our algorithm with other baseline algorithms. In Section 5, we present
+our experimental results. In Section 6 we generalize our results to arbitrary feedback structure.
+Related work is discussed in Section 7. We conclude in Section 8. Proofs of the results are provided
+in Section 9.
+2
+Problem Setting
+Let C = {c1, . . . , ck} be the set of task types. Each task in the system is of a particular type in C.
+Let S = {s1, . . . , sm} be the set of servers (or experts) present in the system. When a server s ∈S
+attempts to resolve a task of type c ∈C, the outcome is 1 (a success) with probability ps,c and
+it is 0 (a failure) with probability 1 −ps,c. Upon success we say that the task is resolved. In the
+context of online hiring platform, this is equivalent to successful hiring of an employee for a job. In
+the context of Q&A platform, this is equivalent to an answer by an expert being accepted by the
+asker of the question.
+We consider a Bayesian setting where we have a prior distribution z = (zc)c∈C ∈C for a
+task’s type, where C is the set of all distributions. Note, diﬀerent tasks may have diﬀerent prior
+distributions. Clearly, if server s processes a task with prior distribution z then the probability that
+it fails is given by
+ψs(z) =
+X
+c∈C
+zc(1 −ps,c).
+(1)
+Further, upon failure, the posterior distribution of task’s type is given by
+φs(z) =
+zc(1 −ps,c)
+ψs(z)
+
+c∈C
+.
+(2)
+Note that the posterior distribution of a task’s type upon failure by a subset of servers does
+not depend on the sequence in which these servers resolve the task, i.e., for each s, s′ ∈S we have
+φs ◦φs′ = φs′ ◦φs. At any point in time a task is associated with a ‘mixed-type’ which is deﬁned
+as the posterior distribution of its type given the past attempts.
+We allow a task to be attempted sequentially by multiple servers until it is resolved. We would
+like to resolve the tasks as quickly as possible. The matching algorithm may use the past feedback
+3
+
+from the servers. In the setting described above the feedback is binary, namely, in the form of
+success and failure. More generally, the servers may provide a more detailed feedback. Although
+in several cases such a feedback is not reliable and often biased,
+e.g., see [13]. For now, we will
+stick with the binary feedback structure. We will generalize our results to an arbitrary feedback
+structure in Section 6.
+2.1
+Single Task Scenario
+Before considering the setting of online task arrivals, for ease of exposition we ﬁrst consider a
+toy scenario with single task for which greedy algorithms are known to be approximately optimal.
+Suppose that time t ∈Z+ is discrete. A task arrives at time t = 0. Let the prior distribution of
+its type upon arrival (equivalently, its mixed-type at time t = 0) be z. At a time, only one server
+attempts to resolve a task. Consider the problem of designing a sequence of servers (s(t) : 0 ≤t ≤τ)
+such that the probability that the task is resolved within a ﬁxed time τ is maximized. Let z(0) = z,
+and for each t ≥1 let z(t) = φs(t−1)(z(t −1)), i.e., z(t) is the mixed-type of the task at time t given
+that it was not resolved upon previous attempts. Then the probability that the task is resolved by
+time τ is given as g
+ (s(t) : 0 ≤t ≤τ)
+
+= 1 −Qτ
+t=0 ψs(t)(z(t)).
+Contrast this with the Bayesian active learning setting in [18, 21] where the goal is to reduce
+uncertainty in true hypothesis via outcome from several experiments. Using a diminishing returns
+property called adaptive submodularity the authors in [18] obtain a policy which is competitive
+with the optimal. In our setting, g is a submodular function. Thus a greedy policy where s(t) for
+each t is chosen to be from arg mins ψs(z(t)) is 1 −1/e-competitive, see [36].
+Further, in this paper we add an extra dimension to the problem which was not considered in the
+[18, 21], namely, we consider the setting of online task arrivals where tasks of diﬀerent mixed-types
+may compete for the servers resources before they leave upon being resolved. We design throughput
+optimal policies under such a setting.
+2.2
+Online Task Arrivals
+We consider a continuous time setting, i.e., t ∈R+. Tasks arrive at a rate of λ per time unit
+on average. The mixed types of incoming tasks upon arrival are assumed i.i.d., taking values in
+a countable subset Z of C. For each z ∈Z, let πz denote the probability that a new arrival is
+of mixed type z. Finally, the time for server s ∈S to complete an attempt on a task takes on
+average 1/µs time units, and such attempt durations are i.i.d.. All involved sources of randomness
+are independent.
+We assume that Z is closed under φs(·), i.e., for each z ∈Z, φs(z) ∈Z. This loses no generality,
+as the closure of a countable set with respect to a ﬁnite number of maps φs remains countable.
+We assume that a given task may be inspected several times by a given server and assume that
+the outcomes success / failure are independent at each inspection. This can be justiﬁed if a label
+s in fact represents a collection of experts with similar abilities, in which case multiple processings
+by s correspond to processing by distinct individual experts.
+For such a setting we would like to minimize the expected sojourn time of a typical task, i.e.,
+the expected time between the arrival and the resolving of a typical task. Recall that the success
+probabilities ps,c are assumed to be arbitrary.
+Under such a heterogeneous setting minimizing
+expected sojourn time is a hard problem. In fact, this is true even when there is no uncertainty
+in task types. As a proxy to sojourn time optimal policies, we will strive for throughput optimal
+4
+
+policies. In particular, we will characterize the arrival rates λ for which the system can be stabilized,
+i.e. for which there exists a scheduling policy which induces a time-stationary regime of the system’s
+behavior. Indeed for a stable system the long term task resolution rate coincides with the task arrival
+rate λ, and thus throughput-optimal policies must make the system stable whenever this is possible.
+Note that for an unstable system the number of outstanding tasks accumulate over time and the
+expected sojourn time tends to inﬁnity.
+Finally, for simplicity we assume more speciﬁcally that the tasks arrive at the instants of a
+Poisson process with intensity λ, and that the time for server s to complete an attempt at a task
+follows an Exponential distribution with parameter µs. These are continuous time analog of i.i.d.
+arrivals and independent departures per time slot in discrete time setting.
+These assumptions
+will imply that the system state at any given time t can be represented as a Markov process,
+which simpliﬁes throughput analysis. The system throughput is often insensitive to such statistical
+assumptions on arrival and service times, e.g., see [44].
+We close the section with some additional assumptions and notations which will aid our analysis.
+For each time t let Nz(t) represent the number of tasks of mixed-type z present in the system
+and N(t) = (Nz(t))z∈Z. We also let z(s, t) denote the mixed type of the task that server s works
+on at time t. For strategies such that the servers select which task to handle based uniquely on the
+vector N(t), the process (N(t))t≥0 forms a continuous-time Markov chain (CTMC) ([7, 27]). The
+policies considered in this paper are studied by analyzing the associated CTMC.
+We allow a task to be assigned to multiple experts at a given time. Further, we allow both
+preemptive as well as non-preemptive policies. Recall, in a preemptive policy an expert may drop
+a task under service if a task of a new mixed-type becomes available, whereas in a non-preemptive
+policy an expert must wait for his task to be serviced before taking up a new one.
+3
+Optimal Stability
+Main goal of this section is to provide necessary and suﬃcient conditions for stability of the system,
+and to provide explicit policies which stabilize the system when the suﬃcient conditions are satisﬁed.
+We obtain stability conditions via capacity constraints and ﬂow conservation constraints which
+capture the ﬂow of tasks from one type to another upon service by an expert. For instance, if νs,z
+represents the ﬂow of tasks of mixed-type z served by expert s, a fraction 1 −ψs(z) of it leaves the
+system due to success while the rest gets converted into a ﬂow of type φs(z). The total arrival rate
+of ﬂow of mixed-type z, i.e., λπz + P
+s∈S,z′∈φ−1
+s
+(z) νs,z′ψs(z′), must match the total service rate,
+i.e., P
+s∈S νs,z. Further, the total ﬂow service rate expert s, i.e., P
+z∈Z νs,z, must be less than its
+service capacity µs. The following is the main result of this section.
+Theorem 1. Suppose there exists s such that minc ps,c > 0. If there exist non-negative real numbers
+νs,z for each s ∈S and each z ∈Z, and positive real numbers δs for each s ∈S such that the
+following hold:
+∀z ∈Z,
+λπz +
+X
+s∈S,z′∈φ−1
+s
+(z)
+νs,z′ψs(z′) =
+X
+s∈S
+νs,z,
+(3)
+∀s ∈S,
+X
+z∈Z
+νs,z + δs ≤µs,
+(4)
+5
+
+then there exists a policy under which the system is stable. If there does not exist non-negative real
+numbers νs,z, for s ∈S, z ∈Z and non-negative real numbers δs for s ∈S such that the above
+constraints hold, then the system cannot be stable.
+We use the condition of existence of an expert s such that minc ps,c > 0 only for a technical
+reason to simplify our proof. We believe that the result holds even when this condition is not true.
+One may envisage obtaining a throughput optimal static randomized policy from a solution to
+(3) and (4) which, for example, maximizes the minimum δs. It is not clear if this policy would result
+into a stable solution. Consider the following plausible scenario. While the total slack available
+at each server is ﬁnite, the total number of queues is inﬁnite since we have one queue for each
+mixed-type. Depending on the system parameters, the optimal solution may assign a positive slack
+to each queue. Then, the inﬁmum over the slacks at diﬀerent queues would be zero. This would
+make the system unstable.
+To avoid this pitfall, we ﬁnd a ﬁnite set of mixed-types Y such that the overall arrival rate into
+queues corresponding to mixed-types Z\Y is suﬃciently small. We then group the inﬁnite number
+of queues corresponding to Z\Y into a virtual queue. We thus obtain a system with ﬁnite number
+of queues which consists of the virtual queue and the queues corresponding to the mixed-types in
+Y. For this system we use a dynamic policy, provided below, which is motivated by the literature
+on backpressure policies for constrained queueing systems, e.g., see [42, 16].
+One may also envisage a static randomized policy obtained via a solution to a modiﬁed version
+of the constraints (3) and (4) which would stabilize the above ﬁnite queueing system. Indeed, such
+a policy exists and we use its existence to show throughput optimality of our backpressure policy.
+Such a static policy, however, suﬀers from a severe practical limitation. By randomly selecting a
+queue for each server, the policy splits its capacity across several queues In contrast, in our policy
+each server serves only one queue with a high backlog. It is well known that pooling of a server’s
+capacity, as against fragmenting its capacity across several queues, achieves better performance
+due to gains from statistical multiplexing. In fact, the performance improvement scales with the
+number of queues.
+Further, an agile backlog based dynamic policy may oﬀer several practical advantages over
+solving a high-dimensional optimization problem in real systems where the parameters used may
+change over time. Thus, we believe it is natural to consider a backpressure approach over a static
+approach.
+We now describe the our dynamic policy which achieves optimal stability. We need some more
+notation to describe the policy. Consider a set Y ⊂Z. Let X(t) be the number of tasks in the
+system at time t which have mixed-type z ∈Z\Y or have had a mixed-type z ∈Z\Y in the past.
+Further, for each z ∈Y let ˜Xz(t) be the number of tasks with mixed-type z which have had a
+mixed-type in Z\Y in the past. Also, for convenience, for each z ∈Z\Y, let ˜Xz(t) be the number
+of tasks with mixed-type z, i.e., ˜Xz(t) = Nz(t) for each z ∈Z\Y. Thus, we have X(t) = P
+z ˜Xz(t).
+Finally, for each z ∈Y let ˜Nz(t) be the number of tasks of mixed-type z which have not had a
+mixed-type in Z\Y in the past. Thus, for each z ∈Y we have Nz(t) = ˜Xz(t) + ˜Nz(t). For the rest
+of this section we suppress the dependence on t for brevity in notation.
+Our policy operates in two modes, Random mode and Backpressure mode. During Random
+mode, each server is assigned a task from X at random. During Backpressure mode, a server s is
+assigned a task of a mixed type in Y with the highest ‘expected backlog’, where the expected backlog
+at mixed-type z accounts for the congestion at z as well as at φs(z). Further, it also accounts for
+the fact that with probability (1 −ψs(z)) the task may get resolved and leave the system without
+6
+
+seeing the congestion at φs(z). The decision regarding which mode to operate in is based on the
+relative congestions at X and Y.
+Deﬁnition 1 (Backpressure(Y) policy). For a given Y, let X and ( ˜Nz)z∈Y be as deﬁned above.
+For each s ∈S, z ∈Y let
+ws,z( ˜N, X) =
+( ˜Nz −ψs(z) ˜Nφs(z),
+if φs(z) ∈Y
+˜Nz −ψs(z)X,
+if φs(z) ∈Z\Y .
+For a given ( ˜N, X), let
+Bs( ˜N, X) = arg
+max
+z′∈Y: ˜
+Nz′>0
+ws,z( ˜N, X).
+If
+X
+s
+µs
+max
+z∈Y: ˜
+Nz>0
+ws,z( ˜N, X) ≥X min
+c∈C
+X
+s
+µsps,c
+then each expert is assigned a task in ˜Nz where z ∈Bs( ˜N, X) ⊂Y with ties broken arbitrarily.
+Else, each expert serves a task in X chosen uniformly at random.
+Note that, under Backpressure(Y) policy,
+
+( ˜Nz)z∈Y, ( ˜Xz)z∈Z
+
+is a CTMC. The following the-
+orem establishes throughput optimality of the Backpressure(Y) policy.
+Theorem 2. Suppose there exists a server s such that minc ps,c > 0. If the suﬃcient conditions
+for stability as given in the statement of Theorem 1 are satisﬁed, then there exists a ﬁnite subset Y
+of Z such that the policy Backpressure(Y) stabilizes the system.
+In particular, the Backpressure(Z) policy is optimally stable for Asymmetric(a) system as de-
+ﬁned in Deﬁnition 3.
+To prove Theorem 2, we use Lyapunov-Forster theorem to show stability. We use the following
+Lyapunov function:
+L( ˜N, ˜X) =
+X
+z∈Y
+˜N 2
+z +
+ X
+z∈Z
+˜Xz
+!2
+=
+X
+z∈Y
+˜N 2
+z + X2.
+As such, proving this result requires signiﬁcantly diﬀerent approach as compared to stability
+proofs via quadratic Lyapunov functions of classical constrained queueing networks with ﬁnite
+number of queues. In particular, the ﬂow equations do not directly give a stabilizing static policy.
+In fact, there does not exist a static policy which stabilizes the system at all feasible loads. To avoid
+this pitfall, we ﬁnd a ﬁnite set Y such that the overall arrival rate into Z\Y is small, and ‘pool’ the
+slack capacity at the servers to serve the inﬁnite number of queues in Z\Y.
+The stability part of Theorem 1 follows from Theorem 2. For the converse statement in Theo-
+rem 1, we use system ergodicity.
+We now provide an alternative policy which achieves stability under a more restrictive condition
+that ps,c are bounded away from 0 and 1, but with the advantage that it does not rely on the precise
+numbers of jobs Nz sharing the same mixed type z, but rather on ‘local averages’. As such it may
+remain optimally stable even when the distribution of mixed types of incoming jobs is no longer
+assumed to be discrete.
+7
+
+Deﬁnition 2 (Backpressure(ϵ) policy). Partition set C into ﬁnitely many subsets Ai, i = 1, . . . , l,
+such that each Ai has diameter at most ϵ, that is for all z, z′ ∈Ai we have |z−z′| = P
+c |zc−z′
+c| ≤ϵ.
+We then deﬁne N(Ai) := P
+z∈Ai Nz, and the backpressure with respect to server s of a given z as
+ws,z(N) := N(Ai) −ψs(z)N(Aj),
+where i and j are such that z ∈Ai and φs(z) ∈Aj. Then, each expert is assigned a task with
+mixed-type in
+As(N) = arg
+max
+z∈Z:Nz>0 ws,z(N),
+with ties broken uniformly at random
+We then have the following:
+Theorem 3. Suppose that there exists α > 0 such that for each s, c we have
+ps,c ∈[α, 1 −α].
+(5)
+Suppose further that the suﬃcient conditions for stability as given in the statement of Theorem 1
+are satisﬁed. Then, there exists an ϵ > 0 suﬃciently small such that the Backpressure(ϵ) policy
+stabilizes the system.
+For its proof, we use the Lyapunov function L(N) = P
+i N(Ai)2. Again, the proof involves a
+signiﬁcantly diﬀerent approach as compared to stability proofs for standard constrained queuing
+networks with ﬁnite number of queues. In particular, we develop and use new ﬂow equations which
+account for not only the sets Ai associated with the mixed-types of the tasks but also the lengths
+of the history of the tasks.
+Unlike backpressure policy proposed in [42] under a diﬀerent setting, which was agnostic to sys-
+tem arrival rates, a set Y (or the ϵ) such that the policy Backpressure(Y) (or policy Backpressure(ϵ))
+stabilizes the system may depend on the value of λ. While the policies as stated may be complex to
+implement, it allows us to develop implementable heuristics which signiﬁcantly outperform greedy
+policy. We demonstrate this in Section 5.
+4
+Asymmetric(a) Systems: A Case Study
+In this section we study a class of task-expert systems, namely Asymmetric(a) systems, deﬁned
+below.
+These systems resemble the N-system considered in the literature of queueing systems
+where the tasks types are assumed to be known, see [19, 5, 43]. In particular, we study the loss
+in throughput due to uncertainty in task type, and also compare the performance of the optimal
+algorithm with some baseline policies, namely the Random policy and the Greedy policies.
+Deﬁnition 3 (Asymmetric(a) System). Fix 0 < a < 1. In the Asymmetric(a) system there are
+two task types C = {c1, c2} and two experts S = {s1, s2}. Each arrival is equally likely to be of both
+types, i.e., πz′ = 1 where z′ satisﬁes z′
+c = 1/2 for each c ∈C, and πz = 0 if z ̸= z′. Both experts
+provide responses at unit rate, i.e., µs = 1 for each s. Further, for class c1 we have ps,c1 = 1 for
+each s ∈S, and for class c2 we have ps1,c2 = a, and ps2,c2 = 0.
+For the Asymmetric(a) system, if a task of mixed-type z′ receives a failure from either of the
+experts then its mixed type becomes z′′ where z′′
+c1 = 0 and z′′
+c2 = 1. Thus, it is suﬃcient to assume
+that Z = {z′, z′′} where z′
+c = 1
+2 for each c ∈C, and z′′
+c = 1{c = c2}, where 1{A} = 1 if A is true and
+0 otherwise. Further, it is easy to check that ψs1(z′) = (1 −a)/2, ψs1(z′′) = 1 −a, ψs2(z′) = 1/2,
+and ψs2(z′′) = 1.
+8
+
+4.1
+Loss in throughput due to uncertainty in task types
+To understand the source of loss in throughput due to uncertainty, we ﬁrst provide throughput
+of the Asymmetric(a) system, and then compare it with an analogous system where true type is
+known. The following proposition uses the ﬂow equations from Theorem 1. Its detailed proof is
+provided in the Appendix.
+Proposition 1. There exists a policy which stabilizes the Asymmetric(a) system if we have λ <
+min {3a/(a + 1), 2a}. Further, if λ > min {3a/(a + 1), 2a} then no policy can stabilize the system.
+Now suppose that the true type of each task is revealed upon arrival.
+Throughput of such
+systems can be computed using the well-known stability conditions for the ﬂexible-server systems,
+e.g., see [30]; in particular, the throughput of the Asymmetric(a) system if true types are known is
+equal to 2a.
+Thus, for a > 1/2 there is a loss in eﬃciency of the system.
+In particular, for a = 1 the
+throughput reduces by 25%. This can be reasoned as follows. For small values of a, the main
+system bottleneck is servicing of tasks of true type c2 by server s1 since this is the only server which
+can serve such tasks. Since server s2 is not bottlenecked, in case of uncertain task types its extra
+capacity may be used to identify tasks of true type c2. However, if the a is large, then both the
+servers are bottlenecked and thus the wasteful use of s2 in servicing tasks of true type c2 results in
+loss of throughput.
+4.2
+Throughput under Random Policy:
+Let us ﬁrst deﬁne the Random policy and then provide an expression for the throughput.
+Deﬁnition 4 (Random Policy). In the Random policy each expert s is assigned a task chosen
+uniformly at random from the pool of outstanding tasks.
+The following proposition provides throughput under Random policy for task expert systems in
+general, and the Asymmetric(a) system in particular. Its proof is provided in the Appendix.
+Proposition 2. Under Random policy, a task-expert system is stable if and only if it satisﬁes the
+following:
+λ <
+ X
+c∈C
+P
+z∈Z zcπz
+P
+s∈S µsps,c
+!−1
+.
+In particular, the Random policy stabilizes the Asymmetric(a) system if and only if λ < 4a/(2+a).
+As expected, for the Asymmetric(a) system the throughput under the Random policy is signif-
+icantly lower than the optimal throughput.
+To prove the above result we use ﬂuid limit approach developed in [38, 12, 31]. Let Xc(t) be the
+number of tasks in the system of pure-type c. Let X(t) = (Xc(t))c. Roughly, given initial condition
+X(0) = x, we let limk→∞1
+kX(0) = x, and study limk→∞1
+kX(kt). We use the following Lyapunov
+function:
+L(X) =
+X
+c
+Xc log
+
+Xc
+γc
+P
+c′ Xc′
+
+,
+where γc ≜λ
+P
+z∈Z zcπz
+P
+s∈S µsps,c .
+9
+
+4.3
+Throughput under Greedy Policies
+Following the discussion in Section 2.1, a question arises: does a greedy approach work well even
+under the online setting? From throughput perspective, a natural greedy approach is one where
+each expert is assigned a task which best suits its skills.
+We will consider two greedy policies, a Preemptive Greedy policy and a Non-Preemptive Greedy
+policy. As we will see below, both the greedy policies are throughput suboptimal for the Asymmetric(a)
+system. Intuitively, the reason for their suboptimality can be explained as follows. Note that for
+a > 0 we have ψs(˜z′) < ψs(˜z′′) for each s.
+Thus, under the greedy policies each expert gives
+priority to the tasks of mixed-type z′. However, since only one expert can successfully serve the
+tasks of mixed-type z′′, servicing of these tasks may become a bottleneck, especially for the small
+and moderate values of a. In such a scenario, a policy in which the expert s1 would prioritize queue
+z′′, especially when its length is relatively large, as done by the Backpressure policy, would achieve
+a better throughput.
+We ﬁrst discuss the Preemptive Greedy policy and then the Non-Preemptive Greedy policy.
+Deﬁnition 5 (Preemptive Greedy Policy). In the Preemptive Greedy policy, at each time an expert
+is assigned an outstanding task which maximizes its success probability, i.e., for each time t such
+that |N(t)| > 0 we have
+z(s, t) ∈As(N(t)) ≜arg
+min
+z:Nz(t)>0 ψs(z),
+where ties are broken uniformly at random.
+The following proposition provides throughput achieved by the Preemptive Greedy policy for
+the Asymmetric(a) system.
+The main idea behind its throughput derivation can be intuitively
+explained as follows. Since both the servers give priority to the tasks of mixed-type z′ at each time,
+the corresponding queue acts as an M/M/1 queue with service rate 2 and arrival rate λ. Since the
+fraction of time this queue is empty is 1 −λ/2, the capacity available at server s2 to server tasks of
+mixed-type z′′ is 1 −λ/2. Thus, maximum rate of service for tasks of mixed-type z′′ is a(1 −λ/2).
+Similarly, the arrival rate for tasks of mixed type z′′ can be shown to be λ(2 −a)/4. The stability
+condition follows by comparing these two. The formal proof of the proposition can be found in the
+Appendix.
+Proposition 3. The Preemptive Greedy policy stabilizes the Asymmetric(a) system if and only if
+we have λ < 4a/(2 + a).
+A surprising implication of the above theorem is that, for a = 1/2, the Preemptive Greedy
+policy as well as the Random Policy achieve throughput equal to 4/5. The optimal throughput is
+25% higher. This shows the importance of designing a matching policy which is cognizant of the
+system bottlenecks, such as the Backpressure policies designed in Section 3. For the N-systems
+where the task types are known, it was ﬁrst observed in [19] that a greedy policy is suboptimal.
+In the Preemptive Greedy policy, the process (N(t))t≥0 is a CTMC. In particular, the order in
+which the tasks of a given mixed-type are served does not matter to the evolution of N(t). However,
+this is not the case in the Non-preemptive Greedy policy. For simplicity, in the Non-preemptive
+Greedy policy, we will view each mixed-type as queue and assume that the tasks of a given mixed-
+type are served in the FCFS discipline. In other words, if at time t for a given server s we have
+z(s, t) = z, then it serves the task which became of mixed type z the earliest. Note that, in our
+general model, upon leaving a queue z, a task may re-enter the queue at a later point in time. In
+10
+
+such a case we consider the arrival time into the queue to be the one corresponding to the latest
+entry.
+Deﬁnition 6 (Non-preemptive Greedy Policy). In the Non-preemptive Greedy policy, upon com-
+pletion of an attempt at a task each expert s serving it is assigned an outstanding task such that
+its success probability 1 −ψs(˜z) is non-zero. If multiple such tasks exists for a server then it is
+assigned one which maximizes its success probability. In other words, if an attempt on a task with
+mixed-type z is completed at time t, then for each s such that z(s, t−) = z we set
+z(s, t) ∈A′
+s(N(t)) ≜arg
+min
+˜z:N˜z(t)>0,ψs(˜z)<1 ψs(˜z),
+where ties are broken uniformly at random. If no such task exists, i.e., if A′
+s(N(t)) is empty, then
+the server stays idle till such a task arrives and starts serving it upon arrival. Further, the tasks
+with a given mixed-type are served in the FCFS discipline as described above.
+For the Non-preemptive Greedy policy, owing to the complexity of the underlying Markov chain,
+we provide below a rather weak condition for instability which is nonetheless suﬃcient to establish
+its sub-optimality. See the Appendix for its proof.
+Proposition 4. Suppose that the Asymmetric(a) system is stabilizable, i.e., λ < min {3a/(a + 1), 2a}.
+Then, under the Non-preemptive Greedy policy, the Asymmetric(a) system is unstable if we have
+λ2(8a−1 + 1) + λ(8a−1 −14) −16 > 0.
+In particular, the above proposition implies that for a = 1/2 the throughput of the Asymmetric(a)
+system under the Non-preemptive Greedy policy is less than 0.914, which is sub-optimal. Recall
+that the optimal throughput for this value of a is 1.
+5
+Experimental Results
+In this section, we present our empirical results obtained by using data from Math.Stack-Exchange
+Q&A platform. In this platform, users post tagged questions that are answered by other users.
+Upon resolution of the question, the asker may reveal which of the submitted answers resolved
+the question. We will use this data to estimate the success probabilities of experts in answering
+questions, and use these parameters in simulations to compare the throughputs that can be achieved
+by greedy, random, and backpressure policies. As we will see, a substantially larger throughput can
+be achieved by backpressure policy than greedy and random.
+Dataset
+The dataset consists of around 702, 286 questions and 994, 138 answers. It was retrieved
+on February 2nd, 2017. The top 11 most common tags are given in Table 1 in decreasing order of
+popularity. Among these tags, the most common is calculus which covers 61, 184 questions, and
+the least common is complex analysis which covers 22, 813 questions. In our analysis, we used only
+questions that are tagged with at least one of the 11 most popular tags, which amounts to a total
+of 381, 239 questions and 544, 267 answers.
+Estimated skill sets
+The success probabilities of answering questions are estimated as follows.
+For a given user-tag pair, the success probability is estimated by the empirical frequency of the
+accepted answers by this user for questions of given tag, conditional on that the user had at least 5
+11
+
+Table 1: Skills of experts estimated by using data from the Math.Stack-Exchange Q&A platform.
+The success probabilities with values larger than 35% are highlighted in bold.
+Expert Clusters
+Tags
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+calculus
+.32
+.39
+.30
+.35
+.37
+.47
+.28
+.16
+.26
+.41
+real-analysis
+.17
+.41
+.25
+.32
+.23
+.49
+.40
+.10
+.10
+.44
+linear-algebra
+.46
+.29
+.05
+.36
+.14
+.48
+.26
+.31
+.07
+.43
+probability
+.07
+.49
+.02
+.33
+.02
+.50
+.06
+.02
+.46
+.04
+abstract-algebra
+.02
+.05
+.03
+.32
+.02
+.38
+.23
+.50
+.01
+.27
+integration
+.09
+.43
+.05
+.19
+.44
+.45
+.03
+.01
+.06
+.37
+sequences-and-series
+.05
+.32
+.16
+.31
+.20
+.45
+.09
+.04
+.06
+.33
+general-topology
+.02
+.10
+.03
+.16
+.02
+.43
+.50
+.07
+.02
+.31
+combinatorics
+.03
+.14
+.06
+.43
+.04
+.37
+.02
+.06
+.19
+.05
+matrices
+.27
+.15
+.02
+.31
+.02
+.44
+.06
+.11
+.02
+.34
+complex-analysis
+.02
+.19
+.08
+.16
+.14
+.50
+.09
+.05
+.01
+.44
+Size
+165
+188
+313
+200
+179
+183
+231
+187
+178
+176
+accepted answers for questions of the given tag, and otherwise we estimate the success probability
+is set to be equal to zero. These success probabilities are estimated for 2, 000 users with the most
+accepted answers. Among these users, the user with the most accepted answers had 4, 665 accepted
+answers, and the user with the least number of accepted answers had 13 accepted answers. There
+were 712 users which had more than 50 answers accepted. In order to form clusters of users with
+similar success probabilities for diﬀerent tags, we ran the k-means clustering algorithm.
+The estimated success probabilities are shown in Table 1. The columns correspond to diﬀerent
+centroids of the clusters and give average success probabilities for diﬀerent tags. In the bottom row,
+we give the sizes of the corresponding clusters. For instance, the 165 persons in cluster 1 have on
+average 32% of their calculus, and 46% of their linear algebra answers accepted.
+There is a pronounced heterogeneity in user expertise.
+We highlighted in bold the success
+probabilities with values larger than 35%. A subset of users, namely cluster 6, have high success
+probabilities at all topics whereas the users in the other clusters have high success rate at a subsets
+of topics.
+Estimating πz There is a prevalence of questions with diﬀerent combinations of tags, that is,
+mixed types. When a question arrives with multiple tags, we associated with it a mixed-type which
+is the uniform distribution across the associated tags. We kept only those combinations of tags
+that occur for at least 1% of the total number of questions. This results in 16 tag combinations
+among which 11 are singletons and 5 are a combinations of 2 tags. These are the mixed types z
+with positive πz, we set πz = 0 for all other mixed types. From among the questions with these 16
+mixed-types, the fraction of questions which belong the mixed-type z is the estimated for πz. We
+observed that roughly 19% of the questions are tagged with multiple tags, showing the relevance of
+our model.
+Simulation setup
+We assumed that the experts have unit service rates. We make this approxi-
+mation as we do not have the information about times at which experts begin to respond a question.
+12
+
+Figure 1: Total number of tasks in the system over time for the greedy and backpressure policy.
+The task arrival rates are as indicated in the ﬁgures.
+We examined the system for increasing values of task arrival rates. We simulate our CTMC via a
+custom discrete event simulator.
+We implement the Backpressure(Y) policy where the set Y consists of all 11 pure types, the
+5 most frequently seen mixed types upon arrival as described above, and the mixed types which
+result from an attempt by an expert exactly once. Note that a task belonging to a pure type can be
+attempted upon multiple times without changing its type. We thus have |Y| = 16+5·10 = 66. Our
+choice of Y is a result of a compromise between performance and complexity. Choosing a larger
+set of Y may increase the stability region by a small fraction, but may signiﬁcantly increase the
+complexity of the Backpressure(Y) policy.
+Further, while serving the tasks in X, instead of choosing tasks at random, we choose tasks
+greedily, i.e., each server is assigned a task in X which maximizes its probability of success. Em-
+pirically, this improves the performance over random selection of tasks in X.
+In the following, we will use the short hand ‘greedy policy’ for the Preemptive Greedy policy,
+and ‘backpressure policy’ for the Backpressure(Y) policy.
+Performance comparison of diﬀerent policies
+In the following, we will use the short hand
+‘greedy policy’ for the Preemptive Greedy policy, and ‘backpressure policy’ for the Backpressure(Y)
+policy. In Figure 1 we plot the time-evolution of the total number of active tasks in the system for
+the greedy policy and the backpressure policy at the respective arrival rates 3.78 and 3.83 (Figure 1
+left), and also at the arrival rates 3.83 and 4.08 (Figure 1 right). In Figure 1 left, both the policies
+are stable. Yet, the sample path under the backpressure policy is more steady than that under
+greedy policy, which is an added advantage to its throughput optimality. In Figure 1 right, while
+the greedy policy is unstable at λ = 3.83, the backpressure policy is stable even at λ = 4.08 and
+thus signiﬁcantly outperforms the greedy policy.
+In Figure 2 we plot the average delay (sojourn time) of tasks in the system against the task
+arrival rates. The average delay is computed by ﬁrst computing the time-averaged number of tasks
+in the system and then applying Little’s law. We observe that the task arrival rates at which random
+13
+
+3.3
+3.4
+3.5
+3.6
+3.7
+3.8
+3.9
+4.0
+Arrival rate
+0
+50
+100
+150
+200
+Average delay
+Backpressure
+Greedy
+Figure 2: Comparison of performance under greedy and backpressure policies.
+(not shown in the plot), greedy, and backpressure policies become unstable are approximately equal
+to 2.2, 3.82, and 4.10, respectively. Thus, the backpressure policy achieves throughput improvement
+of about 8% over the greedy policy.
+The backpressure policies marginally outperforms greedy in terms of average delay at the low
+loads, and signiﬁcantly at high loads. However, observe that at the moderate loads the greedy policy
+outperforms the backpressure policy. The reason for this is as follows. The backpressure policy
+achieves throughput optimality by building gradients (in the form of weights) at the large loads
+which guide system operation. At moderate loads the queue lengths are small and the associated
+gradients are not very meaningful. This is similar in principle to the well known poor performance
+of backpressure policy at lower loads in multihop wireless networks, see [45]. Designing policies
+which perform well at all loads is an interesting avenue for future research.
+6
+General Feedback Structure
+The model described in Section 2 allows for only binary feedback, in the form of success and failure.
+Upon success a task leaves the system, whereas upon failure, the fact of failure is used to reduce
+uncertainty in the true-type of the task. In this section we generalize the feedback structure as
+follows. Upon success a task leaves the system, as in the earlier model. However, upon failure, a
+server may additionally provide a feedback f from a countable set of possible feedbacks F. Let the
+βs,c(f) be the probability that for a task of true type c ∈C, server s provides a feedback f upon
+failure. Thus, for each s and c, βs,c = (βs,c(f) : f ∈F) is a probability mass function. We assume
+that βs,c for each s and c is known. In practice, it needs to be learned.
+In this setting, if an attempt by a server s on a task of mixed type z results into a failure and
+if the feedback provided by the server is f then the task’s new mixed-type, denoted by φs(z, f), is
+14
+
+the resulting posterior distribution, namely,
+φs(z, f) =
+zc(1 −ps,c)βs,c(f)
+ξs(z, f)
+
+c∈C
+,
+where ξs(z, f) is the probability that the task for mixed type z results into failure upon an attempt
+by server s and receives feedback f, i.e.,
+ξs(z, f) = ψs(z)
+X
+c
+zcβs,c(f).
+We again assume that, for each s and f, Z is closed under φs(·, f).
+Along the lines of the development of stability conditions in Section 3, we obtain below the
+necessary and suﬃcient conditions for stability. Again, we let νs,z represent the ﬂow of tasks of
+mixed-type z served by expert s.
+In developing the new ﬂow conservation constraints we now
+account for the more general feedback structure. The capacity constraints remain identical.
+Theorem 4. Suppose there exists s such that minc ps,c > 0. If there exist non-negative real numbers
+νs,z for each s ∈S and each z ∈Z, and positive real numbers δs for each s ∈S such that the
+following hold:
+∀z ∈Z,
+λπz +
+X
+s∈S,f∈F,
+z′∈φ−1
+s
+(z,f)
+νs,z′ξs(z′, f) =
+X
+s∈S
+νs,z,
+(6)
+∀s ∈S,
+X
+z∈Z
+νs,z + δs ≤µs,
+(7)
+then there exists a policy under which the system is stable. If there does not exist non-negative real
+numbers νs,z for s ∈S, z ∈Z and non-negative real numbers δs for s ∈S such that the above
+constraints hold, then the system cannot be stable.
+A stabilizing policy is again obtained by ﬁnding a ﬁnite set Y such that the overall arrival rate
+into Z\Y is small, and using a backpressure policy policy for congestion control. More formally,
+recall the deﬁnitions of ( ˜Xz)z∈Z, X, and ( ˜Nz)z∈Y from Section 3. Consider the following policy.
+Deﬁnition 7 (Modiﬁed Backpressure(Y) policy). For each s ∈S, z ∈Y let
+ws,z( ˜N, X) = ˜Nz −
+X
+f:φs(z,f)∈Y
+ξs(z, f) ˜Nφs(z,f) −X
+X
+f:φs(z,f)/∈Y
+ξs(z, f).
+For a given ( ˜N, X), let
+Bs( ˜N, X) = arg
+max
+z′∈Y: ˜
+Nz′>0
+ws,z( ˜N, X).
+If
+X
+s
+µs
+max
+z∈Y: ˜
+Nz>0
+ws,z( ˜N, X) ≥X min
+c∈C
+X
+s
+µsps,c
+then each expert chooses a task in ˜Nz where z ∈Bs( ˜N, X) ⊂Y with ties broken arbitrarily. Else,
+each expert serves a task in X chosen uniformly at random.
+15
+
+Again, using the Lyapunov function L( ˜N, ˜X) = P
+z∈Y ˜N 2
+z + X2, and the arguments identical
+to the proof of Theorems 1 and 2 in the Appendix but with appropriate changes, it follows that
+there exists a ﬁnite subset Y of Z such that the policy Backpressure(Y) stabilizes the system if
+the necessary conditions are satisﬁed. Further, the converse statement of the theorem follows from
+system ergodicity. We omit details for brevity.
+7
+Related Work
+Bayesian Active Learning (see [18, 21, 10, 14]) aims at learning true hypothesis by adaptively
+selecting sequence of experiments. In [10] labels are obtained for a batch of items at a time. In [14]
+a stream based budgeted setting is considered where a ﬁnite number of items arrive in a random
+order.
+In contrast we allow inﬁnite stream of tasks and are interested in maximizing the task
+resolution throughput under capacity constraints at the servers. The crowdsourcing works such as
+[24, 39, 46, 15] consider task assignment problems for classiﬁcation with unknown ground truths,
+however they consider a static model. In [32] the labeling tasks arrive dynamically and their exit
+is tied to the expert allocation decisions, in that a task leaves once the probability of error in the
+label estimate falls below a threshold.
+Our work is also broadly related to that of multi-arm bandits,
+e.g., see [28, 4, 17, 8, 1] and
+citations therein, in the sense of optimizing the trade-oﬀbetween exploration, to learn job types,
+and exploitation, to optimize task performance. It also has some relation with collaborative ﬁltering
+systems such as those studied in [25, 26, 41], which can be interpreted as expert-task systems where
+success probabilities admit a low-rank matrix structure. Unlike our work, there good matches are
+inferred from observed assignments of tasks to experts, which are according to a given statistical
+model, and there are no resources constraints imposed on the experts.
+A related line of work is that on stochastic online matching, e.g., see [33, 34, 20]. The stochastic
+online matching can be interpreted as a task-expert system where each expert is associated with a
+budget constraint that allows to solve at most one task. Unlike our work where the task types are
+uncertain, uncertainty in these models come from the arbitrariness of the future task arrivals and
+the monotonically decreasing available resource budgets.
+Another related literature is that of constrained queueing systems, where arriving tasks are to
+be served by heterogeneous servers subject to resource constraints, e.g., see [42, 35, 30, 16, 45, 9, 2,
+22, 11, 29, 40]. The goal is to eﬃciently utilize server resources while providing good performance
+in servicing tasks, e.g., optimizing task delays. Our matching policy is of a ﬂavor similar to the
+stability-optimal backpressure policy ﬁrst proposed in [42]. A setting close to ours is the one studied
+in [40] for routing queries in peer-to-peer networks. Here, the types of the queries are known but the
+locations of nodes where the queries may by successfully resolved are uncertain. More technically,
+we associate queues with each prior distribution which may be inﬁnite in number. This makes
+the stability analysis much more challenging. Another related work is that on scheduling ﬂexible
+servers, e.g., see [30, 29], which allows for tasks of diﬀerent types and servers of diﬀerent skills. It
+has been established that a so called max-weight policy is optimal in a heavy traﬃc regime. The
+main diﬀerence from our work is that all these works assume that the task types are known.
+In [6], the authors considered a task-expert system where task types are of two diﬃculty levels
+(hard or easy) and expert skills are of two levels (senior or junior). Seniors may serve any task,
+but juniors may only serve easy tasks. The hardness of each task is unknown upon arrival. In
+comparison, we allow for much more generality with respect to the heterogeneity of skills of experts.
+16
+
+In their model, a task upon service can only become progressively harder, which amounts to a feed-
+forward system, unlike our model.
+The work in [23] considers a model where the job types are known but the expert types are
+unknown. They consider the problem of matching while simultaneously learning the expert types.
+A key idea is to use a shadow price which simultaneously accounts for resource utilization and type
+uncertainties. They consider an asymptotic regime where each expert is allowed to work on a large
+number of tasks, a vanishingly small amount of which could be used to accurately learn the expert
+types, and the rest can be served optimally. In the limit, the learning aspect is decoupled form the
+expert utilization, and it is thus diﬀerent from our work.
+8
+Conclusion
+We studied matching of tasks and experts in a system with uncertain task types. We established
+a complete characterization of the stability region of the system, i.e. the set of task arrival rates
+that can be supported by a matching policy such that the expected number of tasks waiting to
+be served is ﬁnite. We showed that any task arrival rate in the stability region can be supported
+by a back-pressure matching policy. We also compared with two baseline matching polices, and
+identiﬁed instances under which there is a substantial gap between the maximum task arrival rates
+that can be supported by these policies and that of the optimum back-pressure matching policy.
+There are several interesting directions for future research. First, for the case when task types are
+unknown, it is of interest to consider matching policies that optimize diﬀerent kinds of performance
+objectives, such as, for example, minimizing the long-run average of a function of task waiting
+times. Second, much remains to be said about matching policies for the case when both task types
+and the skills of experts are unknown.
+9
+Proofs
+9.1
+Proof of Theorem 1 and Theorem 2
+We ﬁrst show stability under suﬃcient conditions provided in the statement of Theorem 1. In the
+process, we prove Theorem 2.
+In constrained queueing systems, e.g., see [42, 16], a standard approach towards proving stability
+of a backpressure type policy is to design a ‘static’ policy using ﬂow variables (νsz)s,z and the slacks
+(δs)s which provides a ﬁxed service rate to each queue Nz such that its drift is suﬃciently negative
+for each. However, in our setup the total number of queues (Nz)z∈Z could be countable, while the
+total available slack is ﬁnite. Thus, it is not possible to design a static policy such that the drift in
+each individual queue is bounded from above by a negative constant. This is unlike any ﬁnite-server
+queueing system considered in the previous literature.
+We thus take a diﬀerent approach, which can be explained roughly as follows. Since the total
+exogenous arrival rate λ, and the total endogenous arrival rate, i.e. arrival into a queue due to
+failure at another queue, are both ﬁnite (they are bounded from above by P
+s µs), there exists a
+ﬁnite set Y ⊂Z such that the total arrival rate into Z\Y is less than minc∈C
+P
+s∈S
+δs
+4 ps,c. Each
+task which enters a queue Nz where z ∈Z\Y is instead sent to a virtual queue X, and stays there
+until there is a success. If X is ‘large’ compared to the other queues then all the servers focus on
+17
+
+X. The ﬁnite number of remaining queues are operated via a backpressure policy which accounts
+for the ‘expected backlog’ seen in these queues.
+More formally, consider (νs,z)s,z and positive constants (δs)s as postulated in the theorem.
+Without loss of generality, assume that there exists a constant 0 < ϵ < 1 such that δs = ϵµs for
+each s ∈S. Let Y be a ﬁnite subset of Z such that
+X
+z∈Z\Y
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+νs,z′ψs(z′)
+
+≤min
+c∈C
+X
+s∈S
+δs
+4 ps,c.
+(8)
+Since λ + P
+s∈S,z∈Z νs,z ≤2 P
+s µs, such a Y exists.
+Let X be the number of tasks in the system which are or have been in past of type z ∈Z\Y.
+Once a task enters queue X it does not leave it until success. There may be tasks in it with mixed-
+type in Y. Note, our policy will depend on X and thus (z(s, t))s will not be N(t) measurable. In
+turn, N(t) will not be a CTMC. For z ∈Y, let ˜Xz and ˜Nz be the tasks of mixed-type z which have
+and have not had mixed-type in Z\Y. Also, for convenience for each z ∈Z\Y, let ˜Xz be the tasks
+of mixed-type z, i.e., Nz = ˜Xz for each z ∈Z\Y. We now formally deﬁne σ
+
+( ˜Xz)z∈Z, ( ˜Nz)z∈Y
+
+-
+measurable backpressure policy. Thus,
+
+( ˜Nz)z∈Y, ( ˜Xz)z∈Z
+
+is a CTMC.
+We now show stability of the system under this policy for Backpressure(Y) as given in Deﬁ-
+nition 1. Below we will assume that the ties in selecting z from Bs( ˜N, X) are broken uniformly
+at random for simplicity of exposition. The proof can be easily extend to any other tie breaking
+approach. Consider the following Lyapunov function.
+L( ˜N, ˜X) =
+X
+z∈Y
+˜N 2
+z +
+ X
+z∈Z
+Xz
+!2
+=
+X
+z∈Y
+˜N 2
+z + X2.
+For each t, let t + τ(t) be the time at which the ﬁrst event (arrival or completion of a response)
+occurs after time t. Clearly, τ(t) is a stopping time. Further, let τ˜n,˜x(t) = E[τ(t)|( ˜N(t), ˜X(t)) =
+(˜n, ˜x)].
+Let
+D(˜n, ˜x) ≜
+1
+τ˜n,˜x
+E
+h
+L( ˜N(t + τ), ˜X(t + τ)) −L( ˜N(t), ˜X(t))
+ ˜N(t) = ˜n, ˜X(t) = ˜x
+i
+.
+D(˜n, ˜x) is called drift in state n. We would like to show that there exists a positive integer K and
+positive constant ϵ such that
+D(˜n, ˜x) ≤−ϵ ∀(˜n, ˜x) s.t. max(|˜n|∞, x) ≥K.
+Let for each s ∈S and z ∈Y let
+ν∗
+s,z = 1
+(
+x min
+c∈C
+X
+s
+µsps,c >
+X
+s
+µs
+max
+z∈Y:˜nz>0 ws,z(˜n, x)
+)
+1{z ∈Bs(n)}
+1
+|Bs(n)|.
+18
+
+Then, one can check that
+1
+τ˜n,˜x E[ ˜Nz(t + τ)2 −˜Nz(t)2 ˜N(t) = ˜n, ˜X(t) = ˜x]
+= (2˜nz + 1)
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+sz′ψs(z′)
+
++ (−2˜nz + 1)
+X
+s
+ν∗
+s,z.
+Further, let
+ν∗= 1
+(
+x min
+c∈C
+X
+s
+µsps,c >
+X
+s
+µs
+max
+z∈Y:˜nz>0 ws,z(˜n, x)
+)
+.
+Then, we have that
+1
+τ˜n,˜x
+E[X(t + τ)2 −X(t)2 ˜N(t) = ˜n, ˜X(t) = ˜x]
+≤(2x + 1)
+X
+z∈Z\Y
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+s,z′ψs(z′)
+
++ (−2x + 1)ν∗min
+c
+X
+s
+µsps,c.
+Thus, we get
+D(˜n, ˜x) ≤
+X
+z∈Y
+(2˜nz + 1)
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+s,z′ψs(z′)
+
++ (−2˜nz + 1)
+X
+s
+µsν∗
+s,z
++ (2x + 1)
+X
+z∈Z\Y
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+s,z′ψs(z′)
+
++ (−2x + 1)ν∗min
+c
+X
+s
+µsps,c.
+Upon arranging terms, we obtain
+D(˜n, ˜x) ≤
+X
+z∈Y
+2˜nz
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+sz′ψs(z′) −
+X
+s
+ν∗
+s,z
+
+
++ 2x
+
+X
+z∈Z\Y
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+sz′ψs(z′)
+
+−ν∗min
+c
+X
+s
+µsps,c
+
+
++
+
+λ +
+X
+zZ
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ν∗
+s,z′ψs(z′) +
+X
+z∈Y
+X
+s
+ν∗
+s,z + ν∗min
+c
+X
+s
+µsps,c
+
+.
+The last of the above three terms can be bounded by a constant, say α1 = 10 P
+s µs. For each
+s ∈S and z ∈Y let ˆν∗
+s,z = (µs −3δs/4)ν∗
+s,z and ˜ν∗
+sz = (δs/4)ν∗
+s,z. Further, let ˆν∗= minc
+P
+s(µs −
+19
+
+3δs/4)ps,cν∗and ˜ν∗= minc
+P
+s(δs/4)pscν∗. Then,
+D(˜n, ˜x) ≤
+X
+z∈Y
+2˜nz
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ˆν∗
+sz′ψs(z′) −
+X
+s
+ˆν∗
+s,z
+
+
++ 2x
+
+X
+z∈Z\Y
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+ˆν∗
+s,z′ψs(z′)
+
+−ˆν∗
+
++ α1
++
+X
+z∈Y
+2˜nz
+
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+˜ν∗
+s,zψs(z′) −
+X
+s
+˜ν∗
+sz
+
++ 2x
+
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+˜ν∗
+s,z′ψs(z′) −˜ν∗
+
+.
+(9)
+Consider the following lemma. Its proof is given in Section 9.2.
+Lemma 1. Recall the (νs,z)s,z as postulated by the theorem. For Θ = (θs,z)s∈S,z∈Y ∪(θ), where θ
+and θs,z for each s, z are reals, let
+f(Θ) =
+X
+z∈Y
+2˜nz
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+θsz′ψs(z′) −
+X
+s
+θs,z
+
+
++ 2x
+
+X
+z∈Z\Y
+
+λπz +
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+θsz′ψs(z′)
+
+−θ
+
+.
+Then,
+f
+ (ˆν∗
+s,z)s∈S,z∈Y ∪ˆν∗
+≤f
+ 
+(νs,z)s∈S,z∈Y ∪{min
+c
+X
+s∈S
+(δs/4)psc}
+!
+.
+From deﬁnition of νs,z, we get that the ﬁrst term in f(Θ) for Θ = (νs,z)s∈S,z∈Y∪(minc
+P
+s∈S(δs/4)psc)
+is equal to 0, and, from (8) we have that the second term in it is less than or equal to 0.
+Thus, we have that f
+ (ˆν∗
+s,z)s∈S,z∈Y ∪ˆν∗
+≤0. From (9) we in turn obtain
+D(˜n, ˜x) ≤α1+
+X
+z∈Y
+2˜nz
+
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+˜ν∗
+s,zψs(z′) −
+X
+s
+˜ν∗
+s,z
+
++2x
+
+X
+s∈S
+X
+z′∈φ−1
+s
+(z)∩Y
+˜ν∗
+s,z′ψs(z′) −˜ν∗
+
+.
+Fix ϵ > 0. We now show that there exists a positive integer K such that if x > K or if |˜n|∞> K
+then D(˜n, ˜x) ≤−ϵ. Upon rearranging terms, we obtain
+D(˜n, ˜x) ≤α1 −2
+X
+s∈S
+X
+z∈Y:φs(z)∈Y
+˜ν∗
+s,z(˜nz −ψs(z)˜nφs(z)) −2
+X
+s∈S
+X
+z∈Y:φs(z)∈Z\Y
+˜ν∗
+s,z(˜nz −ψs(z)X) −2x˜ν∗
+= α1 −2
+X
+s∈S
+X
+z∈Y
+˜ν∗
+s,zws,z(˜n, x) −2˜ν∗x,
+= α1 −max
+ 
+2
+X
+s∈S
+X
+z∈Y
+˜ν∗
+s,zws,z(˜n, x), 2˜ν∗x
+!
+.
+20
+
+From the deﬁnition of the algorithm we get that
+D(˜n, ˜x) ≤α1 −x min
+c∈C
+X
+s∈S
+δs
+4 ps,c.
+Hence, for any (˜n, x) such that x > (α1 + ϵ) minc∈C
+P
+s∈S
+δs
+4 ps,c, we have D(˜n, ˜x) ≤−ϵ.
+We also have that
+D(˜n, ˜x) ≤α1 −2
+X
+s∈S
+δs
+4 max
+z∈Y ws,z(˜n, x).
+Thus,
+D(˜n, ˜x) ≤α1 −2
+
+min
+s∈S
+δs
+4
+ X
+s∈S
+max
+z∈Y ws,z(˜n, x) ≤α1 −2
+
+min
+s∈S
+δs
+4
+
+max
+z∈Y
+X
+s∈S
+ws,z(˜n, x).
+Now suppose that x ≤α2 ≜(α1 + ϵ) minc∈C
+P
+s∈S
+δs
+4 ps,c. Then, if we are able to show that
+maxz∈Y
+P
+s∈S ws,z(˜n, x) →∞as |˜n|∞→∞, then we would have that D(˜n, ˜x) ≤−ϵ a positive inte-
+ger K′ such that |˜n|∞> K′. We now show that, under x ≤α2, we have P
+s∈S maxz∈Y ws,z(˜n, x) →
+∞as |˜n|∞→∞.
+Let z∗∈arg maxz∈Y ˜nz. Then we have
+X
+s∈S
+ws,z∗(˜n, x) ≤
+X
+s
+(˜nz∗−ψs(z∗) max(α2, ˜nz∗)
+= |S|˜nz∗−max(α2, ˜nz∗)
+X
+s
+ψs(z).
+which tends to inﬁnity because
+X
+s
+ψs(z∗) =
+X
+s
+X
+c
+z∗
+c(1 −ps,c) = |S| −
+X
+s
+X
+c
+z∗
+cps,c
+≤|S| −max
+c
+X
+s
+z∗
+cps,c ≤|S| −max
+c
+z∗
+c min
+c
+X
+s
+ps,c
+≤|S| −1
+|C| min
+c
+X
+s
+ps,c < |S|.
+Thus, there exist positive constants K and ϵ such that if x > K or if |˜n|∞> K then D(˜n, ˜x) ≤
+−ϵ.
+Let A ≜{(˜n, ˜x) : max(|˜n|∞, x) ≤K}. Then, using a variant of Lyapunov-Foster theorem,
+namely Theorem 8.13 in [37], we obtain that from any state (˜n, ˜x) such that |˜n| + x < ∞, the
+expected time to return to A, i.e., τA(˜n, ˜x) is ﬁnite. Further,
+T ≜
+sup
+(˜n,˜x)∈A
+τA(˜n, ˜x) < ∞.
+Thus, starting with any state in A, we return to A in a ﬁnite expected time. We will be done
+if we show that expected time to return to state (0, 0) is also ﬁnite. We do this as follows. Fix a
+constant β > 0. Since there exists s such that minc ps,c > 0, we have that for any interval of time
+21
+
+of size β the probability that no arrival happens in this interval and that a task leaves the system
+is ﬁnite.
+Suppose that system is in a state (˜n, ˜x) ∈A at time t = 0.
+Now consider renewal times
+Ti, i = 0, 1, 2, . . ., where T0 = 0 and for each i > 0, Ti is deﬁned as follows: Ti is equal to Ti−1 + β
+if indeed no arrival happens and a task leaves the system in the interval [Ti−1, Ti−1 + β), else Ti is
+the ﬁrst time of return to A after Ti−1. Clearly E[Ti] since T as deﬁned above is ﬁnite. Further
+probability that a task leaves system in time Ti −Ti−1 is ﬁnite, say α. Thus, time for system
+emptying after ﬁrst reaching A can be upper-bounded by sum of K geometric random variables
+with rate α. Thus expected time to return to state (0, 0) is ﬁnite. Hence, the system is stable.
+Now suppose that the system is stable. Then, the necessary conditions can be shown to hold
+by the ergodicity of the system, and letting νs,z for each s, z to be the long-term fraction of times
+a server s attempts a task in Nz.
+9.2
+Proof of Lemma 1
+Upon rearrangement of terms in the expression of f(Θ) we obtain
+f(Θ)/2 = −
+X
+s
+X
+z∈Y:φs(z)∈Y
+θs,z(nz −ψs(z′)nφs(z)) −
+X
+s
+X
+z∈Y:φs(z)∈Z\Y
+θs,z(nz −ψs(z′)x) −xθ.
+By using the deﬁnition of weights ws,z, we obtain
+f(Θ)/2 = −
+X
+s
+X
+z∈Y
+θs,zws,z(˜n, x) −xθ ≥−
+X
+s
+
+max
+z∈Y ws,z(˜n, x)
+ X
+z∈Y
+θs,z −xθ.
+Thus,
+f((νsz)s∈S,z∈Y ∪{min
+c
+X
+s∈S
+(δs/4)psc})/2
+≥−
+X
+s
+
+max
+z∈Y ws,z(˜n, x)
+ X
+z∈Y
+νs,z −x min
+c
+X
+s∈S
+(δs/4)psc
+≥−
+X
+s
+(µs −δs/2) max
+z∈Y wsz(˜n, x) −x min
+c
+X
+s∈S
+(δs/4)ps,c
+≥−1
+(X
+s
+max
+z∈Y ws,z(˜n, x)(µs −3δs/4) ≥x(min
+c
+X
+s
+(µs −3δs/4)ps,c)
+) X
+s
+max
+z∈Y ws,z(˜n, x)(µs −3δs/4)
+−1
+(X
+s
+max
+z∈Y ws,z(˜n, x)(µs −3δs/4) < x(min
+c
+X
+s
+(µs −3δs/4)ps,c)
+)
+x min
+c
+X
+s
+(µs −3δs/4)ps,c
+= f ((ˆν∗
+sz)s∈S,z∈Y ∪ˆν∗) /2.
+Hence, the lemma holds.
+9.3
+Proof of Theorem 3
+Suppose that the suﬃcient conditions as given in Theorem 1 are satisﬁed. Then, in the proof of
+Theorem 1 we showed existence of a policy such that the system is ergodic.
+In fact, since we
+22
+
+have a strict slack δs > 0 for capacity constraint at each server, using proof of Theorem 1 we can
+design a policy for a system which achieves stability even when the server capacities are modiﬁed
+as µ′
+s = µs −R, where 0 < R < mins δs. Under such a policy, for each s ∈S, z ∈Z, t ≥1, let
+µs,z(t) represent the long-term fraction of times a server s attempts a task in Nz which has been
+attempted t −1 times in the past. Then, the following hold.
+i)
+λz = P
+s µs,z(1),
+ii)
+P
+s µs,z−
+s (t)ψs(z−
+s ) = P
+s µs,z(t + 1),
+iii)
+P
+t≥1
+P
+z∈Z µs,z(t) ≤µs,
+iv)
+∃s0 : P
+t≥1
+P
+z∈Z µs0,z(t) = µs0 −R, R > 0.
+(10)
+The inequalities in (10) can be strengthened to achieve positive slack for each server’s capacity,
+but (10) as mentioned is suﬃcient for our purposes. Using existence of (µs,z(t) : s ∈S, z ∈Z)
+which solves (10), we now show that, for Backpressure(ϵ) policy, provided ϵ > 0 has been chosen
+small enough, the function L(n) := P
+i n(Ai)2 is a Lyapunov function in the sense that its drift is
+negative, bounded away from 0 except for states n with P
+z nz ≤N for some threshold N. This
+will imply the announced result by the same arguments as in the proof of Theorem 2.
+Let n = (nz) be given. For each Ai such that n(Ai) > 0, we pick arbitrarily one point zi in Ai
+such that nzi > 0. We then deﬁne the projection operator P(z) which maps z to zi if z ∈Ai. For
+z ∈Ai such that n(Ai) = 0 we say that P(z) is undeﬁned. We shall also consider for each z ∈Z
+the operator
+P t
+s(z) := P(φs(P t−1
+s
+(z))).
+(11)
+This is deﬁned so long as all the involved projections are deﬁned, i.e. the constructed sequence only
+visits sets Ai with n(Ai) > 0. We also let φt
+s denote the application resulting from t applications
+of φs.
+We now deﬁne for each s, z, t, zi the following rates:
+νs,zi(1; z)
+:= µs,z(1)1IP (z)=zi,
+νs,zi(t; z)
+:=
+ µs,φts(z)(t)1IP ts(z)=zi
+if P t
+s(z) is deﬁned,
+0
+otherwise.
+(12)
+Finally, we deﬁne the following rates for all t ≤T, where ϵ′ and β are constants to be speciﬁed
+shortly:
+rs,zi(1)
+:= P
+z∈Z νs,zi(1; z),
+rs,zi(t)
+:= P
+z∈Z νs,zi(t; z) + ϵ′(1 + βt)1Is=s01In(Ai)>0.
+(13)
+We extend the deﬁnition of the rates rs,zi(t) for t > T by induction as follows. First, for s ̸= s0 we
+let rs,zi(t) = 0. For server s0, we let
+rs0,zi(T + 1) :=
+X
+s
+X
+z:P T +1
+s
+(z)=zi
+νs,zi(T + 1; z) + ϵ′(1 + βT +1)
+(14)
+and for t > T:
+rs0,zi(t + 1) =
+X
+j:P 1
+s0(zj)=zi
+(1 −α)rs0,zj(t).
+(15)
+The functions ψs are all Lipschitz-continuous. Under the assumption (5), it is easily veriﬁed that the
+functions φs are also Lipschitz-continuous. Let K be such that all these functions are K-Lipschitz-
+continuous.
+23
+
+It is readily established by induction on t that for all s, so long as P t
+s(z) is deﬁned, one has
+|P t
+s(z) −φt
+s(z)| ≤ϵKt −1
+K −1 .
+(16)
+Indeed, one has
+|P t
+s(z) −φt
+s(z)|
+= |P(φs(P t−1
+s
+(z))) −φt
+s(z)|
+≤|P(φs(P t−1
+s
+(z))) −φs(P t−1
+s
+(z))| + |φs(P t−1
+s
+(z)) −φt
+s(z)|
+≤ϵ + K|P t−1
+s
+(z) −φt−1
+s
+(z)|,
+and (16) follows by induction.
+We now exploit these properties to show that for suitable choices of β, ϵ′, the previously deﬁned
+rates rs,zi(t) verify the following inequalities for all i such that n(Ai) > 0 and thus zi is deﬁned:
+P
+z∈Ai λz ≤P
+s rs,zi(1),
+P
+s
+P
+zj:P 1
+s (zj)=zi rs,zj(t)ψs(zj) ≤P
+s rs,zi(t + 1)
+(17)
+The ﬁrst equation in (17) reads, in view of (12), (13):
+X
+z∈Ai
+λz ≤
+X
+z∈Ai
+X
+s
+µs,z(1),
+which holds with equality by (10) i).
+The left-hand side of the second equation in (17) reads for t ≤T:
+X
+s
+X
+zj:P 1
+s (zj)=zi
+X
+z:P ts(z)=zj
+µs,φts(z)(t)ψs(zj) + ϵ′(1 + βt).
+Using the Lipschitz property of ψ, the bound (16) established between P t
+s(z) and φt
+s(z), and letting
+Λ := P
+z λz, this is no larger than
+X
+s
+X
+zj:P 1
+s (zj)=zi
+X
+z:P ts(z)=zj
+µs,φts(z)(t)ψs(φt
+s(z)) + ϵ′(1 + βt) + Λ(1 −α)tϵK Kt −1
+K −1 .
+Indeed, the sum P
+z µs,z(t) of rates at step t is at most Λ(1 −α)t. This last expression can be
+rearranged to give
+X
+s
+X
+z:P t+1
+s
+(z)=zi
+µs,φts(z)(t)ψs(φt
+s(z)) + ϵ′(1 + βt) + Λ(1 −α)tϵK Kt −1
+K −1 .
+In view of (10) ii), the ﬁrst summation is equal to
+X
+s
+X
+z:P t+1
+s
+(z)=zi
+µs,φt+1
+s
+(z) =
+X
+s
+rs,zi(t + 1) −ϵ′(1 + βt+1).
+The diﬀerence between the right-hand side and the left-hand side of the second equation in (17) is
+therefore lower-bounded by
+ϵ′(1 + βt+1) −ϵ′(1 + βt) −Λ(1 −α)tϵK Kt −1
+K −1 = ϵ′βt(β −1) −Λ(1 −α)tϵK Kt −1
+K −1 .
+24
+
+Assuming K ≥2, β = K + 1, and ϵ′ = Λϵ, this diﬀerence is at least
+Λϵ(K + 1)tK −ΛϵK(Kt −1) ≥KΛϵ[(K + 1)t −Kt + 1] ≥KΛϵ.
+Letting δ := KΛϵ, we have in fact shown a strengthening of the second equation in (17), namely:
+t ∈2, . . . , T and n(Ai) > 0 ⇒
+X
+s
+X
+zj:P 1
+s (zj)=zi
+rs,zj(t)ψs(zj) ≤δ +
+X
+s
+rs,zi(t + 1)
+(18)
+Consider now t ≥T + 1. The left-hand side of the second equation in (17) veriﬁes
+X
+zj:P 1
+s0(zj)=zi
+rs0,zj(t)ψs(zj) ≤
+X
+zj:P 1
+s0(zj)=zi
+rs0,zj(t)(1 −α),
+by the lower-bound of α on the psc. This implies that the announced inequality also holds for t > T.
+We now verify that, provided ϵ was chosen small enough, the constructed rates rs,zi(t) satisfy
+the capacity constraints of the servers. For s ̸= s0, this is easily veriﬁed, as by (10) iii),
+X
+t
+X
+i
+rs,zi(t) ≤
+X
+z
+X
+t
+µs,z(t) ≤µs.
+Consider now server s0. We then have
+X
+t
+X
+i
+rs0,zi(t) ≤
+X
+z
+X
+t
+µs0,z(t) +
+T +1
+X
+t=1
+ϵ′(1 + βt) + Λ(1 −α)T +1 + ϵ′(1 + βT +1)
+α
+·
+Thus by (10) iv) this meets the capacity constraint of server s0 provided
+T +1
+X
+t=1
+ϵ′(1 + βt) + Λ(1 −α)T +1 + ϵ′(1 + βT +1)
+α
+≤R.
+This can clearly be achieved by ﬁrst choosing T such that Λ(1 −α)T +1 ≤Rα/2, and then ϵ such
+that
+T +1
+X
+t=1
+ϵ′(1 + βt) + ϵ′(1 + βT +1)
+α
+≤R/2.
+It ﬁnally remains to prove that the Foster-Lyapunov stability criterion holds for our proposed
+backpressure policy. Assume that each server s dedicates capacity P
+t≥1 rs,zi(t) to jobs of type zi.
+This does not exceed servers’ capacities as we just showed. Moreover, in view of (17) and (18),
+under this allocation the drift of any n(Ai) such that n(Ai) > 0 reads
+X
+z∈Ai
+λz −
+X
+t≥1
+X
+s
+rs,zi(t) +
+X
+t≥1
+X
+s
+X
+j:P 1
+s (zj)=zi
+rs,zj(t)ψs(zj) ≤−Tδ1In(Ai)>0.
+For an arbitrary policy, let µi denote the service rate it devotes to those z in Ai, and λ′
+i denote
+the overall arrival rate of jobs with type z in Ai whether from external arrivals or unsuccessful
+treatments. The drift for our candidate Lyapunov function L(n) = P
+i n(Ai)2 then reads
+X
+i
+(λ′
+i + µi) + 2n(Ai)[λ′
+i −µi] ≤Λ + 2
+X
+s
+µs + 2
+X
+i
+n(Ai)[λ′
+i −µi],
+25
+
+where we used the fact that the overall arrival rate cannot be larger than the exogeneous arrival
+rate plus the overall service rate.
+Under the allocations P
+t≥1 rs,zi(t) we just considered, the summation in the right-hand side is at
+most −2δT P
+i n(Ai). Since the backpressure policy we have introduced minimizes this summation
+among all feasible policies, it guarantees a drift for the Lyapunov function L of at most Λ+2 P
+s µs−
+2δT P
+i n(Ai). We can therefore rely on Foster’s criterion to deduce that the return time to the
+set A = {n : P
+i n(Ai) ≤(Λ + 2 P
+s µs)/(δT)} has bounded expectation. We will be done if we
+show that the system empties inﬁnitely often. For this, we use the argument similar to that used
+in Theorem 2.
+Fix a constant β > 0. Since α > 0, we have that for any interval of time of size β the probability
+that no arrival happens in this interval and that a task leaves the system is ﬁnite.
+Suppose that system is in a state n ∈A at time t = 0. Now consider renewal times Ti, i =
+0, 1, 2, . . . ,, where T0 = 0 and for each i > 0, Ti is deﬁned as follows: Ti is equal to Ti−1 +β if indeed
+no arrival happens and a task leaves the system in the interval [Ti−1, Ti−1 + β), else Ti is the ﬁrst
+time of return to A after Ti−1. Clearly E[Ti] since T as deﬁned above is ﬁnite. Further probability
+that a task leaves system in time Ti −Ti−1 is ﬁnite, say ˜α. Thus, time for system emptying after
+ﬁrst reaching A can be upper-bounded by sum of K geometric random variables with rate ˜α. Thus
+expected time to return to state 0 is ﬁnite. Hence, the system is stable.
+9.4
+Proof of Proposition 1
+We use Theorem 1 to prove this result. We ﬁrst establish the suﬃcient condition and then the
+necessary condition. For Asymmetric(a) system we have Z = {z′, z′′} where z′
+c = 1
+2 for each c ∈C,
+and z′′
+c = 1{c = c2}. The ﬂow conservation constraints in Theorem 1 can be given as follows:
+λ =
+X
+s
+νs,z′, and
+X
+s
+νs,z′ψs(z′) +
+X
+s
+νs,z′′ψs(z′′) =
+X
+s
+νs,z′′
+Suppose a ≥1
+2. There exists an ϵ > 0 such that λ = 3a(1−ϵ)
+a+1
+. It can be checked that (νsz)s,z
+where
+νs2,z′ = 1 −ϵ, νs2,z′′ = 0, νs1,z′ = 2a −1
+a + 1 (1 −ϵ), νs1,z′′ = 2 −a
+a + 1(1 −ϵ)
+and (δs)s∈S where δs = ϵ for each s satisfy suﬃcient conditions of Theorem 1.
+Now suppose a < 1
+2. There exists an ϵ > 0 such that λ = 2a(1 −ϵ). It can be checked that
+(νs,z)s,z where
+νs2,z′ = 2a(1 −ϵ), νs2,z′′ = 0, νs1,z′ = 0, νs1,z′′ = (1 −ϵ)
+and (δs)s∈S where δs = ϵ for each s satisﬁes suﬃcient conditions of Theorem 1.
+The suﬃcient condition then follows from the proof of Theorem 1 by taking Y as Z.
+We now show the necessary condition. From the necessary conditions in Theorem 1, we have
+the following:
+26
+
+λ =
+X
+s
+νs,z′,
+(19)
+(1 −a)
+2
+νs1,z′ + 1
+2νs2,z′ + (1 −a)νs1,z′′ = νs1,z′′,
+(20)
+νs1,z′ + νs1,z′′ ≤1,
+(21)
+νs2,z′ + νs2,z′′ ≤1.
+(22)
+From (20) we get:
+νs1,z′′ = 1
+a
+(1 −a)
+2
+νs1,z′ + 1
+2νs2,z′
+
+.
+By substituting in (21) this the above expression for νs1,z′′, we get
+νs1,z′ + 1
+a
+(1 −a)
+2
+νs1,z′ + 1
+2νs2,z′
+
+≤1
+Upon simplifying, we get
+νs1,z′ ≤
+2a
+1 + a
+
+1 −1
+2aνs2,z′
+
+.
+(23)
+Further, we need νs1,z′ to be non-negative. Thus, we need νs2,z′ ≤2a.
+Substituting (23) in (19) we get
+λ ≤max
+ 2a
+1 + a
+
+1 −1
+2aνs2,z′
+
+, 0
+
++ νs2,z′.
+Suppose a ≥
+1
+2. Then, subject to (22) and νs2,z′ ≤2a, the right hand side of the above is
+maximized when νs2,z′ = 1 and νs2,z′′ = 0. We thus obtain λ ≤
+3a
+a+1. Similarly, if a < 1
+2, then
+subject to (22) and νs2,z′ ≤2a, the right hand side of the above is maximized when νs2,z′ = 2a
+and νs2,z′′ = 0, from which we obtain λ ≤2a. Thus, overall, we have λ ≤min( 3a
+a+1, 2a). Hence the
+result follows.
+9.5
+Proof of Proposition 2
+We show the result for a general a task-expert system. The result for Asymmetric(a) system then
+follows immediately.
+Note that the system under random policy is equivalent to the one where pure-type of a task
+is revealed upon arrival, i.e., there is no uncertainty in task types. This is true since the random
+policy does not use the information of type (pure or mixed). We thus let the pure-type of each
+task be revealed upon arrival. Let Xc(t) be the number of tasks in the system of pure-type c. Let
+X(t) = (Xc(t))c. For each c ∈C, the arrival rate into queue Xc(t) is equal to
+λc ≜
+X
+z∈Z
+λzcπz.
+We ﬁrst show the if part of the result. Suppose that we have P
+c∈C
+λc
+P
+s∈S µsps,c < 1. We use the
+ﬂuid limit approach developed in [38, 12, 31]. Roughly, given initial condition X(0) = x, the ﬂuid
+27
+
+trajectories of the state process X(t) can be obtained by scaling initial conditions, speeding time, and
+then studying the rescaled process; i.e., letting limk→∞1
+kX(0) = x, and studying limk→∞1
+kX(kt).
+Using arguments similar to those used in [31], the ﬂuid limits for the number of tasks in each
+class can be shown to satisfy the following at almost all times t: for each c ∈C and Xc > 0 we have
+d
+dtXc = λc −
+X
+s∈S
+µsps,c
+Xc
+P
+c′ Xc′ .
+(24)
+Deﬁne a function L on RC as
+L(X) =
+X
+c
+Xc log
+
+Xc
+γc
+P
+c′ Xc′
+
+,
+(25)
+where γc ≜
+λc
+P
+s∈S µsps,c .
+Further, by following the arguments similar to [31], if we have that L(X) →∞and d
+dtL(X) ≤−ϵ
+for all X such that |X| = 1 under ﬂuid limits then the stability of the original system follows. We
+show below that both these limits hold.
+Using (24) and (25), we obtain
+d
+dtL(X) =
+X
+c
+ d
+dtXc
+
+log
+
+Xc
+γc
+P
+c′ Xc′
+
+,
+(26)
+=
+X
+c
+ 
+λc −
+X
+s∈S
+µsps,c
+Xc
+P
+c′ Xc′
+! 
+log
+Xc
+P
+c′ Xc′ −log γc
+
+,
+(27)
+=
+X
+c
+ X
+s
+µsps,c
+! 
+λc
+P
+s∈S µsps,c
+−
+Xc
+P
+c′ Xc′
+ 
+log
+Xc
+P
+c′ Xc′ −log γc
+
+,
+(28)
+=
+X
+c
+ X
+s
+µsps,c
+!
+(γc −Yc) log(Yc/γc),
+(29)
+where Yc :=
+Xc
+P
+c′ Xc′ . Now, (29) is negative and strictly bounded away from zero. This can be
+seen as follows. Firstly, all terms in the sum are non-positive. Therefore, it suﬃces to show that
+there exists a δ > 0 such that there always exists a c for which (γc −Yc) log(Yc/γc) ≤−δ. Since,
+P
+c Yc = 1 and, for some ﬁxed ϵ > 0, P
+c γc = 1−ϵ, it follows that there exists c such that γc −Yc ≤
+−ϵ. For this c, we thus also have Yc/γc ≥1 + ϵ. Consequently, (γc −Yc) log(Yc/γc) ≤−ϵ log(1 + ϵ).
+Let θ = 1/ P
+c γc and ˆγc = θγc for each c ∈C. Since P
+c γc < 1, we have θ > 1. Let D(p||q) be
+the Kullback-Leibler divergence between two Bernoulli distributions with parameters p and q, i.e.,
+D(p||q) = p log( p
+q ) + (1 −p) log( 1−p
+1−q ). Now, we can write
+L(X) =
+X
+c
+Xc log
+
+θXc
+ˆγc
+P
+c′ Xc′
+
+(30)
+=
+X
+c
+Xc log θ +
+X
+c
+Xc log
+
+Xc
+P
+c′ Xc′ . 1
+ˆγc
+
+(31)
+=
+X
+c
+Xc log θ +
+ X
+c
+Xc
+!
+D
+ 
+Xc
+P
+c′ Xc′
+
+c∈C
+
+(ˆγc)c∈C
+!
+(32)
+28
+
+which converges to ∞as |X| grows large.
+Hence, the if part of the result follows.
+We now show that the system is unstable if P
+c∈C
+λc
+P
+s∈S µsps,c ≥1. We consider the original
+system instead of the ﬂuid limits. Consider the following function:
+K(X) =
+X
+c
+1
+P
+s µsps,c
+Xc.
+Clearly, K(X) →∞as X →∞. Deﬁne D(.) as in (33), but for K instead of L. Then, we have
+1
+τ¯0
+D(¯0) =
+X
+c
+λc
+P
+s µsps,c
+,
+and for X ̸= ¯0, we have
+1
+τX
+D(X) =
+X
+c
+1
+P
+s µsps,c
+ 
+λc −
+X
+s∈S
+µsps,c
+Xc
+P
+c′ Xc′
+!
+,
+=
+X
+c
+λc
+P
+s µsps,c
+−
+X
+c
+Xc
+P
+c′ Xc′
+=
+X
+c
+λc
+P
+s µsps,c
+−1,
+≥0.
+Thus, the drift is non-negative for all but ﬁnite number of states. Further, since K(X) is bounded
+from below, the maximum change in K(X) upon an arrival or a departure is also bounded, using
+Proposition I.5.4 on page 22 in [3], we get the only if part.
+9.6
+Proof of Proposition 3
+We ﬁrst show the if part. For each t let t + τ(t) be the time at which the ﬁrst event (arrival or
+completion of a response) occurs after time t. Let τn = E[τ(t)|N(t) = n], i.e., given that N(t) = n
+at time t, τn is the expected time at which the ﬁrst event occurs after time t. For example, for
+n = 0 we have τn = 1/λ.
+Now suppose that λ < 4a/(2 + a). Then, it can be checked that
+2−a
+2(2−λ)λ < a. Thus, there exists
+δ > 0 such (1 + δ)
+2−a
+2(2−λ)λ < a. Now, consider the following candidate Lyapunov function: for each
+n, we have
+1
+τn
+L(n) = (1 + δ) 2 −a
+2(2 −λ)nz′ + nz′′,
+where δ is a constant obtained as above.
+Let
+D(n) = E
+
+L(N(t + τ(t))) −L(N(t))
+N(t) = n
+
+(33)
+Consider the states n such that nz′ > 0. For these states, we obtain
+29
+
+1
+τn
+D(n) = (1 + δ) 2 −a
+2(2 −λ) (λ −µs1 −µs2) + (µs1ψs1(z′) + µs2ψs2(z′))
+= (1 + δ) 2 −a
+2(2 −λ)(λ −2) + 1 −a
+2
++ 1
+2 = −δ 2 −a
+2
+< 0.
+Now, consider states n such that nz′ = 0 and nz′′ > 0. For these states we have
+1
+τn
+D(n) = (1 + δ) 2 −a
+2(2 −λ)λ −µs1a < 0.
+Since the drift outside of the state (0, 0) is less than or equal to −min(δ(2 −a)/2), µs1a −(1 +
+δ)
+2−a
+2(2−λ)λ) < 0, from the Lyapunov-Foster Theorem we obtain that N(t) is positive recurrent if
+λ < 4a/(2 + a).
+We now show the only if part. Suppose that λ ≥4a/(2 + a). Then, there exists δ ≤0 such
+(1 + δ)
+2−a
+2(2−λ)λ ≥a. Thus, drift is non-negative for all but ﬁnite values of n. Further, since L(·)
+is bounded from below, and since the maximum change in L(·) upon an arrival or a departure is
+bounded, using Proposition I.5.4 on page 22 in [3], we establish the only if part.
+9.7
+Proof of Proposition 4
+First, consider the following lemma.
+Lemma 2. Under Non-preemptive Greedy policy, the fraction of time server s1 spends in serving
+tasks of true type c1 is bounded from below by
+1
+16
+λ(2+λ)
+1+λ .
+Thus, the maximum capacity available to serve tasks of true type c2 is 1−1
+16
+λ(2+λ)
+1+λ . In turn, the
+system is unstable if λ
+2 > a
+
+1 −1
+16
+λ(2+λ)
+1+λ
+
+. From this the result follows via some simpliﬁcations.
+We prove the lemma below.
+In what follows we assume that queue z′′ is saturated, since forcing z′′ to be saturated only
+reduces the time the server s1 spends on queue z′ under Non-preemptive Greedy policy. Further,
+note that the quantity of interest is twice the fraction of time server s1 spends in serving tasks of
+true type c1. To obtain a bound on this quantity, we separately obtain an upper bound on the
+expected length of a busy-idle cycle at queue z′ and a lower bound bound on the expected time s1
+spends in serving queue z′ within a busy-idle cycle, and use the renewal reward theorem.
+The expected length of a busy-idle cycle at queue z′ can be bounded from above by that of an
+alternate system in which server s2 is forced to stay idle while server s1 is serving queue z′′. In
+this modiﬁed system, the idle time for queue z′ is upper bounded by 1
+λ + 1 since the inter-arrival
+times are Exponential(λ) and the time server s2 is forced to stay idle is Exponential(1). Further,
+the number of arrivals into queue z′ in an Exponential(1) time period is Geometric(λ) distributed.
+Thus, at the end of idle period, when both the servers start serving the queue, the backlog in the
+queue is 1 + Y where Y is Geometric(λ) distributed. In turn, the expected busy period for queue
+z′ is bounded from above by 1+λ
+2−λ.
+Thus, the expected length of a busy-idle cycle at queue z′ is bounded from above by 1
+λ +1+ 1+λ
+2−λ.
+We now provide a lower bound on the expected time server s1 spends on serving queue z′ within
+its busy-idle cycle. At the beginning of the busy period of queue z′, with probability 1 the server
+30
+
+s2 is serving queue z′ and server s1 is serving queue z′′. The time it takes for one of the servers to
+complete the current service is Exponential(2) distributed. Let Y ′ be the number of arrivals into
+queue in this period. Then, Y ′ is Geometric(λ/2) distributed. With probability half, server s1 is
+the one who completed ﬁrst, and the two servers are now working to drain a backlog of 1 + Y . The
+average duration for this to terminate is 1+λ/2
+2−λ . Thus, 1+λ/2
+2(2−λ) is a lower bound on the expected time
+server s1 spends on serving queue z′ within its busy-idle cycle.
+Thus, the fraction of time s1 spends in serving queue z′ is
+1+λ/2
+2(2−λ)
+1
+λ +1+ 1+λ
+2−λ . From this the lemma
+follows upon some simpliﬁcations, and thus the proposition follows as well.
+Some details of simpliﬁcations:
+To obtain the fraction of time...
+1
+2
+1+λ/2
+2(2−λ)
+1
+λ + 1 + 1+λ
+2−λ
+=
+1
+8
+2+λ
+(2−λ)
+2−λ+λ(2−λ)+λ(1+λ)
+λ(2−λ)
+= 1
+8
+λ(2 + λ)
+2 −λ + λ(2 −λ) + λ(1 + λ) = 1
+8
+λ(2 + λ)
+2 + 2λ
+= 1
+16
+λ(2 + λ)
+1 + λ
+To obtain stability conditions
+λ
+2 > a
+
+1 −1
+16
+λ(2 + λ)
+1 + λ
+
+⇐⇒
+λ
+2a−1+ 1
+16
+λ(2 + λ)
+1 + λ
+> 0 ⇐⇒8a−1λ(1+λ)−16(1+λ)+λ(2+λ) > 0
+⇐⇒λ2(8a−1 + 1) + λ(8a−1 −16 + 2) −16 > 0 ⇐⇒λ2(8a−1 + 1) + λ(8a−1 −14) −16 > 0
+References
+[1] Shipra Agrawal and Navin Goyal. Analysis of thompson sampling for the multi-armed bandit
+problem. In Proceedings of the 25th Conference on Learning Theory, 2012.
+[2] M. Alresaini, M. Sathiamoorthy, B. Krishnamachari, and M.J. Neely. Backpressure with adap-
+tive redundancy (bwar). In Proc. IEEE INFOCOM, pages 2300–2308, March 2012.
+[3] Søren Asmussen. Applied probability and queues. Springer Science & Business Media, 2nd
+edition, 2003.
+[4] Peter Auer, Nicol`o Cesa-Bianchi, and Paul Fischer. Finite-time analysis of the multiarmed
+bandit problem. Machine Learning, 47(2):235–256, 2002.
+[5] S. L. Bell and R. J. Williams. Dynamic scheduling of a system with two parallel servers in
+heavy traﬃc with resource pooling: asymptotic optimality of a threshold policy. Ann. Appl.
+Probab., 11(3):608–649, 08 2001.
+[6] Kostas Bimpikis and Mihalis G Markakis. Learning and hierarchies in service systems. Un-
+published manuscript, 2015.
+[7] Pierre Br´emaud. Markov chains: Gibbs ﬁelds, Monte Carlo simulation, and queues, volume 31.
+Springer Science & Business Media, 2013.
+31
+
+[8] S´ebastien Bubeck and Nicol`o Cesa-Bianchi. Regret analysis of stochastic and nonstochastic
+multi-armed bandit problems. Foundations and Trends in Machine Learning, 5(1), 2012.
+[9] L.X. Bui, R. Srikant, and A. Stolyar. A novel architecture for reduction of delay and queueing
+structure complexity in the back-pressure algorithm. IEEE/ACM Transactions on Networking,
+19(6):1597–1609, Dec 2011.
+[10] Yuxin Chen and Andreas Krause.
+Near-optimal batch mode active learning and adaptive
+submodular optimization. In ICML’13, pages 160–168, 2013.
+[11] Y. Cui, E.M. Yeh, and R. Liu. Enhancing the delay performance of dynamic backpressure
+algorithms. IEEE/ACM Transactions on Networking, 2015.
+[12] J. G. Dai. On positive harris recurrence of multiclass queueing networks: A uniﬁed approach
+via ﬂuid limit models. The Annals of Applied Probability, 5(1):49–77, 1995.
+[13] M Daltayanni, L De Alfaro, and P Papadimitriou.
+Workerrank: Using employer implicit
+judgements to infer worker reputation. In WSDM, 2015.
+[14] Kaito Fujii and Hisashi Kashima. Budgeted stream-based active learning via adaptive sub-
+modular maximization. In NIPS’16, pages 514–522, 2016.
+[15] Chao Gao, Yu Lu, and Dengyong Zhou. Exact exponent in optimal rates for crowdsourcing.
+In ICML’16, pages 603–611, 2016.
+[16] Leonidas Georgiadis, Michael J. Neely, and Leandros Tassiulas. Resource allocation and cross-
+layer control in wireless networks. Foundations and Trends in Networking, 1(1):1–144, 2006.
+[17] John Gittins, Kevin Glazebrook, and Richard Weber. Multi-armed bandit allocation indices.
+John Wiley & Sons, 2011.
+[18] Daniel Golovin, Andreas Krause, and Debajyoti Ray. Near-optimal bayesian active learning
+with noisy observations. In NIPS’10, pages 766–774, 2010.
+[19] J. Michael Harrison.
+Heavy traﬃc analysis of a system with parallel servers: asymptotic
+optimality of discrete-review policies. Ann. Appl. Probab., 8(3):822–848, 08 1998.
+[20] Chien-Ju Ho and Jennifer Wortman Vaughan. Online task assignment in crowdsourcing mar-
+kets. In AAAI’12, pages 45–51, 2012.
+[21] Shervin Javdani, Yuxin Chen, Amin Karbasi, Andreas Krause, Drew Bagnell, and Siddhartha S
+Srinivasa. Near optimal bayesian active learning for decision making. In AISTATS’14, pages
+430–438, 2014.
+[22] Bo Ji, Changhee Joo, and N.B. Shroﬀ.
+Delay-based back-pressure scheduling in multihop
+wireless networks. IEEE/ACM Transactions on Networking, 21(5):1539–1552, Oct 2013.
+[23] Ramesh Johari, Vijay Kamble, and Yash Kanoria.
+Matching while learning.
+CoRR,
+abs/1603.04549, 2017.
+[24] David R. Karger, Sewoong Oh, and Devavrat Shah. Budget-optimal task allocation for reliable
+crowdsourcing systems. Operations Research, 62(1):1–24, 2014.
+32
+
+[25] Jon Kleinberg and Mark Sandler. Convergent algorithms for collaborative ﬁltering. In Pro-
+ceedings of the 4th ACM Conference on Electronic Commerce, 2003.
+[26] Jon Kleinberg and Mark Sandler. Using mixture models for collaborative ﬁltering. In Proceed-
+ings of the 36th annual ACM Symposium on Theory of Computing, 2004.
+[27] Anurag Kumar. Discrete event stochastic processes: Lecture notes for an engineering curricu-
+lum. 2014.
+[28] T.L Lai and Herbert Robbins. Asymptotically eﬃcient adaptive allocation rules. Advances in
+Applied Mathematics, 6(1):4 – 22, 1985.
+[29] Siva Theja Maguluri, Sai Kiran Burle, and R. Srikant. Optimal heavy-traﬃc queue length
+scaling in an incompletely saturated switch. SIGMETRICS Perform. Eval. Rev., 44(1):13–24,
+June 2016.
+[30] Avishai Mandelbaum and Alexander L. Stolyar. Scheduling ﬂexible servers with convex delay
+costs: Heavy-traﬃc optimality of the generalized cµ-rule. Operations Research, 52(6):836–855,
+2004.
+[31] Laurent Massouli´e. Structural properties of proportional fairness: Stability and insensitivity.
+Annals of Applied Probability, 17(3):809–839, 2007.
+[32] Laurent Massouli´e and Kuang Xu. On the capacity of information processing systems. In 29th
+Annual Conference on Learning Theory, New York, United States, June 2016.
+[33] A. Mehta and D. Panigrahi. Online matching with stochastic rewards. In IEEE 53rd Annual
+Symposium on Foundations of Computer Science, pages 728–737, Oct 2012.
+[34] Aranyak Mehta, Bo Waggoner, and Morteza Zadimoghaddam. Online Stochastic Matching
+with Unequal Probabilities, pages 1388–1404. 2015.
+[35] M. J. Neely, E. Modiano, and C. E. Rohrs. Dynamic power allocation and routing for time
+varying wireless networks. In Proc. IEEE INFOCOM, 2003.
+[36] George L Nemhauser and Laurence A Wolsey. Integer and combinatorial optimization, vol-
+ume 18. Wiley, 1988.
+[37] Philippe Robert. Stochastic networks and queues, stochastic modelling and applied probability
+series, vol. 52, 2003.
+[38] Aleksandr Nikolaevich Rybko and Alexander L Stolyar.
+Ergodicity of stochastic processes
+describing the operation of open queueing networks. Problemy Peredachi Informatsii, 28(3):3–
+26, 1992.
+[39] Nihar B. Shah, Dengyong Zhou, and Yuval Peres. Approval voting and incentives in crowd-
+sourcing. In ICML’15, pages 10–19, 2015.
+[40] Virag Shah, Gustavo de Veciana, and George Kesidis. A stable approach for routing queries in
+unstructured p2p networks. IEEE/ACM Transactions on Networking, 24(5):3136–3147, Oct
+2016.
+33
+
+[41] David H. Stern, Ralf Herbrich, and Thore Graepel. Matchbox: Large scale online bayesian
+recommendations. In Proceedings of the 18th International Conference on World Wide Web,
+2009.
+[42] L. Tassiulas and A. Ephremides. Stability properties of constrained queueing systems and
+scheduling policies for maximum throughput in multihop radio networks. IEEE Transactions
+on Automatic Control, 37:1936–1948, 1992.
+[43] Tolga Tezcan and J. G. Dai. Dynamic control of n-systems with many servers: Asymptotic
+optimality of a static priority policy in heavy traﬃc. Operations Research, 58(1):94–110, 2010.
+[44] Heng-Qing Ye, Jihong Ou, and Xue-Ming Yuan. Stability of data networks: Stationary and
+bursty models. Operations Research, 53(1):107–125, 2005.
+[45] Lei Ying, Sanjay Shakkottai, Aneesh Reddy, and Shihuan Liu. On combining shortest-path
+and back-pressure routing over multihop wireless networks. IEEE/ACM Transactions on Net-
+working, 19(3):841–854, June 2011.
+[46] Yuchen Zhang, Xi Chen, Dengyong Zhou, and Michael I. Jordan.
+Spectral methods meet
+em: A provably optimal algorithm for crowdsourcing. J. Mach. Learn. Res., 17(1):3537–3580,
+January 2016.
+34

@@ -1,0 +1,3553 @@
+TITLE: Reliable Off-Policy Evaluation for Reinforcement Learning
+JOURNAL: Operations_Research
+YEAR: 2022
+DOI: https://doi.org/10.1287/opre.2022.2382
+---
+
+Reliable Oﬀ-policy Evaluation for Reinforcement Learning
+Jie Wang
+School of Science and Engineering, The Chinese University of Hong Kong, Shenzhen
+jiewang@link.cuhk.edu.cn
+Rui Gao
+Department of Information, Risk and Operations Management, The University of Texas at Austin
+rui.gao@mccombs.utexas.edu
+Hongyuan Zha
+School of Data Science, Shenzhen Institute of Artiﬁcial Intelligence and Robotics for Society, The Chinese University of Hong Kong, Shenzhen
+zhahy@cuhk.edu.cn
+In a sequential decision-making problem, oﬀ-policy evaluation estimates the expected cumulative reward of a target
+policy using logged trajectory data generated from a diﬀerent behavior policy, without execution of the target
+policy. Reinforcement learning in high-stake environments, such as healthcare and education, is often limited to
+oﬀ-policy settings due to safety or ethical concerns, or inability of exploration. Hence it is imperative to quantify
+the uncertainty of the oﬀ-policy estimate before deployment of the target policy. In this paper, we propose a novel
+framework that provides robust and optimistic cumulative reward estimates using one or multiple logged trajectories
+data. Leveraging methodologies from distributionally robust optimization, we show that with proper selection of
+the size of the distributional uncertainty set, these estimates serve as conﬁdence bounds with non-asymptotic and
+asymptotic guarantees under stochastic or adversarial environments. Our results are also generalized to batch
+reinforcement learning and are supported by empirical analysis.
+Key words: Uncertainty quantiﬁcation; Reinforcement learning; Wasserstein robust optimization
+1. Introduction
+Reinforcement learning (RL) has achieved phenomenal success in games and robotics (OpenAI et al.
+2019, Mnih et al. 2015, Kober et al. 2013) in the past decade, which also stimulates the enthusiasm of
+extending these techniques in other areas including healthcare (Raghu et al. 2017, Gottesman et al.
+2019), education (Mandel et al. 2014), autonomous driving (Sallab et al. 2017), recommendation
+systems (Liu et al. 2018a, Wang et al. 2018), etc. One of the major challenges in applying RL to these
+real-world applications, especially those involve high-stake environments, is the problem of oﬀ-policy
+evaluation (OPE): how one can evaluate a new policy before deployment, using only historical data
+collected from a diﬀerent policy, known as the behavior policy. Indeed, for many practical applications,
+one may not have a faithful simulator of the domain from which suﬃcient amount of data can be
+exploited to train the RL system, and it may not always be feasible to try out a new policy without
+causing unintended harms. For example, consider the problem of ﬁnding the best treatment plan for
+a patient, or testing the performance of an automated driving system, or suggesting a personalized
+curriculum for a student. In those tasks, conducting experimentation involves interactions with real
+people, thus it can be costly to collect data. Even worse, a bad policy can be risky or unethical and
+may result in severe consequences. Therefore, it is important for the RL system to have the ability to
+predict how well a new policy would perform without having to deploy it ﬁrst.
+While most existing works on OPE aim to provide accurate point estimates for short-horizon
+problems (Thomas et al. 2017, Precup 2000, Hanna et al. 2017, Jiang and Li 2016) as well as long-
+or inﬁnite-horizon problems (Liu et al. 2018b, Zhang et al. 2020a, Tang et al. 2019, Farajtabar et al.
+2018, Kallus and Uehara 2020, Chen et al. 2020b), it is equally important to quantify the uncertainty
+of the OPE point estimates for both safe exploration and optimistic planning. On the one hand, in
+high-stake mission-critical environments as aforementioned, providing a lower conﬁdence bound
+for OPE enables us to explore policies with safety guarantees and thus help to reduce the risk and
+1
+
+2
+circumvent catastrophic events; speciﬁcally, in batch reinforcement learning in which a ﬁxed set
+of logged data is used for policy optimization, this pessimism principle is important to guarantee
+good performance (Buckman et al. 2021, Jin et al. 2021). On the other hand, for risk-seeking policy
+optimization algorithms that apply the optimism principle in the face of uncertainty (Munos 2014),
+an upper conﬁdence bound used to balance the exploration and exploitation trade-oﬀis desirable.
+Motivated by these problems, the main goal of this paper is to develop reliable conﬁdence interval (CI)
+estimates for OPE with provable statistical guarantees.
+Let us discuss several challenges in deriving a CI for OPE. Arguably, the most straightforward thought
+is based on the sample mean and sample deviation estimates and invokes some form of concentration
+inequality to implement. Unfortunately, this could be problematic due to various reasons.
+(I) To begin with, most existing approaches (Thomas et al. 2015, Hanna et al. 2017) are based on
+step-wise importance sampling, which do not work in long- or inﬁnite-horizon setting. This
+is because the OPE point estimate suﬀers from the “curse of horizon” (Liu et al. 2018b): it
+has excessively high variance arising from the multiplication of importance ratios at each time
+period in the horizon.
+(II) To reduce the variance, one may consider approaches based on a marginalized formulation
+(Liu et al. 2018b) that applies importance sampling to the average state visitation distribution.
+Essentially this yields a bilevel stochastic optimization (feasibility) problem (see also equations
+(2)(3) in Section 2), in which the lower-level problem estimates the marginalized importance
+weight function and the upper-level problem estimates the cumulative discounted reward.
+Developing a CI for its optimal value is a highly non-trivial task.
+(III) Even for asymptotic CIs that are usually easier to obtain than non-asymptotic CIs, existing
+concentration results for the marginalized formulation (e.g. Kallus and Uehara (2022)) depend
+crucially on certain mixing conditions, i.e., the ﬁnite-sample distribution of the associated
+Markov chain should be close to its steady-state distribution. For non-asymptotic CIs, Feng
+et al. (2020) proposes a variational framework that solves an optimization problem over a
+conﬁdence set containing the underlying true state-action value function with high probability,
+but assumes the access to i.i.d. state-action transition pairs, and the length of their CI depends
+on the sample size in a sub-optimal (fourth-root) rate; Dai et al. (2020) applies the generalized
+empirical likelihood method to the Lagrangian reformulation of the bilevel stochastic program,
+which assumes i.i.d. state-action-next-state transition tuples (and may be relaxed to certain
+fast-mixing condition) and involves a nonconvex-concave saddle-point problem that may not
+have global optimality guarantees. Unfortunately, the i.i.d. or mixing conditions aforementioned
+generally do not hold in practice. Indeed, the historical trajectory data may not serve as a
+faithful representation of the steady-state distribution under the behavior policy, because the
+number of trajectories in the data set is usually limited or even only one, each of which has
+dependent data sequence with ﬁnite length and thus may not be mixing yet.
+(IV) In OPE, the environment where the target policy will be deployed may deviate from the past
+environment where the historical data were collected. For instance, in clinical trials, a medicine
+or vaccine is initially tested for young and healthy people, but eventually we would like to know
+its safety and eﬀectiveness on other population such as the elderly people. As such, there is a
+shift in the age distribution between the training population and the testing population. This is
+usually referred to as covariate shift or distribution shift in the literature (Si et al. 2020, Uehara
+et al. 2020b). In this case, it is important to evaluate the risk of a new policy under adversarial
+scenarios so that the decision-maker would have a sense of how worst it could happen and
+makes plans accordingly.
+To take these concerns into account, we propose a novel framework for computing CI estimates for
+the inﬁnite-horizon discounted OPE, inspired from distributionally robust Markov Decision Process
+(MDP) (Iyengar 2005, Nilim and Ghaoui 2005, Wiesemann et al. 2013). In a nutshell, the idea is to
+develop a distributionally robust/optimistic counterpart of the marginalized formulation as mentioned
+
+3
+in the item (II) above (see formulation (P) in Section 3), whose optimal values serve as the lower/upper
+conﬁdence bounds for the OPE under proper selection of the radius of the uncertainty set. This
+gives rise to an end-to-end framework that uses logged trajectory data to simultaneously learn the
+importance weight function, ﬁnd the worst-case/best-case scenarios, and compute the CI. Speciﬁcally,
+we consider an s-rectangular Wasserstein distributional uncertainty set (Yang 2017) centered around
+the empirical conditional action-next-state distributions under the behavior policy, which captures the
+distributional uncertainty (e.g. adversarial data perturbation and distribution shift) of the average
+visitation distribution, and naturally incorporates the geometry of the state-action space and is suitable
+for distributions with non-overlapping support. Our main contributions are as follows.
+• We derive exact tractable reformulations for the distributionally robust and optimistic OPE (Theo-
+rem 1), based on which the CIs can be computed via robust value iteration algorithm (Algorithm
+1). We also develop an equivalent Lagrangian formulation that can be solved numerically in
+a fashion similar to generative adversarial networks (Goodfellow et al. 2014), in which the
+discriminator is regularized by its Lipschitz norm (Proposition 3).
+• In stochastic setting, we develop both asymptotic and non-asymptotic CIs for OPE (Theorem 2 and
+Remark 1), only assuming that the logged data are collected from (one or more) trajectories under
+the behavior policy and the underlying Markov chain transition dynamics. In adversarial setting
+where there is a distribution shift due to changing environments, we provide asymptotic and
+non-asymptotic CIs for the adversarial reward (Theorems 3 and 4). When applying to on-policy
+problems, our results provide an end-to-end statistical inference approach for robust MDP that
+directly uses trajectory data without estimating the transition probability matrix.
+• We extend our framework to batch reinforcement learning by developing eﬃcient algorithms and
+provide ﬁnite-sample performance guarantees (Theorems 5 and 6). Our theoretical ﬁndings are
+veriﬁed by numerical experiments.
+• Our analysis is based on two new results on Wasserstein distributionally robust optimization
+in discrete ﬁnite space, both of which may be of independent interest. The ﬁrst result is on
+its equivalence to a discrete form of Lipschitz regularization; and the second result is a new
+ﬁnite-sample guarantee that does not suﬀer from the curse of dimensionality, which, to the best
+of our knowledge, is the ﬁrst result of this kind in discrete settings.
+Related Work
+Uncertainty Quantiﬁcation for OPE.
+Recently, there is a surge of interest in studying uncertainty
+quantiﬁcation for OPE. Existing works (Feng et al. 2020, Dai et al. 2020, Kallus and Uehara 2022) assume
+i.i.d. transitions pairs or mixing condition. The non-asymptotic CI in Dai et al. (2020) is computed from
+solving a nonconvex-concave optimization involving an 5 -divergence distributional uncertainty set.
+The non-asymptotic CI derived in Feng et al. (2020) exploits concentration bounds for U/V-statistics,
+whose length of the CI depends on the sample size in a sub-optimal fourth-root rate. Asymptotic CIs
+are developed in Kallus and Uehara (2022) for a broad class of MDPs using central limit theorem
+under various mixing conditions. In addition, by assuming the value function can be approximated
+by linear functions under certain basis, non-asymptotic and asymptotic CIs are constructed in Duan
+et al. (2020), Shi et al. (2020), but this approach suﬀers from model misspeciﬁcation and may lead
+to biased estimates. Asymptotic CIs are also derived using bootstrapping (Kostrikov and Nachum
+2020) and Bayesian hypothesis testing (Sonabend et al. 2020). Besides, Jiang and Huang (2020)
+considers a diﬀerent notion of the CI that does not capture the randomness of data. For ﬁnite,
+short-horizon problems, CIs are proposed based on concentration inequalities (Thomas et al. 2015) and
+bootstraping (Hanna et al. 2017). However, those bounds become vacuous due to the large variance of
+estimators in long- or inﬁnite-horizon problems (Liu et al. 2018b). In all above works, it is assumed
+that the deployment environment remains the same. OPE for bandit learning under distribution shift
+is investigated in Si et al. (2020).
+
+4
+(Distributionally) Robust MDP and RL.
+Our framework is closely related to robust MDPs and its
+distributionally robust counterpart and applications in RL. Robust MDPs take account of the uncertainty
+in transition dynamics by hedging against a family of transition probability matrices specifying the
+range of transition probabilities, and rectangularity is a useful property to maintain tractability of
+the resulting optimization problem (Iyengar 2005, Nilim and El Ghaoui 2005, Wiesemann et al. 2013,
+Mannor et al. 2016, Goyal and Grand-Clement 2022). Distributionally robust MDP exploits a priori
+distributional information to construct the distributional uncertainty set of transition probability
+distributions (Xu and Mannor 2010). Diﬀerent distributional uncertainty sets of transition dynamics
+have been studied, including the set constructed based on relative entropy (Smirnova et al. 2019),
+Wasserstein metric (Yang 2017, Tirinzoni et al. 2018, Abdullah et al. 2019, Hou et al. 2020, Song
+and Zhao 2020), !1-norm (Ho et al. 2021), or general statistical distances together with certain
+moment conditions (Chen et al. 2019b). Most of these works do not consider oﬀ-policy evaluations
+with exceptions of Tirinzoni et al. (2018) and Petrik and Russel (2019), which consider entropy-based
+and Bayesian uncertainty sets, respectively. The idea of using distributionally robust optimization for
+uncertainty quantiﬁcation has appeared in the context of simulation optimization (Lam and Zhou
+2017, Lam and Qian 2017). In RL, pessimistic MDPs based on oﬄine data are considered in Kidambi
+et al. (2020), Yu et al. (2020), Matsushima et al. (2021), but the way of uncertainty quantiﬁcation
+in these works are orthogonal to our work. Our framework is consistent to the pessimism principle
+introduced in Buckman et al. (2021), but our bound is data-dependent and thus tighter than their
+state-wise bound.
+The rest of this paper is organized as follows. Section 2 presents preliminaries on OPE and robust
+MDPs. Section 3 outlines our framework for robust and optimistic oﬀ-policy evaluation for MDPs with
+discounted reward. Section 4 derives tractable reformulations and develops algorithms. Section 5
+presents the theoretical analysis of the optimistic and robust reward evaluation. Section 6 extends
+the algorithm to robust batch reinforcement learning, and Section 7 demonstrates some numerical
+experiments and analysis. The Appendices contain the proofs of all the results.
+2. Oﬀ-Policy Evaluation
+We consider an inﬁnite-horizon discounted ﬁnite state MDP represented by a tuple hS,A,%,',W,30i,
+where S,A denote, respectively, the state and the action spaces, which are assumed to be ﬁnite;
+% = {%(B0|B,0)}B,B02S,02A is the set of transition probability matrices, where %(B0|B,0) represents the
+state transition probability from the current state B to the next state B0 after taking an action 0;
+' = {A (B,0)}B2S,02A is the reward table with the (B,0)-th entry being the reward after taking the action
+0 in the state B; W 2 (0, 1) is the discount factor; and 30 denotes the initial state distribution before
+executing a policy. A stochastic policy c is represented by a conditional distribution that takes action 0
+with probability c(0|B) in state B. At each time C, a decision maker observes the current state BC, takes an
+action 0C according to a policy c(·|BC), receives a non-negative reward AC whose expectation is A (BC,0C),
+and transit to the next state BC+1 according to transition probability %(BC+1|BC,0C). The performance of a
+policy c is measured by the expected discounted cumulative reward 'c, or its value, deﬁned as
+'c := (1 −W) lim
+)!1E
+h )X
+C=0
+WCAC
+i
+,
+where the expectation is taken with respect to the distribution of the trajectories under the policy c.
+Oﬀ-policy evaluation is the problem of estimating 'c for a new target policy c using a set of trajectory
+data collected from a behavior policy c1. As is well-known, OPE with long- or inﬁnite-horizon MDPs
+suﬀers from the curse of horizon: the variance of the importance sampling-based estimates grows
+exponentially with respect to the length of the horizon ). To address this issue, one may consider an
+alternative formulation of the target policy value based on the marginalized importance sampling of the
+
+5
+average visitation distribution of state-action pairs (Liu et al. 2018b). To this end, let us provide an
+alternative representation of the value 'c. Let 3c,C be the distribution of the state BC at time C when
+executing a policy c with initial distribution 30, and deﬁne the average visitation distribution as
+3c (B) := (1 −W) lim
+)!1
+)X
+C=0
+WC3c,C (B),
+B 2 S,
+(1)
+which becomes the steady-state distribution under the policy c when W ! 1. By making use of (1), the
+value 'c can be expressed in the expectation form
+'c = E(B,0)⇠3c [A (B,0)] =
+X
+B2S,02A
+3c (B)c(0 | B)A (B,0),
+where we have used overloaded notation 3c (B,0) :=3c (B)c(0 | B). Now deﬁne V : S ⇥A ! R+ as
+VB(0) := c(0 | B)
+c1(0 | B),
+B 2 S,0 2 A,
+which is assumed to be known or can be estimated accurately from data. Throughout this paper, we
+make the following assumptions, which are standard in the literature.
+Assumption 1. The Markov chains induced by c and c1 are ergodic.
+Assumption 2. 3c1 (B), VB(0) > 0 for all B 2 S,0 2 A.
+Deﬁne the marginalized importance ratio F : S ! R+ as
+F(B) := 3c (B)
+3c1 (B),
+B 2 S,
+to be the density ratio between the average visitation state distributions of the target policy and that
+of the behavior policy. By the importance sampling technique, the value 'c for the target policy c can
+be computed as
+'c = E(B,0)⇠3c1
+⇥
+F(B)VB(0)A (B,0)
+⇤
+.
+(2)
+Thereby, the problem of OPE is transformed into estimating the marginalized importance ratio – also
+known as stationary distribution correction (Nachum et al. 2019) – with a plethora of approaches
+developed covering various settings (Xie et al. 2019, Kallus and Uehara 2020, 2022, Uehara et al. 2020a,
+Tang et al. 2019, Chen et al. 2020b, Zhang et al. 2020a).
+With a slight abuse of notation, we use 3c (B,0,B0) to denote the average visitation probability for the
+state-action-state pair (B,0,B0) of a policy c, i.e., 3c (B,0,B0) =3c (B)c(0 | B)%(B0 | B,0). Using the stationary
+equation under policy c, it can be easily shown that F and V satisfy the following system of stationary
+equations, whose proof can be found in Appendix EC.2.
+Lemma 1. Let W 2 (0, 1]. Then it holds that
+F(B0)3c1 (B0) = (1 −W)30(B0) +W
+X
+B2S,02A
+3c1 (B,0,B0)VB(0)F(B),
+8B0 2 S.
+(3)
+This lemma helps to develop an estimation of F using the logged trajectory data. Indeed, 3c1 can be
+estimated directly from the trajectories, thereby F can be obtained by solving (3), and thus the value
+'c can be computed using (2). Typically in the literature, it is assumed that the empirical estimation
+of 3c1 is a good surrogate. However in reality, the empirical estimate from the trajectory may deviate
+from the deploying environment since we only have access to trajectories with limited length and may
+face the issue of changing environments. The rest of this paper is devoted to addressing these issues.
+
+6
+3. Distributionally Robust and Optimistic Oﬀ-Policy Evaluation
+As previously mentioned, the ﬁnite-length Markovian trajectory data and potential shifts of MDP
+environments may both lead to potential estimation error in the importance ratio F and thus the value
+'c. In this section, we develop a distributionally robust/optimistic framework that takes these issues
+into account.
+We make the following assumption on the logged trajectory data generation process throughout the
+remainder of this paper.
+Assumption 3. The trajectories are generated according to the behavior policy c1 and the transition
+dynamics %. Namely, given current state B, the action is generated according to c1(·|B); and given the
+current state B and action 0, the next state is generated independently according to %(·|B,0).
+Note that this is a rather mild assumption requiring nothing more than that the trajectories are
+consistent with the MDP environment under policy c1. This implies that conditioning on the current
+state B, we can extract i.i.d. samples (0,B0) from the conditional distribution c1(0|B)%(B0|0,B) from the
+trajectories. This is a much weaker assumption than the common i.i.d. assumption of (B,0,B0) in the
+existing literature that is usually not satisﬁed by the logged trajectories.
+Leveraging ideas from distributionally robust MDP (Wiesemann et al. 2013, Yang 2017), we consider
+an s-rectangular Wasserstein distributional uncertainty set. Denote by W the Wasserstein metric
+associated with a metric (transport cost function) 2 : (S ⇥A)2 ! R+:
+W (`,a) :=
+min
+W 2Γ(`,a) E((0,B),(00,B0))⇠W
+⇥
+2 &(0,B), (00,B0)'⇤
+,
+with Γ(`,a) represents the joint distribution on (A ⇥S)2 with marginals ` and a. For any probability
+distribution ` on the state-action-next-state space S ⇥A ⇥S, let `(·, ·|B) be the conditional probability
+distribution on the action-next-state space A ⇥S conditioning on the state B induced from `. Denote
+by D = {(B 9
+C ,09
+C,A 9
+C )}1C )9,19 퐽the collected samples under the behavior policy c1, where D contains
+퐽trajectories with the 9-th trajectory being (B 9
+1,09
+1,A 9
+1, . . .,B 9
+)9,09
+)9,A 9
+),B 9
+)9+1). Let d = (dB)B2S, where dB is
+the radius for the Wasserstein ball associated with state B, and let ˆ` = (ˆ`B)B2S, where ˆ`B is the empirical
+distributions of the conditional action-next-state visitation distributions 3c1 (·, · | B) constructed from
+tuples D:
+ˆ`B := 1
+=B
+X
+1C )9,19 퐽
+X(09
+C,B 9
+C+1)1{(B,09
+C,A 9
+C ) 2 D},
+and =B = P
+1C )9,19 퐽1{(B,09
+C,A 9
+C ) 2 D} denotes the number of state-action-next-state tuples starting
+with B. It is easy to verify that P
+B2S =B = P
+19 퐽)9. The s-rectangular Wasserstein distributional
+uncertainty set is deﬁned as
+Mˆ`(d) :=
+n
+` 2 P(S ⇥A ⇥S) : W &`(·, · | B), ˆ`B
+' dB,8B 2 S
+o
+.
+We propose the following distributionally robust and optimistic formulations, respectively:
+Lˆ`(d)
+⇣
+resp. Uˆ`(d)
+⌘
+:=min
+F,`
+⇣
+resp. max
+F,`
+⌘
+X
+B2S,02A
+`(B)c1(0 | B)F(B)VB(0)A (B,0)
+(P-a)
+s.t. F(B0)`(B0) = (1 −W)30(B0) +W
+X
+B2S,02A
+`(B,0,B0)VB(0)F(B), 8B0 2 S,
+(P-b)
+` 2 Mˆ`(d), F 2 R|S|
++ .
+(P-c)
+Via the system of stationary equations (P-b), every ` determines a set of compatible marginalized
+importance ratio functions. In particular, the true average visitation distribution under the behavior
+
+7
+policy 3c1 satisﬁes (P-b) with ` =3c1. When dB = 0 for all B 2 S, the optimization problem (P) reduces
+to the typical sample average formulation studied in the literature (Liu et al. 2018b). Otherwise, the
+distributional uncertainty set Mˆ`(d) induces an uncertainty set
+-
+F : 9` 2 Mˆ`(d), B.C., (P-b) holds
+ 
+for the importance weight function F, which can be viewed as a conﬁdence region for F. Under proper
+selection of the radius {dB}B2S that will be speciﬁed in Section 5, the optimal values of (P) provides
+a CI estimate [Lˆ`(d),Uˆ`(d)] for 'c. This framework is an end-to-end approach in the sense that it
+jointly learns the importance weight function, the worst-case/best-case distribution and computing the
+CI using the logged trajectory data, as opposed to a separate approach that builds the CI based on the
+estimated importance weight function F using a separate procedure (Mousavi et al. 2020), whereby
+the estimation error of F may propagate to the CI resulting a larger variance.
+The advantage of using the s-rectangular Wasserstein distributional uncertainty set is four-fold. First,
+Wasserstein metric naturally incorporates the geometry of the state-action space, and is suitable for
+distributions with non-overlapping supports and for hedging against adversarial data perturbations
+(Gao and Kleywegt 2022). It is purely data-driven whereby ˆ` can be directly constructed from the
+logged trajectories, as opposed to the classical robust MDP literature (see, e.g. Wiesemann et al. (2013))
+in which the nominal transition dynamics are estimated from data using a separate statistical procedure
+such as maximum likelihood. Second, from the optimization point of view, the s-rectangularity enables
+a tractable reformulation of (P) that will be presented in Section 4. Third, from the statistical point of
+view, the s-rectangularity facilitates us to establish a conﬁdence interval with provable guarantees by
+observing that for any trajectory data, conditioning on the current state B, we have i.i.d. samples of
+action-next-state pairs (0,B0) as long as the trajectories are generated according to the behavior policy
+c1(0|B) and the transition dynamics %(B0|B,0); see Assumption 3. Fourth, for batch RL setting in Section
+6, the B-rectanguarity is consistent with the pessimism principle with respect to the state-wise Bellman
+uncertainty that is introduced in Buckman et al. (2021).
+4. Tractable Reformulations and Algorithms
+Problem (P) is not immediately tractable because it involves an optimization over probability distribu-
+tions as well as a simultaneous optimization over F and `. In this section, we provide exact tractable
+reformulations and algorithms for solving (P), whose proofs are provided in Appendix EC.3.
+To simplify the presentation, we state only the results on the distributionally robust OPE, i.e., the
+minimization problem in (P), and the counterpart for distributionally optimistic OPE can be found in
+Appendix A. For a function 5 : S ! R, we deﬁne the global slope (Ambrosio et al. 2008) of 5 at B 2 S as
+l5 (B) = max
+˜B<B
+5 (˜B) −5 (B)
+2(˜B,B)
+,
+(4)
+and for any probability measure a 2 P(S) we deﬁne the Lipschitz norm of 5 with respect to a as
+k5 kLip,a =
+max
+B2supp(a) l5 (B).
+(5)
+Deﬁne the following optimization problem on the value function E:
+max
+E2R|S| (1 −W)
+X
+B
+E(B)30(B)
+s.t. E(B) 
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S,
+where + (B) := max
+_≥0
+⇢
+−_dB + 1
+=B
+=B
+X
+8=1
+min
+02A,B02S
+-
+E(B0)VB(0) + _2((0,B0), (08,B0
+8))
+ 0
+,
+(V)
+We have the following result showing the equivalence between (P) and (V).
+
+8
+Theorem 1. For every B 2 S, let nB 2 (0, 1−W
+2W ) and "B := max02A VB(0) −min02A VB(0), and assume dB
+satisﬁes dBkVBkLip,ˆ`B 1−W
+2W −nB. Then with probability at least 1 −P
+B2S exp(−2=Bn2
+B /"2
+B ), it holds that
+(I) The vector-valued mapping
+E 7!
+X
+0
+c(0 | B)A (B,0) +W+ (B)
+2
+B2S
+is contractive with Lipschitz constant 1+W
+2 ;
+(II) The optimal values of (P) and (V) coincide.
+Problem (V) can be viewed as a robust Bellman recursion, in which + (B) is the dual reformulation
+of the robust reward-to-go function min`2Mˆ` (d)
+P
+02A,B02S `(0,B0 | B)E(B0)VB(0). One notable diﬀerence
+between Theorem 1 and standard results on s-rectangular robust MDP is that its statement is not
+deterministic, as the mapping in (I) is contractive only probabilistically. For on-policy evaluation,
+i.e., c = c1, we have VB = 1 and kVBkLip,ˆ`B = "B = 0, (V) becomes deterministic and provides a robust
+counterpart result of Puterman (1994). To obtain negligible error probability g in Theorem 1, for ﬁxed
+W 2 (0, 1), the sample size should be suﬃciently large so that
+min
+B2S
+=B
+"2B
+= ⌦
+✓
+W2
+(1 −W)2 log |S|
+g
+◆
+.
+(6)
+Therefore, the required sample size is nearly state space size-independent as the lower bound only has a
+logarithmic dependence on the the number of states. In addition, taking discounted factor W close to 1
+will require the sample size lower bound in (6) grow linearly with respect to 1/(1 −W)2. The proof
+of 1 is based on techniques from robust MDP with s-rectangular sets (Wiesemann et al. 2013) and
+Wasserstein distributionally robust optimization (Esfahani and Kuhn 2018, Blanchet and Murthy 2019,
+Gao and Kleywegt 2022).
+It is clear from Theorem 1 that E satisﬁes the robust counterpart of the ﬁxed-point condition
+E(B) =
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ` (d)
+X
+02A,B02S
+`(0,B0 | B)E(B0)VB(0), 8B 2 S,
+(7)
+whence E can be solved by value iteration, which is summarized in Algorithm 1.
+Algorithm 1 Value Iteration Algorithm for Robust Reward Evaluation
+1: Input: W, ˆ`, d. Initialize E 2 R|S|
++ .
+2: while not converge do
+3:
+For each B 2 S, compute + (B) deﬁned in (V).
+4:
+For each B 2 S, update
+E(B) 
+X
+0
+c(0 | B)A (B,0) +W ·+ (B)
+5: end while
+The following proposition shows that the iterates in Algorithm 1 are guaranteed to converge into
+the optimal solution of (V).
+Proposition 1. Under the setting of Theorem 1, the iterate E in Algorithm 1 converges to the optimal
+solution to (V).
+
+9
+4.1. A Regularized Lagarangian Perspective
+In this subsection, we provide a diﬀerent interpretation of (P) and (V) from the perspective of
+regularization. To this end, we ﬁrst write the dual form of (V).
+Proposition 2. Problem (V) admits a strong dual formulation
+min
+^2R|S|
++ ,@2R
+P
+B2S =B |A||S|
++
+X
+B2S,02A
+c(0 | B)^(B)A (B,0)
+s.t.
+(1 −W)30(B0) +W
+X
+B2S,02A
+VB(0)^(B)
+=B
+X
+8=1
+@(B)
+8,(0,B0) =^(B0), 8B0 2 S,
+=B
+X
+8=1
+X
+02A,B02S
+@(B)
+8,(0,B0)2((0,B0), (08,B0
+8)) dB, 8B 2 S,
+X
+02A,B02S
+@(B)
+8,(0,B0) = 1
+=B
+, 88 = 1, 2, . . .,=B, 8B 2 S.
+(8)
+This formulation can be interpreted as follows. Note that it can be easily veriﬁed that P
+B2S ^(B) = 1 by
+adding up the ﬁrst set of equality constraints in (8). Thereby the decision variable ^ can be viewed
+as the average visitation distribution under the target policy c. The decision variable @(B) can be
+viewed as a transport plan that transports probability mass from the empirical distribution ˆ`B to a new
+distribution `B, served as a surrogate for the underlying average state-visitation distribution 3c1. The
+ﬁrst set of constraint in (8) describes the system of stationary equation under the policy c. The second
+and third sets of inequality constraints conﬁnes the distribution `B to be within the Wasserstein ball.
+When ` =3c1 and dB = 0 for all B 2 S, (8) reduces to the bilevel feasibility formulation (2)(3). Thus, (8)
+is a robust counterpart that outputs the worst-case average visitation distribution ^ under the target
+policy c.
+Introducing a Lagrangian multiplier 5 for the ﬁrst set of constraints in (8), we can obtain an
+equivalent Lagrangian reformulation of (8).
+Proposition 3. Let Δ|S| be the probability simplex in R|S|. There exists {dB}B2S ⇢R|S|
++
+such that for all
+{dB}B2S satisfying dB < dB, 8B 2 S, problem (8) is equivalent to
+min
+^2Δ|S| max
+5 2R|S| EB⇠^,0⇠c (·|B) [A (B,0)] + (1 −W)EB⇠30 [5 (B)] +WEB⇠^,(0,B0)⇠ˆ`B [VB(0)5 (B0)] −EB⇠^ [5 (B)]
+−WEB⇠^ [dBkVB5 kLip,ˆ`B].
+Proposition 3 indicates that the distributionally robust formulation (P) is equivalent to a weighted
+Lipschitz regularization on 5 for suﬃciently small Wasserstein radii {dB}B2S, where the expression
+of the threshold {¯dB}B2S can be found in the proof of Proposition 3 in Appendix EC.3.2. For general
+radii {dB}B2S ⇢R|S|
++ , the regularized minimax formulation above constitutes a lower bound for the
+problem (8). As a consequence, Proposition 3 uncovers the connection between distributionally robust
+formulation and the Lipschitz regularization formulation. This formulation falls into the family of
+regularized Lagrangian formulation described in Yang et al. (2020), but it provides a principled
+Lipschitz regularization resulting from the distributionally robust formulation (P). This min-max
+formulation is reminiscent of the generative adversarial network (GAN) (Goodfellow et al. 2014) in the
+deep learning literature, where ^ and 5 are referred to as the generator and discriminator, respectively,
+and are often parameterized by neural networks. Thus, Proposition 3 suggests an alternative way to
+solving (P) using deep learning techniques. Study on this approach is beyond the scope of this paper,
+but below we detail several theoretical problems worth investigation. First, it is of research interest to
+investigate how large the network size is enough to approximate the underlying optimal generator
+and discriminator functions. Recent work suggests that neural networks can eﬃciently approximate
+
+10
+functions with special data structures such as low-dimensional manifolds (Hanin 2019, Chen et al.
+2020a, 2022, 2019a). It is desirable to generalize those analyses on our formulation. Second, it is
+important to understand the landscape of the non-convex training problem with neural networks.
+Both empirical and theoretical studies reveal that over-parameterized neural networks can beneﬁt
+the optimization training (Mei et al. 2018, Du et al. 2019, Mei et al. 2019, Sun 2019, Zhang et al.
+2020b, Sirignano and Spiliopoulos 2020, Jacot et al. 2018), but the analysis specialized to the oﬀ-policy
+evaluation problem remains unknown.
+Substituting ^(B) with ˆ`(B)F(B) for B 2 S yields
+min
+F≥0 max
+5 2R|S| (1 −W)EB⇠30 [5 (B)]
++E(B,0,B0)⇠ˆ`
+⇥
+F(B)(WVB(0)5 (B0) −5 (B) + E00⇠c (·|B) [A (B,00)] −WdBkVB5 kLip,ˆ`B])
+⇤
+.
+Deﬁne the function
+!(F, 5 ) := (1 −W)EB⇠30 [5 (B)] + E(B,0,B0)⇠ˆ`
+⇥
+(WVB(0)5 (B0) −5 (B))F(B)
+⇤
+.
+When dB = 0,8B 2 S, the problem above becomes
+min
+F≥0 EB⇠ˆ`,00⇠c (·|B) [F(B)A (B,00)] + max
+5 2R|S| !(F, 5 ).
+The problem above reduces to ﬁnding an importance weight function F such that
+!(F, 5 ) = 0,
+85 2 R|S|,
+since otherwise, due to the linearity of !(F, 5 ) in 5 , one can always pick the function 5 to make the
+objective value grow to inﬁnity. In comparison, the algorithm developed in Liu et al. (2018b) solves
+˜!(F, 5 ) := (1 −W)EB⇠30 [(1 −F(B))5 (B)] +WE(B,0,B0)⇠ˆ`
+⇥
+(F(B)VB(0) −F(B0))5 (B0)
+⇤
+= 0,
+85 2 F,
+where F ⇢R|S| is a suitable family of discriminators. Observe that
+!(F, 5 ) −˜!(F, 5 ) = (1 −W)EB⇠30 [F(B)5 (B)] + E(B,0,B0)⇠ˆ`[W5 (B0)F(B0) −F(B)5 (B)].
+(9)
+Recall that for any B0 2 S,
+(1 −W)30(B0) −3c1 (B0) +W
+X
+(B,0)
+c1(0 | B)%(B0 | B,0)3c1 (B) = 0.
+Multiplying both sides with the test function F(B0) · 5 (B0) for B0 2 S implies that
+(1 −W)EB⇠30 [F(B)5 (B)] −EB⇠3c1 [F(B)5 (B)] +WE(B,0,B0)⇠3c1 [F(B0)5 (B0)] = 0.
+Equivalently,
+(1 −W)EB⇠30 [F(B)5 (B)] + E(B,0,B0)⇠3c1 [W5 (B0)F(B0) −F(B)5 (B)] = 0.
+(10)
+Comparing the identity (9) with (10), we can see the two objective functions !(F, 5 ) and ˜!(F, 5 )
+coincide when ˆ` is replaced with 3c1.Hence, our formulation reduces to the formulation in Liu et al.
+(2018b) when ˆ` =3c1 and dB = 0 for all B 2 S.
+
+11
+5. Uncertainty Quantiﬁcation
+In this section, we provide uncertainty quantiﬁcation for OPE under the two situations described in the
+introduction. In Section 5.1, we develop asymptotic and non-asymptotic conﬁdence intervals when the
+logged trajectory data set contains one or more ﬁnite-length (possibly non-stationary) trajectories under
+the behavior policy. In Section 5.2, we derive the conﬁdence interval estimates of the adversarial reward
+under changing MDP environments. Asymptotic result provides a characterization of the distributional
+behavior for a large sample size and are practically useful. In contrast, non-asymptotic result provides
+conﬁdence bounds that are valid for any sample size and reveals the impact of parameters such as
+data dimension and problem hyper-parameters on the conﬁdence interval. The results in this section
+are based on the ﬁnite-sample performance guarantees for Wasserstein DRO on the discrete space
+(Appendix B), which may be of independent interest.
+Throughout this section and the next section, we deﬁne the following parameters for notational
+simplicity:
+XB =
+min
+(0,B0)2supp 3c1 (·,·|B)3c1 (0,B0 | B),
+JB =
+1
+⇣
+1−2XB
+1−XB _ 2XB −1
+XB
+⌘,
+X0
+B =
+min
+02supp c1 (·|B) c1(0 | B),
+"B := max
+02A VB(0) −min
+02A VB(0),
+B 2 S.
+In addition, we assume that the value function |E(B)| " for any B 2 S and some constant " > 0.
+5.1. Conﬁdence Interval using Finite-length Trajectories
+In this subsection, we consider a stochastic setting where trajectory data are Markovian. Proofs for
+results in this section are provided in Appendix EC.4.1.
+Recall that 'c is the true value of the target policy c, and Lˆ`(d), Uˆ`(d) are, respectively, the robust
+and optimistic value estimates deﬁned in (P). In this subsection, we explicitly use subscript = to
+denote the dependence on sample size = = (=B)B2S for relevant quantities. The next theorem establishes
+non-asymptotic conﬁdence bounds on 'c based on Lˆ`= (d=) and Uˆ`= (d=).
+Theorem 2. For B 2 S, let gB > 0, and set d=,B =
+q
+2gB
+=B diam(A ⇥S), and n=,B = 6
+=B . Let n= = (n=,B)B2S. Then
+with probability at least 1 −2P
+B2S UB, where
+UB := exp & −gB + log(2=B")' + exp (−=BXB + log(2=B")) + exp
+⇣
+−=B logJB + log(2=B")
+⌘
+,
+it holds that
+Lˆ`= (d=) −3>
+0 (퐼−W%true)−1n= 'c Uˆ`= (d=) +3>
+0 (퐼−W%true)−1n=.
+Theorem 2 shows that [Lˆ`= (d=) −3>
+0 (퐼−W%true)−1n=, Uˆ`= (d=) + 3>
+0 (퐼−W%true)−1n=] can be served
+as a conﬁdence interval for 'c. Each row of the term 3>
+0 (퐼−W%true)−1n= is of high-order $(1/=B), as
+compared to the length of [Lˆ`= (d=), Uˆ`= (d=)] that has a square-root dependence on 1/=B established
+in Proposition 4 below. The proof of Theorem 2 is based on a perturbation analysis on the Bellman
+operator (Lemma EC.6) and a ﬁnite-sample performance bound on Wasserstein DRO (Lemma EC.8).
+In particular, our ﬁnite-sample guarantee is based on covering number arguments as opposed to
+the VC dimension used in Dai et al. (2020). Unlike Dai et al. (2020) and Feng et al. (2020), we do
+not require the assumption that the value function belongs to a reproducing kernel Hilbert space.
+To prove Theorem 2, we leverage the out-of-sample performance guarantee for Wasserstein DRO in
+Proposition 8, which depends on a fractional parameter [ 2 (0, 1]. When presenting the main result
+in Theorem 2, we select the fraction parameter [ = 1 for simplicity. One can tune this parameter to
+balance between the error probability and the radius. For problems where the global slope (see (4) for
+deﬁnition) of the value function is much smaller than its Lipschitz norm (see (5) for deﬁnition) for
+many states, one can reduce the fraction [ to obtain a tighter conﬁdence interval.
+
+12
+Remark 1 (Asymptotic CI). Under the setting of Theorem 2, if we choose the Wasserstein radius
+d=,B =
+q
+2gB
+=B diam(A ⇥S) with gB =g + log(2=B"), then with probability at least
+1 −2|S|4−g −2
+X
+B
+
+exp
+⇣
+−=BXB + log(2=B")
+⌘
++ exp
+⇣
+−=B logJB + log(2=B")
+⌘2
+,
+the underlying reward 'c 2 [Lˆ`= (d=) −3>
+0 (퐼−W%true)−1n=, Uˆ`= (d=) +3>
+0 (퐼−W%true)−1n=]. Moreover, the
+probability bound in Theorem 2 converges to 1−2|S|4−g asymptotically. As a consequence, the proposed
+CI is a (1 −U)-asymptotic conﬁdence interval by choosing the parameter g so that 4−g+log(2|S|) = U.
+The next proposition provides an upper bound on the length of our proposed CI.
+Proposition 4. For B 2 S, let gB,g0
+B > 0, d=,B =
+q
+2gB
+=B diam(A ⇥S), =B ≥4g02
+B W2
+(1−W )2 , and set
+n=,B :=Wd=,B
+max
+E2R|S|: |E(B)|" kVBEkLip,3c1 (·,·|B).
+Then with probability at least 1 −P
+B2S exp(−2g02
+B /"2
+B ), it holds that
+Uˆ`= (d=) −Lˆ`= (d=) 23)
+0 (퐼−W%ˆ`=)−1n=,
+where %ˆ`= (B,B0) = P
+0 ˆ`=(0,B0 | B)VB(0).
+Proposition 4 reveals that the length of our established conﬁdence interval depends inversely on
+1/p=B. For small state spaces in which |S| is viewed as an irrelevant constant, this is optimal; while
+for large state spaces, the gap between 1/p=B and 1/pP
+B2S =B roughly means that our bound has an
+extra factor of 1/
+p
+|S|. Such conservativeness arises from the s-rectangularity of the uncertainty set
+Mˆ`(d). Nonetheless, the s-rectangularity is designed to maintain tractability for distributionally robust
+MDP and is seemingly unavoidable; see the NP-hardness discussion in Wiesemann et al. (2013). If we
+consider the regularized Lagrangian formulation in Section 4.1 and assume the global optimality of
+the involved nonconvex problem (as did in Dai et al. (2020)), then an extension of our formulation
+may achieve optimal sample rate, which is left to future work.
+5.2. Conﬁdence Interval under Changing Environments
+In this subsection, we consider OPE under distribution shift. Most existing works on OPE for RL are
+based on a key assumption that the future environment in which the target policy is deployed is the
+same as the past environment from which the logged trajectory data are collected. As motioned in the
+introduction, such an assumption may not necessarily hold in practical scenarios. Under the changing
+environments, the average visitation distribution 3c1 may be diﬀerent in the future environment, which
+results in a diﬀerent value 'c. This holds even when 3c1 is exactly known for the past environment.
+Hence, it is important to understand the performance of the target policy under adversarial scenarios
+and quantify its uncertainty.
+In the spirit of Si et al. (2020) which studies OPE for bandits under distribution shift, we refer to
+Ladv(d) as the adversarial value under policy c(B|0) = c1(B|0)VB(0), deﬁned as the worst-case reward
+under an adversarial changing environment, with the radius d capturing the discrepancy between the
+future and the past:
+Ladv(d) :=min
+F,`
+X
+B2S,02A
+`(B)c1(0 | B)F(B)VB(0)A (B,0)
+s.t. F(B0)`(B0) = (1 −W)30(B0) +W
+X
+B2S,02A
+`(B,0,B0)VB(0)F(B), 8B0 2 S,
+` 2 M3c1 (d).
+(11)
+
+13
+The diﬀerence between the equation above and (P) is that the center of the Wasserstein ball ˆ` in (P)
+is replaced by the true average visitation distribution 3c1 in the past environment. Diﬀerent from the
+previous subsection, the radius d is ﬁxed and not varying in the sample size, simply because the gap
+between the future and the past remains even when we have inﬁnite amount of historical data. We
+are interested in developing a CI for Ladv(d) using only the logged trajectory data, i.e., based on the
+empirical estimate Lˆ`= (d). Proofs for results in this section are provided in Appendix EC.4.2.
+The following theorem establishes the ﬁnite sample guarantee for estimating Ladv(d) based on
+Lˆ`= (d). Consider the function space FB := {(0,B0) 7! VB(0)E(B0), |E(B0)| ",8B0 2 S}. Let E⌦[R=B (FB)]
+denote the Rademacher complexity of the space FB with respect to 3c1 (·, · | B) for sample size =B.
+Theorem 3. Let g > 0 and for B 2 S, set
+퐻B = max
+5 2FB k5 k1,
+]=,B = 2
+✓
+2E⌦[R=B (FB)] +퐻B
+r g
+2=B
+◆
+.
+Then there exists {dB}B2S ⇢R|S|
++
+such that for all {dB}B2S satisfying dB < dB and dBkVBkLip,3c (·,·|B) 1−W
+2W ,
+8B 2 S, with probability at least 1 −P
+B UB, where
+UB := exp (−=BXB + log(2=B")) + 24−g,
+it holds that
+Lˆ`= (d) −3>
+0 ]= Ladv(d) Lˆ`= (d) +3>
+0 ]=.
+Note that the term ]= in Theorem 3 and the term n= in Theorem 2 have diﬀerent orders of the
+sample size. This is because the benchmarks are diﬀerent under stochastic and adversarial settings. In
+the stochastic setting (Theorem 2), we would like to choose a radius d= such that the robust reward
+serves as a high-conﬁdence lower bound, thus the residual n= is of higher-order than the length of
+the CI. Whereas in the adversarial setting, the radius of the distributional uncertainty set is ﬁxed in
+advance, capturing the distribution shift under changing environments. The goal is to provide a CI for
+the adversarial reward Ladv(d) using an empirical estimate Lˆ`= (d), thus the term ]= represents the
+half length of the CI. Similar to Proposition 4, the length of the conﬁdence interval depends inversely
+on 1/p=B.
+Below we also provide an asymptotic CI for Ladv(d) based on Lˆ`(d). To ease the exposition, we only
+consider a single trajectory with length), but the result is readily generalized to multiple (independent)
+trajectories. In the following theorem, we explicitly use subscript ) to denote the dependence of ˆ` on
+the truncation length ).
+Theorem 4. Set
+Ac (B) =
+X
+0
+A (B,0)c(0 | B), B 2 S,
+⇡(B,0,B0),(˜B,˜0, ˜B0) = 1{B = ˜B,0 = ˜0,B0 = ˜B0}
+1
+p
+3c1 (B)
+, B,˜B,B0,˜B0 2 S,0, ˜0 2 A,
+%`⇤(B,B0) =
+X
+0
+VB(0)`⇤(0,B0 | B), B,B0 2 S,
+~(B,0,B0) =W(1 −W)
+⇣
+(퐼−W%)
+`⇤)−130A)
+c (퐼−W%)
+`⇤)−1⌘
+B,B0 VB(0), B,B0 2 S,0 2 A,
+where `⇤is the optimal solution to (11), and ⇤2 R|S||A||S|⇥|S||A||S|
++
+is deﬁned as
+⇤(B,(0,B0)),(˜B,(˜0,˜B0)) =
+(3c1 (0,B0 | B)(1 −3c1 (0,B0 | B)),
+if (B, (0,B0)) = (˜B, (˜0,˜B0)),
+−3c1 (0,B0 | B)3c1 (˜0,˜B0 | B)
+if B = ˜B, (0,B0) < (˜0,˜B0),
+0,
+otherwise.
+
+14
+Assume that dBkVBkLip,3c (·,·|B) < 1−W
+W , B 2 S. Then it holds that
+p
+) &Lˆ`) (d) −Ladv(d)' d−! N (0,~)⇡⇤⇡~).
+Recalling that ) = P
+B =B, Theorem 4 provides an asymptotic CI with length $(1/pP
+B =B), which
+improves the order in the non-asymptotic CI derived in Theorem 3.
+6. Distributionally Robust Batch Reinforcement Learning
+Our distributionally robust framework can be easily leveraged for batch RL, whereby the decision-maker
+ﬁnds the optimal policy using a ﬁxed set of logged trajectories generated from a behavior policy c1, by
+solving the following max-min formulation
+L⇤
+ˆ`= (d=) = sup
+c 2⇧
+inf
+`2Mˆ`= (d=) Ec,`
+1
+X
+C=0
+WCAC
+2
+.
+(12)
+Let 'true be the optimal value under the true underlying MDP environment. Below, we develop a
+robust value iteration algorithm for solving (12) and provide its ﬁnite-sample performance guarantee.
+Proofs for results in this section are given in Appendix EC.5.
+With a slight abuse of notation Vc
+B (0) := c (0|B)
+c1 (0|B) , deﬁne
+max
+c,E
+(1 −W)
+X
+B
+E(B)30(B)
+s.t.
+E(B) 
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S,
+where
++ (B) :=
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)E(B0)Vc
+B (0).
+(13)
+Similar to Theorem 1, this optimization problem can be solved eﬃciently by robust value iteration.
+Theorem 5. For B 2 S, let nB 2
+⇣
+0, 1−W
+2W
+⌘
+, and suppose d=,B satisﬁes d=,BkVc
+B kLip,ˆ`=,B 1−W
+2W −nB for
+every deterministic policy c. Then with probability at least 1 −P
+B2S exp &−2=BX02
+B n2
+B
+', where X0
+B =
+min02supp c1 (·|B) c1(0 | B), it holds that
+(I) The optimal values for problems (12) and (13) coincide;
+(II) Let (E⇤,c⇤) be the optimal solution to problem (13). Then E⇤solves the ﬁxed point equation
+E(B) = max
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S,
+(14)
+and c⇤solves the maximization on the right-hand side in (14):
+c⇤(· | B) = argmax
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S.
+By Theorem 5, we can solve the batch reinforcement learning problem via robust value iteration,
+and the detailed procedure is presented in Algorithm 2. In each iteration we ﬁrst obtain the worst-case
+average visitation distribution of behavior policy conditioned on states (see line 3 of Algorithm 2),
+which can be solved in similar manner as in (7), and then perform the policy improvement step. In
+particular, the policy improvement part will result in a deterministic optimal policy since the objective
+function is linear with respect to the policy. Similar to the analysis in (6), to achieve an error probability
+g, the sample size in Theorem 5 should be such that minB =B = ⌦
+⇣
+W2
+X02
+B (1−W )2 log |S|
+g
+⌘
+. Compared with
+
+15
+Algorithm 2 Value Iteration Algorithm for Robust Batch Reinforcement Learning
+1: Input: ˆ`=, d=, W. Initialize E 2 R|S|
++ .
+2: while not converge do
+3:
+For each B 2 S, compute
+`⇤(·, · | B) = argmin
+`2Mˆ`= (d=)
+X
+02A,B02S
+`(0,B0 | B)E(B0)Vc
+B (0).
+4:
+For each B 2 S, update
+E(B) max
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W
+X
+02A,B02S
+`⇤(0,B0 | B)E(B0)Vc
+B (0).
+5: end while
+the robust OPE reformulation in Theorem 1, the required sample size =B depends on an additional
+factor 1/X02
+B . This results from that the value iteration algorithm for batch RL optimizes worst-case
+distribution and target policy jointly, and the contractive property of the robust Bellman recursion
+depends on the factor X0
+B, the minimum entry of the probability vector of the behavior policy. The next
+theorem establishes performance guarantees when focusing on the collection of deterministic policies.
+Theorem 6. For B 2 S, let gB > 0, n=,B = 6
+=B , and d=,B =
+q
+2gB
+=B diam(A ⇥S). Then with probability at least
+1 −P
+B2S UB, where
+UB := exp & −gB + log(2|A|=B")' + exp & −=BXB + log(2|A|=B")' + exp
+⇣
+−=B logJB + log &2|A|=B"'⌘
+,
+it holds that
+'true ≥L⇤
+ˆ`= (d=) −3>
+0 (퐼−W%true)−1n=.
+This theorem shows that when choosing the radius dB = $(1/p=B), the optimal reward is lower
+bounded by the estimated robust reward up to a higher order residual. Similar to the discussion
+in Remark 1, L⇤
+ˆ`= (d=) is an (1 −U)-asymptotic lower bound on the true optimal value 'true by
+taking d=,B =
+q
+2gB
+=B diam(A ⇥S) with gB = g + log(2|A|=B"), and the parameter g is chosen such that
+4−g+log |S| = U.
+Some recent works including MOReL (Kidambi et al. 2020) and MoPo (Yu et al. 2020) learn
+pessimistic MDPs based on oﬄine data and then solve the batch reinforcement learning problem.
+However, their conﬁdence bounds massively rely on the discrepancy between the learned MDP
+environment and the underlying true MDP environment, which are often conservative in practical
+settings. Most recently, Kumar et al. (2020) proposes a conservative Q-learning framework for robust
+batch framework by penalizing Q-values. Their work serves as a counter-part of distributionally robust
+framework from the perspective of regularization.
+7. Numerical Simulations
+In this section, we conduct numerical experiments in two discrete MDP environments to show
+the performance of the algorithms based on our framework for OPE. The description of two MDP
+environments is as follows:
+Machine Replacement Problem. This MDP environment (Wiesemann et al. 2013) has 10 states and
+2 actions: Repair and Do Nothing. States 1 to 8 model the states of deterioration of a machine and
+
+16
+there are two repair states '1 and '2. The state '1 is a normal repair state with reward 18, and the
+state '2 is a long repair state with reward 10. The reward for states 1 to 7 is 20, and the reward for
+state 8 is 0. When the action Do Nothing is performed, for 8 = 1, 2, . . ., 7, the state (8 will remain in its
+current state with probability ? = 0.2, and move to the state (8+1 with probability @ = 0.8. States (8
+and '1 will remain in its current state with probability 1. The state '2 will remain in its current state
+with probability ? = 0.2, and move to the state (1 with probability @ = 0.8. When the action Repair
+is performed, for 8 = 1, 2, . . ., 8, the state (8 will move to repair states '1,'2 with probability 0.1, 0.6,
+respectively, and move to the state (min{8+1,8} with probability 0.3.
+Healthcare Management Problem. This MDP (Goyal and Grand-Clement 2022) has six states
+{1, 2, 3, 4, 5, 6} to model the physical conditions of patients, in which the state 6 is an absorbing
+mortality state. Three actions are available under this setting: Do Nothing (01), Prescribe Low Drug
+Level (02), and Prescribe High Drug Level (03). The goal of the agent is to minimize the mortality rate
+of patients and reduce the drug level to lower the harm of treatment. The reward at the state 6 is 0,
+while at remaining states, taking the action 01,02,03 receives reward 10, 6, 2, respectively. When the
+action 01 is taken, for 8 = 1, 2, . . ., 5, the state (8 will transit into state (8,(8+1,(max{1,8−1} with probability
+?1 = 0.4,?2 = 0.3,?3 = 0.3, respectively. When the action 02 or 03 is taken, the values of [?1,?2,?3] are
+replaced with transition probabilities [0.4, 0.2, 0.4] or [0.4, 0.1, 0.5], respectively.
+In order to simulate the task for OPE numerically, we set the target policy to be the optimal one
+trained by the &-learning algorithm. For MRP scenario, we set the behavior policy to be the random
+policy such that conditioned on any state, the action follows uniform distribution. For HMP scenario,
+we set the behavior policy to be the one after running Q-learning for 5 iterations, since setting random
+policy will make 3c1 (B) < 7 ⇥10−3 for B 2 {(4,(5} and Assumption 2 will be approximately violated.
+The collected samples of state-action-state pairs are generated under the behavior policy. The cost
+function of the Wasserstein metric is set to be 2((0,B), (00,B0)) = [|B −B0| + |0 −00|]/(|S| + |A|). The
+computed radii are recorded in Figure EC.1, EC.2, and EC.3, respectively.
+7.1. Conﬁdence Intervals for Non-stationary Trajectory Data
+In this subsection we show the numerical performance for our interval estimates based on non-stationary
+trajectory data. In particular, we choose the radius size to be the one discussed in Remark 1 to realize
+the asymptotic 95% coverage rate. Recall that ) is the truncation length, and 퐽is the number of
+trajectories for observed samples. The default parameters are ) = 300 and 퐽= 300, unless varying
+them for performance comparison. The evaluation criterion is our estimated reward normalized by
+the underlying true reward under the target policy. Figure 1 reports the 95% conﬁdence interval of
+the normalized reward across diﬀerent choices of ) and 퐽. The values of radii establishing conﬁdence
+intervals are shared in Figure EC.1. As the number of trajectories or truncation length increases, both
+upper and lower conﬁdence bounds become tighter, which suggests that our algorithm is able to give a
+sample-eﬃcient conﬁdence interval for oﬀ-policy evaluation.
+Figure 2 shows the empirical coverage rate for the 95% conﬁdence interval generated by our
+algorithm with 200 independent trials. The ~-axis represents empirical error rates in which the
+corresponding conﬁdence intervals do not cover the underlying true reward. While the asymptotic
+conﬁdence regions may be overly optimistic for small number of trajectories (e.g., 퐽200 for MRP and
+퐽220 for HMP) or short truncation length (e.g., ) 280 for MRP and ) 400 for HMP) cases, the
+ﬁgure shows the 5% error rate is controlled when the number of observations increases, justifying that
+the asymptotic conﬁdence interval constructed in Remark 1 can roughly achieve the 95% coverage
+probability.
+7.2. Conﬁdence Intervals for Changing Environment
+Next, we study the uncertainty quantiﬁcation for OPE under changing environments. Assume that
+there exist experiment errors during the past MDP environments, and parameters for the transition
+
+17
+(a) Machine Replacement Problem
+(b) Healthcare Management Problem
+Figure 1
+Results for two MDP environments with discounted reward (W = 0.95), in which the ~-axis represents the
+estimated reward normalized by the underlying true reward under the target policy. The plots show the 95%
+conﬁdence interval of the normalized reward generated by our algorithm across diﬀerent numbers of
+trajectories and diﬀerent truncation lengths.
+Figure 2
+Results for two MDP environments with discounted reward (W = 0.95) on the empirical coverage rate of the
+constructed 95% conﬁdence intervals. The plots show the empirical error rate generated by 200 independent
+trials across diﬀerent numbers of trajectories and diﬀerent truncation lengths.
+dynamics will be perturbed a little bit. In particular, the parameters for the transition dynamics
+(?,@), (?1,?2,?3) in the two MDP environments above are replaced with (?0 = ? + 0.1,@0 =@ −0.1), (?0
+1 =
+?1 + 0.05,?0
+2 = ?2,?0
+3 = ?3 −0.05) during the data collection phase. Moreover, during the data collection
+phase when the action 03 is performed at state (6, the state will transit into (5,(6 with probability
+0.05, 0.95, respectively. Once the perturbation of environment is high, the conﬁdence interval will be
+overly conservative so that the oﬀ-policy evaluation task becomes meaningless. We thereby choose
+small perturbations to two MDP environments. In both scenarios, OPE based on the data for past
+environment over-estimates the underlying true reward under future MDP environment. We test the
+convergence of Lˆ`) (d) into Ladv(d) as the trajectory length increases, in which d is chosen to be a
+constant radius size. We tune the radii d such that the adversarial value Ladv(d) serves as the lower
+bound for the underlying true reward under future MDP environment. Values of the radii are shared
+in Figure EC.2. Figure 3 shows the estimation of the adversarial reward normalized by its exact value
+
+18
+(a) Machine Replacement Problem
+(b) Healthcare Management Problem
+Figure 3
+Results on the 95% conﬁdence bound estimate for Ladv. The plots show the robust reward estimates across
+diﬀerent truncation lengths within a single trajectory, where error bars are generated based on the asymptotic
+uncertainty quantiﬁcation result in Theorem 4.
+across diﬀerent number of truncation lengths, where we only use one trajectory to collect samples.
+Each data point in the plot represents the values of Lˆ`) (d), and the error bars represent the asymptotic
+95% conﬁdence intervals discussed in Theorem 4. Note that the variance stated in Theorem 4 depends
+on 3c1 and `⇤, which cannot be obtained exactly. Therefore, we use the approximate variance instead
+by replacing these terms with ˆ` and the optimal solution to Lˆ`) (d). From the plot we can see that as
+the sample size increases, both bias and variance for estimated adversarial reward values decrease,
+which indicates that Lˆ`) (d) converges into Ladv(d) well.
+7.3. Distributionally Robust Batch Reinforcement Learning
+Finally, we run experiments on the task of distributionally robust batch reinforcement learning, based
+on the historical data induced by a single behavior policy. We compare the performance of our robust
+algorithm with the algorithm based on the sample average approximation (SAA) approach within two
+MDP environments. The performance of an obtained policy c is measured by its relative performance
+gap 100 ⇥퐽⇤−퐽(c )
+|퐽⇤|
+, where 퐽⇤denotes the underlying true reward when the MDP environment is exactly
+known, and 퐽(c) denotes the reward of the policy c under the true MDP environment. Thus, the
+smaller the relative performance gap is, the better performance the policy has. Figure 4 reports
+the box plots for the relative performance gap of these two algorithms across diﬀerent numbers of
+trajectories and truncation lengths. From the plot we can see that generally our algorithm reduces
+relative performance gap faster than the SAA approach as the sample size increases. Therefore, we
+conclude that our algorithm outperforms the SAA approach for the batch reinforcement learning task.
+8. Concluding Remarks
+In this paper, we develop a novel framework for computing either non-asymptotic or asymptotic
+conﬁdence interval estimates for oﬀ-policy evaluation in inﬁnite-horizon RL. Unlike existing approaches,
+we do not assume the restrictive i.i.d. or mixing conditions on the transition tuples and consider
+both Markovian and adversarial settings. When applying our framework to on-policy problems, our
+theory provide an end-to-end approach to statistical inference for robust MDP using trajectory data
+without explicitly estimating the transition probabilities. The length of our proposed CI estimates has
+an optimal sample rate for small state spaces, in which case we proposed eﬃcient algorithms for both
+OPE and batch RL. Our formulation can be naturally extended to the behavior-agnostic setting, in
+which the behavior policy is not known to the decision maker. Our regularized Lagrangian formulation
+can be tailored to large or continuous state space by solving a minimax saddle point problem with the
+Lipschitz regularization, which is left for future work.
+
+19
+(a) Machine Replacement Problem
+(b) Healthcare Management Problem
+Figure 4
+Results for two MDP environments with discounted reward (W = 0.95), where the evaluation criterion is chosen
+to be the relative performance gap between the estimated optimal reward and the underlying true reward when
+the MDP environment is exactly known. Experiments are conducted for diﬀerent number of trajectories and
+diﬀerent truncation lengths, where the box plots are generated based on 10 independent trials.
+9. Acknowledgements
+The third author’s research is partially supported by a grant from the Shenzhen Science and Technology
+Program (JCYJ20210324120011032) and Shenzhen Institute of Artiﬁcial Intelligence and Robotics for
+Society. The authors would like to thank the referees and the Editorial team at Operations Research for
+their extensive feedback in improving this manuscript.
+10. Brief Author Biographies
+Jie Wang received the B.Sc. degree in pure mathematics from the Chinese University of Hong Kong,
+Shenzhen, in 2020. He is currently pursuing the Ph.D. degree with the H. Milton Stewart School of
+Industrial and Systems Engineering, Georgia Institute of Technology. His research interests include
+statistics, optimization, and network information theory.
+Rui Gao is an assistant professor in the McCombs School of Business at the University of Texas at
+Austin. He received his B.S. degree in Mathematics and Applied Mathematics from Xi’an Jiaotong
+University in 2013, and his Ph.D. degree in Operations Research from Georgia Institute of Technology
+in 2018. His main research studies data-driven decision making under uncertainty and prescriptive
+data analytics.
+Hongyuan Zha is a X.Q. Deng Presidential Chair Professor of the Chinese University of Hong Kong,
+Shenzhen. He received his B.S. degree in Mathematics from Fudan University in 1984, and his Ph.D.
+in Scientiﬁc Computing from Stanford University in 1993. He was a faculty member of College of
+Computing at Georgia Institute of Technology from 2006 to 2020, and the Department of Computer
+
+20
+Science and Engineering at Pennsylvania State University from 1992 to 2006. His research interest is
+machine learning.
+Appendix A: Results for Optimistic OPE
+This section provides tractable formulations for optimistic OPE. It can be reformulated as the following
+minimization problem:
+min
+E
+(1 −W)
+X
+B
+E(B)30(B)
+s.t.
+E(B) ≥
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S,
+F⌘4A4
++ (B) := min
+_≥0
+⇢
+_dB + 1
+=B
+=B
+X
+8=1
+max
+02A,B02S
+-
+E(B0)VB(0) −_2((0,B0), (08,B0
+8))
+ 0
+.
+Theorem 7. Under the same conditions of Theorem 1, with probability at least
+1 −
+X
+B2S
+exp(−2=Bn2
+B /"2
+B ),
+the optimal values for the maximization problem (P) and the minimization problem presented above
+coincide.
+Hence, the optimistic reward can be evaluated by solving for the ﬁxed-point equation
+E(B) =
+X
+0
+c(0 | B)A (B,0) +W
+max
+`2Mˆ` (d)
+X
+02A,B02S
+`(0,B0 | B)E(B0)VB(0), 8B 2 S.
+With almost the same arguments presented in Section 4.1, we can develop a regularization
+counterpart for optimistic OPE. This problem with discriminator function constraints can be formulated
+as
+max
+^2R|S|
++ ,@2R
+P
+B2S =B |A||S|
++
+X
+(B,0)
+c(0 | B)^(B)A (B,0)
+B.C.
+(1 −W)EB⇠30 [5 (B)] +WEB⇠^
+
+E(0,B0)⇠P=B
+8=1 @(B)
+8,(0,B0) [VB(0)5 (B0)]
+2
+= EB⇠^ [5 (B)], 85 2 R|S|
+=B
+X
+8=1
+X
+02A,B02S
+@(B)
+8,(0,B0)2((0,B0), (08,B0
+8)) dB, 8B 2 S
+X
+02A,B02S
+@(B)
+8,(0,B0) = 1
+=B
+,88 = 1, 2, . . .,=B,8B 2 S
+The following proposition reveals that the optimistic OPE is equivalent to the variation regularization
+problem.
+Proposition 5. Under the same conditions of Proposition 3, when dB < dB,B 2 S, the optimistic OPE is
+equivalent to
+max
+^≥0
+min
+5 2R|S| EB⇠^ [E0⇠c (·|B) [A (B,0)]] + (1 −W)EB⇠30 [5 (B)] +WEB⇠^
+⇥
+E(0,B0)⇠ˆ`B [VB(0)5 (B0)]
+⇤
+−EB⇠^ [5 (B)]
++WEB⇠^(B)dB · kVB5 kLip,ˆ`B .
+
+21
+Similarly, for general radii {dB}B2S ⇢R|S|
++ , the regularized maximin formulation above constitutes an
+upper bound for the optimistic OPE problem. Using the importance sampling technique, we solve the
+following problem instead:
+max
+F≥0
+min
+5 2R|S| (1 −W)EB⇠30 [5 (B)]
++E(B,0,B0)⇠ˆ`
+⇥
+F(B)(WVB(0)5 (B0) −5 (B) + E00⇠c (·|B) [A (B,00)] +WdB · kVB5 kLip,ˆ`B])
+⇤
+.
+Appendix B: Finite-sample Guarantees for Wasserstein DRO in Discrete Space
+The results in this section are parallel to the results in Gao et al. (2020) which focuses on continuous
+space. Proofs are given in Appendix B.
+We begin by introducing some notations in a general setup. Let P= denote the empirical distribution
+constructed from = i.i.d. samples from some underlying true distribution Ptrue on a ﬁnite discrete
+metric space Z associated with a metric 2 : Z2 ! R+. Let F be a class of functions on Z. We deﬁne the
+Wasserstein regularizer for a function 5 2 F as
+R=(d; 5 ) := sup
+P
+-
+EI⇠P[5 (I)] : W (P,P=) d
+ 
+−EI⇠P= [5 (I)].
+The global slope of a function 5 2 F at I 2 Z is deﬁned as
+l5 (I) = max
+˜I<I
+5 (˜I) −5 (I)
+2(˜I,I)
+,
+and the Lipschitz norm of 5 with respect to P is deﬁned as
+k5 kLip,P = max
+I2supp Pl5 (I).
+The following result shows the relationship between Wasserstein DRO in discrete space and Lipschitz
+regularization.
+Proposition 6. Deﬁne Z1 := {I 2 Z : l5 (I) = k5 kLip,P=} and
+¯d :=
+sup
+É:Z!Z
+n
+EP= [2(É(I),I)] : É(I) = I,8I 8 Z1, 5 (É(I)) −5 (I)
+2(É(I),I)
+= l5 (I),8I 2 Z1
+o
+.
+For any d ≥0, it holds that
+R=(d; 5 ) d · k5 kLip,P=.
+For any d < ¯d, it holds that
+R=(d; 5 ) = d · k5 kLip,P=.
+
+22
+Next, we study the ﬁnite-sample performance guarantee for Wasserstein DRO in discrete space. We
+introduce a metric d on F
+d( ˜5 , 5 ) := k ˜5 −5 k1 _ k ˜5 −5 klip,
+8 ˜5 , 5 2 F,
+where k · k1 and k · kLip denotes the sup-norm and Lipschitz norm respectively. Denote by N (n,F,d)
+the n-covering number of F under the metric d, deﬁned as the smallest cardinality of an n-cover
+of F, where the collection of functions Fn is called an n-cover of F if for any 5 2 F, there exists
+5 0 2 Fn so that d(5 , 5 0) n. Finally, let 퐻(0k1) denote the binary relative entropy function 퐻(0k1) :=
+0 log 0
+1 + (1 −0) log 1−1
+1−0.
+Assumption 4. Suppose F satisﬁes the following conditions:
+(I) There exists ! > 0 so that 5 (˜I) −5 (I) !2(˜I,I) for all I, ˜I 2 Z and all 5 2 F.
+(II) There exists [ 2 (0, 1] such that X := inf5 2F Ptrue
+-
+I 2 Z : l5 (I) ≥[k5 kLip,Ptrue
+ 
+2 (0, 1).
+Proposition 7. Assume Assumption 4 holds. Suppose that d= = d0/p= for some d0 > 0. Let 2 <
+X
+1−X ^ 1−X
+X .
+Then with probability at least 1 −exp & −=퐻&2k
+X
+1−X ^ 1−X
+X
+' + logN ( 1
+=,F,d)', simultaneously for all 5 2 F,
+[d=k5 kLip,P= −3
+= R=(d=; 5 ) d=k5 kLip,P=
+Note that this result appears in (Gao et al. 2020, Theorem 2) in a slightly diﬀerent form for a continuous
+space.
+Next, we establish the out-of-sample performance guarantee for Wasserstein DRO on a discrete
+space. Comparing with the discussion in Gao et al. (2020), our analysis is easier since the variation
+only relies on the global slope of a function. Deﬁne diam(Z) := max˜I,I2Z 2(˜I,I).
+Proposition 8. Assume Assumption 4 holds. Let g > 0 and Δ =
+1
+( 1−2X
+1−X _ 2X−1
+X ) . Set d= = diam(Z)
+[2
+p
+2g/=. Then
+with probability at least
+1 −N
+⇣
+1
+=,F,d
+⌘h
+4−g + exp (−= log(1/(1 −X))) + exp (−= logΔ)
+i
+,
+simultaneously for all 5 2 F, it holds that
+EI⇠Ptrue [5 (I)] EI⇠P= [5 (I)] + R= (d=; 5 ) + 6
+= .
+This indicates that with high probability, by setting the radius in the order of $(diam(Z)/p=), the
+Wasserstein robust loss dominates the true loss up to a higher order remainder. There is a trade-oﬀ
+between [, which aﬀects the radius, and X, which aﬀects the error probability bound, in Proposition 8
+
+23
+— one can reduce [ to achieve a larger X (thus a smaller error probability bound). When the global
+slope of loss functions are much smaller than their Lipschitz norm with high probability, to keep the
+error probability bound at a reasonably small level, we would like to reduce the fraction [ so that X in
+Assumption 4(II) would not be too small. Note that if one choose d= using the principle in Esfahani
+and Kuhn (2018), namely, a high conﬁdence bound on the Wasserstein distance between P= and Ptrue,
+then one would only obtain a much worse bound $(|Z|/p=) that linearly depends on the carnality
+of Z (Singh and Póczos 2019). This is the curse of dimension in discrete settings: imagine Z is an
+n-covering of a :-dimensional unit box, then |Z| =$(n−:). Our bound does not suﬀer from the curse of
+dimensionality which, to the best of knowledge, is the ﬁrst result of this kind for Wasserstein DRO on a
+discrete space. The diﬀerence between this result and the result on a continuous space (Gao et al.
+2020) is that local slope does not serve as the regularization term, which simpliﬁes the analysis on the
+out-of-sample performance guarantee. We will instantiate this result on OPE and show that the tail
+probability has a mild dependence on =.
+Finally, we discuss the generalization bound for Wasserstein DRO with ﬁxed radius. This gener-
+alization bound is developed by selecting the fraction parameter [ = 1 in Assumption 4. Deﬁne the
+following two risk functions in which the radius is d and the nominal distributions are diﬀerent:
+* ⇤(d; 5 ) = sup
+P
+-
+EP[5 (I)] : W (P,Ptrue) d
+ 
+,
+*=(d; 5 ) = sup
+P
+-
+EP[5 (I)] : W (P,P=) d
+ 
+.
+Proposition 9. Let g > 0 and X = minI2Z Ptrue(I). Suppose the function 5 satisﬁes 0 5 (I) ",8I 2 Z
+and the radius d satisﬁes
+d < d =
+sup
+É:Z!Z
+n
+EP= [2(É(I),I)] : É(I) = I,8I 8 Z1, 5 (É(I)) −5 (I)
+2(É(I),I)
+= l5 (I),8I 2 Z1
+o
+.
+Then with probability at least 1 −N
+⇣
+1
+=,F,d
+⌘
+4−= log(
+1
+1−X ) −24−g, simultaneously for all 5 2 F, it holds
+that
+|* ⇤(d; 5 ) −*=(d; 5 )| 2E⌦[R=(F)] + "
+r g
+2= .
+References
+Abdullah MA, Ren H, Ammar HB, Milenkovic V, Luo R, Zhang M, Wang J (2019) Wasserstein robust reinforcement
+learning. arXiv preprint arXiv:1907.13196 .
+Agrawal A, Verschueren R, Diamond S, Boyd S (2018) A rewriting system for convex optimization problems.
+Journal of Control and Decision 5(1):42–60.
+Ambrosio L, Gigli N, Savaré G (2008) Gradient ﬂows: in metric spaces and in the space of probability measures
+(Springer Science & Business Media).
+
+24
+Billingsley P (1961) Statistical methods in markov chains. The Annals of Mathematical Statistics 12–40.
+Blanchet J, Murthy K (2019) Quantifying distributional model risk via optimal transport. Mathematics of
+Operations Research 44(2):565–600.
+Buckman J, Gelada C, Bellemare MG (2021) The importance of pessimism in ﬁxed-dataset policy optimization.
+International Conference on Learning Representations.
+Chen M, Jiang H, Liao W, Zhao T (2019a) Eﬃcient approximation of deep relu networks for functions on low
+dimensional manifolds. Advances in Neural Information Processing Systems, volume 32, 8172–8182.
+Chen M, Jiang H, Liao W, Zhao T (2022) Nonparametric regression on low-dimensional manifolds using deep
+relu networks: function approximation and statistical recovery. Information and Inference: A Journal of the
+IMA .
+Chen M, Liao W, Zha H, Zhao T (2020a) Statistical guarantees of generative adversarial networks for distribution
+estimation. arXiv preprint arXiv: 2002.03938 .
+Chen X, Wang L, Hang Y, Ge H, Zha H (2020b) Inﬁnite-horizon oﬀ-policy policy evaluation with multiple behavior
+policies. International Conference on Learning Representations.
+Chen Z, Yu P, Haskell WB (2019b) Distributionally robust optimization for sequential decision-making. Optimiza-
+tion 68(12):2397–2426.
+Dai B, Nachum O, Chow Y, Li L, Szepesvari C, Schuurmans D (2020) Coindice: Oﬀ-policy conﬁdence interval
+estimation. Advances in Neural Information Processing Systems, volume 33, 9398–9411.
+Diamond S, Boyd S (2016) CVXPY: A Python-embedded modeling language for convex optimization. Journal of
+Machine Learning Research 17(83):1–5.
+Du SS, Zhai X, Poczos B, Singh A (2019) Gradient descent provably optimizes over-parameterized neural
+networks. International Conference on Learning Representations.
+Duan Y, Jia Z, Wang M (2020) Minimax-optimal oﬀ-policy evaluation with linear function approximation.
+International Conference on Machine Learning, volume 119, 2701–2709.
+Esfahani PM, Kuhn D (2018) Data-driven distributionally robust optimization using the wasserstein metric:
+Performance guarantees and tractable reformulations. Mathematical Programming 171(1-2):115–166.
+Farajtabar M, Chow Y, Ghavamzadeh M (2018) More robust doubly robust oﬀ-policy evaluation. International
+Conference on Machine Learning, volume 80, 1447–1456.
+Feng Y, Ren T, Tang Z, Liu Q (2020) Accountable oﬀ-policy evaluation with kernel bellman statistics. International
+Conference on Machine Learning, volume 119, 3102–3111.
+Gao R (2022) Finite-sample guarantees for wasserstein distributionally robust optimization: Breaking the curse
+of dimensionality. Operations Research .
+Gao R, Chen X, Kleywegt AJ (2020) Wasserstein distributionally robust optimization and variation regularization.
+arXiv preprint arXiv:1712.06050 .
+Gao R, Kleywegt A (2022) Distributionally robust stochastic optimization with wasserstein distance. Mathematics
+of Operations Research .
+Goodfellow I, Pouget-Abadie J, Mirza M, Xu B, Warde-Farley D, Ozair S, Courville A, Bengio Y (2014) Generative
+adversarial nets. Advances in neural information processing systems, volume 27, 2672–2680.
+Gottesman O, Johansson F, Komorowski M, Faisal A, Sontag D, Doshi-Velez F, Celi LA (2019) Guidelines for
+reinforcement learning in healthcare. Nat Med 25(1):16–18.
+Goyal V, Grand-Clement J (2022) Robust markov decision processes: Beyond rectangularity. Mathematics of
+Operations Research .
+Gurobi Optimization, LLC (2022) Gurobi Optimizer Reference Manual. URL https://www.gurobi.com.
+Hanin B (2019) Universal function approximation by deep neural nets with bounded width and relu activations.
+Mathematics 7(10).
+Hanna JP, Stone P, Niekum S (2017) Bootstrapping with models: Conﬁdence intervals for oﬀ-policy evaluation.
+Thirty-First AAAI Conference on Artiﬁcial Intelligence, volume 31.
+
+25
+Ho CP, Petrik M, Wiesemann W (2021) Partial policy iteration for l1-robust markov decision processes. Journal of
+Machine Learning Research 22(275):1–46.
+Hou L, Pang L, Hong X, Lan Y, Ma Z, Yin D (2020) Robust reinforcement learning with wasserstein constraint.
+arXiv preprint arXiv:2006.00945 .
+Iyengar GN (2005) Robust dynamic programming. Mathematics of Operations Research 30(2):257–280.
+Jacot A, Gabriel F, Hongler C (2018) Neural tangent kernel: Convergence and generalization in neural networks.
+Advances in Neural Information Processing Systems, volume 31.
+Jiang N, Huang J (2020) Minimax value interval for oﬀ-policy evaluation and policy optimization. Advances in
+Neural Information Processing Systems 33:2747–2758.
+Jiang N, Li L (2016) Doubly robust oﬀ-policy value evaluation for reinforcement learning. International Conference
+on Machine Learning, volume 48, 652–661.
+Jin Y, Yang Z, Wang Z (2021) Is pessimism provably eﬃcient for oﬄine rl? International Conference on Machine
+Learning, volume 139, 5084–5096.
+Kallus N, Uehara M (2020) Double reinforcement learning for eﬃcient oﬀ-policy evaluation in markov decision
+processes. Journal of Machine Learning Research, volume 21, 1–63.
+Kallus N, Uehara M (2022) Eﬃciently breaking the curse of horizon: Double reinforcement learning in inﬁnite-
+horizon processes. Operations Research .
+Kidambi R, Rajeswaran A, Netrapalli P, Joachims T (2020) Morel: Model-based oﬄine reinforcement learning.
+Advances in neural information processing systems 33:21810–21823.
+Kober J, Bagnell JA, Peters J (2013) Reinforcement learning in robotics: A survey. The International Journal of
+Robotics Research 32(11):1238–1274.
+Kosorok MR (2008) Introduction to empirical processes and semiparametric inference. (Springer).
+Kostrikov I, Nachum O (2020) Statistical bootstrapping for uncertainty estimation in oﬀ-policy evaluation. arXiv
+preprint arXiv:2007.13609 .
+Kumar A, Zhou A, Tucker G, Levine S (2020) Conservative q-learning for oﬄine reinforcement learning. Advances
+in Neural Information Processing Systems 33:1179–1191.
+Lam H, Qian H (2017) Optimization-based quantiﬁcation of simulation input uncertainty via empirical likelihood.
+arXiv preprint arXiv:1707.05917 .
+Lam H, Zhou E (2017) The empirical likelihood approach to quantifying uncertainty in sample average
+approximation. Operations Research Letters 45(4):301–307.
+Liu F, Tang R, Li X, Ye Y, Chen H, Guo H, Zhang Y (2018a) Deep reinforcement learning based recommendation
+with explicit user-item interactions modeling. arXiv preprint arXiv:1810.12027 .
+Liu Q, Li L, Tang Z, Zhou D (2018b) Breaking the curse of horizon: Inﬁnite-horizon oﬀ-policy estimation. Advances
+in Neural Information Processing Systems, volume 31, 5356–5366.
+Mandel T, Liu YE, Levine S, Brunskill E, Popovic Z (2014) Oﬄine policy evaluation across representations with
+applications to educational games. Proceedings of the 13th International Conference on Autonomous Agents
+and Multiagent Systems, volume 13, 1077–1084.
+Mannor S, Mebel O, Xu H (2016) Robust mdps with k-rectangular uncertainty. Mathematics of Operations Research
+41:1484–1509.
+Matsushima T, Furuta H, Matsuo Y, Nachum O, Gu S (2021) Deployment-eﬃcient reinforcement learning via
+model-based oﬄine optimization. International Conference on Learning Representations.
+Mei S, Misiakiewicz T, Montanari A (2019) Mean-ﬁeld theory of two-layers neural networks: dimension-free
+bounds and kernel limit. Proceedings of the Thirty-Second Conference on Learning Theory, volume 99,
+2388–2464.
+Mei S, Montanari A, Nguyen PM (2018) A mean ﬁeld view of the landscape of two-layer neural networks.
+Proceedings of the National Academy of Sciences 115(33):7665–7671.
+
+26
+Mnih V, Kavukcuoglu K, Silver D, Rusu AA, Veness J, Bellemare MG, Graves A, Riedmiller M, Fidjeland AK,
+Ostrovski G, Petersen S, Beattie C, Sadik A, Antonoglou I, King H, Kumaran D, Wierstra D, Legg S, Hassabis
+D (2015) Human-level control through deep reinforcement learning. Nature 518(7540):529–533.
+Mousavi A, Li L, Liu Q, Zhou D (2020) Black-box oﬀ-policy estimation for inﬁnite-horizon reinforcement learning.
+International Conference on Learning Representations.
+Munos R (2014) From bandits to monte-carlo tree search: The optimistic principle applied to optimization and
+planning. Foundations and Trends in Machine Learning 7(1):1–129.
+Nachum O, Chow Y, Dai B, Li L (2019) Dualdice: Behavior-agnostic estimation of discounted stationary distribution
+corrections. Advances in Neural Information Processing Systems 32.
+Nilim A, El Ghaoui L (2005) Robust control of markov decision processes with uncertain transition matrices.
+Operations Research 53(5):780–798.
+Nilim A, Ghaoui LE (2005) Robust control of markov decision processes with uncertain transition matrices.
+Operations Research 53(5):780–798.
+OpenAI, Berner C, Brockman G, Chan B, Cheung V, D÷biak P, Dennison C, Farhi D, Fischer Q, Hashme S, Hesse
+C, Józefowicz R, Gray S, Olsson C, Pachocki J, Petrov M, de Oliveira Pinto HP, Raiman J, Salimans T,
+Schlatter J, Schneider J, Sidor S, Sutskever I, Tang J, Wolski F, Zhang S (2019) Dota 2 with large scale deep
+reinforcement learning. arXiv preprint arXiv:1912.06680 .
+Petrik M, Russel RH (2019) Beyond conﬁdence regions: Tight bayesian ambiguity sets for robust mdps. Advances
+in Neural Information Processing Systems, volume 32, 7049–7058.
+Precup D (2000) Eligibility traces for oﬀ-policy policy evaluation. International Conference on Machine Learning,
+759–766.
+Puterman ML (1994) Markov Decision Processes: Discrete Stochastic Dynamic Programming (John Wiley & Sons,
+Inc.).
+Raghu A, Komorowski M, Ahmed I, Celi L, Szolovits P, Ghassemi M (2017) Deep reinforcement learning for
+sepsis treatment. arXiv preprint arXiv:1711.09602 .
+Sallab AE, Abdou M, Perot E, Yogamani SK (2017) Deep reinforcement learning framework for autonomous
+driving. Electronic Imaging 2017(19):70–76.
+Shapiro A, Dentcheva D, Ruszczynski A (2021) Lectures on stochastic programming: modeling and theory (Society
+for Industrial and Applied Mathematics), 3 edition.
+Shi C, Zhang S, Lu W, Song R (2020) Statistical inference of the value function for reinforcement learning in
+inﬁnite horizon settings. arXiv preprint arXiv:2001.04515 .
+Si N, Zhang F, Zhou Z, Blanchet J (2020) Distributional robust batch contextual bandits. International Conference
+on Machine Learning, volume 119, 8884–8894.
+Singh S, Póczos B (2019) Minimax distribution estimation in wasserstein distance. arXiv preprint arXiv:1802.08855
+.
+Sion M (1958) On general minimax theorems. Paciﬁc Journal of mathematics 8(1):171–176.
+Sirignano J, Spiliopoulos K (2020) Mean ﬁeld analysis of neural networks: A law of large numbers. SIAM Journal
+on Applied Mathematics 80(2):725–752.
+Smirnova E, Dohmatob E, Mary J (2019) Distributionally robust reinforcement learning. arXiv preprint
+arXiv:1902.08708 .
+Sonabend A, Lu J, Celi LA, Cai T, Szolovits P (2020) Expert-supervised reinforcement learning for oﬄine policy
+learning and evaluation. Advances in Neural Information Processing Systems 33:18967–18977.
+Song J, Zhao C (2020) Optimistic distributionally robust policy optimization. arXiv preprint arXiv:2006.07815 .
+Sun R (2019) Optimization for deep learning: theory and algorithms. arXiv preprint arXiv:1912.08957 .
+Tang Z, Feng Y, Li L, Zhou D, Liu Q (2019) Doubly robust bias reduction in inﬁnite horizon oﬀ-policy estimation.
+International Conference on Learning Representations.
+Thomas PS, Theocharous G, Ghavamzadeh M (2015) High-conﬁdence oﬀ-policy evaluation. AAAI Conference on
+Artiﬁcial Intelligence, volume 29.
+
+27
+Thomas PS, Theocharous G, Ghavamzadeh M, Durugkar I, Brunskill E (2017) Predictive oﬀ-policy policy
+evaluation for nonstationary decision problems, with applications to digital marketing. AAAI Conference on
+Artiﬁcial Intelligence, volume 31, 4740–4745.
+Tirinzoni A, Chen X, Petrik M, Ziebart BD (2018) Policy-conditioned uncertainty sets for robust markov decision
+processes. Advances in neural information processing systems 31:8953–8963.
+Uehara M, Huang J, Jiang N (2020a) Minimax weight and q-function learning for oﬀ-policy evaluation.
+International Conference on Machine Learning, 9659–9668.
+Uehara M, Kato M, Yasui S (2020b) Oﬀ-policy evaluation and learning for external validity under a covariate
+shift. Advances in Neural Information Processing Systems, volume 33, 49–61.
+Wang L, Zhang W, He X, Zha H (2018) Supervised reinforcement learning with recurrent neural network for
+dynamic treatment recommendation. Proceedings of the 24th ACM SIGKDD International Conference on
+Knowledge Discovery & Data Mining, 2447–2456.
+Wiesemann W, Kuhn D, Rustem B (2013) Robust markov decision processes. Mathematics of Operations Research
+38:153–183.
+Xie T, Ma Y, Wang YX (2019) Towards optimal oﬀ-policy evaluation for reinforcement learning with marginalized
+importance sampling. Advances in Neural Information Processing Systems, volume 32, 9668–9678.
+Xu H, Mannor S (2010) Distributionally robust markov decision processes. Advances in Neural Information
+Processing Systems, volume 23, 2505–2513.
+Yang I (2017) A convex optimization approach to distributionally robust markov decision processes with
+wasserstein distance. IEEE control systems letters 1(1):164–169.
+Yang M, Nachum O, Dai B, Li L, Schuurmans D (2020) Oﬀ-policy evaluation via the regularized lagrangian.
+Advances in Neural Information Processing Systems 33:6551–6561.
+Yu T, Thomas G, Yu L, Ermon S, Zou JY, Levine S, Finn C, Ma T (2020) Mopo: Model-based oﬄine policy
+optimization. Advances in Neural Information Processing Systems 33:14129–14142.
+Zhang R, Dai B, Li L, Schuurmans D (2020a) Gendice: Generalized oﬄine estimation of stationary values.
+International Conference on Learning Representations.
+Zhang Y, Cai Q, Yang Z, Chen Y, Wang Z (2020b) Can temporal-diﬀerence and q-learning learn representation? a
+mean-ﬁeld theory. Advances in Neural Information Processing Systems 33:19680–19692.
+
+ec1
+Supplementary for "Reliable Oﬀ-policy Evaluation for Reinforcement
+Learning"
+Appendix EC.1: Detailed Experiment Setup
+All the experiments are performed on a MacBook Pro laptop with 32GB of memory running python
+3.7 with CVXPY optimization solver (Diamond and Boyd 2016, Agrawal et al. 2018) and Gurobi
+package (Gurobi Optimization, LLC 2022). Values of radii for DRO models are listed as follows. As we
+can see, the values of radii in Figure EC.1 generally scale in the order of 1/p= in terms of the sample
+size =, which is consistent with the choice of radii listed in Remark 1. Moreover, the width of intervals
+in Figure 1 decreases as the radii decrease, which is consistent with the theoretical upper bound on
+the length of proposed CI in Proposition 4.
+(a) Machine Replacement Problem
+(b) Healthcare Management Problem
+Figure EC.1
+Values of radii for constructing 95% conﬁdence intervals with non-stationary trajectory data in Figure 1. The
+~-axis represents states of MDP environments, and the G-axis represents diﬀerent numbers of trajectories or
+diﬀerent truncation lengths.
+
+ec2
+(a) Machine Replacement Problem
+(b) Healthcare Management Problem
+Figure EC.2
+Values of radii for constructing 95% conﬁdence intervals under changing MDP environments in Figure 3.
+The G-axis represents states of MDP environments, and the ~-axis represents values of radii.
+(a) Machine Replacement Problem
+(b) Healthcare Management Problem
+Figure EC.3
+Values of radii for the task of distributionally robust batch reinforcement learning in Figure 4. The ~-axis
+represents states of MDP environments, and the G-axis represents diﬀerent numbers of trajectories or
+diﬀerent truncation lengths.
+Appendix EC.2: Proofs for Section 2
+Proof of Lemma 1.
+By the deﬁnition of average visitation distribution 3c in (1), it can be shown
+that the following linear system holds (Liu et al. 2018b, Lemma 3):
+3c (B0) = (1 −W)30(B0) +W
+X
+(B,0)
+%(B0 | B,0)c(0 | B)3c (B),8B0 2 S.
+Substituting 3c (B) with F(B)3c1 (B) in the equalities above gives
+F(B0)3c1 (B0) = (1 −W)30(B0) +W
+X
+(B,0)
+%(B0 | B,0)c(0 | B)F(B)3c1 (B),
+8B0 2 S.
+This, together with the relation 3c1 (B,0,B0) = %(B0 | B,0)c1(0 | B)3c1 (B) completes the proof.
+⇤
+Appendix EC.3: Proofs for Section 4
+EC.3.1. Proof of Theorem 1
+We need several technical lemmas before the proof of Theorem 1.
+
+ec3
+Lemma EC.1. For ﬁxed state B 2 S, value function E, and the empirical distribution ˆ`(·, · | B) =
+1
+=B
+P=B
+8=1X(08,B0
+8 ), the optimization
+min
+`2Mˆ` (d)
+X
+(0,B0)
+`(0,B0 | B)E(B0)VB(0)
+(EC.1)
+can be equivalently formulated as
+min
+`8 (·,·), 8=1,2,...,=B
+(
+1
+=B
+=B
+X
+8=1
+`8(0,B0)E(B0)VB(0) : 1
+=B
+=B
+X
+8=1
+`8(0,B0)2((0,B0), (08,B0
+8)) d
+)
+,
+where 2((01,B0
+1), (02,B0
+2)) denotes the transportation cost between action-state pairs (01,B0
+1) and (02,B0
+2).
+The optimal value can also be computed from the one-dimensional dual problem:
+max
+^≥0
+(
+−^d + 1
+=B
+=B
+X
+8=1
+min
+(0,B0)
+⇢
+E(B0)VB(0) +^2((0,B0), (08,B0
+8))
+0)
+.
+Proof.
+The problem (EC.1) can be viewed as the minimization of expectation with respect to the
+probability measure within a Wasserstein ball. Applying duality results in Blanchet and Murthy (2019)
+and Gao and Kleywegt (2022) completes the proof.
+⇤
+Lemma EC.2. The min-min problem in (P) can be equivalently formulated as:
+min
+^,`
+X
+B
+^(B)
+X
+0
+c1(0 | B)VB(0)A (B,0) =
+X
+B
+^(B)
+X
+0
+c(0 | B)A (B,0)
+(EC.2a)
+subject to
+^(B0) = (1 −W)30(B0) +W ·
+X
+B
+^(B)
+
+1(`(B) > 0)
+X
+0
+`(B,0,B0)
+`(B)
+VB(0)
+2
+, 8B0 2 S,
+(EC.2b)
+` 2 Mˆ`(d).
+(EC.2c)
+Note that this equivalence is independent of the structure of the ambiguity set.
+Proof.
+The result follows simply by the change-of-variable technique with ^(B) =F(B)`(B).
+⇤
+In particular, when `(B0) = 0 for some B0 2 S, by the stationarity constraint (EC.2b) we can assert
+that ^(B0) = (1−W)30(B0). After substituting ^(B) = (1−W)30(B0) for all B in the set ¯S = {B 2 S : `(B) = 0},
+the problem is reduced into a problem with smaller size so that the decision variable becomes
+{^(B),B 2 S \ ¯S}. Without loss of generality, we can assume that for any ` 2 P, the marginal distribution
+for state `(B) > 0 for any B 2 S. Then the indicator term in (EC.2b) can be omitted, and we denote the
+fraction `(B,0,B0)
+`(B)
+as the conditional probability `(0,B0 | B) for simplicity.
+Taking the duality for the minimization over ` in the problem (EC.2), we reformulate it as a min-max
+problem.
+Lemma EC.3. The min-min problem in (EC.2) can be equivalently formulated as:
+min
+`
+max
+E
+(1 −W)
+X
+B
+E(B)30(B)
+(EC.3a)
+B.C.
+E(B) 
+X
+0
+c(0 | B)A (B,0) +W
+X
+(0,B0)
+`(0,B0 | B)E(B0)VB(0),
+8B 2 S,
+(EC.3b)
+` 2 Mˆ`(d).
+(EC.3c)
+The following lemma from Nilim and El Ghaoui (2005) is useful for the reformulation of the min-max
+problem (EC.3).
+
+ec4
+Lemma EC.4. Let 2 2 R=
++ and 5 : R=
++ ! R=
++ be a component-wise non-decreasing contraction mapping.
+Then
+(
+max
+2)G
+subject to
+G 5 (G)
+)
+=2)G⇤,
+where G⇤is the ﬁxed point of the contraction mapping 5 , i.e. G⇤= 5 (G⇤).
+Deﬁne a mapping Trob : R|S| ! R|S|
++
+as
+Trob[E] =
+✓
+min`2Mˆ` (d)
+P
+0 c(0 | B)A (B,0) +W P
+(0,B0) `(0,B0 | B)E(B0)VB(0)
+◆
+B2S
+, E 2 R|S|.
+(EC.4)
+Lemma EC.5. Under the setting of Theorem 1, Trob is a component-wise non-decreasing, and is contractive
+with constant 1+W
+2 with probability at least 1 −P
+B2S exp
+⇣
+−2=Bn2
+B
+"2B
+⌘
+.
+Proof.
+The mapping Trob is component-wise non-decreasing because of the non-negativity of
+{`(0,B0 | B)VB(0)}0,B0 for any ﬁxed B. For any E1,E2 2 R|S|
++
+and B 2 S, it holds that
+Trob(E1)B =
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)E1(B0)VB(0)
+=
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ` (d)
+⇢X
+0,B0 `(0,B0 | B)E2(B0)VB(0) +
+X
+0,B0 `(0,B0 | B)[E1(B0) −E2(B0)]VB(0)
+0
+≥
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)E2(B0)VB(0)
++W
+min
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)[E1(B0) −E2(B0)]VB(0)
+= Trob(E2)B +W
+min
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)[E1(B0) −E2(B0)]VB(0).
+It follows that
+Trob(E2)B −Trob(E1)B W
+max
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)[E2(B0) −E1(B0)]VB(0)
+WkE1 −E2k1 ·
+max
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)VB(0).
+Applying Proposition 6, we can assert that
+max
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)VB(0) 
+X
+0,B0 ˆ`(0,B0 | B)VB(0) + dB · kVBkLip,ˆ`B .
+Applying the Hoeﬀding upper bound implies that for any nB > 0,
+P
+✓X
+0,B0 ˆ`(0,B0 | B)VB(0) ≥1 +nB
+◆
+exp
+✓
+−2=Bn2
+B
+"2B
+◆
+,
+where "B = max
+0
+VB(0) −min
+0
+VB(0).
+(EC.5)
+Therefore, with probability at least 1 −exp
+⇣
+−2=Bn2
+B
+"2B
+⌘
+,
+max
+`2Mˆ` (d)
+X
+0,B0 `(0,B0 | B)VB(0) 1 +nB + dBkVBkLip,ˆ`B 1 +W
+2W ,
+which implies that Trob(E2)B −Trob(E1)B 1+W
+2 kE1 −E2k1. We can exchange the role of E1 and E2 to show
+that |Trob(E2)B −Trob(E1)B| 1+W
+2 kE1 −E2k1. Taking the union bound for all B 2 S completes the proof.
+⇤
+
+ec5
+Now we are ready to prove Theorem 1.
+Proof of Theorem 1.
+Applying Lemma EC.1, the mapping Trob becomes
+Trob[E] =
+"
+P
+0 c(0 | B)A (B,0) +W max^≥0
+⇢
+−^dB + 1
+#B
+P#B
+8=1 min(0,B0)
+⇢
+E(B0)VB(0) +^2((0,B0), (08,B0
+8))
+00 #
+B2S
+.
+Note that Trob[E] is an equivalent formulation of the right-hand side of (7). Applying Lemma EC.5,
+we can see that Trob is a component-wise non-decreasing contraction mapping with high probability.
+Whenever this holds, by Lemma EC.4, at optimality each of the constraint (7) is tight.
+Let E⇤be the optimal solution to (V) and let {`⇤(·, · | B)}B2S be the corresponding worst-case
+conditional distributions yielding from Lemma EC.1. Thus, for all B 2 S,
+E⇤(B) =
+min
+`2Mˆ` (d)
+X
+0
+c(0 | B)A (B,0) +W
+X
+(0,B0)
+`(0,B0 | B)E⇤(B0)VB(0)
+=
+X
+0
+c(0 | B)A (B,0) +W
+X
+(0,B0)
+`⇤(0,B0 | B)E⇤(B0)VB(0).
+(EC.6)
+Because of the rectangularity of Mˆ`(d), the pair (`⇤,E⇤) is feasible for (EC.3). Hence, the optimal value
+in (V) is lower bounded by the optimal value of (EC.3).
+On the other hand, for ﬁxed ` 2 Mˆ`(d), the optimum E` of the inner maximization problem in (EC.3)
+satisﬁes E`(B) = P
+0 c(0 | B)A (B,0) +W P
+(0,B0) `(0,B0 | B)E`(B0)VB(0), 8B 2 S. Since ` is feasible for Mˆ`(d),
+we have
+E`(B) ≥
+min
+`2Mˆ` (d)
+X
+0
+c(0 | B)A (B,0) +W
+X
+(0,B0)
+`(0,B0 | B)E`(B0)VB(0).
+Since E⇤is the solution to the ﬁxed point equation (EC.6), applying Theorem 6.2.2 in Puterman (Puter-
+man 1994) gives E`(B) ≥E⇤(B) for all B 2 S. Because of the non-negativity of 30, we conclude that the
+optimal value in (EC.3) is lower bounded by that in (V). Therefore, the proof is completed.
+⇤
+EC.3.2. Proofs for Propositions
+Proof of Proposition 1.
+Since the right-hand side of (7) is a contraction mapping with respect to
+the value function E, all constraints in (7) are tight at optimality. Because of the non-negativity of
+30(B),8B, solving the optimization problem (V) is equivalent to computing the unique ﬁxed point of the
+equation (7). As a result, the ﬁxed point iteration presented in Algorithm 1 is guaranteed to converge
+into the optimal solution because the right-hand side at (7) is a contraction mapping.
+⇤
+Proof of Proposition 2.
+By assigning the dual multiplier {^(B)} for each constraint in (V), the dual
+problem becomes
+min
+^≥0
+X
+(B,0)
+c(0 | B)^(B)A (B,0) + max
+E
+X
+B
+E(B)
+⇥
+(1 −W)30(B) −^(B)
+⇤
++W
+X
+B
++ (B)^(B).
+In particular, the inner maximization presented above can be reformulated as
+max
+E,_B ≥0
+X
+B
+E(B)
+
+(1 −W)30(B) −^(B)
+2
++W
+X
+B
+^(B)
+
+−_BdB + 1
+=B
+=B
+X
+8=1
+min
+(0,B0)2A⇥S
+-
+E(B0)VB(0) + _B2((0,B0), (08,B0
+8))
+ 2
+=
+max
+E,
+_B ≥0,8B2S
+UB,8,8B2S,88
+8>><
+>>:
+P
+B E(B)
+
+(1 −W)30(B) −^(B)
+2
++W P
+B ^(B)
+
+−_BdB + 1
+=B
+P=B
+8=1 UB,8
+2
+Subject to UB,8 E(B0)VB(0) + _B2((0,B0), (08,B0
+8)),88,8(0,B0)
+9>>=
+>>;
+.
+
+ec6
+By assigning the dual multiplier {⌘(B)
+8,(0,B0)}(0,B0),8, the dual of the maximization problem becomes
+min
+⌘≥0
+max
+E,
+_B ≥0,8B2S
+UB,8,8B2S,88
+X
+B
+E(B)
+
+(1 −W)30(B) −^(B)
+2
++W
+X
+B
+^(B)
+
+−_BdB + 1
+=B
+=B
+X
+8=1
+UB,8
+2
++
+X
+B
+X
+8
+X
+(0,B0)
+⌘(B)
+8,(0,B0)
+
+E(B0)VB(0) + _B2((0,B0), (08,B0
+8)) −UB,8
+2
+=min
+⌘≥0
+max
+E,
+_B ≥0,8B2S
+UB,8,8B2S,88
+X
+B0 E(B0)
+"
+(1 −W)30(B0) −^(B0) +
+X
+(B,0)
+X
+8
+⌘(B)
+8,(0,B0)VB(0)
+#
++
+X
+B
+_B
+"
+−W^(B)dB +
+X
+8
+X
+(0,B0)
+⌘(B)
+8,(0,B0)2((0,B0), (08,B0
+8))
+#
++
+X
+B
+X
+8
+UB,8
+"
+1
+=B
+W^(B) −
+X
+(0,B0)
+⌘(B)
+8,(0,B0)
+#
+.
+Therefore, the inner maximization problem is bounded if and only if the following conditions hold:
+(1 −W)30(B0) −^(B0) +
+X
+(B,0)
+X
+8
+⌘(B)
+8,(0,B0)VB(0) = 0, 8B0 2 S,
+W^(B)dB −
+X
+8
+X
+(0,B0)
+⌘(B)
+8,(0,B0)2((0,B0), (08,B0
+8)) 0, 8B 2 S,
+1
+=B
+W^(B) −
+X
+(0,B0)
+⌘(B)
+8,(0,B0) = 0, 8B 2 S,88 2 [=B].
+Hence, the dual of problem (V) becomes
+min
+^≥0,⌘≥0
+X
+(B,0)
+c(0 | B)^(B)A (B,0)
+s.t.
+(1 −W)30(B0) +
+X
+(B,0)
+X
+8
+⌘(B)
+8,(0,B0)VB(0) =^(B0), 8B0 2 S,
+X
+8
+X
+(0,B0)
+⌘(B)
+8,(0,B0)2((0,B0), (08,B0
+8)) W^(B)dB, 8B 2 S,
+X
+(0,B0)
+⌘(B)
+8,(0,B0) = W
+=B
+^(B),8B 2 S, 88 2 [=B].
+By change of variable ⌘(B)
+8,(0,B0) ⌘(B)
+8,(0,B0)/W, this dual problem can be formulated as
+min
+^≥0,⌘≥0
+X
+(B,0)
+c(0 | B)^(B)A (B,0)
+s.t.
+(1 −W)30(B0) +W
+X
+(B,0)
+VB(0)
+X
+8
+⌘(B)
+8,(0,B0) =^(B0), 8B0 2 S,
+X
+8
+X
+(0,B0)
+⌘(B)
+8,(0,B0)2((0,B0), (08,B0
+8)) ^(B)dB, 8B 2 S,
+X
+(0,B0)
+⌘(B)
+8,(0,B0) = 1
+=B
+^(B),8B 2 S, 88 2 [=B].
+Or we make the change of variable ⌘(B)
+8,(0,B0) =^(B)@(B)
+8,(0,B0) and consider solving
+min
+^≥0,✓≥0
+X
+(B,0)
+c(0 | B)^(B)A (B,0)
+
+ec7
+s.t.
+(1 −W)30(B0) +W
+X
+(B,0)
+VB(0)^(B)
+X
+8
+@(B)
+8,(0,B0) =^(B0), 8B0 2 S,
+X
+8
+X
+(0,B0)
+@(B)
+8,(0,B0)2((0,B0), (08,B0
+8)) dB, 8B 2 S,
+X
+(0,B0)
+@(B)
+8,(0,B0) = 1
+=B
+,8B 2 S, 88 2 [=B].
+⇤
+Proof of Proposition 3.
+Deﬁne ZB,1 = {(0,B0) 2 A ⇥S : lVB 5 (0,B0) = kVB5 kLip,ˆ`B }, and
+dB =
+sup
+É: A⇥S!A⇥S
+⇢
+Eˆ`B [2(É(0,B0), (0,B0))] : É(0,B0) = (0,B0),8(0,B0) < ZB,1,
+VB5 (É(0,B0)) −VB5 ((0,B0))
+2(É(0,B0), (0,B0))
+= lVB 5 (0,B0),8(0,B0) 2 ZB,1
+0
+.
+Consider the general case where the function space F is a subset of {5 : S 3 B 7! 5 (B) 2 R}. Then for
+ﬁxed ^, the inner problem of robust OPE becomes
+min
+`2Mˆ` (d),8B
+max
+5 2L[F ] (1 −W)EB⇠30 [5 (B)]
++
+⇢X
+B
+^(B)Ac (B) +WEB⇠^(B)
+⇥
+E(0,B0)⇠`(·,·|B) [VB(0)5 (B0)]
+⇤
+−EB⇠^ [5 (B)]
+0
+= max
+5 2L[F ] (1 −W)EB⇠30 [5 (B)] +
+X
+B
+^(B)Ac (B) −EB⇠^ [5 (B)]
++
+min
+`2Mˆ` (d),8B
+⇢
+WEB⇠^(B)
+⇥
+E(0,B0)⇠`(·,·|B) [VB(0)5 (B0)]
+⇤0
+= max
+5 2L[F ] (1 −W)EB⇠30 [5 (B)] +
+X
+B
+^(B)Ac (B) −EB⇠^ [5 (B)] +WEB⇠^(B)
+⇢
+min
+`2Mˆ` (d) E(0,B0)⇠`(·,·|B) [VB(0)5 (B0)]
+0
+,
+where the ﬁrst equality is by applying the sion’s minimax theorem (Sion 1958) based on the fact that
+L[F] is a linear topological space and Mˆ`(d) is a compact Wasserstein ball, and the second equality is
+because of the rectangular structure of the ambiguity set P. Based on the assumption that dB < dB,8B
+and applying Theorem 6 on the inner minimization within the Wasserstein ball, this problem can be
+equivalently formulated as
+max
+5 2F (1 −W)EB⇠30 [5 (B)] +
+X
+B
+^(B)Ac (B)
+−EB⇠^ [5 (B)] +WEB⇠^(B)
+⇢
+E(0,B0)⇠ˆ`B [VB(0)5 (B0)] −dB · kVB(·)5 (·)kLip,ˆ`B
+0
+.
+Combining this formulation with the outer minimization with respect to ^ completes the proof. For
+general radii {dB}, the results can be derived using Proposition 6 in a similar manner.
+⇤
+Appendix EC.4: Proofs for Section 5
+EC.4.1. Proofs for Section 5.1
+We begin with a lemma on the error bounds for the perturbed value iterations.
+Lemma EC.6. Denote by T true the Bellman operator with the true conditional probability 3c1 (0,B0 | B):
+T true[E](B) = P
+0 c(0 | B)A (B,0) +W P
+(0,B0) 3c1 (0,B0 | B)E(B0)VB(0).
+
+ec8
+Denote by T ; and T D perturbations of T so that
+T ; [E](B) =) true[E](B) −n;
+E(B),
+T D [E](B) =) true[E](B) +nD
+E (B).
+Assume that there exist n; = (n; (B))B2S and nD = (n; (B))B2S such that n;
+E(B) n; (B) and nD
+E (B) nD(B) for all
+B 2 S and E. Let Etrue,E;,ED be the solutions to the ﬁxed point of T true,T ;,T D, respectively. Then
+Etrue −E; &퐼−W%true'−1n;,
+Etrue −ED ≥−&퐼−W%true'−1nD,
+where the matrix %true 2 R|S|⇥|S| is deﬁned as %true
+B,B0 := P
+0 3c1 (0,B0 | B)VB(0), and the inequality is interpreted
+component-wise.
+Proof of Lemma EC.6.
+Deﬁne E;
+(:) as the :-th iteration point for the value iteration algorithm with
+Bellman operator T ;. Then we have the relation
+E (:+1)
+;
+−Etrue = T ; [E;
+(:)] −T true[Etrue]
+= T true[E;
+(:)] −T true[Etrue] −nE;
+(:)
+≥T true[E;
+(:)] −T true[Etrue] −n;
+=W
+✓X
+0,B0 3c1 (0,B0 | B)VB(0)(E;
+(:) −Etrue)
+◆
+B2S
+−n;
+=W%true(E;
+(:) −Etrue) −n;.
+Applying the relation inductively, we have
+E;
+(=) −Etrue ≥W=(%true)=(E;
+(0) −Etrue) −
+=−1
+X
+:=0
+W=−:−1(%true)=−:−1n;.
+Taking the limit = ! 1 and applying the identity (퐼−퐴)−1 = lim=!1 P=−1
+:=0 퐴: gives the desired result.
+The other part of this Lemma follows the similar argument.
+⇤
+Lemma EC.7. For ﬁxed B 2 S, we deﬁne
+FB := {(0,B0) 7! VB(0)E(B0) : 0 2 A,B0 2 S}.
+Deﬁne
+d(VB(·)E(·), VB(·)˜E(·)) = |(1 −W)3>
+0
+&퐼−W%true'−1(˜E −E)|.
+Then
+N
+⇣
+1
+=,FB,d
+⌘
+2=".
+Proof of Lemma EC.7.
+Denote H as the collection of all possible value functions E. Take the semi-
+metric of H as
+d(˜E,E) := |(1 −W)3>
+0
+&퐼−W%true'−1(˜E −E)|.
+For ﬁxed C, consider the line set HC = {E : (1−W)3>
+0
+&퐼−W%true'−1E = C}. For any n ≥0, we have d(E,E0) n
+when E 2 HC and E0 2 HC+n. In order to ﬁnd the 1
+=-covering number of H, we only need to ﬁnd the
+covering number for the 1-dimensional parameter C with −" C ", which is 2=". Since the function
+class FB can be expressed as
+FB = {0 7! VB(0)} ⇥H,
+the covering number of FB can be upper bounded as 2=".
+⇤
+
+ec9
+Applying Proposition 8 with [ = 1 to the right-hand side of constraint (7) gives the following result.
+Lemma EC.8. Fix B 2 S and deﬁne FB = {(0,B0) 7! E(B0)VB(0),0 2 A,B0 2 S}. Let gB > 0, and set
+d=,B =
+r
+2gB
+=B
+diam(A ⇥S),
+XB =
+min
+(0,B0)2supp 3c1 (·,·|B)3c1 (0,B0 | B),
+JB =
+1
+⇣
+1−2XB
+1−XB _ 2XB −1
+XB
+⌘.
+With probability at least 1 −U0
+B, where
+U0
+B := exp & −gB + log(2=B")' + exp (−=B log (1/(1 −XB)) + log(2=B"))
++ exp
+⇣
+−=B logJB + log(2=B")
+⌘
+,
+(EC.7)
+simultaneously for every function E with |E(B)| ", it holds that
+E3c1 [E(B)VB(0)] ≥Trob[E] −6
+=B
+.
+In particular, based on the identity exp(−2 log(1/(1 −X))) exp(−2X) for any 2 > 0,X 2 [0, 1), we can
+replace the error probability U0
+B in (EC.7) with
+UB := exp & −gB + log(2=B")' + exp (−=BXB + log(2=B")) + exp
+⇣
+−=B logJB + log(2=B")
+⌘
+.
+This new error probability is slightly more conservative, but it highlights the linear dependence of XB
+on the sample size =B.
+Proof of Theorem 2.
+Taking the union bound of the probability presented in Lemma EC.8, with
+probability at least 1 −P
+B2S UB, the Bellman operator Trob for robust reward deﬁned in (EC.4) admits
+the following error bound for any value function E satisfying |E(B)| ",8B 2 S,
+Trob[E] = T ⇤[E] +nE,
+nE(B) n=,B.
+Recall that we have used E⇤to denote the ﬁxed point of Trob. When this upper bound holds, applying
+Lemma EC.6 implies
+Etrue −E⇤≥−(퐼−W%true)−1n=.
+Then the gap between the underlying reward and the robust reward is
+'c ≥Lˆ`= (d=) −3)
+0 (퐼−W%true)−1n=.
+Similarly, with probability at least 1 −P
+B2S UB, it holds that
+'c Uˆ`= (d=) +3)
+0 (퐼−W%true)−1n=.
+Taking the union bound implies the desired result.
+⇤
+Proof of Proposition 4.
+Denote by ˆT the empirical Bellman operator such that
+ˆT [E](B) =
+X
+B
+c(0 | B)A (B,0) +W
+X
+B02S
+%ˆ`= (B,B0)E(B0) 8B 2 S.
+where %ˆ`= 2 R|S|⇥|S| denotes the transition kernel with %ˆ`= (B,B0) = P
+0 ˆ`=(0,B0 | B)VB(0). Denote by
+{ˆE(B)}B2S the empirical value function, which is the ﬁxed point for the empirical Bellman operator.
+Leveraging the concentration inequality in (EC.5) implies that with probability at least 1 −exp
+⇣
+−2g02
+B
+"2B
+⌘
+,
+it holds that
+X
+B0 %ˆ`= (B,B0) =
+X
+02A,B02S
+ˆ`=(0,B0 | B)VB(0) 1 + g0
+B
+p=B
+
+ec10
+Therefore, with probability at least 1 −P
+B2S exp
+⇣
+−2g02
+B
+"2B
+⌘
+, for all B 2 S and for any two value functions
+E1,E2, it holds that
+CCC ˆT [E1](B) −ˆT [E2](B)
+CCC =W
+CCCCC
+X
+(0,B0)
+ˆ`=(0,B0 | B)[E1(B0) −E2(B0)]VB(0)
+CCCCC
+WkE1 −E2k1
+X
+(0,B0)
+ˆ`=(0,B0 | B)VB(0)
+
+✓
+W + Wg0
+B
+p=B
+◆
+kE1 −E2k1 1 +W
+2
+kE1 −E2k1,
+which means that ˆT is a contraction mapping, i.e., the matrix 퐼−W%ˆ`= is invertible. Denote by ); and )D
+the robust and optimistic Bellman operators, with the associated robust and optimistic value functions
+being E; and ED, respectively. Note that the Bellman operator ); satisﬁes
+ˆT (B) −); (B) n; (B) :=Wd=,B · kVBE; kLip,ˆ`=,B .
+Applying the similar perturbation analysis as in Lemma EC.6 gives
+ˆE −E; (퐼−W%ˆ`)−1n;.
+Similarly, ED −ˆE (퐼−W%ˆ`)−1nD with nD(B) :=Wd=,B · kVBEDkLip,ˆ`=,B .
+In summary, with probability at least 1 −P
+B2S exp
+⇣
+−2g02
+B
+"2B
+⌘
+, the length of the conﬁdence interval can
+be upper bounded by
+Uˆ`= (d) −Lˆ`= (d) 
+CCCC
+X
+B
+30(B)[ED(B) −E; (B)]
+CCCC
+
+CCCC
+X
+B
+30(B)[ˆE(B) −E; (B)]
+CCCC +
+CCCC
+X
+B
+30(B)[ED(B) −ˆE(B)]
+CCCC
+3)
+0 (퐼−W%ˆ`=)−1n; +3)
+0 (퐼−W%ˆ`=)−1nD.
+According to the deﬁnition of function variation term, it holds that
+kVBE; kLip,ˆ`=,B kVBE; kLip,3c1 (·,·|B) 
+max
+E2R|S|,|E(B)|" kVBEkLip,3c1 (·,·|B).
+The other function variation term can also be upper bounded similarly.
+⇤
+EC.4.2. Proofs for Section 5.2
+Proof of Theorem 3.
+Deﬁne the adversarial Bellman operator T : R|S| ! R|S| as
+T [E] =
+✓X
+0
+c(0 | B)A (B,0) +W
+min
+`2M3c1 (d)
+X
+(0,B0)
+`(0,B0 | B)E(B0)VB(0)
+◆
+B2S
+, E 2 R|S|.
+Deﬁne the empirical adversarial Bellman operator ˆT : R|S| ! R|S| as
+ˆT [E] =
+✓X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ` (d)
+X
+(0,B0)
+`(0,B0 | B)E(B0)VB(0)
+◆
+B2S
+, E 2 R|S|.
+We realize the Lipschitz constant of the operator T can be bounded as
+W
+max
+`2M3c1 (d)
+X
+(0,B0)
+`(0,B0 | B)VB(0) W(1 + dBkVBkLip,3c (·,·|B)) W0 := 1 +W
+2
+.
+
+ec11
+Therefore, the Bellman operator T is a contractive mapping. Deﬁne the following two thresholds
+d (1)
+B
+=
+sup
+) : A⇥S!A⇥S
+⇢
+E3c1 (·,·|B) [2(É(0,B0), (0,B0))] : É(0,B0) = (0,B0),8(0,B0) < ZB,1,
+VB5 (É(0,B0)) −VB5 ((0,B0))
+2(É(0,B0), (0,B0))
+= lVB 5 (0,B0),8(0,B0) 2 ZB,1
+0
+,
+d (2)
+B
+=
+sup
+) : A⇥S!A⇥S
+⇢
+Eˆ`B [2(É(0,B0), (0,B0))] : É(0,B0) = (0,B0),8(0,B0) < ZB,1,
+VB5 (É(0,B0)) −VB5 ((0,B0))
+2(É(0,B0), (0,B0))
+= lVB 5 (0,B0),8(0,B0) 2 ZB,1
+0
+.
+Suppose dB < dB := d (1)
+B
+^d (2)
+B
+. By Proposition 9 with [ = 1, the following relation holds with probability
+at least 1 −exp (−=BXB + log(2=B")) −24−g:
+|T [E](B) −ˆT [E](B)| ]0
+=B := 2E⌦[R=B (FB)] +퐻B
+r g
+2=B
+.
+Deﬁne ˆE (:) as the :-th iteration point for the value iteration algorithm with Bellman operator ˆT . Let E
+be the ﬁxed point solution of the Bellman operator T . Then we have the relation
+|ˆE (:+1) (B) −E(B)| =
+CCC ˆT [ˆE (:)](B) −T [E](B)
+CCC
+
+CCT [ˆE (:)](B) −T [E](B)
+CC +
+CCCT [ˆE (:)](B) −ˆT [ˆE (:+1)](B)
+CCC
+W0|ˆE (:) (B) −E(B)| +]0
+=B .
+Applying this relation inductively, it holds that
+|ˆE(B) −E(B)| := lim
+:!1 |ˆE (:+1) (B) −E(B)| ]0
+=B
+1
+X
+:=0
+(W0): =
+]0
+=B
+1 −W0,
+where ˆE is the ﬁxed point solution of the Bellman operator ˆT . Taking the union bound implies that the
+relation
+|Ladv(d) −Lˆ`= (d)| =
+CCCC(1 −W)
+X
+B
+[E(B) −ˆE(B)]30(B)
+CCCC 1 −W
+1 −W0
+X
+B
+30(B)]0
+=B
+holds with probability at least 1 −P
+B UB. The proof is completed.
+⇤
+To prove Theorem 4, We ﬁrst establish the asymptotic convergence for the transition probabilities ˆ`)
+into 3c1, and then the convergence for Ladv(d) can be built by applying the functional delta theorem.
+Lemma EC.9. Denote by ˆ`) = vec({ˆ`) (0,B0 | B)}), and 3c1 = vec({3c1 (0,B0 | B)}). It holds that
+p
+) &ˆ`) −3c1
+' d−! N (0,⇡⇤⇡),
+where ⇤2 R|S||A||S|⇥|S||A||S|
++
+is deﬁned as
+⇤(B,(0,B0)),(˜B,(˜0,˜B0)) =
+(3c1 (0,B0 | B)(1 −3c1 (0,B0 | B)),
+if (B, (0,B0)) = (˜B, (˜0,˜B0)),
+−3c1 (0,B0 | B)3c1 (˜0,˜B0 | B)
+if B = ˜B, (0,B0) < (˜0,˜B0),
+0,
+otherwise,
+and ⇡= diag
+⇣
+vec
+⇣
+(3c1)−1
+2 ⌦1|A||S|
+⌘⌘
+, 3−1/2
+c1
+:=
+⇢
+1
+p
+3c1 (B)
+0
+B2S
+, and vec(·) denotes the vectorization of a
+matrix by stacking the rows of the matrix on top of one another.
+
+ec12
+Proof of Lemma EC.9.
+The proof essentially follows Billingsley (1961) on the maximum likelihood
+estimate for Markov chains. Denote by - (<)
+B
+be the action-state pair directly after the <-th return to B.
+Deﬁne
+?B,(0,B0) := c1(0|B)%(B0|B,0),
+gB,(0,B0) ()) :=
+)X
+C=1
+1{BC = B,0C = 0,BC+1 = B0},
+gB()) :=
+)X
+C=1
+1{BC = B},
+&B,(0,B0) ()) :=
+b)3c1 (B)c
+X
+<=1
+1{- (<)
+B
+= (0,B0)}.
+It follows that
+ˆ`) (0,B0|B) =gB,(0,B0) ())/gB()).
+From the Markov property, for each B 2 S, {&B,(0,B0)}02A,B02S is multinomially distributed with b)3c1 (B)c
+trials and success probability vector ?B,(·,·). As a result, we have
+"
+&B,(0,B0) ()) −b)3c1 (B)c?B,(0,B0)
+p
+b)3c1 (B)c
+#
+B2S,(0,B0)2A⇥S
+d−! N (0,⇤).
+Next, we prove that
+"
+gB,(0,B0) ()) −gB())?B,(0,B0)
+p
+b)3c1 (B)c
+#
+B2S,(0,B0)2A⇥S
+d−! N (0,⇤).
+To this end, it suﬃces to show for each B 2 S and (0,B0) 2 A ⇥S,
+Δ) := gB,(0,B0) ()) −gB())?B,(0,B0) −&B,(0,B0) ()) + b)3c1 (B)c?B,(0,B0)
+p
+)
+p−! 0.
+Fixing B 2 S and (0,B0) 2 A ⇥S, setting /< := 1{- (<)
+B
+= (0,B0)} −?B,(0,B0) and .< := P<
+9=1 /9, we rewrite
+Δ) as
+Δ) =
+.gB () ) −.b)3c1 (B)c
+p
+)
+.
+Let n > 0. By consistency of the empirical frequency gB()), there exists )0 such that for all ) >)0,
+P{|gB,(0,B0) ()) −)3c1 (B)| >)n3} n.
+Note that /9’s are i.i.d. with mean 0 and variance ?B,(0,B0) (1 −?B,(0,B0)). For ) > )0, we have from
+Chebyshev’s inequality that
+P{|Δ) | > n} P{|gB,(0,B0) ()) −)3c1 (B)| >)n3} + P{|Δ) | > n, |gB()) −)3c1 (B)| )n3}
+n + P
+(
+max
+<2N:|<−)3c1 (B)|)n3 |.< −.b)3c1 (B)c| > n
+p
+)
+)
+n + 2
+X
+<2N:|<−)3c1 (B)|)n3
+P{|.<| > n
+p
+)/2}
+n + 8)n3?B,(0,B0) (1 −?B,(0,B0))/()n2)
+= n(1 + 8?B,(0,B0) (1 −?B,(0,B0)) ! 0.
+
+ec13
+Finally, observe that
+hp
+) &ˆ`) (0,B0 | B) −3c1 (0,B0 | B)'i
+B2S,(0,B0)2A⇥S
+=
+"
+1
+p
+3c1 (B)
+&p
+gB())ˆ`) (0,B0 | B) −
+p
+gB())3c1 (0,B0 | B)'
+#
+B2S,(0,B0)2A⇥S
+=
+"
+1
+p
+3c1 (B)
+ 
+gB,(0,B0) ())
+p
+gB())
+−gB())3c1 (0,B0 | B)
+p
+gB())
+!#
+B2S,(0,B0)2A⇥S
+=
+"
+1
+p
+3c1 (B)
+p
+b)3c1 (B)c
+p
+gB())
+·
+"
+gB,(0,B0) ()) −gB())?B,(0,B0)
+p
+b)3c1 (B)c
+##
+B2S,(0,B0)2A⇥S
+p−!N (0,⇡⇤⇡),
+where the convergence follows using Slutsky’s theorem and linear transformation of multivariate
+normal distribution.
+⇤
+Lemma EC.10. Under the setting of Theorem 4, the matrix 퐼−W%` is invertible for any ` 2 M3c1 (d).
+Proof of Lemma EC.10
+It suﬃces to show that the mapping T : E 7!W%`E is contractive. For any
+E1,E2 2 R|S|, we have
+kT [E1] −T [E2]k1 =W max
+B
+CCCCC
+X
+(0,B0)
+`(0,B0 | B)[E1(B0) −E2(B0)]VB(0)
+CCCCC
+WkE1 −E2k1 max
+B
+X
+(0,B0)
+`(0,B0 | B)VB(0)
+WkE1 −E2k1 max
+B
+max
+`2M3c1 (d)
+X
+(0,B0)
+`(0,B0 | B)VB(0).
+In particular, applying Proposition 6 implies that
+max
+`2M3c1 (d)
+X
+(0,B0)
+`(0,B0 | B)VB(0) 
+X
+0,B0 3c1 (0,B0 | B)VB(0) + dB · kVBkLip,3c1 (·,·|B).
+Therefore, as long as 1 + dB · kVBkLip,3c1 (·,·|B) < 1/W for all B 2 S, the mapping T is contractive.
+⇤
+Proof of Theorem 4.
+Deﬁne
+^`(B) =F(B)`(B),
+%`(B,B0) =
+X
+0
+VB(0)`(0,B0 | B),
+Ac =
+X
+0
+c1(0 | B)VB(0)A (B,0),
+then the stationary constraint (P-b) can be reformulated as
+^`(B0) = (1 −W)30(B0) +W
+X
+B
+^`(B)%`(B,B0).
+To apply the delta method, let us compute r`L3c1 (d). From Lemma EC.10 we can see that the system
+of equations above has the unique solution, and we can reformulate L3c1 as the following:
+L3c1 (d) =
+min
+`2M3c1 (d)
+X
+B
+^`(B)Ac (B) =
+min
+`2M3c1 (d) h(1 −W)Ac, &퐼−W%)
+`
+'−130i.
+
+ec14
+Denote the minimizer above as `⇤. By the envelope theorem, the gradient of L`(d) (with respect to `)
+at ` =3c1 can be expressed as
+rL3c1 (d) = rh(1 −W)Ac, (퐼−W%)
+`⇤)−130i
+= h(1 −W)Ac, r(퐼−W%)
+`⇤)−130i
+= h(1 −W)Ac,W(퐼−W%)
+`⇤)−1(r%)
+`⇤)(퐼−W%)
+`⇤)−130i
+=W(1 −W)hvec
+⇣
+(퐼−W%)
+`⇤)−130A)
+c (퐼−W%)
+`⇤)−1⌘
+, rvec(%)
+`⇤)i
+=W(1 −W)
+⇢⇣
+(퐼−W%)
+`⇤)−130A)
+c (퐼−W%)
+`⇤)−1⌘
+B,B0 VB(0) : (B,0,B0) 2 S ⇥A ⇥S
+0
+,
+where the last inequality is because
+rvec(%)
+`⇤) =
+⇢
+1(¯B = B,¯B0 = B0)VB(¯0)
+0
+(B,B0),(¯B,¯0,¯B0)
+.
+Therefore, using the delta theorem and Lemma EC.9 gives the result.
+⇤
+Appendix EC.5: Proofs for Section 6
+Lemma EC.11. Under the setting of Theorem 6, with probability at least 1−exp &−2=BX02
+B n2
+B
+', it holds that
+max
+0
+ˆ`=(0 | B)
+c1(0 | B) 1 +W
+2W
+−d=,B max
+c (·|B)kVc
+B kLip,ˆ`=,B .
+Proof.
+First, we can see that the maximization over the variation term is bounded:
+max
+c (·|B) kVc
+B kLip,ˆ`=,B = max
+c (·|B)
+max
+02supp(ˆ`(·|B)),
+˜0<0
+c (0|B)
+c1 (0|B) −c (˜0|B)
+c1 (˜0|B)
+2(0, ˜0)
+=
+max
+02supp(ˆ`(·|B)),
+˜0<0
+1
+c1 (0|B)
+2(0, ˜0)
+=
+1
+min
+02supp(ˆ`(·|B)),
+˜0<0
+c1(0 | B)2(0, ˜0) < 1.
+Therefore, the assumption in Theorem 6 is valid for suﬃciently small d=,B. Applying Dvoret-
+zky–Kiefer–Wolfowitz inequality (Kosorok 2008) gives
+Pr
+✓
+max
+0
+ˆ`(0 | B)
+c1(0 | B) 1 +W
+2W
+−d=,B max
+c (·|B)kVc
+B kLip,ˆ`B
+◆
+=Pr
+✓
+max
+0
+ˆ`(0 | B) −c1(0 | B)
+c1(0 | B)
+1 −W
+2W
+−d=,B max
+c (·|B)kVc
+B kLip,ˆ`B
+◆
+≥Pr
+✓
+max
+0
+⇥
+ˆ`(0 | B) −c1(0 | B)
+⇤
+X0
+B
+1 −W
+2W
+−d=,B max
+c (·|B)kVc
+B kLip,ˆ`B
+2◆
+≥1 −exp
+ 
+−2=BX02
+B
+1 −W
+2W
+−d=,B max
+c (·|B)kVc
+B kLip,ˆ`B
+22!
+≥1 −exp
+⇣
+−2=BX02
+B n2
+B
+⌘
+.
+⇤
+
+ec15
+Proof of Theorem 5.
+By exchanging the maximization over E and c in (13), we can reformulate this
+problem as the existence problem:
+max
+E
+(1 −W)
+X
+B
+E(B)30(B)
+s.t.
+9c,E(B) 
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S,
+where
++ (B) :=
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)E(B0)Vc
+B (0).
+Or equivalently, we can reformulate this existence problem as
+max
+E
+(1 −W)
+X
+B
+E(B)30(B)
+s.t.
+E(B) max
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W+ (B), 8B 2 S,
+(*)
+where
++ (B) :=
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)E(B0)Vc
+B (0).
+Deﬁne the operator q(E) as the right-hand side of the constraint (*), i.e.,
+q(E) =
+✓
+max
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)E(B0)Vc
+B (0)
+◆
+B2S
+, E 2 R|S|.
+We claim that q(E) is a contraction mapping: For any E1,E2 2 R|S|
++ ,
+q(E1)B = max
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)E1(B0)Vc
+B (0)
+≥max
+c (·|B)
+X
+0
+c(0 | B)A (B,0) +W
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)E2(B0)Vc
+B (0)
++W
+min
+`2Mˆ`= (d=)
+X
+(0,B0)
+`(0,B0 | B)[E1(B0) −E2(B0)]Vc
+B (0)
+= q(E2)B +W
+min
+`2Mˆ`= (d=),c (·|B)
+X
+(0,B0)
+`(0,B0 | B)[E1(B0) −E2(B0)]Vc
+B (0).
+It follows that
+q(E2)B −q(E1)B W
+max
+`2Mˆ`= (d=),c (·|B)
+X
+(0,B0)
+`(0,B0 | B)[E2(B0) −E1(B0)]Vc
+B (0)
+WkE2 −E1k1 ·
+max
+`2Mˆ`= (d=),c (·|B)
+X
+(0,B0)
+`(0,B0 | B)Vc
+B (0)
+WkE2 −E1k1 ·
+"
+max
+c (·|B)
+X
+(0,B0)
+ˆ`=(0,B0 | B)Vc
+B (0) + d=,B max
+c (·|B)kVc
+B kLip,ˆ`=
+#
+=WkE2 −E1k1 ·
+
+max
+0
+ˆ`=(0 | B)
+c1(0 | B) + d=,B max
+c (·|B)kVc
+B kLip,ˆ`=
+2
+1 +W
+2
+kE2 −E1k1.
+We can exchange the role of E1 and E2 to show that |q(E2)B −q(E1)B| 1+W
+2 kE1 −E2k1. Then applying
+Lemma EC.4 implies that E⇤and c⇤must be the optimal solution for (13).
+⇤
+Lemma EC.12. For ﬁxed B 2 S, we deﬁne
+FB :=
+⇢
+(0,B0) 7! E(B0)c(0 | B)
+c1(0 | B)
+,
+c(0 | B) is deterministic
+0
+.
+
+ec16
+Deﬁne d(˜E,E) := |3>
+0
+&퐼−W%true'−1(˜E −E)|, then
+N
+⇣
+1
+=,FB,d
+⌘
+2|A|=".
+Proof of Lemma EC.12.
+Deﬁne d and H following the setting in Lemma EC.7. Since c(0 | B) is
+deterministic, for ﬁxed B, it can be expressed as
+c(0 | B) = 1{0 = 00},
+for some 00.
+It follows that
+FB =
+(
+[
+002A
+⇢
+0 7! 1{0 = 00}
+c1(0 | B)
+0)
+⇥H,
+which implies the covering number of FB can be upper bounded as 2|A|=".
+⇤
+As a result, Proposition EC.1 follows by applying the covering number argument similar as in Lemma
+EC.8. Next, we build the performance guarantee for robust batch reinforcement learning by applying
+the perturbation analysis on the Bellman operator and the generalization bound on Wasserstein DRO.
+Proposition EC.1. Fix B 2 S and deﬁne
+FB :=
+⇢
+(0,B0) 7! E(B0)c(0 | B)
+c1(0 | B)
+,
+c(0 | B) is deterministic
+0
+.
+Take gB > 0 and d=,B =
+q
+2gB
+=B diam(A ⇥S),
+XB =
+min
+(0,B0)2supp 3c1 (·,·|B)3c1 (0,B0 | B),
+JB =
+1
+⇣
+1−2XB
+1−XB _ 2XB −1
+XB
+⌘,
+then with probability at least 1 −UB, where
+UB := exp & −gB + log(2|A|=B")' + exp & −=BXB + log(2|A|=B")' + exp
+⇣
+−=B logJB + log &2|A|=B"'⌘
+,
+simultaneously for every function 5 2 FB, it holds that
+EI⇠Ptrue [5 (I)] ≥
+min
+P:W (P,P=)d=,B EP[5 (I)] −6
+=B
+.
+Now we give a proof of Theorem 6 by utilizing the perturbation analysis on the Bellman operator.
+Proof of Theorem 6.
+Denote by T true the Bellman operator for the underlying true value function
+Etrue, and by T ⇤the Bellman operator for the robust value function E⇤. Taking the union bound of the
+probability presented in Proposition EC.1 implies that, with probability at least 1 −P
+B UB, it holds that
+T ⇤[E] = T true[E] +nE,
+nE n=,B.
+Applying Lemma EC.6 implies
+Etrue −E⇤≥−(퐼−W%true)−1n=.
+Substituting 'true with P
+B 30(B)Etrue(B) and L⇤
+ˆ`= (d=) with P
+B 30(B)E⇤(B) completes the proof.
+⇤
+
+ec17
+Appendix EC.6: Proofs of Appendix B
+Proof of Proposition 6.
+Let (˜I,I) ⇠⌥be taken from the set of joint distributions on Z ⇥Z whose
+second marginal being P=, and denote by ⌥I the conditional distribution of ˜I given I. We have that
+R=(d; 5 ) = sup
+⌥
+inf
+_≥0
+-
+_d + E(˜I,I)⇠⌥[5 (˜I) −5 (I) −_2(˜I,I)]
+ 
+inf
+_≥0sup
+⌥
+-
+_d + E(˜I,I)⇠⌥[5 (˜I) −5 (I) −_2(˜I,I)]
+ 
+= inf
+_≥0sup
+⌥I
+-
+_d + EI⇠P=
+⇥
+E˜I⇠⌥I [5 (˜I) −5 (I) −_2(˜I,I)|I]
+⇤ 
+= inf
+_≥0
+-
+_d + EI⇠P=
+⇥
+sup
+⌥I
+E˜I⇠⌥I [5 (˜I) −5 (I) −_2(˜I,I)|I]
+⇤ 
+= inf
+_≥0
+n
+_d + EI⇠P=
+h
+max
+˜I2Z {5 (˜I) −5 (I) −_2(˜I,I)}
+io
+d · k5 kLip,P=,
+where the inequality holds due to Lagrangian relaxation; the second equality follows from the tower
+property of conditional expectation; the third equality follows from interchangeability principle
+(Shapiro et al. 2021); the fourth equality holds due to the fact that sup⌥I is attained at a Dirac point
+mass; and the last equality follows by plugging in a feasible solution _ = k5 kLip,P=.
+To show the other direction, by deﬁnition of ¯d, there exists É : Z ! Z such that É(I) = I for I 8 Z1,
+5 (É(I))−5 (I)
+2 (É(I),I)
+= l5 (I) = k5 kLip,P= for I 2 Z1, and EP= [2(É(I),I)] = ¯d. Let B = d/¯d. Then
+EP= [(1 −B)5 (I) +B5 (É(I))] −EP= [5 ] = BEP= [1{I 2 Z1}(5 (É(I)) −5 (I))] = dk5 kLip,P=.
+Therefore, it holds that R=(d; 5 ) = d · k5 kLip,P=.
+⇤
+The proof of Proposition 8 relies on the ﬁnite-sample convergence of the Lipschitz norm with respect
+to P= into the norm with respect to Ptrue, which is discussed in the following Lemma.
+Lemma EC.13. Assume Assumption 4(II) holds. Let F be a collection of discrete functions 5 : Z ! R.
+With probability at least 1 −exp & −= log
+⇣
+1
+1−X
+⌘
++ logN ( 1
+=,F,d)', the following relation holds uniformly
+for any discrete function 5 2 F:
+[k5 kLip,Ptrue k5 kLip,P= k5 kLip,Ptrue.
+Proof of Lemma EC.13.
+By deﬁnition, it always holds that k5 kLip,P= k5 kLip,Ptrue. On the other hand,
+for ﬁxed 5 2 F deﬁne the event E = {I : l5 (I) ≥[k5 kLip,Ptrue}, then
+P
+-
+k5 kLip,P= ≥[k5 kLip,Ptrue
+ 
+≥1 −P
+-
+I=
+1, . . .,I=
+= 8 E
+ 
+≥1 −(1 −X)=,
+where suppP= := {I=
+1, . . .,I=
+=}. To bound the probability for a family of losses, using the deﬁnition of
+covering numbers, there exists a ﬁnite subset Fn ✓F with |Fn| N (n,F, d) so that for any 5 2 F, there
+exists ˜5 2 Fn with d(5 , ˜5 ) n. It follows that
+P
+-
+85 2 F, k5 kLip,P= ≥[k5 kLip,Ptrue + 2n
+ 
+≥P
+-
+85 2 Fn, k5 kLip,P= ≥[k5 kLip,Ptrue
+ 
+≥1 −N (n,F, d)(1 −X)=,
+where the ﬁrst inequality is based on the fact that d(5 , ˜5 ) n implies |k5 kLip,P= −k ˜5 kLip,P= | n and
+|k5 kLip,Ptrue −k ˜5 kLip,Ptrue| n, and the second inequality is by applying the union bound over Fn. The
+proof is completed.
+
+ec18
+Proof of Proposition 8.
+Note that the underlying distribution Ptrue satisﬁes the following transporta-
+tion information inequality (Gao 2022, Deﬁnition 1):
+W(P,Ptrue) diam(Z)
+p
+2⇡KL(PkPtrue),
+where ⇡KL denotes the KL-divergence metric. Applying the concentration inequality presented in (Gao
+2022, Theorem 1), with probability at least 1 −4−g, for a single function 5 2 F, it holds that
+EI⇠Ptrue [5 (I)] EI⇠P= [5 (I)] + RPtrue
+ 
+diam(Z)
+r
+2g
+= ;−5
+!
+.
+(EC.8)
+Let C
+⇣
+1
+=,F,d
+⌘
+be a 1
+=-cover of F, then for any 5 2 F, there exists 5 0 2 C so that
+EPtrue [5 ] EPtrue [5 0] + 1
+= .
+(EC.9)
+Applying the union bound over all functions in F on the upper bound (EC.8), together with the relation
+(EC.9) and the upper bound in Theorem 6, implies that with probability at least 1 −N
+⇣
+1
+=,F,d
+⌘
+4−g,
+EI⇠Ptrue [5 (I)] EI⇠P= [5 0(I)] + RPtrue
+ 
+diam(Z)
+r
+2g
+= ;−5 0
+!
++ 1
+=
+EI⇠P= [5 (I)] + diam(Z)
+r
+2g
+= k5 0kLip,Ptrue + 2
+=
+EI⇠P= [5 (I)] + diam(Z)
+r
+2g
+= k5 kLip,Ptrue + 3
+=,
+(EC.10)
+where the last inequality above is because
+|k5 0kLip,Ptrue −k5 kLip,Ptrue| k5 −5 0kPtrue,1 d(5 , 5 0) 1
+= .
+By Lemma EC.13, with probability at least 1 −N
+⇣
+1
+=,F,d
+⌘
+4−= log(
+1
+1−X ),
+diam(Z)
+r
+2g
+= k5 kLip,Ptrue [d=k5 kLip,P=.
+(EC.11)
+Applying Proposition 7 with 2 = 0 implies that, with probability at least
+1 −exp
+2666664
+−= log
+©≠≠
+´
+1
+⇣
+1−2X
+1−X _ 2X−1
+X
+⌘
+™ÆÆ
+¨
++ logN
+✓1
+=,F,d
+◆3777775
+,
+we have
+[d=k5 kLip,P= R=(d=; 5 ) + 3
+= .
+(EC.12)
+Combining (EC.10)-(EC.12) completes the proof.
+⇤
+Proof of Proposition 9.
+Since d is suﬃciently small, applying Theorem 6 gives
+*=(d; 5 ) −* ⇤(d; 5 ) = &EP= [5 (I)] −EPtrue [5 (I)]' + d &k5 kLip,P= −k5 kLip,Ptrue
+'.
+
+ec19
+On the one hand, applying Lemma EC.5 in Gao et al. (2020) implies that with probability at least
+1 −4−g, it holds that
+EP= [5 (I)] −EPtrue [5 (I)] 2E⌦[R(F)] + "
+r g
+2= .
+This, together with the relation k5 kLip,Ptrue k5 kLip,P=,85 2 F implies that
+*=(d; 5 ) −* ⇤(d; 5 ) 2E⌦[R(F)] + "
+r g
+2= .
+(EC.13)
+On the other hand, applying Lemma EC.5 in Gao et al. (2020) again implies that with probability at
+least 1 −4−g, it holds that
+EP= [5 (I)] −EPtrue [5 (I)] ≥−
+✓
+2E⌦[R(F)] + "
+r g
+2=
+◆
+.
+By Lemma EC.13, the relation k5 kLip,Ptrue = k5 kLip,P=,85 2 F holds with probability at least 1 −
+N
+⇣
+1
+=,F,d
+⌘
+4−= log(
+1
+1−X ). Therefore, we conclude that with probability at least 1−N
+⇣
+1
+=,F,d
+⌘
+4−= log(
+1
+1−X ) −
+4−g, it holds that
+* ⇤(d; 5 ) −*=(d; 5 ) 2E⌦[R(F)] + "
+r g
+2= .
+(EC.14)
+Taking the union bound in (EC.13) and (EC.14) completes the proof.
+⇤

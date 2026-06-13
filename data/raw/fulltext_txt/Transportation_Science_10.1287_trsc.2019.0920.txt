@@ -1,0 +1,2562 @@
+TITLE: Sparse Travel Time Estimation from Streaming Data
+JOURNAL: Transportation_Science
+YEAR: 2019
+DOI: https://doi.org/10.1287/trsc.2019.0920
+---
+
+Sparse Travel Time Estimation from Streaming Data
+Saif Eddin Jabari∗1,2, Nikolaos M. Freris3, and Deepthi Mary Dilip4
+1New York University Abu Dhabi, Saadiyat Island, P.O. Box 129188, Abu Dhabi,
+U.A.E.
+2New York University Tandon School of Engineering, Brooklyn NY
+3School of Computer Science and Technology, University of Science and
+Technology of China, Diansan Building, West Campus, 443 Huangshan Road,
+Hefei, Anhui, 230027 China
+4BITS Pilani, Dubai Campus, Dubai International Academic City, Dubai, U.A.E.
+Abstract
+We address two shortcomings in online travel time estimation methods
+for congested urban trafﬁc. The ﬁrst shortcoming is related to the determina-
+tion of the number of mixture modes, which can change dynamically, within
+day and from day to day. The second shortcoming is the wide-spread use
+of Gaussian probability densities as mixture components. Gaussian densi-
+ties fail to capture the positive skew in travel time distributions and, con-
+sequently, large numbers of mixture components are needed for reasonable
+ﬁtting accuracy when applied as mixture components. They also assign posi-
+tive probabilities to negative travel times. To address these issues, this paper
+derives a mixture distribution with Gamma component densities, which are
+asymmetric and supported on the positive numbers. We use sparse estima-
+tion techniques to ensure parsimonious models and propose a generalization
+of Gamma mixture densities using Mittag-Lefﬂer functions, which provides
+enhanced ﬁtting ﬂexibility and improved parsimony. In order to accommo-
+date within-day variability and allow for online implementation of the pro-
+posed methodology (i.e., fast computations on streaming travel time data),
+we introduce a recursive algorithm which efﬁciently updates the ﬁtted dis-
+tribution whenever new data become available. Experimental results using
+real-world travel time data illustrate the efﬁcacy of the proposed methods.
+Keywords: Multi-modal travel time distributions; sparse modeling; Mittag-
+Lefﬂer density; data-driven trafﬁc analytics.
+∗Corresponding author, E-mail: sej7@nyu.edu
+1
+arXiv:1804.08130v4 [stat.ML] 13 May 2019
+
+1
+Introduction
+Travel times are among the prime measures of trafﬁc and travel performance in con-
+gested road networks. They are critical inputs in a variety of route planning applications
+and can vary dramatically from one location to another and by time of day. This vari-
+ability is a key factor in assessing the reliability of trafﬁc routes. Many factors contribute
+to travel time variability including uncertainty about network supplies and demands,
+driver behavior, and queueing dynamics at trafﬁc signals [Du et al., 2012, Ramezani and
+Geroliminis, 2012, 2015].
+Travel time modeling and estimation remains an active area of research in Transporta-
+tion Science: Kharoufeh and Gautam [2004] derived a stochastic model for travel time on
+a freeway link. Carey and Ge [2005a] established conditions for a well-behaved travel
+time model, and further proposed a discretized model and analyzed its convergence
+properties to the celebrated LWR model [Carey and Ge, 2005b]. Ghiani and Guerriero
+[2014] showed that any continuous piecewise-linear travel time model can be generated
+by an appropriate Ichoua, Gendreau, Potvin (IGP) model [Ichoua et al., 2003], and pro-
+vided an efﬁcient method for learning the parameters via solving a linear system of equa-
+tions. G´omez et al. [2016] introduced a model for vehicle routing problems with stochas-
+tic travel and service times (VRPSTT). Zheng et al. [2017] developed an analytical model
+that captures travel time dynamics and variability in urban signalized arterials.
+We present a data-driven methodology for learning travel times modeled as a mix-
+ture of densities. This approach is well suited to congested urban networks, where trip
+information (times and positions) is only available for the vehicle transmitting the in-
+formation (e.g., from taxis or car-sharing service providers) and information about other
+trafﬁc characteristics (such as trafﬁc volumes, speeds of other vehicles, and trafﬁc control
+settings) is not available. The goal is to estimate travel time distributions in this (com-
+mon) type of setting.
+Along expressways (uninterrupted trafﬁc facilities), travel time distributions are typ-
+ically well captured by unimodal functions such as the lognormal distribution [Richard-
+son and Taylor, 1978, Rakha et al., 2006, Pu, 2011, Arezoumandi, 2011], the Gamma dis-
+tribution [Polus, 1979, Kim and Mahmassani, 2014, 2015] and the Weibull distribution
+[Al-Deek and Emam, 2006]. In urban settings with trafﬁc signals, travel time distribu-
+tions tend to have multiple modes. Along high-speed arterials and expressways with
+stop-and-go trafﬁc, they are well represented by bi-modal distributions [Hoﬂeitner et al.,
+2012a, Kazagli and Koutsopoulos, 2013, Ji and Zhang, 2013, Feng et al., 2014]. In con-
+gested networks with spillover dynamics, one tends to observe more than two modes
+[Rakha et al., 2011, Hoﬂeitner et al., 2012b, Hunter et al., 2013, Yang et al., 2014]. To ac-
+count for this multi-modality of travel time distributions, researchers resort more and
+more to mixture modeling [Guo et al., 2010, Wan et al., 2014, Rahmani et al., 2015]. The
+Expectation Maximization (EM) algorithm [Redner and Walker, 1984] and Bayesian tech-
+niques are widely used to estimate mixture model parameters. The Bayesian approach
+applies Markov chain Monte Carlo (MCMC) techniques to solve the estimation problem
+and is known to be computationally demanding [Chen et al., 2014]. As a result, the ma-
+jority of prevalent methods utilize the EM algorithm, which is most suitable for Gaussian
+mixtures. The concern with computation times stems from a need for real-time estima-
+2
+
+tion.
+The symmetric shape of Gaussian densities is in contrast to the conventional (and em-
+pirically supported) representation of travel time distributions using distributions with
+positive skew [Emam and Al-Deek, 2006, Fosgerau and Fukuda, 2012, Jenelius and Kout-
+sopoulos, 2013, Xu et al., 2014, Kim and Mahmassani, 2015, Jenelius and Koutsopoulos,
+2015, Taylor, 2017]. When the underlying distributions are skewed and the mixture com-
+ponents are not, a large number of components is needed for accurate estimation of travel
+time distributions. This can adversely impact parsimony of the model. Another disad-
+vantage that comes with adopting Gaussian mixture components is that the resulting
+probability distribution has negative travel times in its support. This feature is unavoidable
+and particularly problematic for travel time estimation over short segments that have
+high variability.
+Traditional mixture modeling requires a priori knowledge of the number of mix-
+ture components. This is a major limitation in the context of travel time estimation,
+since the number of components and their parameters changes throughout the day. The
+problem of determining the optimal number of components has been addressed by re-
+searchers in various ﬁelds through sparse density estimators using support vector ma-
+chines [Mukherjee and Vapnik, 1999], penalized histogram difference criteria [Lin et al.,
+2013], and orthogonal forward regression [Chen et al., 2004, 2008]. In the transportation
+literature, the number of components is typically determined by seeking sparse (i.e., par-
+simonious) solutions to problems with large numbers of candidate components [Hoﬂeit-
+ner et al., 2013, 2014].
+This paper proposes a mixture density estimation approach for real-time estimation
+of travel time distributions. Our analysis substantially extends and expands our previ-
+ous work [Dilip et al., 2017]. We derive a suitable form for the mixture distribution from
+fundamentals of macroscopic trafﬁc theory. The source of uncertainty about travel times
+can be interpreted as an absence of knowledge about detailed trafﬁc conditions along the
+travel routes in question, which is represented by random trafﬁc density proﬁles. We
+demonstrate that, for any equilibrium pace function (deﬁned as the reciprocal of an equi-
+librium speed relation), the distribution of travel times can be captured by a mixture of
+Gamma probability density functions. The parameters of the mixture component densi-
+ties can be tuned a priori, whence the estimation problem focuses on ﬁnding estimates
+for the mixture weights. The Gamma probability densities overcome the issues men-
+tioned above pertaining to Gaussian mixtures, since the Gamma component densities
+have positive support and can have asymmetric shapes (i.e., they are more ﬂexible).
+To further enhance parsimony, we devise a richer set of component densities (with
+variable location and scale parameters) that can be combined to capture a wide variety
+of travel time distributions. This is achieved by generalizing the Gamma densities us-
+ing Mittag-Lefﬂer functions. Subsequently, the problem becomes one of choosing those
+mixture components that most closely capture the empirical distributions. We propose
+the use of an ℓ1−regularizer, which is known to promote sparsity [Tibshirani, 1996] and
+demonstrate how to apply this methodology to streaming data. The latter is achieved
+by (i) updating the inputs whenever a new travel time sample or batch of travel times
+arrives and (ii) warm-starting the numerical optimization; this allows for a very fast up-
+date of the ﬁtted distribution and renders the proposed approach amenable to an online
+3
+
+implementation capable of capturing within-day variation of travel times.
+The remainder of this paper is organized as follows: We derive the Gamma mixture
+from trafﬁc ﬂow fundamentals in Section 2. In Section 3, we formulate the estimation
+problem and describe a discretization procedure that casts it as a convex program. . We
+specialize the estimation problem formulation (speciﬁcally, the discretization) to Gamma
+mixture components and present our proposed generalization using Mittag-Lefﬂer func-
+tions in Section 4. Section 5 describes the numerical optimization approach used to solve
+the estimation problem, while recursive estimation from streaming data is discussed in
+Section 6. Section 7 is devoted to testing of the proposed approach using both synthetic
+data (for validation) and real-world data (for demonstrating the applicability in real-life
+settings), while Section 8 concludes the paper. Our ﬁndings ﬁrmly support the efﬁcacy
+of the proposed sparse density estimation for online learning of travel time distributions,
+in terms of improved ﬁtting accuracy and improved parsimony.
+We also provide ﬁve appendices that support the main sections of the paper: an ex-
+tensive notation table is given in Appendix A, Appendix B describes a post-processing
+technique for ensuring summability to unity conditions, Appendix C and Appendix D
+present two approaches that can be utilized to enhance sparsity of solutions, and Ap-
+pendix E describes a means for selecting the regularization parameter.
+2
+Derivation of Mixture Distribution from Traﬃc Flow Characteristics
+2.1
+The Equilibrium Pace Function and its Properties
+Consider a vehicle traversing a path in a trafﬁc network with terminal positions x1 at
+the upstream end of the path and x2 at the downstream end. Let C(x) denote the time
+instant that the vehicle crosses position x. Then the travel time along the path is given
+by C(x2) −C(x1). By deﬁnition, C is continuous and strictly increasing. Hence, the
+fundamental theorem of calculus provides a function Π(x) such that
+C(x2) −C(x1) =
+Z x2
+x1
+Π(x)dx,
+(1)
+where
+Π(x) = dC(x)
+dx
+.
+(2)
+The non-negative function Π(x) is the pace at position x (in units of unit time per unit dis-
+tance). In a ﬁrst-order macroscopic trafﬁc ﬂow context, the pace at position x depends on
+the trafﬁc density at x: let ρ denote the trafﬁc density, V(ρ) an equilibrium speed-density
+relation, and Q(ρ) = ρV(ρ) an equilibrium ﬂux function. We denote the equilibrium pace
+function by P, which is related to the equilibrium speed and ﬂux functions via:
+P(ρ) =
+ρ
+Q(ρ) =
+1
+V(ρ).
+(3)
+It follows that the equilibrium pace function has the following four properties:
+(i) As ρ →0, P(ρ) →v−1
+fr , where vfr is the free-ﬂow speed.
+4
+
+(ii) As ρ →ρjam, P(ρ) →∞, where ρjam is the jammed trafﬁc density.
+(iii) P(ρ) is continuous on ρ ∈(0, ρjam).
+(iv) P(ρ) is non-decreasing in ρ.
+Properties (i) - (iii) follow immediately from well-known properties of equilibrium speed-
+density relations [Del Castillo and Benitez, 1995]. Property (iv) follows from
+dP(ρ)
+dρ
+= d
+dρ
+
+ρ
+Q(ρ)
+
+=
+1
+Q(ρ)
+
+1 −
+1
+V(ρ)
+dQ(ρ)
+dρ
+
+,
+(4)
+and since trafﬁc waves cannot move faster than the trafﬁc itself, we have for any 0 ≤ρ ≤ρjam
+that V(ρ) ≥dQ(ρ)/dρ. Since Q(·) is non-negative, we immediately have that
+dP(ρ)
+dρ
+≥0
+(5)
+for all 0 ≤ρ ≤ρjam and, hence, P(·) is non-decreasing. An example pace function, based
+on the Newell-Franklin speed-density relation [Newell, 1961, Franklin, 1961] is given in
+Figure 1. The speed relation is given by
+V(ρ) = vfr
+
+1 −e
+vb
+vfr (
+ρjam
+ρ −1)
+,
+(6)
+where vb is the backward wave speed.
+Traﬃc density, ⇢(veh/km)
+(Equilibrium) Pace, P(⇢) (km/hr)
+
+
+
+
+
+
+
+
+
+
+
+ 
+Figure 1: An example pace function based on the Newell-Franklin speed-density relation
+with vfr = 100 km/hr, backward wave speed vb = −20 km/hr and ρjam = 150 veh/km.
+The properties above suggest that an appropriate choice for the distribution function
+of pace is one that is supported on [v−1
+fr , ∞). A variety of known distribution functions
+are supported on positive intervals; among them the Gamma distribution [Polus, 1979,
+Kim and Mahmassani, 2014, 2015] and the Lognormal distribution [Richardson and Tay-
+lor, 1978, Rakha et al., 2006, Pu, 2011, Arezoumandi, 2011] are most widely used as the
+distribution functions of trafﬁc variables. As a mixture density, the former offers some
+tractability properties that the latter does not.
+5
+
+2.2
+The Distribution of Traﬃc Densities and Pace
+In [Carey and Ge, 2005b], a discrete-space formulation of a few pace functions was con-
+sidered and convergence to the Lighthill and Whitham [1955] and Richards [1956] model
+(the LWR model) as the discrete space interval length approaches zero was demonstrated.
+In a similar way, we deﬁne Π(x) ≡P
+ ρ(x), x
+
+, where we allow the equilibrium pace to
+depend on position, and treat dependence of density on time as implicit. Hence (1) can
+be written as
+C(x2) −C(x1) =
+Z x2
+x1
+P
+ ρ(x), x
+
+dx.
+(7)
+Uncertainty about travel times can be interpreted as absence of (detailed) knowledge of
+trafﬁc conditions. This is captured by treating ρ(x) for each x as a random variable, where
+P(ρ(x) ≤0) = P(ρ(x) ≥ρjam) = 0 must hold. This dictates distributions of trafﬁc
+density that are supported on bounded intervals. Haight [1963] prescribes variants of
+the Beta distribution for trafﬁc densities. Beta distributions can be tuned to capture a
+variety of other distributions with bounded support as special cases. For example, a Beta
+distribution with parameters a = b = 1 is a uniform distribution, which can be used
+to represent complete ignorance about trafﬁc conditions. Similarly, when the parameters are
+such that a < b, the distribution is positively skewed, which can be used to represent
+lower density trafﬁc, while the case a > b corresponds to negative skew, which represents
+high density trafﬁc. The probability density function (PDF) for trafﬁc densities, given the
+parameters a, b and ρjam, can be written as
+fρ(r) = 1{r∈[0,ρjam]}
+1
+ρa+b−1
+jam
+B(a, b)
+ra−1 ρjam −r
+b−1,
+(8)
+where B is the Beta function; this PDF is illustrated in Figure 2.
+f⇢(r)
+r (veh/km)
+
+
+
+
+
+
+
+
+
+
+
+
+a > b
+a < b
+Figure 2: Illustration of fρ when a < b (uncongested trafﬁc) and a > b (congested trafﬁc).
+In both cases, ρjam = 150 veh/km.
+In special cases, such as the Newell-Franklin relation (6), which possesses a unique
+inverse and is differentiable, one obtains the distribution of pace directly from the pace
+6
+
+function P and the PDF of trafﬁc density fρ. Denote the PDF of pace by fΠ; then
+fΠ(t) = 1{tvfr≥1} fρ
+ P−1(t)
+dP−1(t)
+dt
+.
+(9)
+In the general case, a unique inverse P−1 does not exist (e.g., the widely used triangular
+relation). In this case, the probability distribution of the pace at position x, Π(x), can be
+derived from the properties of the equilibrium pace function P and the distribution of
+trafﬁc densities.
+2.3
+General Pace Functions and the Distribution of Travel Time
+To represent the distribution of travel times for general pace functions, ﬁrst note that con-
+tinuity of equilibrium pace functions implies that there exists a polynomial that approxi-
+mates any P arbitrarily closely (by the Weierstrass approximation theorem). Speciﬁcally,
+there exist weights {ζk}k≥0 such that, for any ϵ1, ϵ2 > 0,
+P(ρ) −
+∞
+∑
+k=0
+ζkρk ≤ϵ1
+(10)
+for all ρ ∈[0, ρjam −ϵ2]. In other words, on any closed interval that does not include ρjam,
+there exists a polynomial that approximates P uniformly (since P has an asymptote at
+ρjam). Hence,
+P(ρ) ≈
+∞
+∑
+k=0
+ζkρk
+(11)
+for all ρ ∈[0, ρjam). The characteristic function of Π(x) is given by ϕΠ(s) ≡EeisP(ρ),
+where dependence on x is made implicit, and i ≡√−1 is the imaginary unit. Expanding
+eisP(ρ) using Maclaurin series, we have that
+ϕΠ(s) = E
+∞
+∑
+j=0
+(is)j
+j!
+ P(ρ)
+j = 1 + E
+∞
+∑
+j=1
+(is)j
+j!
+ P(ρ)
+j.
+(12)
+Expanding the terms involving the pace function using (11), we have that
+ P(ρ)
+j =
+ ∞
+∑
+k=0
+ζkρkj
+=
+∞
+∑
+k1=0
+. . .
+∞
+∑
+kj=0
+j
+∏
+l=1
+ζklρk1+...+kj =
+∞
+∑
+m=0
+
+∑
+k1+...+kj=m
+
+m
+k1 . . . kj
+
+j
+∏
+l=1
+ζkl
+
+ρm.
+(13)
+Since the weights {ζk}k≥0 are constant (they depend on the pace function), for each m
+the product term ∏
+j
+l=1 ζkl can be treated as a constant, which we denote by Cm. By the
+multinomial theorem, we have that ∑k1+...+kj=m (
+m
+k1 ... kj) = jm. Hence,
+ϕΠ(s) = 1 + E
+∞
+∑
+j=1
+(is)j
+j!
+∞
+∑
+m=0
+Cmjmρm = 1 +
+∞
+∑
+m=0
+∞
+∑
+j=1
+(is)j
+j! CmjmEρm.
+(14)
+7
+
+For the PDF of trafﬁc density (2), the mth moment is given by:
+Eρm = ρm
+jam
+B(a + m, b)
+B(a, b)
+= ρm
+jam
+Γ(a + b)Γ(a + m)
+Γ(a)Γ(a + b + m),
+(15)
+where Γ is the Gamma function. Deﬁne βm ≡a + b + m; then
+ϕΠ(s) = 1 +
+∞
+∑
+m=0
+Cmρm
+jam
+Γ(a + b)Γ(a + m)
+Γ(a)
+∞
+∑
+j=1
+(is)j
+j!
+jm
+Γ(βm + j)
+Γ(βm + j)
+Γ(βm)
+.
+(16)
+By appeal to the second mean value theorem for integrals in conjunction with the integral
+test for convergence of inﬁnite series, it can be shown that there exist constants eCm that
+depend on m (but not j) such that
+∞
+∑
+j=1
+(is)j
+j!
+jm
+Γ(βm + j)
+Γ(βm + j)
+Γ(βm)
+= eCm
+∞
+∑
+j=1
+(is)j
+j!
+Γ(βm + j)
+Γ(βm)
+.
+(17)
+Deﬁning the weights θm ≡Cmρm
+jam
+Γ(a+b)Γ(a+m) eCm
+Γ(a)
+, we have that
+ϕΠ(s) = 1 +
+∞
+∑
+m=0
+θm
+∞
+∑
+j=1
+(is)j
+j!
+Γ(βm + j)
+Γ(βm)
+.
+(18)
+Note that (i) the characteristic function of a Gamma PDF with shape parameter β and
+scale parameter σ, denoted ϕΓ(s), is given by
+ϕΓ(s) =
+ 1 −σis
+−β =
+∞
+∑
+j=0
+(is)j
+j! σj Γ(β + j)
+Γ(β)
+(19)
+and that (ii) the characteristic function associated with a mixture distribution is a mixture
+of the characteristic functions of the component distributions. That is, if a PDF is given
+by
+fX(x) =
+∞
+∑
+m=0
+θm fm(x)
+(20)
+for some random variable X with range R ⊆R, where { fm}m≥0 are mixture component
+PDFs, then
+ϕX(s) =
+Z
+R eisx fX(x)dx =
+Z
+R eisx
+∞
+∑
+m=0
+θm fm(x)dx =
+∞
+∑
+m=0
+θm
+Z
+R eisx fm(x)dx =
+∞
+∑
+m=0
+θmϕm(s),
+(21)
+where {ϕm}m≥0 are the characteristic functions associated with the component PDFs.
+These two properties imply that the PDF of pace fΠ can be captured by an appropri-
+ately tuned mixture of Gamma PDFs with scale parameter σ = 1 and shape parameters
+{βm}m≥0 provided that ∑∞
+m=0 θm = 1. When the latter holds, we have that
+ϕΠ(s) =
+∞
+∑
+m=0
+θm
+∞
+∑
+j=0
+(is)j
+j!
+Γ(βm + j)
+Γ(βm)
+=
+∞
+∑
+m=0
+θm(1 −is)−βm.
+(22)
+8
+
+The PDF of a Gamma distributed random variable with shape parameter β and scale
+parameter σ is given by
+fΓ(t; β, σ) = 1{t≥0}
+1
+σΓ(β)
+ t
+σ
+β−1
+e−t
+σ .
+(23)
+Hence, the distribution of pace can be written as
+fΠ(t) =
+∞
+∑
+m=0
+θm fΓ(t; βm, 1).
+(24)
+The result above generalizes immediately from pace to travel time: it may be as-
+sumed that P is continuous in x since lane additions/drops do not occur abruptly and
+when speed limits change, drivers cannot adjust their speeds instantaneously, since equi-
+librium relations are governed by driving behavior – see [Jabari et al., 2014, 2018, Zheng
+et al., 2018]. Thus by the mean-value theorem, there exists x1 ≤x ≤x2 such that
+P
+ ρ(x), x
+(x2 −x1) =
+Z x2
+x1
+P
+ ρ(x), x
+
+dx.
+(25)
+Hence, the travel time along the path starting at x1 and terminating at x2 can be repre-
+sented by the pace evaluated at an “intermediate location”. That is, C(x2) −C(x1) =
+P
+ ρ(x), x
+(x2 −x1) and the same procedure applied to represent the distribution of pace
+as a mixture can be applied to travel time. Speciﬁcally, by continuity we have that
+C(x2) −C(x1) = P
+ ρ(x), x
+(x2 −x1) =
+∞
+∑
+k=0
+eζkρk,
+(26)
+where we write {eζk}k≥0 to distinguish the weights associated with travel time from those
+associated with pace. Following the same procedure above, we can obtain
+fT(t) =
+∞
+∑
+m=0
+θm fΓ(t; βm, 1),
+(27)
+where fT is the PDF of travel time. We close this section with some remarks about the
+mixture distribution (27).
+1. The most commonly used mixture densities (e.g., Gaussian, biweight, and Epanech-
+nikov) all suffer from assigning non-zero probability to negative travel times. Gamma
+mixture densities overcome this drawback.
+2. In the derivation above, the shape parameters {βm}m≥0 are arbitrary; the speciﬁcs
+of the distribution of the equilibrium pace function P being subsumed into the mix-
+ture weights, {θm}m≥0. The shape parameters, therefore, can be chosen a priori.
+3. Since σ = 1 for all m, we have that the shape parameters bear the sole responsibility
+of determining the locations of the mixture components. The locations are repre-
+sented by the peaks of the distributions, located at the modes, which are given by
+{βm −1}m≥0.
+9
+
+4. There are three main drawbacks of the mixture distribution above:
+(a) The shape of each of the component distributions depends on location: the
+variance of component distribution m is given by βm. This results in an unde-
+sirable feature referred to as boundary bias. We address this in Section 4.1.
+(b) We lose some ﬂexibility (and model parsimony) as a result of ﬁxing the scale
+parameters to a single value σ = 1. We address this issue in Section 4.3, where
+we propose a generalization of the component PDFs that allow for variable
+scale parameters.
+(c) The mixture involves an inﬁnite number of components, which renders it in-
+feasible from an estimation standpoint. In the following sections, we set the
+mixture to have M < ∞components, where M is is chosen to be sufﬁciently
+large. We address the errors associated with truncation in Proposition 1 and
+Proposition 2 and present a zero-overhead post-processing step in Appendix
+B to ensure that ∑M
+m=0 θm = 1 is satisﬁed.
+3
+Empirical Travel Time Distribution and Sparse Estimation
+This section presents the estimation problem that we seek to solve. In essence, we seek
+to ﬁnd a mixture distribution that most closely resembles the distribution of the travel
+time data. For the latter, we propose the use of a generalization of a histogram in which
+the histogram bins can are replaced by kernels, which can be represented by any PDF. The
+rectangular bins of a typical histogram can be seen as a special case of this, where the
+chosen kernel is a uniform PDF.
+3.1
+Parzen Density Estimator: Empirical Distribution
+Given S samples T1, . . . , TS drawn from a population with (unknown) probability density
+function f, the Parzen density, also known as Parzen window (PW) estimator [Parzen, 1962,
+Cacoullos, 1966, Raudys, 1991, Silverman, 1986] of travel time t is given by:
+bf (t) = 1
+S
+S
+∑
+j=1
+κh(t −Tj),
+(28)
+where κh is a window (or kernel) of width h, and h is called the smoothing parameter. The
+Parzen density can equivalently be interpreted as a modiﬁed histogram, allowing for the
+“bins” to be non-rectangular. As an example, choosing κh ≡δ, where δ is the Dirac delta
+function, we get the standard empirical distribution 1
+S ∑S
+j=1 δ(t −Tj), which uses kernels
+with zero bandwidth, h = 0. Typically, κh is a PDF; for example, we use the Gaussian
+density with variance h2 in our experiments. Several methods have been proposed to de-
+termine h based either on minimizing the mean square error or based on cross-validation
+techniques (see [Lacour et al., 2016] and references therein for a contemporary treatment
+of the bandwidth selection problem).
+Parzen window (PW) estimators can also be regarded as a special type of ﬁnite mix-
+ture models, where the mixture components are assigned equal weights and are located
+10
+
+exactly at the training data. The PW estimator generally requires as many components as
+the number of training samples. As a result, it may require substantial storage require-
+ments. In this paper, the PW estimators serve as empirical distribution functions (or
+generalized histograms), and the goal is to develop and ﬁt parsimonious (light-weight)
+models that may as well achieve higher (out-of-sample) prediction accuracy.
+3.2
+Sparse Mixture Density Estimation
+Consider the mixture density
+f (t) =
+M−1
+∑
+m=0
+θmφm(t),
+(29)
+where {φm}M−1
+m=0 are the component density functions (M in total) and {θm}M−1
+m=0 are the
+component weights. We will allow M to be large so that (29) is rich enough to ﬁt a broad
+class of distributions. Our aim is to achieve a sparse representation of f (a parsimonious
+ﬁt), i.e., one with most of the elements of the vector θ = [θ0 . . . θM−1]⊤being zero while
+maintaining test performance or generalization capability comparable to that of the PW
+estimate obtained with an optimized bandwidth h. We thus seek to solve:
+minimize
+θ∈Ω
+1
+2
+ bf −
+M−1
+∑
+m=0
+θmφm
+
+2
+2 + w∥θ∥1,
+(30)
+where Ω⊆RM is a set of M-dimensional vectors that we consider for the optimization
+problem, and w ≥0 is the regularizing parameter. The L2−norm is over a suitably chosen
+(inﬁnite-dimensional) functional space and the ℓ1−norm is the usual (ﬁnite dimensional)
+vector norm, i.e., the sum of absolute values of the vector entries. Typically,
+1
+2
+ bf −
+M−1
+∑
+m=0
+θmφm
+2
+2 = 1
+2
+Z
+R+
+
+bf (t) −
+M−1
+∑
+m=0
+θmφm(t)
+2
+dt.
+(31)
+The ﬁrst term in the objective function, ∥bf −∑M−1
+m=0 θmφm∥2
+2, is a measure of goodness-of-
+ﬁt: it is the (squared) L2−distance between the empirical distribution (of the data) bf and
+the ﬁtted distribution f. The second term is an ℓ1−regularizer: ∥· ∥1 is known to promote
+sparsity in the vector of weights θ [Tibshirani, 1996], i.e., a parsimonious solution. Finally,
+note that a higher value for w yields higher sparsity of the optimal solution vector θ of
+the optimization problem (30).
+3.3
+Support Discretization
+To solve the estimation problem (30) via numerical optimization, we discretize the travel
+times. This is done by deﬁning disjoint intervals (of the same or variable lengths) in the
+support of the distribution and associate with each interval a representative value (denoted
+by τn for the nth interval, e.g., its midpoint). Each data point is assigned the represen-
+tative value of the interval it lies in: let τ be a surjective mapping from the continuous
+interval [0, Tmax] into the discrete set {τn}N−1
+n=0 , i.e., τ performs the operation t 7→τn. In
+11
+
+effect, the function τ takes a continuous travel time t and returns its representative τn in
+the discrete set. Consequently, the PDFs bf and f are approximated by vectors of size N,
+denoted, respectively, by bp and p. We thus have for any t ≥0 that
+f (t) ≈pτ(t) =
+M−1
+∑
+m=0
+θmφm(τ(t)).
+(32)
+The locations of the M component densities simply constitute a set of travel times,
+which we denote by {tm}M−1
+m=0 ; note that these do not necessarily coincide with the discrete
+support of the distribution. Besides, we will consider mixture components with variable
+width, so that {tm}M−1
+m=0 may not have M distinct values, i.e., some values coincide (this
+corresponds to the case of placing multiple mixture components of different width at the
+same location), and M > N is possible. The distinct values in {tm}M−1
+m=0 are taken to be
+a subset of the discrete support of the distribution ∪M−1
+m=0 {tm} ⊆{τn}N−1
+n=0 ; denoting the
+number of distinct values in the set {tm}M−1
+m=0 by M′, we have necessarily that M′ ≤N.
+When a single scale parameter is used (see Section 4) it holds that M = M′ ≤N.
+The M mixture components are further quantized in accordance with the discretiza-
+tion of the support as follows: we deﬁne φn,m ≡cn,mφm(τn), where cn,m is a constant
+that depends on the discretization method, and the m-th mixture component function.
+Similarly, we may quantize the PW by setting bpn = αn bf (τn). In essence, αn is a mea-
+sure of the width of the nth interval; for example αn ≡∆for a uniform discretization
+with step-size ∆(e.g., we use a second-by-second uniform discretization in our experi-
+ments and set αn ≡1). We discuss the issue of mixture component discretization (the
+selection of {cn,m}) in detail in Section 4.2 and Section 4.3. Finally, deﬁning the matrix
+Φ ≡[φn,m] ∈RN×M
++
+, we have
+p = Φθ
+(33)
+and we consider, in the following, the (discrete) estimation problem:
+minimize
+θ∈Ω
+1
+2
+bp −Φθ
+2
+2 + w∥θ∥1 = 1
+2
+N−1
+∑
+n=0
+
+bpn −
+M−1
+∑
+m=0
+φn,mθm
+2
++ w
+M−1
+∑
+m=0
+|θm|,
+(34)
+which is known as the (constrained) Least Absolute Shrinkage and Selection Operator (LASSO)
+in the statistics and machine learning literature [Tibshirani, 1996].
+4
+Gamma and Mittag-Leﬄer Mixtures
+In this section, we specialize the estimation problem presented in Section 3.2 to the
+Gamma density mixture derived in Section 2 and address the drawbacks presented at
+the end of Section 2.3.
+4.1
+Boundary Bias
+Like most asymmetric densities, the shape of the Gamma density (speciﬁcally, its width)
+depends on both the scale parameter as well as the location parameter (e.g., its mean).
+This change in shape results in what is referred to as boundary bias in the statistics liter-
+ature [Chen, 2000] and is addressed by changing the roles of parameter and argument.
+12
+
+This is done as follows: to evaluate the probability density at t, the model (i) uses a single
+Gamma PDF with its mode, equal to (β −1)σ, coinciding with t, (ii) evaluates the densi-
+ties of the sample points using this function, and (iii) calculates a weighted sum of these
+densities. Effectively, the roles of parameter and argument are reversed. This prevents bias
+from mixture densities located near the boundaries. Speciﬁcally, placement of the mix-
+ture densities is done as follows: In order to locate the (mode of the) mixture component
+at the argument t, the location parameter is set so that (β −1)σ = t, i.e., we set β = 1 + t
+σ;
+hence, for a given scale parameter σ > 0, the m-th Gamma density is given by:
+φm(t) = fΓ
+
+tm; 1 + t
+σ, σ
+
+.
+(35)
+The estimated probability (before discretization) is then given by:
+f (t) =
+M−1
+∑
+m=0
+θm fΓ
+
+tm; 1 + t
+σ, σ
+
+=
+M−1
+∑
+m=0
+θm
+1
+σΓ
+ 1 + t
+σ
+
+tm
+σ
+ t
+σ e−tm
+σ .
+(36)
+This mechanism is illustrated in Figure 3.
+1 + t
+σ
+t1
+t2
+t3
+t4
+t5
+φ2(t)
+φ3(t)
+φ4(t)
+φ5(t)
+φ1(t)
+p(t) = ✓1φ1(t) + ✓2φ2(t) + ✓3φ3(t) + ✓4φ4(t) + ✓5φ5(t)
+Figure 3: Mixture of Gamma mixture densities: Gamma probability density function
+centered at t and evaluated at times {tm}5
+m=1 with weights {θm}5
+m=1.
+4.2
+Discretization of Gamma Mixture Densities
+Gamma mixture densities in the statistics literature do not in general integrate to unity.
+In other words R ∞
+0
+fΓ(tm; 1 + σ−1t, σ)dt ̸= 1: this is a consequence of reversing the roles
+of parameter and argument. In this paper, we give close attention to this issue and ensure
+that our approach guarantees that p is a valid probability mass function (PMF). A similar
+analysis can be carried out for discretizing bp.
+The standard approach of normalizing p as a post-processing step is not applicable in
+our case. In standard practice, one only considers goodness-of-ﬁt: given that bp sums to
+unity, it follows that minimizing the distance ∥bp −p∥2
+2 should yield a p that sums close
+13
+
+enough to unity, so that normalizing by ∑N−1
+n=0 pn will not incur a signiﬁcant impact on the
+goodness-of-ﬁt. In our case, however, we have a trade-off between goodness-of-ﬁt and
+sparsity (parsimony). This type of normalization can substantially affect the goodness-of-
+ﬁt for a given sparsity level.
+Therefore, we carefully design the discretization in such a way that the resulting
+densities sum to unity (approximately). Mathematically, we require that ∑N−1
+n=0 pn ≈1,
+where the approximation error is kept below a predeﬁned threshold. Since each vector
+{φn,m}N−1
+n=0 is interpreted as a probability distribution, we will ﬁrst require that ∑N−1
+n=0 φn,m ≈
+1 for all m ∈{0, . . . , M −1} (equivalently, we require that Φ is approximately column-
+stochastic). We propose a choice for the set of discretization constants, denoted {cn}N−1
+n=0 ,
+so that this is indeed the case.
+Proposition 1 (Non-Adaptive Kernel Density). For ∆> 0, deﬁne τn ≡n∆and tm ≡m∆,
+where n ∈{0, 1, . . .} and {m = 0, . . . , M −1}. Deﬁne e∆≡∆
+σ and φn,m ≡cn fΓ
+ tm; 1 + ne∆, σ
+
+and set cn ≡σ for all n. Then, there exists N < ∞such that, for any 0 < ε < 1,
+1 −ε ≤
+N−1
+∑
+n=0
+φn,m ≤1.
+(37)
+Proof. Set the scale parameter so that e∆= 1, i.e., σ ≡∆, then
+N−1
+∑
+n=0
+φn,m =
+N−1
+∑
+n=0
+cn fΓ
+ tm; 1 + ne∆, σ
+ =
+N−1
+∑
+n=0
+1
+Γ(1 + ne∆)
+tm
+σ
+ne∆
+e−tm
+σ
+(38)
+converges to 1 (from below) as N →∞since the terms inside the sum on the right hand
+side of (38) take the form of the probability mass function of a Poisson distributed random
+variable with rate parameter tm
+σ . We choose N so that the sum is approximately unity: let
+X be a Poisson random variable with rate parameter
+max
+{tm}M−1
+m=0
+tm
+σ = (M −1)∆
+σ
+= M −1
+(39)
+and choose N as the (1 −ε)-percentile point of X. That is
+N ≡min
+
+n : P(X ≥n) ≤ε
+ 
+.
+(40)
+This completes the proof.
+Note that (i) choosing the rate parameter as maxm=0,...,M−1
+tm
+σ renders our choice of
+N independent of tm and ensures that the threshold error is not exceeded for any tm; (ii)
+this is only achievable when N > M; and (iii) ensuring that exactly ∑N−1
+n=0 φn,m = 1 for all
+j ∈{0, . . . , M −1} (as opposed to it being approximately equal to unity) can be achieved
+by re-deﬁning φ0,m (a constant which depends on m) as
+φ0,m ≡(εm + 1)e−tm
+σ ,
+(41)
+where
+εm =
+∞
+∑
+n=N
+1
+n!
+tm
+σ
+n
+.
+(42)
+Note that εm is increasing in m; therefore, it is upper-bounded by εM−1.
+14
+
+4.3
+Adaptive Model using Mittag-Leﬄer Functions
+One drawback of the approach outlined above is the necessity for a single scale param-
+eter σ. To allow for varying scale parameters, we generalize the Gamma densities using
+Mittag-Lefﬂer functions. In this context, the assumption that e∆= 1 is no longer feasible
+since σ is allowed to vary from one mixture component to another. To ensure summabil-
+ity to unity, we generalize the Gamma density to one which uses a generalized form of
+the exponential function. This can be achieved by replacing e−t
+σ in (23) with the reciprocal
+of the (scaled) Mittag-Lefﬂer function [Haubold et al., 2011]:
+Eν(t) ≡
+∞
+∑
+n=0
+tn
+Γ(1 + nν).
+(43)
+Note that the exponential function is a special case of the Mittag-Lefﬂer function obtained
+when ν = 1; i.e., E1(t) ≡et. We ﬁrst generalize (23) as follows:
+fM−L(t; β, σ, ν) =
+1
+σΓ(β)
+ t
+σ
+β−1h
+Eν
+  t
+σ
+νi−1
+,
+(44)
+where the parameters β and σ are the location and scale parameters deﬁned above and
+the parameter ν depends on the discretization. Proposition 2 generalizes the summabil-
+ity result in Proposition 1 to the adaptive case (i.e., varying scale parameters). It also
+proposes a choice for the discretization constants, {cn,m}∞,M−1
+n,m=0 , where the discretization
+varies by mixture component.
+Proposition 2 (Mittag-Leﬄer Densities). Let ∆and {τn}∞
+n=0 be as deﬁned in Proposition 1.
+Assume the pairs {tm, σm}M−1
+m=0 are sorted in increasing order and set cn,m ≡σm for all n, m pairs.
+Deﬁne e∆m ≡∆
+σm and the Mittag-Lefﬂer densities
+φn,m ≡cn,m fM−L(tm; 1 + ne∆m, σm, e∆m) =
+1
+Γ(1 + ne∆m)
+ tm
+σm
+ne∆mh
+Ee∆m
+  tm
+σm
+e∆mi−1
+(45)
+for n = 0, . . . and m = 0, . . . , M −1. Then, there exists N < ∞such that, for any 0 < ε < 1,
+1 −ε ≤
+N−1
+∑
+n=0
+φn,m ≤1.
+(46)
+Proof. For each 0 ≤m ≤M −1, let eXm be the generalized hyper-Poisson random vari-
+able proposed by [Chakraborty and Ong, 2017] and let p eXm denote its probability mass
+function with parameters am and bm:
+P( eXm = n) ≡p eXm(n; am, bm) = an
+m
+1
+Γ(1 + nbm)Ebm(am).
+(47)
+Set am ≡
+ tm/σm
+e∆m and bm ≡e∆m = ∆/σm. Then for each m, the set {φn,m}∞
+n=0 in (45) is
+a probability mass function of a hyper-Poisson random variable. Hence,
+lim
+N↑∞
+N−1
+∑
+n=0
+φn,m = 1.
+(48)
+15
+
+Setting
+N ≡min
+
+n : P( eXm ≥n) ≤ε, for 0 ≤m ≤M −1
+ = min
+
+n : P( eXM−1 ≥n) ≤ε
+ 
+(49)
+completes the proof.
+We may ensure that ∑N−1
+n=0 φn,m = 1 exactly by re-deﬁning
+φ0,m ≡(eεm + 1)
+
+Ee∆m
+ (tm/σm)
+e∆m−1,
+(50)
+where
+eεm =
+∞
+∑
+n=N
+1
+Γ(1 + ne∆m)
+ tm
+σm
+ne∆m.
+(51)
+Observe that in a Mittag-Lefﬂer (M-L) mixture, multiple mixture densities (of variable
+scale σm) may be associated with the same travel time tm (same location parameter); this
+implies that M > N is possible. Similarly, the set {σm}M−1
+m=0 need not have distinct values.
+Nonetheless, the above analysis shows that necessarily N > M′, where M′ denotes the
+number of distinct values of the times {tm}M−1
+m=0 .
+5
+Numerical Optimization
+In what follows, the (constrained) LASSO problem (34) is considered by taking Ω= RM
++
+(the positive orthant) as opposed to Ω= {θ ∈RM
++ | ∑M−1
+m=0 θm = 1} (the probability
+simplex).
+This is done purposefully for two reasons.
+First, this choice yields more
+efﬁcient numerical optimization methods, which is especially important for real-time
+learning (effectively, the projection to the positive orthant is much simpler than the pro-
+jection to the simplex, which requires sorting). Second, and more importantly, setting
+Ω= {θ ∈RM
++ | ∑M−1
+m=0 θm = 1} would result in the optimization problem:
+minimize
+θ≥0
+1
+2
+bp −Φθ
+2
+2 + w1⊤θ
+subject to
+1⊤θ = 1,
+which is equivalent to
+minimize
+θ≥0
+1
+2
+bp −Φθ
+2
+2
+subject to
+1⊤θ = 1
+since the second term in the objective is determined by the equality constraint (1 is a
+vector of 1s of size M). This leaves no control over sparsity, since the objective no longer
+depends on the control parameter w. This is clearly an undesirable feature when aiming
+for parsimonious solutions in a controllable fashion, and justiﬁes our choice of selecting
+Ω= RM
++ in what follows. Ensuring that ∑N−1
+n=0 pn = 1 (exactly) can be achieved with a
+zero-overhead post-processing mechanism. This strategy is described in Appendix B.
+16
+
+LASSO (34) is a convex problem [Boyd and Vandenberghe, 2004] and there exist a
+multitude of schemes for solving it numerically. Aside from generic convex solvers such
+as CVX [Grant and Boyd, 2014], many numerical optimization methods have been de-
+veloped: these include applications of the fast proximal gradient method of Nesterov
+[2013] such as [Beck and Teboulle, 2009, Wright et al., 2009], of the Alternating Direction
+Method of Multipliers (ADMM) [Parikh and Boyd, 2014] such as [Afonso et al., 2010],
+and of interior point methods [Kim et al., 2007]. Recently, a quasi-Newton solver featur-
+ing substantial acceleration for high-accuracy solutions was devised by [Sopasakis et al.,
+2016].
+In this paper, we consider Ω= RM
++ , a constrained LASSO problem (with non-negative
+weights):
+minimize
+θ∈RM+1
++
+1
+2
+bp −Φθ
+2
+2 + w1⊤θ,
+(52)
+which has a differentiable objective and very simple constraint set. For the adaptive case, spar-
+sity can be improved using a scaled regularizer as described in Appendix C. We imple-
+ment a fast projected gradient method for this problem and use the log-barrier interior-
+point method (l1 ls) based on the analysis in [Kim et al., 2007]. We set a logarithmic
+barrier for the non-negative constraints as −∑M
+m=0 log(θm) and augment the objective
+function to obtain the associated centering problem
+minimize
+θ∈RM+1
+z
+2
+bp −Φθ
+2
+2 + zw
+M
+∑
+m=0
+θm −
+M
+∑
+m=0
+log(θi),
+(53)
+where the centering problem becomes equivalent to the original as z →+∞.
+Post-processing methods that are geared towards de-biasing the solution and tech-
+niques for selecting the regularization parameter w are presented in Appendix D and
+Appendix E, respectively.
+6
+Recursive Estimation
+The sparse density estimation methods that we have presented thus far implicitly assume
+that the travel times are all available for density estimation purposes. This is an inherent
+issue with traditional data analysis methods that naturally amount to ofﬂine data process-
+ing . In order to capture real-time variation in travel time (for instance due to recurrent
+or non-recurrent events), this section presents an efﬁcient online algorithm that operates
+directly on streaming measurements. Our approach is inspired by and extends [Freris
+et al., 2013a,b] and [Sopasakis et al., 2016] on recursive compressed sensing, which applies
+LASSO to successive overlapping windows of the data stream.
+The key observation is that the dimensionality of our problem M (size of θ) does not
+depend on the size of the dataset S, but depends solely upon the granularity of time
+discretization (as well as the choice of scale parameters for M-L mixture component den-
+sities). For efﬁcient sparse density estimation using streaming data, it is important to de-
+vise a method that (i) efﬁciently updates the Parzen density based on new measurements
+and (ii) provides fast numerical solutions to the LASSO problem, (52). Satisfying these
+17
+
+two requirements ensures that the resulting method is suitable for an online implemen-
+tation subject to high frequency streaming measurements and stringent real-time con-
+straints in estimating variable densities. To accomplish the second requirement, we pro-
+pose using warm-starting in solving (52), i.e., we use the previously obtained estimate bθ
+as a starting point to an iterative LASSO solver (while properly updating the Parzen vec-
+tor bp). This is advantageous and leads to a substantial acceleration; see the experiments
+in Section 7.5. We demonstrate how the ﬁrst requirement can be satisﬁed by considering
+two scenarios: (i) sequential processing of travel times, i.e., more data become available from
+the ‘same’ underlying distribution, whence the changes in estimated parameter bθ reﬂect
+enhancing the learning outcome based on new data, and (ii) a rolling-horizon setup, in
+which data are processed via windowing so as to track dynamic (within-day) variability
+in the travel time distributions in real-time. This can also be used for anomaly detection,
+for instance, to identify incidents based on abrupt changes in the travel time distribution.
+We brieﬂy discuss the two scenarios below. We assume, without any loss in generality,
+that the online algorithm accepts streaming travel time data and processes the data one
+observation at a time.
+6.1
+Sequential Data Processing
+We consider a stream of travel time data {T1, T2, . . .} and without loss of generality, we
+assume that they belong in the set {τn}N−1
+n=0 . Sequential processing amounts to learning
+the underlying mixture densities corresponding to using the ﬁrst K + 1 data points based
+on the estimated mixture using the ﬁrst K data point, for K ∈Z+. The Kth LASSO
+problem is
+bθ(K) ∈argmin
+θ∈Ω
+1
+2
+bp(K) −Φθ
+2
+2 + w1⊤θ.
+(54)
+Observe that the matrix Φ does not depend on K, but depends on our choice of time dis-
+cretization (as well as the scale parameters). As explained above, we use warm-starting
+to obtain the solution bθ(K+1) while using as starting point to our numerical solver the
+previous solution bθ(K). The Parzen density (28) is recursively updated as follows:
+bf (K+1)(t) =
+K
+K + 1
+bf (K)(t) +
+1
+K + 1κh(t −TK+1).
+(55)
+Since we consider discretized data, the values κh(t −tj) can be precomputed for t ∈
+{τn}N−1
+n=0 and j = 0, 1, . . . , N −1. Let us deﬁne the matrix Ψ ∈RN×N (depending ex-
+clusively on time discretization, where the jth column of Ψ, denoted by Ψj, is given by:
+Ψj = [κh(τ0 −tj) . . . κh(τN−1 −tj)]⊤.
+(56)
+Therefore, the vector bp(K+1) can be obtained from bp(K) along with the new data point
+TK+1 using O(N) operations as follows:
+bp(K+1) =
+K
+K + 1 bp(K) +
+1
+K + 1ΨTK+1,
+(57)
+where ΨTK+1 ∈RN is the column of Ψ corresponding to the (discretized) travel time TK+1.
+18
+
+6.2
+Rolling-Horizon Data Processing
+This recursive scheme allows real-time streaming data to be incorporated into the model
+as they arrive, and gradually removes old data that becomes irrelevant. This is achieved
+by sampling the input stream recursively via overlapping windowing, rather than using
+all historical data available to learn the model parameters. This enables the sparse den-
+sity model to adapt to changes in the underlying data distribution (due, for example, to
+within-day variability in trafﬁc conditions).
+We deﬁne T(j)
+W to be the jth window taken from the streaming travel time data of
+length W. Without loss of generality, we will assume a ﬁxed window of length W, and for
+a travel time data stream {T1, T2, . . .}, we deﬁne T(j)
+W ≡{Tj, . . . , Tj+W−1} and, similarly,
+T(j+1)
+W
+≡{Tj+1, . . . , Tj+W} to be two consecutive windows.
+Denoting the Parzen density corresponding to travel times in T(j)
+W by bp(j), learning
+from the jth window amounts to solving
+bθ(j) ∈argmin
+θ∈Ω
+1
+2
+bp(j) −Φθ
+2
+2 + w1⊤θ.
+(58)
+Noting the overlap between two consecutive windows, the {bθ(j)} sequence of parameters
+can be estimated recursively: this can be achieved by leveraging the solution obtained
+from the data in the jth window to warm-start the iterative solver for LASSO in window
+j + 1. The Parzen density (28) associated with travel time t ∈R+ corresponding to the
+jth window is given by
+bf (j)(t) = 1
+W
+j+W−1
+∑
+l=j
+κh(t −tl).
+(59)
+Thus, the empirical PW estimator can be viewed as a sliding empirical density estimator
+with a shifted kernel κh(t −Tj+W) being added for every successive window, while the
+outdated kernel κh(t −Tj) is removed, i.e.,
+bf (j+1)(t) = bf (j)(t) + 1
+W [κh(t −Tj+W) −κh(t −Tj)].
+(60)
+Again, the vector bp(j+1) can be obtained from bp(j) very efﬁciently using O(N) operations,
+as follows:
+bp(j+1) = bp(j)(t) + 1
+W (ΨTj+W −ΨTj),
+(61)
+where again ΨTj+W, ΨTj ∈RN are the columns of Ψ corresponding to the (discretized)
+travel times Tj+W, Tj, respectively. Owing to the substantial overlap between consecutive
+data windows, the optimal solution to the (j + 1)th problem is expected to be close to
+that of the previous problem. This leads to substantial acceleration in solving successive
+LASSO problems as demonstrated in Section 7.5.
+7
+Experimental Validation
+In this section, we present numerical experiments that demonstrate the merits of our
+methods on real-life datasets.
+19
+
+7.1
+Numerical Testing
+We ﬁrst tested the performance of the proposed approach on a synthetic dataset, using
+a known bi-modal probability density. The example we consider compares the perfor-
+mance of a Gaussian mixture and the proposed mixture density using M-L functions.
+For this example, a data set of S randomly drawn samples was used to construct the den-
+sity estimate and a separate (out of sample) test data set of size Stest was used to calculate
+the out-of-sample rooted-mean square error (RMSEoos) deﬁned by
+RMSEoos =
+v
+u
+u
+t 1
+Stest
+Stest
+∑
+j=1
+
+bf (tj) −f (tj)
+2
+.
+(62)
+The (true) density to be estimated is given by a mixture of two densities: a Gaussian and
+a Laplacian with equal weights (0.5):
+f (t) = 0.5
+1
+√
+200π
+e−(t−60)2
+200
++ 0.50.2
+2 e−0.2|t−30|.
+(63)
+The density estimation was carried out using a data sample of size S = 2000, while the
+error is reported for an out-of-sample dataset with Stest = 10, 000. For travel times, we
+considered uniform per-second discretization of the interval [1, 300]s, i.e., M′ = 300. The
+scale parameter σm was allowed ten values {1, 2, . . . , 10} (therefore M = 10M′ = 3000)
+for both Gaussian and M-L mixture densities. For both cases, we set N = 2M′ = 600,
+corresponding to uniform per-second discretization of the interval [1, 600] seconds. For
+this example, all computations were performed using Matlab and CVX [Grant and Boyd,
+2014] for numerical optimization. The test was performed ten times and average values
+are reported. A representative comparison between the density obtained using our pro-
+posed approach (for both Gaussian and M-L kernels), the PW density (using Gaussian
+kernel with variance h = 1.5), and the true density is presented in Figure 4.
+0
+20
+40
+60
+80
+100
+0
+0.01
+0.02
+0.03
+0.04
+0.05
+True Density
+Parzen Density
+Sparse Density
+0
+20
+40
+60
+80
+100
+0
+0.01
+0.02
+0.03
+0.04
+0.05
+True Density
+Parzen Density
+Sparse Density
+(a)
+(b)
+Figure 4: True PDF vs. PW PDF vs. sparse mixture density PDF; (a) sparse density with
+Gaussian mixture component densities, (b) sparse density with M-L mixture component
+densities.
+From this ﬁgure, it is evident that the sparse mixture estimators provide a very good
+ﬁt to the true distribution, as is also shown in Table 1 (where RMSEoos is reported within
+20
+
+±1 standard deviation). The achieved sparsity was less than 5% and 0.4% of the sample
+sizes in the case of the Gaussian and M-L cases, respectively. This indicates that using
+M-L mixture densities promotes higher sparsity than using Gaussian mixture densities,
+i.e., higher compression rate, while at the same time achieving an order of magnitude
+improvement in goodness-of-ﬁt, cf. Table 1. In fact, the proposed sparse M-L estimator
+even outperformed PW in terms of accuracy, which perfectly demonstrates the superior
+ﬁtting capabilities of our model.
+Table 1: Performance comparison on synthetic data.
+Method
+RMSEoos
+Number of mixture components
+PW estimator
+5.50e-04 ± 9.96e-05
+2000
+Sparse Gaussian estimator
+3.3e-03 ± 1.92e-05
+95
+Sparse M-L Estimator
+4.49e-04 ± 1.16e-04
+7
+7.2
+Experiments on Real Datasets
+7.2.1
+Dataset Description
+The sparse mixture density estimation approach proposed was applied to travel times
+extracted from vehicle trajectories made available by the Next Generation SIMulation
+(NGSIM) program Peachtree Street dataset (http://ngsim-community.org). The arte-
+rial section is approximately 640 meters (2100 feet) in length, with ﬁve intersections and
+two or three through lanes in each direction. The section is divided into six intersection-
+to-intersection segments which are numbered from one to six, running from south to
+north. Of the ﬁve intersections, four are signalized while intersection 4 is un-signalized.
+The Peachtree Street data consists of two 15-minute time periods: 12:45PM to 1:00PM
+(noon dataset) and 4:00PM to 4:15PM (PM dataset). The dataset includes detailed indi-
+vidual vehicle trajectories with time and location stamps, from which the travel times of
+individual vehicles on each link were extracted. In this study, the link travel time is the
+time a vehicle spends from the instant it enters the arterial link to the instant it passes the
+stop-bar at the end of the link (i.e., the time spent at intersections is excluded).
+The second dataset we used contains vehicle trajectory data collected under the NGSIM
+program on eastbound I-80 in the San Francisco Bay area in April 2005. The study area
+is approximately 500 meters in length and consists of six expressway lanes, including a
+high-occupancy vehicle (HOV) lane and an on-ramp (see Punzo et al. [2011] for details).
+Using seven cameras mounted on top of a 30-story building adjacent to the expressway,
+a total of 5648 vehicle trajectories were captured on this road section in three 15-minute
+intervals: 4.00PM to 4.15PM; 5.00PM to 5:15PM; and 5:15PM to 5.30PM. These periods
+represent the build-up of congestion, the transition between uncongested and congested
+conditions, and full congestion during the peak period, respectively.
+7.2.2
+Fitting Results and Comparisons
+In order to demonstrate the effectiveness of the proposed approach, we have chosen to
+estimate the travel time distributions of southbound trafﬁc on the signalized arterial links
+21
+
+along Peachtree Street for the two time periods. We used Gaussian component densities
+for the empirical distribution bp (the PW density), where the bandwidth h was calculated
+according to the (standard) approximation proposed by Silverman [1986]: h = 1.06ςS−1/5
+is picked to minimize the integral mean-square error (where ς is the sample variance and
+S is the sample size). For the M-L mixture, we used M′ = 300 location parameters with
+scale parameters in the set σm ∈{1, 2, 3, 4, 5} (i.e., M = 1500 mixture components were
+used in the estimation procedure).
+Figure 5 (a) shows the PW PDF and the estimated sparse PDF (using M-L functions)
+for the travel times of the southbound vehicles during the noon period. The ﬁtted distri-
+bution is clearly bi-modal and closely follows the PW PDF. The bi-modality of the travel
+time distribution can be attributed to the presence of two trafﬁc states: non-stopped ve-
+hicles along the entire corridor in the southbound direction and stopped vehicles expe-
+riencing delay at one or more of the signals. Observe that while the number of mixture
+components required to calculate the PW density is equal to the number of data samples
+(58 for this case), the proposed estimation algorithm achieves a similar accuracy with a
+much sparser representation: only four M-L mixture components were needed; i.e., a com-
+pression rate of about 15:1.
+We compared our approach against the Expectation Maximization (EM) algorithm [Bishop,
+2006], the prevalent method for estimation of Gaussian mixture models [Wan et al., 2014].
+The EM algorithm (using Gaussian mixtures) has been widely used for the estimation of
+travel time densities, despite its slow rate of convergence [Wu, 1983, Archambeau et al.,
+2003], and the dependence of the parameter estimates on the choice of the initial values
+[Biernacki et al., 2003]. The commonly adopted method to prevent the EM algorithm
+from getting trapped in local minima is to start the algorithm with different initial ran-
+dom guesses [Wan et al., 2014]. The importance of properly deﬁning the stopping cri-
+terion to ensure that the parameters converge to the global maximum of the likelihood
+function has been highlighted in [Karlis and Xekalaki, 2003, Abbi et al., 2008]. In all our
+experiments, we used ten randomly selected initial estimates; for termination criterion,
+we used tolerance threshold (selected as 10−3) on the absolute difference between two
+successive root-mean squared error (RMSE) estimates, where
+RMSE =
+v
+u
+u
+t 1
+N
+N
+∑
+j=1
+ bp(tj) −p(tj)
+2.
+(64)
+A known issue with the EM algorithm is that it requires predetermining the number
+of mixture components. This is in contrast to our method, which optimally determines
+the number of mixture components concurrently with the ﬁtting procedure. Given the number
+of mixture components, the EM algorithm is an iterative method used to estimate the
+mean and variance of each Gaussian mixture density, along with the weight vector θ.
+Note that the EM algorithm solves for maximum-likelihood estimates of the mixture distribution
+parameters; it does not minimize the RMSE. Figure 5 and Table 2 summarize the results. The
+optimal sparse ﬁtting contains four M-L mixture components and we also tested the EM
+algorithm with two, four and six Gaussian mixture components. Increasing the number
+of components in the EM algorithm increases (i.e., improves) the log-likelihood but the
+RMSE tends to get worse beyond two mixture components. This is indicative of the
+22
+
+0
+50
+100
+150
+Travel Time (sec)
+0
+0.02
+0.04
+0.06
+Probability Density
+Parzen Density Estimator
+Sparse Density Estimator
+0
+50
+100
+150
+Travel Time (sec)
+0
+0.02
+0.04
+0.06
+Probability Density
+Parzen Density
+Gaussian Mixture Model
+(a)
+(b)
+0
+50
+100
+150
+Travel Time (sec)
+0
+0.02
+0.04
+0.06
+Probability Density
+Parzen Density
+Gaussian Mixture Model
+0
+50
+100
+150
+Travel Time (sec)
+0
+0.02
+0.04
+0.06
+Probability Density
+Parzen Density
+Gaussian Mixture Model
+(c)
+(d)
+Figure 5: Travel time densities of Peachtree Street (southbound, noon) depicting the loca-
+tions of the travel time samples (green circles along the horizontal axis); (a) M-L mixture
+densities vs. Parzen density, (b) Gaussian mixture with two modes vs. Parzen density,
+(c) Gaussian mixture with four modes vs. Parzen density, (d) Gaussian mixture with six
+modes vs. Parzen density.
+Table 2: Performance comparison: M-L vs. EM.
+Method
+No. mixture components
+RMSE
+Log-likelihood
+Sparse M-L Estimator
+4
+0.0004
+N/A
+EM
+2
+0.0009
+0.0021
+EM
+4
+0.0012
+0.0029
+EM
+6
+0.0063
+0.0152
+EM algorithm’s tendency to over-ﬁt to artifacts in the data with larger numbers of mixture
+components. This is indicative of a susceptibility to data errors of the EM algorithm. (This
+is a well-known weakness of log-likelihood maximization as opposed to least-squares
+estimation.) In contrast, our model has the favorable property that the goodness-of-ﬁt
+typically increases with the number of mixture components used. Figure 6 illustrates
+this using travel times from another dataset (namely, I-80): we evaluated the RMSE for
+our sparse density estimator vs. the EM algorithm with varying numbers of mixture
+components (for M-L component densities, we varied the regularizing parameter w so as
+to achieve different sparsity levels).
+23
+
+0
+5
+10
+15
+Number of Components
+0
+0.2
+0.4
+0.6
+0.8
+1
+1.2
+1.4
+Fitting Error
+10-3
+EM Algorithm
+Sparse Density Estimator
+Figure 6: Fitting accuracy of Sparse Density Estimator vs EM for variable number of
+components; dataset: I-80.
+7.3
+Inference with Parsimonious Models
+In order to highlight the predictive capabilities and interpretability of parsimonious mod-
+els, we have tested our method on hold-out real data from the I-80 dataset: We divided the
+bulk of the I-80 data in two parts (corresponding to different timestamps ): (i) a training
+dataset and (ii) a hold-out test dataset (where we selected a ratio of 4 : 1 for training vs.
+test data). We then ﬁt our model using the training data and tested its performance (mea-
+sured via goodness-of-ﬁt) on the hold-out test data. It is worth noting that this scenario
+is a challenging one due to the heterogeneity of the travel times recorded over intervals
+of variable trafﬁc conditions. The results are reported in Figure 7: Figure 7 (a) plots the
+PW on the training and hold-out data, along with the sparse density obtained using M-L
+mixture densities (12 mixture components were used by our sparse density estimator in
+this case); Figure 7 (b) plots the ﬁtting error (RMSE) for both our method and the EM
+algorithm using a varying number of mixture components, namely 1-12. It is evident
+from this experiment that our method clearly outperformed the EM algorithm in terms
+of higher ﬁtting accuracy on hold-out data.
+0
+50
+100
+150
+200
+250
+300
+Travel Time (sec)
+0
+0.005
+0.01
+0.015
+Probability Density
+Parzen Density (Training Data)
+Sparse Density
+Parzen Density (Hold-out Data)
+0
+2
+4
+6
+8
+10
+12
+Number of Components
+2
+4
+6
+8
+10
+12
+14
+Fitting Error
+10-4
+EM Algorithm 
+(variable no. components)
+Sparse Density Estimator
+(optimized no. of components)
+(a)
+(b)
+Figure 7: (a) Parzen density for training data, hold-out data, and ﬁtted sparse density,
+(b) Fitting error on hold-out data: M-L sparse density estimator (straight line in black) vs
+EM algorithm for variable number of mixture components (blue); dataset: I-80.
+24
+
+We tested our method vs. ℓ2−regularization on the Peachtree (northbound, noon)
+dataset. For both methods, we chose M = 1500 M-L mixture components for model selec-
+tion (M′ = 300 and a scale parameter set σm ∈{0.2, 0.3, 0.5, 1, 1.5}). For ℓ2-regularization,
+the value ew was selected from the set {5 · 10−5, 5 · 10−4, 5 · 10−3, 5 · 10−2, 5 · 10−1} by
+5 : 1 cross-validation. Figure 8 illustrates the results. Both methods achieved an RMSE
+0
+300
+600
+900
+1200
+1500
+0
+0.01
+0.02
+0.03
+0.04
+0
+300
+600
+900
+1200
+1500
+0
+0.1
+0.2
+0.3
+0.4
+(a)
+(b)
+Figure 8: Weight vector θ (a) using ℓ2-regularization (b) using sparse density estimation
+(ℓ1−regularization); dataset: Peachtree (northbound, noon).
+of about 0.008. Nonetheless, the number of mixture components (and corresponding
+weights) that need to be stored to re-create and predict the travel time distribution was
+substantially reduced to only 5 M-L mixture densities using sparse density estimation
+(from 84 needed for ℓ2−regularization). In addition to reduced storage requirements,
+the sparse density estimate allows for making inference with ease about the underlying
+data through the selected mixture components and their corresponding weights. For in-
+stance, the selected M-L components indicate that the underlying travel time data can
+be approximated well by two peaks located at around t = 11 and t = 45. On the other
+hand, the mixture components selected by the ℓ2-norm regularization are much less in-
+formative. This parsimony is further illustrated in Figure 9 where the experiment was
+conducted on the I-80 dataset.
+0
+500
+1000
+1500
+2000
+2500
+3000
+0
+0.05
+0.1
+0.15
+0.2
+Figure 9: Sparse density estimation, I-80.
+25
+
+7.4
+Merits of Mittag-Leﬄer Mixture Densities
+In this section, we demonstrate the superiority of the adaptive approach with M-L mix-
+ture densities over the non-adaptive (Gamma mixture densities with a single-scale pa-
+rameter σ) in terms of parsimony. For this case study, we considered the travel time
+distribution of the northbound trafﬁc along Peachtree street in the noon time period.
+The sparse density estimation was ﬁrst carried out using the M-L mixture densities with
+σm ∈{1, 2, 3, 4, 5} and then using Gamma mixture densities with single parameter σ = 1.
+The solutions are depicted in Figure 10(a) and Figure 10(b) respectively, where we have
+used M = 1500 (M′ = 300 uniform per-second discretization) for the M-L mixture den-
+sities and M = 300 for the Gamma mixture densities. The ﬁgures indicate that the travel
+0
+300
+600
+900
+1200
+1500
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0
+50
+100
+150
+200
+250
+300
+0
+0.05
+0.1
+0.15
+(a)
+(b)
+Figure 10: Weight vector θ for (a) M-L mixture densities (b) Gamma mixture densities;
+dataset: Peachtree (northbound, noon).
+time density can be efﬁciently represented using two dominant modes (with different
+scale parameters). However, in the case of the Gamma mixture, a much larger number
+of components was required. Although using a σ = 5 reduces the number of Gamma
+mixture components required to 2, the sparse Gamma estimate cannot accurately cap-
+ture the shape of the distribution, as shown in Figure 11(a); in contrast, the estimated
+M-L mixture is indistinguishable from the PW density, as depicted in Figure 11(b).
+0
+100
+200
+300
+400
+0
+0.002
+0.004
+0.006
+0.008
+0.01
+Parzen Density
+Sparse Density with = 1
+Sparse Density with = 5
+0
+100
+200
+300
+400
+0
+0.002
+0.004
+0.006
+0.008
+0.01
+Parzen Density
+Sparse Density
+(a)
+(b)
+Figure 11: Travel time densities of Peachtree Street (northbound, noon): (a) Gamma mix-
+ture, (b) M-L mixture.
+26
+
+Interpreting the results. From the weight vector of the M-L mixture in Figure 10(a),
+it is clear that the predominant mixture components associated with the highest weights
+are the M-L densities with σ = 5 located at t = 97 seconds, and σ = 3 located at t = 158.
+From this alone, we can infer the most likely travel times of the northbound (noon) trafﬁc
+along Peachtree street, whereas the weight vector associated with the Gamma mixture is
+not quite as informative.
+7.5
+Real-World Testing of Recursive Algorithm
+The recursive algorithm on streaming data was tested using the I-80 dataset. We track the
+changes in the travel time density on I-80 using the recursive algorithm, by taking a ﬁxed
+window size of W = 100 travel time samples for each instance of sparse density estima-
+tion (along with parameters M′ = 300, N = 600 corresponding to per-second uniform
+discretization and scale parameters σm ∈{1, 2, 3, 4, 5}, whence M = 1500 M-L mixture
+components are considered). By processing the newly arriving samples one at a time
+(and simultaneously discarding the oldest ones), the density is constantly updated with
+time following the mechanism presented in Section 6.2. The travel time densities for the
+PM peak period predicted by the recursive algorithm are depicted in Figure 12, where
+we can observe that the number of modes, as well as their locations, vary signiﬁcantly
+over time.
+0
+50
+100
+150
+0
+0.01
+0.02
+0.03
+4:04:04 PM
+5:11:33 PM
+5:18:46 PM
+Figure 12: Time varying travel time density on I-80 (eastbound, PM).
+For the ﬁrst time period under consideration, the travel time density at (a representa-
+tive) time of 4:04PM is plotted; clearly, the density can be captured by a bi-modal distri-
+bution. This corresponds to the uncongested period where the travel times of nearly all
+the vehicles are below 80 seconds. However, at about 5:08PM (which represents the time
+when congestion begins to build up), the number of modes increases to 3, introducing a
+new cluster of vehicles with travel times between 70 and 120 seconds. After congestion
+has set in, the number of modes again reduces to 2 in the third time-period, and the loca-
+tions of these modes indicate that the travel times of all vehicles have increased. In brief,
+these results highlight the capability of the recursive algorithm to track the varying travel
+time density in real-time, in a means that is also robust to the variations encountered by
+individual vehicles. The model parameters estimated by the recursive algorithm reﬂect
+the underlying trafﬁc conditions, and can capture the multi-modality in these distribu-
+tions very efﬁciently.
+27
+
+The run-time was reported to be just over 2.5 minutes for recursive estimation vs.
+about 2.5 hours using the standard method (non-recursive one). This experiment solidi-
+ﬁes our claim for the feasibility of a truly real-time implementation of our methods (note
+that a run-time of 2.5 minutes was needed to track the variability over an interval of 45
+minutes). A series of snapshots illustrating the dynamic variation of densities is given in
+Figure 13.
+Figure 13: Recursive estimation of travel time densities: a snapshot of density evolution
+in real-time; dataset: I-80.
+8
+Conclusions
+We have introduced an efﬁcient model-based approach for estimating travel time dis-
+tributions in urban networks. Our methods employ sparse model selection on a mix-
+ture density to obtain parsimonious estimates that accurately characterize measured his-
+tograms of travel times. The numerical examples employed in the paper demonstrate
+that the proposed approach is a viable alternative to existing density estimation tech-
+niques and yields estimates with (i) higher goodness-of-ﬁt, (ii) substantial compression
+compared to the Parzen estimates (i.e., the histogram), and (iii) robustness to over-ﬁtting.
+In this sparsity-seeking framework, ensuring integrability of the mixture densities
+(i.e., ensuring that the resulting function is a PDF) cannot be achieved by normalization as
+is traditionally done. For this purpose, we have developed a new mixture using Mittag-
+Lefﬂer functions which was shown to outperform Gaussian mixtures in terms of both
+accuracy and parsimony.
+Most learning algorithms, including sparse model selection, are naturally ofﬂine in
+the sense that they operate on the entirety of a given dataset. To address the crucial
+problem of online travel time estimation, we have proposed algorithms that directly op-
+erate on streaming data measurements in two settings: (i) successively improving the
+ﬁtting ﬁdelity when new data become available and (ii) tracking the variability of the
+travel times in real-time. Our experiments demonstrate a speed-up of several orders of
+magnitude over ofﬂine data analysis.
+28
+
+Acknowledgment
+This research was funded in part by the NYU Global Seed Grant for Collaborative Re-
+search. The work of the second author, while with NYU Abu Dhabi and NYU Tandon
+School of Engineering, was supported by the National Science Foundation (NSF) under
+grant CCF-1717207.
+Appendix A
+Notation
+General
+Z+, R+
+The non-negative integers and non-negative real numbers, respectively
+i
+The imaginary unit, i ≡√−1
+1{conditon}
+The indicator function, maps to 1 if conditon is true and maps to 0 otherwise
+B
+The Beta function
+Γ
+The Gamma function
+Eν
+Mittag-Lefﬂer function with parameter ν, Eν(t) = ∑∞
+n=0
+tn
+Γ(1+nν)
+∥· ∥
+Norm, e.g., ∥y∥2 is the L2 norm of y
+Trafﬁc-Flow
+C(x)
+Vehicle crossing time at position x
+Π(x)
+Macroscopic pace at position x
+ρ
+Trafﬁc density
+V
+Equilibrium speed function
+Q
+Equilibrium ﬂux function (fundamental diagram), Q(ρ) = ρV(ρ)
+P
+Equilibrium pace function, which maps trafﬁc density to pace, P(ρ) =
+1/V(ρ)
+ρjam
+Jammed trafﬁc density, V(ρjam) = 0
+vfr
+Free-ﬂow speed, V(0) = vfr
+vb
+Backward wave speed, d
+dρQ(ρjam) = vb
+Probabilities and Related Notions
+E
+The expectation operator
+(
+m
+k1 ... kj)
+The multinomial coefﬁcient, (
+m
+k1 ... kj) ≡
+m!
+k1!·...·kj!
+fX
+The probability density function (PDF) associated with continuous random
+variable X
+pX
+The probability mass function (PMF) associated with discrete random vari-
+able X
+ϕX
+The characteristic function associated with random variable X, ϕX(s) ≡
+EeisX
+f (y; µ)
+A PDF evaluated at y with parameter (vector) µ. We casually write f (y)
+ignoring the argument µ, so as to lighten notation.
+p(y; µ)
+A PMF evaluated at y with parameter (vector) µ. We casually write p(y)
+ignoring the argument µ, so as to lighten notation.
+fΓ
+The PDF of a Gamma distributed random variable
+29
+
+fM−L
+Mittag-Lefﬂer PDF, fM−L(t; β, σ, b) =
+1
+σΓ(β)
+
+t
+σ
+β−1h
+Eν
+  t
+σ
+ci−1
+fρ
+The PDF of trafﬁc density
+fΠ
+The PDF of pace
+fT
+The PDF of travel time
+ϕΠ
+The characteristic function of pace
+ϕΓ
+The characteristic function of a Gamma distributed random variable
+Travel Time Data, Empirical Distributions, and Estimated Distributions
+w
+Regularization parameter
+T1, . . . , TS
+A sample of S travel times
+T(j)
+W
+The
+jth
+window
+taken
+from
+stream
+travel
+time
+data,
+T(j)
+W
+=
+{Tj, . . . , Tj+W−1}, where W is the window width
+∆
+Time discretization constant
+{τn}N−1
+n=0
+A set of discrete travel times, deﬁning the support (or domain) of the PMFs,
+tn = n∆
+{tm}M−1
+m=0
+A subset of {τn}N−1
+n=0 representing the locations of the mixture PDFs
+τ
+A function that maps a continuous travel time t to a discrete travel τn (τn is
+the representative of t in the discrete set)
+bf
+Empirical distribution of travel times, also known as the Parzen Window
+(PW) estimator. bf (t) is the frequency of travel time t ∈R+, as established
+empirically.
+kh
+A kernel, window, or bin of width h; kh(t −Tj) provides a measure of the
+distance between travel time t ∈R+ and the data point Tj.
+f
+Mixture PDF (to be estimated)
+φm
+The m mixture component of f (a PDF)
+θm
+The weight associated with the mth mixture component
+θ
+M dimensional vector of mixture weights
+bp
+Discrete
+empirical
+distribution,
+an
+N
+dimensional
+vector
+bp
+=
+[bp0 . . . bpN−1]⊤with bpn ∝bf (τn)
+p
+Discrete mixture distribution, an N dimensional vector p = [p0 . . . pN−1]⊤
+with pn ∝f (τn)
+cn
+Discretization constant used to deﬁne the discrete component densities;
+speciﬁcally, φn,m ≡cnφm(τn)
+Φ
+The matrix [φn,m] ∈RN×M
++
+: we have p = Φθ
+Ψ
+A N × N matrix with elements Ψn,i = κh(τn −τi)
+bf (K)
+Parzen density established using the ﬁst K travel times {T1, . . . , TK}
+bf (j)
+Parzen density established using travel time data T(j)
+W
+bp(K)
+Discrete empirical distribution established using the ﬁst K travel times
+{T1, . . . , TK}
+bp(j)
+Discrete empirical distribution established using travel time data T(j)
+W
+bθ(K)
+Estimated mixture weights using the ﬁrst K travel times {T1, . . . , TK}
+bθ(j)
+Estimated mixture weights using travel time data T(j)
+W
+30
+
+Appendix B
+Ensuring Summability of Mixture Weights to Unity
+Let [θ∗
+0 . . . θ∗
+M−1]⊤solve (34), where (for the sake of generality) the matrix elements φn,m
+are given by (45). Suppose ∑M−1
+m=0 θ∗
+m < 1 . To address the summability to unity issue, we
+may append a single component density to the solution with negligible impact on the
+outcome. Consider the vector ψ(t′, σ′) ∈RN, the elements of which are given by
+ψn(t′, σ′) ≡σ′ fM−L
+
+t′; 1 + τn
+σ′ , σ′
+,
+(65)
+for n = 0, 1, . . . N −1. The parameters t′ and σ′ are chosen so that
+max
+n∈{0,...,N−1} ψn(t′, σ′) ≤ε,
+(66)
+for some predeﬁned tolerance threshold ε > 0. Deﬁne ∆′ ≡
+∆
+σ′ so that ψn(t′, σ′) =
+σ′ fM−L(t′; 1 + n∆′, σ′). Consider a choice of t′ and σ′ so that t′
+σ′ = 1, then
+max
+n∈{0,...,N−1} σ′ fM−L(t′; 1 + n∆′, σ′) =
+max
+n∈{0,...,N−1}
+1
+Γ(1 + n∆′)E∆′(1).
+(67)
+A well-known property of the Gamma function is that it achieves a global minimum in
+R+, which is Γ(xmin) = 0.885603 (for xmin = 1.461632). Consequently,
+max
+n∈{0,...,N−1}ψn(t′, σ′) ≤
+1
+0.88E∆′(1)
+(68)
+so that σ′ is chosen to ensure that
+E ∆
+σ′ (1) ≥
+1
+0.88ε.
+(69)
+We now append ψ(t′, σ′) to Φ (as a column to the right) and set θ = [θ∗⊤, 1 −∑M−1
+m=0 θ∗
+m]⊤.
+First, notice that the choice of σ′ above does not depend on θ∗(but depends exclusively
+on the discretization interval ∆). Therefore, this calculation can be performed ofﬂine.
+Since θM = 1 −∑M−1
+n=0 θ∗
+m < 1, by design, we know that the contribution of ψ(t′, σ′) to p
+is smaller than ε (since its contribution to all support values {τn}N−1
+n=0 is smaller than ε).
+This motivates restricting attention to LASSO constrained to the positive orthant (vs. the
+probability simplex).
+Appendix C
+Increasing the Sparsity
+In the adaptive case, we can further increase the sparsity by scaling the weights θ in a way
+that favors mixture components with larger scale parameters, as a type of preconditioning.
+Formally, let Σ ∈RM×M be a diagonal matrix with elements Σm,m = σm and consider the
+following re-scaled version of the estimation problem:
+minimize
+θ∈Ω
+1
+2
+bp −Φθ
+2
+2 + w
+Σ−1θ
+1.
+(70)
+31
+
+By modifying the weight vector in this way, we penalize each mixture component in
+proportion to the inverse of its scale parameter. This is done to encourage the sparse
+density algorithm to choose mixture components with larger scale parameters (hence,
+fewer components) to capture the distribution. Informally, when two or more mixture
+components yield a ﬁtting accuracy comparable with one wider component, the latter
+will be selected.
+When Ω= RM
++ , we have the constrained LASSO problem
+minimize
+θ∈RM+1
++
+1
+2
+bp −Φθ
+2
+2 + w1⊤Σ−1θ,
+(71)
+where a logarithmic barrier for the non-negative constraints can be augmented to the
+objective function to obtain the associated centering problem
+minimize
+θ∈RM+1
+z
+2
+bp −Φθ
+2
+2 + zw
+M
+∑
+m=0
+1
+σm
+θm −
+M
+∑
+m=0
+log(θi).
+(72)
+Appendix D
+Post-Processing
+Once a numerical solution of LASSO (52) is obtained, it is important to numerically post-
+process it. For example, we aim for ‘zero’ values in the solution vector θ, but this practi-
+cally corresponds to very small entries. One simple yet effective way to deﬁne the zero
+entries of θ is by thresholding, e.g., setting all entries |θi| < ϵ∥θ∥∞to zero, for some small
+value of ϵ, e.g. ϵ = 10−3. After thresholding, the support of the solution supp(bθ) (the set
+of non-zero entries) and the corresponding number of non-zero entries sw ≡|supp(θ)|
+are determined. An additional way to improve sparsity is by combining nearby mixture
+components that appear in the (thresholded) solution, i.e., mixture components whose
+locations lie within a predetermined distance. Finally, we may improve the reconstruc-
+tion ﬁdelity by performing constrained least-squares on the resulting support: i.e., we
+obtain a new matrix Φs ∈RN×sw by selecting the set of columns of Φ corresponding to
+the support, and perform constrained least-squares to update the entries bθs:
+minimize
+θs∈Ωs
+bp −Φsθs
+2
+2.
+(73)
+This is usually referred to as a de-biasing step, where Ωs = Rsw
++ .
+Appendix E
+Choice of Regularization Parameter
+The regularization parameter w controls the trade-off between sparsity and reconstruc-
+tion error. If the regularization parameter w is sufﬁciently large most of the coefﬁcients
+are driven to zero, thus leading to a sparse model with only a few (relevant) mixture
+density functions. However, this typically leads to poor ﬁtting accuracy (low goodness-
+of-ﬁt). On the other hand, when w is sufﬁciently small one retrieves the best possible
+ﬁt (non-negative least-squares), which is (in general) not sparse: most (typically, all)
+coefﬁcients are non-zero. In selecting w, the aim is to balance the trade-off between
+32
+
+goodness-of-ﬁt and sparsity. The problem of choosing the appropriate regularization
+parameter is crucial as it governs the selection of the sparsest model that can faithfully
+reconstruct the underlying distribution of the data. One approach to select a suitable
+w, which makes good use of the available dataset, is k-fold cross-validation [Efron and
+Gong, 1983, Turney, 1994]. Notwithstanding, cross-validation techniques do not promote
+sparsity in general, but are rather geared towards avoiding overﬁtting. Moreover, an issue
+with cross-validation is that it does not lead to consistent model selection for LASSO.
+We propose a simple scheme for tuning the parameter w to balance the trade-off be-
+tween goodness-of-ﬁt and sparsity. For this purpose, we use a metric inspired by the
+analysis in [Reid et al., 2013, Sun and Zhang, 2012] on scaled-LASSO, namely
+S2
+w ≡∥bp −Φθ(w)∥2
+2
+M −sw
+,
+(74)
+where sw ≡|supp(θ(w))| is the cardinality of the support set (as determined via the
+post-processing mechanism in Appendix D), i.e., the number of non-zero entries of the
+solution vector. We use θ(w) to emphasize the dependence of the (constrained) LASSO
+solution on the regularizing parameter w. The metric S2
+w in (74) captures the trade-off
+between (i) goodness-of-ﬁt, as measured by the squared ℓ2−error ∥bp −Φθ(w)∥2
+2 and (ii)
+sparsity (M −sw) (the number of zeros in the solution θ): it is proportional to the former
+and inversely proportional to the latter. Note, therefore, that seeking to minimize this
+metric leads to aiming for simultaneously maximizing the goodness-of-ﬁt and parsimony, and
+this is exactly the approach that we adopt in this paper. Last, S2
+w is well-deﬁned for
+sw < M, i.e., it is not deﬁned for values of w close to 0 where typically sw = M (S2
+w is
+ﬁnite on a set (wmin, +∞) for some wmin > 0 because of the continuity of the optimal
+solution θ in w); we may extend it to take the value inﬁnity in such case (since a sparse
+solution is desirable).
+For w = 0, one retrieves the constrained least-squares solution:
+minimize
+θ∈Ω
+bp −Φθ
+2
+2,
+(75)
+which serves as a lower bound for the squared ℓ2−error (best possible goodness-of-ﬁt)
+but is known to be non-sparse (sw = M in most cases). For w > w0 where
+w0 ≡∥Φ⊤bp∥∞,
+(76)
+the all-zero solution is retrieved (sw = 0); this maximizes sparsity but yields a squared
+ℓ2−error equal to ∥bp∥2
+2. One may then search over variable values of w and select the
+one that minimizes S2
+w. For example, we may consider values of w in a logarithmic scale:
+starting from w0 we evaluate S2
+w for values wk = ηkw0 for some η ∈(0, 1), e.g., η = 0.95
+was chosen in our experiments, where k is successively increased until a termination
+criterion is met. In our experiments we have considered:
+∥bp −Φθ(wk+1)∥2 −∥bp −Φθ(wk)∥2
+∥bp −Φθ(wk)∥2
+< ϵ′,
+(77)
+with ϵ′ = 10−3. An alternative is to achieve a desirable sparsity level exactly by means of
+the search mechanism above in conjunction with bisection. This can be applied to all the
+sparse estimation problems that we consider in this paper (see Figure 6 for illustration).
+33
+
+References
+R. Abbi, E. El-Darzi, C. Vasilakis, and P. Millard. Analysis of stopping criteria for the
+EM algorithm in the context of patient grouping according to length of stay. In 4th
+International IEEE Conference on Intelligent Systems (IS’08), pages 3–9, 2008.
+M. Afonso, J. Bioucas-Dias, and M. Figueiredo. Fast image recovery using variable split-
+ting and constrained optimization. IEEE Transactions on Image Processing, 19(9):2345–
+2356, 2010.
+H. Al-Deek and E. Emam. New methodology for estimating reliability in transportation
+networks with degraded link capacities. Journal of Intelligent Transportation Systems, 10
+(3):117–129, 2006.
+C. Archambeau, J. Lee, and M. Verleysen. On convergence problems of the EM Algo-
+rithm for Finite Gaussian Mixtures. In European Symposium on Artiﬁcial Neural Networks,
+pages 99–106, 2003.
+M. Arezoumandi. Estimation of travel time reliability for freeways using mean and stan-
+dard deviation of travel time. Journal of Transportation Systems Engineering and Informa-
+tion Technology, 11 (6):74–84, 2011.
+A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for linear
+inverse problems. SIAM Journal on Imaging Sciences, 2(1):183–202, 2009.
+C. Biernacki, G. Celeux, and G. Govaert. Choosing starting values for the EM algorithm
+for getting the highest likelihood in multivariate Gaussian mixture models. Computa-
+tional Statistics & Data Analysis, 41(3):561–575, 2003.
+C. Bishop. Pattern recognition and machine learning. Springer, New York, 2006.
+S. Boyd and L. Vandenberghe. Convex optimization. Cambridge University Press, Cam-
+bridge, UK, 2004.
+T. Cacoullos. Estimation of a multivariate density. Annals of the Institute of Statistical
+Mathematics, 18(1):179–189, 1966.
+Malachy Carey and YE Ge. Alternative conditions for a well-behaved travel time model.
+Transportation Science, 39(3):417–428, 2005a.
+Malachy Carey and YE Ge. Convergence of a discretised travel-time model. Transportation
+Science, 39(1):25–38, 2005b.
+S. Chakraborty and S. Ong. Mittag-Lefﬂer function distribution – A new generalization
+of hyper-Poisson distribution. Journal of Statistical Distributions and Applications, 4(8):
+1–17, 2017.
+P. Chen, K. Yin, and J. Sun. Application of ﬁnite mixture of regression model with varying
+mixing probabilities to estimation of urban arterial travel times. Transportation Research
+Record: Journal of the Transportation Research Board, 2442:96–105, 2014.
+34
+
+S. Chen. Probability density function estimation using Gamma kernels. Annals of the
+Institute of Statistical Mathematics, 52(3):471–480, 2000.
+S. Chen, X. Hong, and C. Harris. Sparse kernel density construction using orthogonal
+forward regression with leave-one-out test score and local regularization. IEEE Trans-
+actions on Systems, Man, and Cybernetics Part B, 34(4):1708–1717, 2004.
+S. Chen, X. Hong, and C. Harris. An orthogonal forward regression technique for sparse
+kernel density estimation. Neurocomputing, 71(4):931–943, 2008.
+J. Del Castillo and F. Benitez. On the functional form of the speed-density relationship. i:
+General theory, ii: Empirical investigation. Transportation Research Part B, 29(5):373–406,
+1995.
+D. Dilip, N. Freris, and Saif Jabari. Sparse estimation of travel time distributions using
+Gamma kernels, paper no. 17-02971. In 96th Annual Meeting of the Transportation Re-
+search Board, 2017.
+L. Du, S. Peeta, and Y. Kim. An adaptive information fusion model to predict the short-
+term link travel time distribution in dynamic trafﬁc networks. Transportation Research
+Part B, 46(1):235–252, 2012.
+B. Efron and G. Gong.
+A leisurely look at the bootstrap, the jackknife, and cross-
+validation. The American Statistician, 37(1):36–48, 1983.
+E. Emam and H. Al-Deek. Using real-life dual-loop detector data to develop new method-
+ology for estimating freeway travel time reliability. Transportation Research Record: Jour-
+nal of the Transportation Research Board, 1959:140–150, 2006.
+Y. Feng, J. Hourdos, and G. Davis. Probe vehicle based real-time trafﬁc monitoring on
+urban roadways. Transportation Research Part C, 40:160–178, 2014.
+M. Fosgerau and D. Fukuda. Valuing travel time variability: Characteristics of the travel
+time distribution on an urban road. Transportation Research Part C, 24:83–101, 2012.
+R. Franklin. The structure of a trafﬁc shock wave. Civil Engineering and Public Works
+Review, 56:1186–1188, 1961.
+N. Freris,
+O.
+¨Oc¸al,
+and M. Vetterli.
+Recursive compressed sensing.
+arXiv
+preprint:1312.4895, 2013a.
+N. Freris, O. ¨Oc¸al, and M. Vetterli. Compressed Sensing of Streaming data. In Proceedings
+of the 51st Allerton Conference on Communication, Control and Computing, pages 1242–
+1249, 2013b.
+Gianpaolo Ghiani and Emanuela Guerriero. A note on the Ichoua, Gendreau, and Potvin
+(2003) travel time model. Transportation Science, 48(3):458–462, 2014.
+Andr´es G´omez, Ricardo Mari˜no, Raha Akhavan-Tabatabaei, Andr´es L Medaglia, and
+Jorge E Mendoza. On modeling stochastic travel and service times in vehicle routing.
+Transportation Science, 50(2):627–641, 2016.
+35
+
+M. Grant and S. Boyd. CVX: Matlab software for disciplined convex programming, ver-
+sion 2.1. http://cvxr.com/cvx, March 2014.
+F. Guo, H. Rakha, and S. Park. Multistate model for travel time reliability. Transportation
+Research Record: Journal of the Transportation Research Board, 2188:46–54, 2010.
+F. Haight. Mathematical theories of trafﬁc ﬂow. Academic Press, New York, 1963.
+H. Haubold, A. Mathai, and R. Saxena. Mittag-Lefﬂer functions and their applications.
+Journal of Applied Mathematics, 2011, 2011.
+A. Hoﬂeitner, R. Herring, and A. Bayen. Arterial travel time forecast with streaming data:
+A hybrid approach of ﬂow modeling and machine learning. Transportation Research Part
+B, 46(9):1097–1122, 2012a.
+A. Hoﬂeitner, R. Herring, and A. Bayen.
+Probability distributions of travel times on
+arterial networks: A trafﬁc ﬂow and horizontal queuing theory approach, paper no.
+12-0798. In 91st Annual Meeting of the Transportation Research Board, 2012b.
+A. Hoﬂeitner, T. Rabbani, L. El Ghaoui, and A. Bayen. Online Homotopy Algorithm for a
+Generalization of the LASSO. IEEE Transactions on Automatic Control, 58(12):3175–3179,
+2013.
+A. Hoﬂeitner, T. Rabbani, M. Raﬁee, L. El Ghaoui, and A. Bayen. Learning and estima-
+tion applications of an online homotopy algorithm for a generalization of the LASSO.
+Discrete and Continuous Dynamical Systems, 7(3):503–523, 2014.
+T. Hunter, T. Das, M. Zaharia, P. Abbeel, and A. Bayen. Large-scale estimation in cyber-
+physical systems using streaming data: A case study with arterial trafﬁc estimation.
+IEEE Transactions on Automation Science and Engineering, 10(4):884–898, 2013.
+Soumia Ichoua, Michel Gendreau, and Jean-Yves Potvin. Vehicle dispatching with time-
+dependent travel times. European journal of operational research, 144(2):379–396, 2003.
+S.E. Jabari, J. Zheng, and H. Liu. A probabilistic stationary speed–density relation based
+on Newells simpliﬁed car-following model. Transportation Research Part B, 68:205–223,
+2014.
+S.E. Jabari, F. Zheng, H. Liu, and M. Filipovska. Stochastic Lagrangian modeling of trafﬁc
+dynamics, paper no. 18-04170. In 97th Annual Meeting of the Transportation Research
+Board, 2018.
+E. Jenelius and H. Koutsopoulos. Travel time estimation for urban road networks using
+low frequency probe vehicle data. Transportation Research Part B, 53:64–81, 2013.
+E. Jenelius and H. Koutsopoulos. Probe vehicle data sampled by time or space: consistent
+travel time allocation and estimation. Transportation Research Part B, 71:120–137, 2015.
+36
+
+Y. Ji and H.M. Zhang. Travel time distributions on urban streets: Estimation with hierar-
+chical Bayesian mixture model and application to trafﬁc analysis with high-resolution
+bus probe data, paper no. 13-4377. In 92nd Annual Meeting of the Transportation Research
+Board, 2013.
+D. Karlis and E. Xekalaki. Choosing initial values for the EM algorithm for ﬁnite mix-
+tures. Computational Statistics & Data Analysis, 41(3):577–590, 2003.
+E. Kazagli and H. Koutsopoulos. Arterial travel time estimation from automatic num-
+ber plate recognition data. Transportation Research Record: Journal of the Transportation
+Research Board, 2391:22–31, 2013.
+Jeffrey P Kharoufeh and Natarajan Gautam. Deriving link travel-time distributions via
+stochastic speed processes. Transportation Science, 38(1):97–106, 2004.
+J. Kim and H. Mahmassani. A ﬁnite mixture model of vehicle-to-vehicle and day-to-day
+variability of trafﬁc network travel times. Transportation Research Part C, 46:83–97, 2014.
+J. Kim and H. Mahmassani. Compound Gamma representation for modeling travel time
+variability in a trafﬁc network. Transportation Research Part B, 80:40–63, 2015.
+S. Kim, K. Koh, M. Lustig, S. Boyd, and D. Gorinevsky. An interior-point method for
+large-scale-regularized least squares. IEEE Journal of Selected Topics in Signal Processing,
+1(4):606–617, 2007.
+C. Lacour, P. Massart, and V. Rivoirard. Estimator selection: A new method with appli-
+cations to kernel density estimation. arXiv preprint arXiv:1607.05091, 2016.
+M. Lighthill and G. Whitham. On kinematic waves. i: Flood movement in long rivers,
+ii: A theory of trafﬁc ﬂow on long crowded roads. In Proceedings of the Royal Society
+(London) A229, pages 281–345, 1955.
+W. Lin, Y. Wang, Y. Zhuang, and S. Zhang. Evaluate the number of clusters in ﬁnite
+mixture models with the penalized histogram difference criterion. Journal of Process
+Control, 23(8):1052–1062, 2013.
+S. Mukherjee and V. Vapnik. Support vector method for multivariate density estimation
+(AI Memo 1653), 1999.
+URL ftp://publications.ai.mit.edu/ai-publications/
+1500-1999/AIM-1653.ps.
+Y. Nesterov. Gradient methods for minimizing composite functions. Mathematical Pro-
+gramming, 140(1):125–161, 2013.
+G. Newell. Nonlinear effects in the dynamics of car following. Operations Research, 9(2):
+209–229, 1961.
+N. Parikh and S. Boyd. Proximal Algorithms. Foundations and Trends in Optimization, 1
+(3):127–239, 2014.
+E. Parzen.
+On estimation of a probability density function and mode.
+The Annals of
+Mathematical Statistics, 33(3):1065–1076, 1962.
+37
+
+A. Polus. A study of travel time and reliability on arterial routes. Transportation, 8(2):
+141–151, 1979.
+W. Pu. Analytic relationships between travel time reliability measures. Transportation
+Research Record: Journal of the Transportation Research Board, 2254:122–130, 2011.
+V. Punzo, M. Borzacchiello, and B. Ciuffo. On the assessment of vehicle trajectory data
+accuracy and application to the Next Generation SIMulation (NGSIM) program data.
+Transportation Research Part C, 19(6):1243–1262, 2011.
+M. Rahmani, E. Jenelius, and H. N Koutsopoulos. Non-parametric estimation of route
+travel time distributions from low-frequency ﬂoating car data. Transportation Research
+Part C, 58:343–362, 2015.
+H. Rakha, I. El-Shawarby, Arafeh M., and F. Dion. Estimating path travel-time reliability.
+In Proceeding of the 2006 IEEE Conference on Intelligent Transportation Systems, pages 236–
+241, 2006.
+H. A Rakha, J. Du, S. Park, F. Guo, Z. Doerzaph, D. Viita, G. Golembiewski, B. Katz,
+N. Kehoe, and H.. Rigdon. Feasibility of using in-vehicle video data to explore how to modify
+driver behavior that causes nonrecurring congestion (SHRP 2 Report S2-L10-RR-01). Trans-
+portation Research Board, Washington, D.C., 2011.
+M. Ramezani and N. Geroliminis. On the estimation of arterial route travel time distri-
+bution with Markov chains. Transportation Research Part B, 46(10):1576–1590, 2012.
+M. Ramezani and N. Geroliminis. Queue proﬁle estimation in congested urban networks
+with probe data.
+Computer-Aided Civil and Infrastructure Engineering, 30(6):414–432,
+2015.
+ˇS. Raudys. On the effectiveness of Parzen window classiﬁer. Informatica, 2(2):434–454,
+1991.
+R. Redner and H. Walker. Mixture densities, maximum likelihood and the EM algorithm.
+SIAM Review, 26(2):195–239, 1984.
+S. Reid, R. Tibshirani, and J. Friedman. A study of error variance estimation in LASSO
+regression. arXiv preprint arXiv:1311.5274, 2013.
+P. Richards. Shock waves on the highway. Operations Research, 4(1):42–51, 1956.
+A. Richardson and M. Taylor. Travel time variability on commuter journeys. High Speed
+Ground Transportation Journal, 12(1), 1978.
+B. Silverman. Density estimation for statistics and data analysis, volume 26. CRC Press, Boca
+Raton, FL, 1986.
+P. Sopasakis, N. Freris, and P. Patrinos. Accelerated reconstruction of a compressively
+sampled data stream. In 24th IEEE European Signal Processing Conference (EUSIPCO),
+pages 1078–1082, 2016.
+38
+
+T. Sun and C. Zhang. Scaled sparse linear regression. Biometrika, pages 1–20, 2012.
+M. Taylor. Fosgerau’s travel time reliability ratio and the Burr distribution. Transportation
+Research Part B, 97:50–63, 2017.
+Robert Tibshirani. Regression shrinkage and selection via the lasso. Journal of the Royal
+Statistical Society. Series B, pages 267–288, 1996.
+P. Turney. A theory of cross-validation error. Journal of Experimental and Theoretical Artiﬁ-
+cial Intelligence, 6(4):361–391, 1994.
+N. Wan, G. Gomes, A. Vahidi, and R. Horowitz. Prediction on travel-time distribution
+for freeways using online expectation maximization algorithm, paper no. 14-3221. In
+93rd Annual Meeting of the Transportation Research Board, 2014.
+S. Wright, R. Nowak, and M. Figueiredo. Sparse reconstruction by separable approxima-
+tion. IEEE Transactions on Signal Processing, 57(7):2479–2493, 2009.
+C. Wu. On the convergence properties of the EM algorithm. The Annals of Statistics, pages
+95–103, 1983.
+X. Xu, A. Chen, L. Cheng, and H. Lo. Modeling distribution tail in network performance
+assessment: A mean-excess total travel time risk measure and analytical estimation
+method. Transportation Research Part B, 66:32–49, 2014.
+F. Yang, M. Yun, and X. Yang. Travel time distribution under interrupted ﬂow and appli-
+cation to travel time reliability. Transportation Research Record: Journal of the Transporta-
+tion Research Board, 2466:114–124, 2014.
+F. Zheng, S.E. Jabari, H. Liu, and D. Lin. Trafﬁc state estimation using stochastic La-
+grangian dynamics. Transportation Research Part B, 115:143–165, 2018.
+Fangfang Zheng, Henk Van Zuylen, and Xiaobo Liu. A methodological framework of
+travel time distribution estimation for urban signalized arterial roads. Transportation
+Science, 51(3):893–917, 2017.
+39

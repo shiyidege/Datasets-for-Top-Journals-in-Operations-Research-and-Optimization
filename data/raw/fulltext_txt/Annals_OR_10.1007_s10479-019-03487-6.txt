@@ -1,0 +1,1443 @@
+TITLE: Solving the shift and break design problem using integer linear programming
+JOURNAL: Annals_OR
+YEAR: 2019
+DOI: https://doi.org/10.1007/s10479-019-03487-6
+---
+
+Annals of Operations Research (2021) 302:341–362
+https://doi.org/10.1007/s10479-019-03487-6
+S.I.: PATAT 2018
+Solving the shift and break design problem using integer
+linear programming
+Arjan Akkermans1 · Gerhard Post2,3
+· Marc Uetz2
+Published online: 4 December 2019
+© The Author(s) 2019
+Abstract
+In this paper we propose a two-phase approach to solve the shift and break design problem
+using integer linear programming. In the ﬁrst phase we create the shifts, while heuristically
+taking the breaks into account. In the second phase we assign breaks to each occurrence of
+any shift, one by one, repeating this until no improvement is found. On a set of benchmark
+instances, composed by both randomly-generated and real-life ones, this approach obtains
+better results than the current best known method for shift and break design problem.
+Keywords Shift design · Break scheduling · Timetabling
+1 Introduction
+Personnel scheduling was ﬁrst introduced by Edie (1954) and formulated as a set covering
+problem by Dantzig (1954) in the 1950s. After its introduction it has received a great deal of
+attention in the literature and has been applied to numerous areas such as airlines, health care
+systems, police, call centers and retail stores (Ernst et al. 2004). The interest can be explained
+by labor cost being a major direct cost component for companies.
+In this paper we consider the shift and break design problem which in this speciﬁc form
+was introduced by Di Gaspero et al. (2010). In this problem a set of template shifts has to
+be selected from a set of possible shift types. A template shift is characterized by a ﬁxed
+starting time and a ﬁxed duration, such as 09:00 and 8h, while a shift type only prescribes
+the intervals for possible starting times and durations. A selected template shift can then be
+used on different days, leading to shifts. A shift is thus speciﬁed by a day, starting time, and a
+duration. A shift usually requires breaks to be admissible; when an admissible set of breaks
+is assigned to a shift, we will call a duty. The breaks in a duty are restricted by a large number
+of conditions which we will discuss in more detail in the next section. On a given day, one or
+B Gerhard Post
+g.f.post@utwente.nl
+1
+Ab Ovo, Barbizonlaan 87, 2908 ME Capelle aan den IJssel, The Netherlands
+2
+Department of Applied Mathematics, University of Twente, P.O. Box 217, Enschede,
+The Netherlands
+3
+PCA Mobile, Klipperweg 19, Raalte, The Netherlands
+123
+
+342
+Annals of Operations Research (2021) 302:341–362
+more duties, usually with different break allocations, can be created for a shift. A duty can
+then be assigned to a person, and the work periods in the duty contribute to fulﬁll the given
+stafﬁng requirements. During a break, duties are not counted as contributing to the fulﬁllment
+of the stafﬁng requirements, and in addition, also not during the time period immediately
+after a break. It is assumed that under- and overstafﬁng is possible, yet undesirable.
+Next to avoiding under- and overstafﬁng, an important goal in the shift design problem is
+to select a small number of template shifts. This can be important, because schedules with a
+small number of different template shifts are easier from a managerial perspective, and better
+for personnel acceptance. Eventually, understafﬁng, overstafﬁng and the number of template
+shifts will translate into penalty costs.
+The main contribution of this paper is to show that the shift and break design problem can
+be solved by contemporary standard ILP solvers when decomposed into two, combinatorially
+deﬁned aggregation levels. The resulting algorithm seems to outperform the previously best
+performing method suggested by Di Gaspero et al. (2010) that combined local search with
+constraint programming techniques. The main idea of this paper is to try to exploit the power
+of contemporary ILP solvers. Our paper shows that this approach is indeed feasible, given
+the “right” decomposition of the problem. Having said that, it should be noted that obtaining
+a (proven) optimal solution for a shift and break design problem of moderate size, is still out
+of reach for general purpose exact solvers.
+The structure of this article is as follows. Section 2 gives the problem description in more
+detail. Section 3 gives an overview of related literature, Sect. 4 describes our approach and
+Sect. 5 the computational results. Finally, Sect. 6 presents the conclusions.
+2 Problem description
+2.1 Shifts and breaks
+We use the same problem formulation as Di Gaspero et al. (2010). The planning horizon
+consists of a set of consecutive days such as a week. The problem is cyclic, meaning that
+a night shift on the last day will continue on the ﬁrst time periods of the planning horizon.
+The planning horizon is divided into time periods of a constant duration, such as 5min. For
+each time period t the stafﬁng requirement Rt is given. Per time period we have to design
+duties that fulﬁll the stafﬁng requirement. To explain duties, we need the notions of shift
+type, template shift, and shift.
+– Shift type A shift type speciﬁes an earliest starting time, a latest starting time, a minimum
+duration and a maximum duration. Figure 1 gives an example, where the shift types are
+Morning, Day, Evening and Night shifts.
+– Template shift A template shift speciﬁes a starting time and a duration. Each template
+shift s must derive from a shift type t, meaning that the starting time of s should lie at or
+between the earliest and latest starting times of t, and the duration of s should be at or
+between the minimum and maximum durations of t.
+– Shift A template shift combined with a day in the planning horizon constitutes a shift.
+Each template shift has as many shifts as days in the planning horizon.
+– Duty A shift itself is not yet complete: it usually needs breaks. A shift with a valid break
+allocation is called a duty. A duty can be assigned to an employee. Note that several
+employees can work the same shift, but with different break allocations, i.e. they work
+123
+
+Annals of Operations Research (2021) 302:341–362
+343
+in different duties. The freedom in choosing the positions of the breaks can be used to
+follow the stafﬁng requirements more closely.
+The break allocation in a duty splits its periods into a set of alternating breaks and working
+periods. A duty that is on break at a certain time period, does not contribute to the stafﬁng
+requirement of that period. The same holds for the period following a break: the reasoning
+is that the employee needs some start-up time, which makes the employee not productive in
+this period. The periods of the duty that contribute to the stafﬁng requirements are called the
+active periods.
+Various conditions are set on the break allocation in a shift. These conditions repre-
+sent legal regulations as well as physical requirements that prevent fatigue. Let us discuss
+these constraints. Firstly, the total break time of a duty is given, as a function of the
+duration of the shift. The number of breaks in duty is not ﬁxed, as the duration per
+break can vary: all breaks and working periods have a minimum and maximum dura-
+tion. For example, if a break follows a long working period, which is a working period
+longer than a certain threshold, then the break has a longer minimum duration. Also, the
+start of a break cannot be too close to the beginning and end of a shift. Finally, from
+a certain shift duration, the duty requires a lunch break of a ﬁxed duration which has
+to be scheduled around the middle of the shift. For full details we refer to “Appendix
+A.3”.
+A solution is represented by a set S of selected template shifts, the number of shifts on each
+day of the planning horizon for each of the selected template shifts, and a break allocation
+to each of the selected shifts, leading to the duties.
+2.2 Example
+Figure 1 and Table 1 show, respectively, an example of stafﬁng requirements over
+a two-day period, and a set of shift types. Each template shift should belong to
+one of the shift types, which in this case means that the starting time of a tem-
+plate shift should lie between 05:00 and 08:00, or 09:00 and 11:00, or 13:00 and
+15:00, or 21:00 and 23:00, and a template shift must have a duration between 7 and
+9h.
+A solution could consist of a template shift m from 08:00 to 16:00, a template shift e
+from 13:00 to 20:00, and a template shift n from 21:00 to 05:00. Choosing the number
+Fig. 1 Example stafﬁng requirements
+123
+
+344
+Annals of Operations Research (2021) 302:341–362
+Table 1 Example shift types
+Abbr.
+Name
+Earliest start
+Latest start
+Minimum duration
+Maximum duration
+M
+Morning shift
+05:00
+08:00
+7:00
+9:00
+D
+Day shift
+09:00
+11:00
+7:00
+9:00
+E
+Evening shift
+13:00
+15:00
+7:00
+9:00
+N
+Night shift
+21:00
+23:00
+7:00
+9:00
+Table 2 Solution to the example
+Name
+Type
+Start
+End
+Day 1
+Day 2
+m
+Morning shift
+08:00
+16:00
+1
+2
+e
+Evening shift
+13:00
+20:00
+3
+3
+n
+Night shift
+21:00
+05:00
+1
+4
+of shifts starting on day 1 and day 2 as in Table 2, we fulﬁll exactly the stafﬁng require-
+ments.
+If breaks have to be assigned to the shifts, there will be understafﬁng during all breaks,
+and the periods immediately after the breaks.
+2.3 Objective
+The objective function is the weighted sum of overstafﬁng, understafﬁng, and the number of
+selected template shifts. The ﬁrst two factors can easily be deﬁned by using the active time
+periods of a duty. Let at to represent number of duties that are active at time period t. The
+overstafﬁng, O, represents the total excess of active duties and the understafﬁng, U, the total
+shortage. They are deﬁned as follows
+O =
+
+t∈T
+max{at −Rt, 0}, U =
+
+t∈T
+max{Rt −at, 0}
+Using the weights W1, W2 and W3 to penalize the different solution criteria, and using |S|
+to represent the total number of selected template shifts, the objective is formulated in the
+following way.
+minimize W1 · O + W2 · U + W3 · |S|.
+(1)
+3 Previous and related work
+After the personnel scheduling problem was introduced by Dantzig (1954), many different
+formulations of personnel scheduling problems have been considered. A recent overview of
+personnel scheduling is given by Van den Bergh et al. (2013). The authors note that a wide
+range of solution methods is used to ﬁnd solutions to personnel scheduling problems. The two
+main approaches used are mathematical programming methods such as linear programming,
+goal programming, integer programming and column generation, and heuristic methods such
+as simulated annealing, tabu search and genetic algorithms.
+123
+
+Annals of Operations Research (2021) 302:341–362
+345
+Efﬁcient methods for solving personnel scheduling problems without breaks are available
+for some speciﬁc formulations. The constraint matrix in the integer linear programming
+formulation of Dantzig (1954), which describes a set covering problem, is a consecutive
+ones matrix if the problem does not contains cyclicity nor breaks, i.e. all duties are active
+on a consecutive number of time slots. Matrices with the consecutive ones property are
+totally unimodular, as ﬁrst shown by Veinott and Wagner (1962), and hence integer linear
+programs containing such a constraint matrix can be solved efﬁciently by solving the linear
+programming relaxation. Bartholdi et al. (1980) show that personnel scheduling problems
+with a row circular matrix can be solved efﬁciently by considering at most a bounded number
+of ﬂow problems. These row circular matrices follow if all duties are of the same duration and
+contain no breaks. Furthermore Bartholdi et al. (1980) show that the formulation of Dantzig
+(1954) can be slightly changed to allow for problems in which, next to the linear cost for
+using a duty, a linear penalty cost for overstafﬁng and understafﬁng can be considered, too.
+Even when ignoring the problem of minimizing the number of template shifts, the con-
+straint matrix for the shift design problem has neither the consecutive ones property, nor the
+circular row property. The constraint matrix is column circular. Cyclic scheduling problems
+involving duties without breaks will always have the circular ones property in the columns.
+Hochbaum and Levin (2006) discuss the hardness of problems with a column circular matrix,
+and show the problem to be equivalent to the exact matching problem which is in the com-
+plexity class NRC (Mulmuley et al. 1987). It is currently unknown whether the problem is
+in P.
+Aykin (1996) studied a problem for a continuous 24h workday (cyclical) and giving
+each duty one half hour lunch break and two 15min breaks. For this problem an integer
+linear program formulation is described which differs from the original set cover formulation
+proposed by Dantzig (1954) by requiring three breaks to be scheduled. Rekik et al. (2010)
+considered an extension of the model and tested instances for which exactly three breaks
+were required for each duty, having a combined duration of 2h. Furthermore, the second
+break was required to be the longest break and the continuous periods in-between two breaks
+(working period) were restricted to have a duration between 1 and 3h. For this problem
+Rekik et al. (2010) propose two integer linear program formulations and compare their results
+with modiﬁed versions of integer linear programming formulations given by Bechtold and
+Jacobs (1990) and Aykin (1996). Rekik et al. (2010) show that their model is slightly slower
+computationally than the formulations in Bechtold and Jacobs (1990) and Aykin (1996),
+which is explained by the added ﬂexibility.
+The shift and break design problem of the form discussed here was introduced in
+Di Gaspero et al. (2010). The authors state that to the best of their knowledge the very
+problem as described in their paper has not been addressed before in the literature. The
+authors propose an approach combining local search (LS) and constraint programming (CP)
+(Apt 2003). Their approach starts off with ﬁnding an initial randomly generated solution for
+the assignment of template shifts. Random LS is employed on a part of the solution, namely a
+solution which speciﬁes the template shifts, the number of shifts on each day, and the number
+of breaks for each shift. A CP model is then used to ﬁnd a feasible break allocation. Since
+the authors are the ﬁrst to tackle this speciﬁc shift and break design problem, there are no
+results to compare to. The authors use a set of randomly generated instances as well as a
+set of real-life instances which are publicly available (Database and Artiﬁcial Intelligence
+Group, Vienna University of Technology (2017)).
+Obviously, the shift and break design problem is the combination of two other problems:
+the shift design problem (Musliu et al. 2004) and the break scheduling problem (Beer et al.
+123
+
+346
+Annals of Operations Research (2021) 302:341–362
+2010). Local search techniques have been applied to both of these problems, which are brieﬂy
+discussed next.
+Shift design problems
+Musliu et al. (2004) use tabu search (Glover and Laguna 1999) for
+the shift design problem. The authors state that they rely on local search techniques because
+the shift design problem is proven to be NP hard (Kortsarz and Slany 2001). Di Gaspero
+et al. (2007) use a hybrid heuristic, which consists of a greedy heuristic followed by a local
+search algorithm, which outperforms the previous results. The greedy heuristic is based on
+the relation of the shift design problem to a ﬂow problem as described in Kortsarz and Slany
+(2001). Answer Set Programming (ASP) (Brewka et al. 2011) is an exact solution technique
+and has been applied to the shift design problem by Brewka et al. (2011). ASP is able to ﬁnd
+most best known solutions within 60min on instances of shift design where those solutions
+have no overstafﬁng and understafﬁng. While the execution times are often not competitive
+with results from Di Gaspero et al. (2007), there are instances on which ASP works very well.
+Solutions found for the instances in which a solution without overstafﬁng and understafﬁng
+might not exist are not competitive with results from the literature. A variation on the shift
+design problem is studied by Bonutti et al. (2016). The authors extend the shift design problem
+to have multiple types of skills for employees. In their formulation the stafﬁng requirements
+state the required number of employees at each time period for each skill. This variation
+also allows for the possibility of planning one break around the middle of a shift. Simulated
+annealing (Kirkpatrick et al. 1983) is used to ﬁnd a solution.
+Break scheduling
+Break scheduling was ﬁrst introduced by Beer et al. (2010). In their
+formulation different constraints are given with different weights to each type of violation
+and there are no hard constraints. Their formulation uses either a random assignment of
+breaks as an initial solution or a solution following from a simple temporal problem (Dechter
+et al. 1991). After the initial solution has been constructed the authors use either tabu search,
+simulated-annealing, or a minimum conﬂicts-based heuristic (Minton et al. 1992). A memetic
+algorithm for break scheduling was proposed by Musliu et al. (2009). Memetic algorithms
+combine population based methods with local search techniques and were ﬁrst mentioned
+in Moscato (1989). The authors compare their results with the minimum conﬂicts-based
+heuristic as proposed by Beer et al. (2010). The algorithms both score best on half of the test
+instances and hence conclusions regarding the better algorithm are indecisive. An improved
+memetic algorithm is given in Widl and Musliu (2010). This algorithm obtains best results on
+all the instances considered by the previous authors. In this approach a part of the constraints
+in the break scheduling problem are considered hard and, ignoring the other constraints
+which regard the stafﬁng requirements, a simple temporal problem (Dechter et al. 1991) can
+be formulated. Solutions from this are taken as initial solutions for the memetic algorithm.
+In this approach memes are deﬁned by a set of time slots and each duty is assigned to exactly
+one meme in which most of the timeslots of the duty are. The reason for this approach as
+opposed to the approach used in Musliu et al. (2009) is that duties have a strong interference
+in satisfying the stafﬁng requirements, and therefore it is difﬁcult to ﬁnd effective crossover
+operations when a meme represents a duty. This memetic algorithm is also used in Widl and
+Musliu (2014). In this paper it is also proven that break scheduling is generally NP-complete,
+even under the condition that all feasible break patterns of each duty are given explicitly in
+the input.
+123
+
+Annals of Operations Research (2021) 302:341–362
+347
+4 The two-phase ILP approach
+Solving the shift and break design problem in one stroke is computationally hard, especially
+because of the importance to minimize the number of active template shifts. For this reason
+we propose a solution method that is composed of two phases: the ﬁrst phase determines
+which template shifts and how many shifts will be used, while in the second phase the breaks
+are assigned to these shifts.
+More concretely, our solution approach consists of a two-phase approach where we use
+integer linear programming (ILP) to ﬁnd a solution in each phase. In the ﬁrst phase the
+template shifts are designed and the number of shifts for each day are determined. The
+problem that we solve in the ﬁrst phase is a variation of shift design in which we have to
+select a set of template shifts, while we heuristically account for the break time which has to
+be allocated in the second phase. This second phase will be treated as a series of instances
+of the break scheduling problem.
+4.1 The first phase method
+First we give an integer linear program (ILP) formulation of the shift design problem. A
+compact overview of this ILP is given in A.2. The ﬁrst phase will use a modiﬁed version of
+this ILP which we will discuss after having introduced the shift design ILP.
+4.1.1 The ILP for the shift design problem
+The shift design problem is made up of time periods, days and shifts. We will use the following
+variables to refer to a single element of each set.
+• t refers to a time period.
+• d refers to a day.
+• s refers to a template shift.
+The time periods and the days are part of the input, but the template shifts are not explicitly
+given. However, looking at the shift types, all template shifts belonging to a certain type can
+be found by using pairs of possible starting times and possible durations of that shift type.
+For each of these template shifts we can make the decision of using it or not. In the case that
+a template shift is used, we call it active and we can assign a number of shifts to it on each
+day. Hereto we use the following variables.
+as =
+
+1
+if template shift s is active
+0
+otherwise
+wd,s = the number of shifts of template shift s starting on day d
+If a template shift is inactive the number of shifts on each day are forced to be 0. To model
+this constraint we use the parameter M = maxt{Rt}. Recall that Rt denotes the stafﬁng
+requirement at time period t. M is an upper bound on the number of shifts which are used
+in an optimal solution for the shift design problem, since using more duties will lead to
+unnecessary overstafﬁng. The following Big-M constraints force the number of shifts to be
+0 in case that the corresponding template shift is not active.
+wd,s ≤M · as
+∀d, s
+(2)
+123
+
+348
+Annals of Operations Research (2021) 302:341–362
+Using the number of shifts for each template shift we can calculate the overstafﬁng and the
+understafﬁng. For this we need a parameter denoting on which time periods the shifts of a
+template shift starting on a speciﬁc day are active. We introduce the following.
+ot = the amount of overstafﬁng at time period t,
+ot ≥0
+ut = the amount of understafﬁng at time period t,
+ut ≥0
+As,d,t =
+
+1 if the shifts of template shift s starting on day d are active at time period t
+0 otherwise
+The following constraints specify, respectively, lower bounds for the understafﬁng and the
+overstafﬁng variables.
+
+s,d
+
+As,d,t · wd,s
+
++ ut ≥Rt
+∀t
+(3)
+ot =
+
+s,d
+
+As,d,t · wd,s
+
++ ut −Rt
+∀t
+(4)
+The objective function is the weighted sum of overstafﬁng, understafﬁng and the number of
+template shifts.
+minimize W1
+
+t
+ot + W2
+
+t
+ut + W3
+
+s
+as
+(5)
+Typically, the weight W2 for understafﬁng is much higher than weight W1 for overstafﬁng; in
+practice, a quotient 10 or higher is not unusual. In the instances we study in Sect. 5, W2 = 10
+and W1 = 2 with a rather low quotient of 5.
+In Sect. 5 the weight for the number of used template shifts W3 = 60. The importance of
+W3 depends on the chosen time granularity, as penalties for understafﬁng and overstafﬁng are
+counted per time period per duty. Hence in the instances we discuss, with a time granularity
+of 5min, the costs for having an additional template shift is equal to the cost of having an
+understafﬁng of 1 for 30min.
+4.1.2 Virtual shifts
+In order to design template shifts that follow the requirements in the shift and break design
+problem more closely, we need to account for the break time which has to be allocated to
+each duty in the second phase. In order to do this we construct a virtual shift for each possible
+template shift. These are used to represent a shift while heuristically accounting for the break
+time which has to be scheduled. Instead of a binary indicator for denoting whether a duty will
+be active at a time period, the virtual shifts can be thought of as representing the probability
+of a duty being active at a time period.
+In the shift design ILP we used the parameters As,d,t, which were binary and indicated
+whether shifts of template shift s starting on day d were active during time period t. For the
+virtual shifts we will use the values A∗
+s,d,t which can be any value from 0 to 1. A duty is not
+active on its breaks and on the ﬁrst time period following a break. The total break time, in
+time periods, required for a shift belonging to template shift s is given as part of the input
+by f (s). Before assigning the breaks we do not know the number of breaks that a duty will
+have and hence we cannot determine the number of inactive time periods of that duty exactly.
+However, we can calculate the maximum and minimum number of breaks of a duty by using
+the various restrictions on the break allocations. We will use I P(s) to indicate the number
+123
+
+Annals of Operations Research (2021) 302:341–362
+349
+Fig. 2 Shift and virtual shift
+of inactive time periods for a duty belonging to template shift s, under the assumption of
+having as many breaks as possible. Hereto we use max B(s) to denote the maximum number
+of breaks for template shift s, which leads to
+I P(s) = f (s) + max B(s)
+(6)
+We use the maximum number of breaks to account for the worst case. Therefore this approach
+is conservative, and may lead to scheduling too many shifts. This is justiﬁed in staff scheduling
+problems that consider understafﬁng as (far) less desirable than overstafﬁng.
+Recall that breaks cannot be scheduled near the beginning and end of a shift. Denote by
+α and β the number of time periods where the shift is guaranteed to be active at the start
+and at the end of the shift, respectively. Outside these time intervals a duty might be inactive
+depending on the break schedule. We simply “divide” the rest of the breaks evenly over the
+remaining time periods of the duty. Using s.length to denote the number of time periods in
+template shift s, we can express R∗
+s , the ratio of inactive periods to active periods of a shift
+of template shift s, excluding the ﬁrst α and last β time periods, by
+R∗
+s =
+I P(s)
+s.length −α −β
+(7)
+We deﬁne the parameters A∗
+s,d,t as follows
+A∗
+s,d,t =
+⎧
+⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎩
+0
+if t is not part of a shift of template shift s starting on day d
+1
+if t is in the ﬁrst α time periods of a shift of template shift s starting on day d
+1
+if t is in the last β time periods of a shift of template shift s starting on day d
+1 −R∗s
+otherwise
+(8)
+Figure 2 shows the effect of working with a virtual shift (with 10 duties).
+4.1.3 The ILP for the ﬁrst phase
+The shift design ILP can be adapted in various ways to incorporate the virtual shifts. It is
+possible to simply change the parameters As,d,t to A∗
+s,d,t. Preliminary tests showed that this
+approach gives decent results, however a drawback is that the actual ﬂexibility of being able
+to choose the break allocation is not taken into account.
+123
+
+350
+Annals of Operations Research (2021) 302:341–362
+With an eye on the fact that understafﬁng is generally less desirable than overstafﬁng,
+we work with virtual shifts in a slightly “asymmetric” way, by adapting the constraints that
+express under- and overstafﬁng.
+For understafﬁng we simply use the constraint (3):
+
+s,d
+
+As,d,t · wd,s
+
++ ut ≥Rt
+∀t
+(9)
+In other words, we penalize understafﬁng at time t in the case that there are not enough shifts
+even if all duties are active at time t. Clearly in such a case understafﬁng would be inevitable.
+Overstafﬁng at a time period, however, will be penalized only if there are too many duties
+when using the virtual values A∗
+s,d,t as deﬁned by the virtual shifts.
+ot ≥
+
+s,d
+
+A∗
+s,d,t · wd,s
+
++ ut −Rt
+∀t
+(10)
+This updated ILP accepts without penalty all overstafﬁng and understafﬁng, as long as the
+number of present workers is between the number speciﬁed by the shifts and the virtual shifts.
+Using only these two constraints, it is possible that overall too few duties are scheduled
+since the constraints allow a duty to be always active. To tackle this issue, we enforce that
+over a certain number C of consecutive time periods the sum of the stafﬁng requirements are
+fulﬁlled using the virtual shifts. Since the problem is cyclic, the index of R is (t + i) mod n.
+C
+
+i=1
+ 
+s,d
+A∗
+s,d,t+i · wd,s
+
+≥
+C
+
+i=1
+R(t+i) mod n
+∀t
+(11)
+Our experiments suggested to work with the value C = 25, expressing the idea that under-
+stafﬁng at a certain time period can be resolved by borrowing overstafﬁng from 12 “adjacent”
+time periods, so 1h in both directions. We believe that the number C should be chosen spe-
+ciﬁc to the instances: it reﬂects the ﬂexibility of moving breaks around. In our instances
+the working periods have a duration between 30 and 100min, making a 60min average for
+avoiding understafﬁng plausible.
+4.2 Second phase method
+Here we give a description of the algorithm used to allocate the breaks. This algorithm
+iteratively uses a break scheduling ILP for a single duty at a time, and takes all other duties
+and their current break allocations as ﬁxed. The ILP for the break scheduling of a single duty
+is given in “Appendix A.3”. For a more extensive description of this ILP we refer to the MSc
+thesis (Akkermans 2017).
+The algorithm for the second phase can be seen as an iterative greedy algorithm. The
+shifts on each day as determined by the ﬁrst phase are used, where at the start of phase two,
+all duties are active from the start to the end of the duty (i.e., no breaks are scheduled yet).
+Then the duties are considered in a ﬁxed but random order, and an optimal break allocation
+is calculated for a single duty by using the break scheduling ILP. This alters the number of
+active duties at some of the time periods, and hence the objective function. This iterative
+greedy procedure continues as long as it is possible to improve the solution by changing the
+break allocation of a single duty, and terminates after a full round without any improvement.
+123
+
+Annals of Operations Research (2021) 302:341–362
+351
+5 Computational results
+The website (Database and Artiﬁcial Intelligence Group, Vienna University of Technology
+(2017)) contains a number of instances that we used to test our method. The instances are
+divided in three sets. The ﬁrst two sets both consist of 30 randomly generated instances and
+are referred to as “First Set” and “Second Set” in Tables 3 and 4. These instances were created
+by “reverse engineering” as follows: The stafﬁng requirements are generated from a solution
+with a randomly generated set of active template shifts and duties. Hence, there is a “best
+known” solution which provides an exact coverage of the requirements.
+The third set consists of 5 instances and based on a real world example. For these instances
+a good solution in which there is no overstafﬁng and understafﬁng is very unlikely to exist.
+The real life instances are smaller than the randomly generated instances with respect to the
+total stafﬁng requirements. For the real life case the average value for the sum of the stafﬁng
+requirements over all time periods equals 10,193, for the randomly generated instances this
+number is 16,535. However, the given shift types for the real life instances allow more tem-
+plate shifts. For these instances the total number of possible template shifts is 8645, while the
+randomly generated instances allow for 2800 possible template shifts. Due to the higher num-
+ber of possible template shifts for the real life instances our method did not obtain satisfactory
+results when solving an ILP containing all possible template shifts for these instances. To
+overcome this challenge we only considered template shifts at a time granularity of 15min for
+the real life instances. This reduces the number of possible template shifts from 8645 to 1075
+templateshifts,butmightcutouttheoptimalsolution.Inallinstances,theweights W1, W2 and
+W3, see Eq. (1) for overstafﬁng, understafﬁng, and number of used template shifts are set to
+W1 = 2,
+W2 = 10,
+W3 = 60.
+Our algorithm for shift and break design was written in C++ using Microsoft Visual Studio
+2013 (Microsoft 1980). The integer linear programs were solved using IBM ILOG CPLEX
+Optimization Studio 12.7.1 (IBM 2017). The algorithm was performed on a PC with an Intel
+i7-4702MQ quad core processor with 2.2GHz and 8GB RAM memory, allowing CPLEX to
+use all cores.
+In Di Gaspero et al. (2010), the authors use a time limit of 60min per instance to ﬁnd a solu-
+tion. Given the type of problem (generating a week’s schedule) this seems a reasonable time,
+as viewed from the functional perspective. In technological sense, using 60min now is incom-
+parable to using 60min 10years ago. However, our research is not to give a technological com-
+parison, but a functional one: what can be achieved nowadays in 1h, using a normal laptop?
+Wesplitthe60mincalculationtimeinamaximumof30minfortheﬁrstphaseandthesame
+maximum for the second phase. In the ﬁrst phase these 30min are always used completely, i.e.
+after 30min CPLEX is not yet sure that the optimal solution has been obtained. The average
+optimality gap, however is small: in the ﬁrst phase for the randomly generated instances is
+0.50 (with standard deviation 0.10), for the real life instances this number is 0.86 (with stan-
+dard deviation 0.02). A running time of lower than 60min thus means that the second phase
+converges before the allocated 30min are used. This is the case in 40 of the randomly gen-
+erated instances and for 3 of the real life instances. Our solutions are available at the website
+of Database and Artiﬁcial Intelligence Group, Vienna University of Technology ((2017)).
+The results for the randomly generated instances are shown in the Tables 3 and 4. The
+explanation of the columns is as follows.
+– The colums “Inst.” refers to the instance number.
+123
+
+352
+Annals of Operations Research (2021) 302:341–362
+Table 3 Results ﬁrst set
+aThe authors did not report a solution
+123
+
+Annals of Operations Research (2021) 302:341–362
+353
+Table 4 Results second set
+aThe authors did not report a solution
+123
+
+354
+Annals of Operations Research (2021) 302:341–362
+Table 5 Results real life instances
+Inst.
+Over
+Under
+Shifts
+Objective
+Time (min)
+2P-ILP Di Gasp. 2P-ILP Di Gasp. 2P-ILP Di Gasp. LB-I 2P-ILP.
+Di Gasp. 2P-ILP
+2fc04a
+1224
+2636
+5
+173
+30
+23
+4050 4298
+8382
+56
+3fc04a
+1227
+2732
+1
+130
+36
+21
+4398 4624
+8024
+57
+4fc04a
+1081
+2710
+4
+94
+32
+21
+3896 4122
+7620
+56
+50fc04
+1130
+2636
+4
+180
+29
+29
+3744 4040
+8812
+60
+51fc04
+1343
+2890
+0
+209
+32
+23
+4360 4606
+9250
+60
+Average 1201
+2720
+3
+157
+32
+23
+4090 4338
+8418
+58
+– The columns below “over”, “under”, “shifts” and “Objective” show, respectively the
+overstafﬁng, understafﬁng, number of template shifts and the total objective value of the
+solution.
+– those previous four columns are further divided according to the solution method, “2P-
+ILP” shows our results, “Di Gasp” shows the results of Di Gaspero et al. (2010), and
+“Best” show the results of the best know solution (used to generate the instances).
+– The column “LB-I” under “Objective” gives a lower bound estimate for our ﬁnal solu-
+tion based on the solution of the ﬁrst phase and is constructed as follows. After the ﬁrst
+phase the number of used template shifts are known, as well as the number of shifts on
+each day. This, together with the assumption that even with the maximum number of
+breaks scheduled the total number of stafﬁng requirements can still be covered (which
+was true for all our solutions), can be used to calculate a lower bound, since under these
+circumstances the best possible thing to do is to schedule as much breaks as possible
+without creating any additional understafﬁng anywhere. Thus for the lower bound esti-
+mate we only take into account unavoidable understafﬁng which is the understafﬁng in
+case that no breaks are scheduled, and the overstafﬁng which is unavoidable: the sum of
+the total requirements minus the sum of the total number of active duties considering the
+maximum number of breaks.
+– The column “Time” is the computation time in minutes for our solution. This time is
+at most 60min, because the ﬁrst phase always uses 30min, and the second phase gets
+30min as maximum.
+The results of the real life instances are shown in Table 5, and the notations are similar. The
+tables show that in the randomly generated instances, the lower bound LB-I is on average
+5.1% better when compared to the objective value found by our two-phase approach. For the
+real life instances this is 5.7%.
+The low understafﬁng is partly a consequence of the choice made in Constraint (11) where
+we did not allow any understafﬁng over 25 time periods as measured by the virtual shifts.
+Although this requirement seems rather weak, it creates solutions with almost no under-
+stafﬁng. We experimented with soft variants of Constraint (11), which led to inconclusive
+results. The main reason seems to be that obtaining good lower bounds for the ﬁrst phase
+problem is more difﬁcult, leading to increased computation times, and worse solutions on
+several instances, as well as large improvements on other ones.
+Solving the break scheduling problem for one shift (see “Appendix A.3”) takes usually 5–
+10 s. On average all (more than 100) shifts are optimized 3.7 times; after a full round without
+improvement the optimization is stopped. The order of treatment is top-down, but the results
+are very stable, in the sense that the gap to the lowerbound of the ﬁrst phase is stable around
+5–6%.Webelievethatanother(random)sortingoftheshiftswouldleadtoverysimilarresults.
+123
+
+Annals of Operations Research (2021) 302:341–362
+355
+In Akkermans (2017) some experiments with applying the break scheduling problem for
+two shifts at the same time are performed. However, the computation time increases to several
+minutes, so that after 30min the result is inferior to the single shift approach. In this respect
+it is interesting to know that a shift of 8h has 1,878,678 possible duties (given the parameter
+settings in our instances). As an instance has usually well over 100 shifts, solving the break
+scheduling problem directly in 30min is challenging. Even if one could, it would improve
+the solution by at most a few percent, given the lowerbound LB-I.
+6 Conclusion
+We proposed an integer linear programming approach for the shift and break design problem,
+which obtains better results on all instances when compared to the best results available in
+the literature. Note that the integer linear program of the ﬁrst phase can also be used to solve
+the instances of shift design problem, which are all solved to optimality within the time limit
+of 30min. These result are shown in “Appendix A.1”.
+Since we were not able to solve the ILP in the ﬁrst phase to optimality we are not sure of
+the performance of our algorithm in case the optimal solution for this ILP would have been
+be found. For the randomly generated instances, for which a solution that exactly matches
+the staff requirements is known, the average objective value of our solutions are more than 5
+times higher than the cost of the solution that exactly match the requirements. Based on the
+solution of the ﬁrst phase, we can estimate a lower bound for the ﬁnal solution, as documented
+in the “LB-I” columns in the Tables 3, 4 and 5. Note that the realized objective is just a few
+percent higher than this lower bound “LB-I”. In other words, the overall results can still be
+improved signiﬁcantly, and to do this, the ﬁrst phase should generate “better” solutions.
+Above we observed that the second phase works very well in the two-phase approach that
+we propose, with an optimality gap of 5–6%. However, applying phase two solely on instances
+of break scheduling problem turned out to be less effective than the memetic algorithms of
+WidlandMusliu(2010),whenstartingwiththeshiftsthatwereusedtoconstructtheinstances.
+The reason might be that there is exactly one solution without overstafﬁng and understafﬁng,
+which is difﬁcult to ﬁnd by optimizing shift by shift, as it needs extreme coordination to
+reach it.
+We decomposed the shift and break design problem in two phases, a ﬁrst phase where
+we decide on the template shifts and the number of shifts, and a second phase in which we
+decide where to place the breaks. The ﬁrst phase is in a sense the hardest to handle, as the
+information is incomplete. We believe that the virtual shifts work well, because of the high
+ﬂexibility of the breaks; in that case the assumption that in the middle of a shift there is a
+uniform distribution on the probability of a time being a break time is reasonable. A more
+detailed analysis could make this more precise, and might or might not improve the quality
+of the solutions. This is a point for further investigations.
+Another approach, used often in personnel scheduling problems, is a column generation
+approach. Usually a column is a schedule for an employee, but in this case an approach
+where each separate duty, with breaks assigned, is a column might be more appropriate.
+Note, however, that due to minimizing the number of template shifts in use, the columns are
+dependent on each other. How to overcome this issue is another topic to investigate.
+Open Access This article is distributed under the terms of the Creative Commons Attribution 4.0 International
+License(http://creativecommons.org/licenses/by/4.0/),whichpermitsunrestricteduse,distribution,andrepro-
+duction in any medium, provided you give appropriate credit to the original author(s) and the source, provide
+a link to the Creative Commons license, and indicate if changes were made.
+123
+
+356
+Annals of Operations Research (2021) 302:341–362
+Appendix
+A.1 Results shift design
+Comparison of ILP formulation of shift design problems solved with the commercial solver
+Cplex (IBM 2017) and the greedy min-cost max-ﬂow + Local Search heuristic (Gr) proposed
+by Di Gaspero et al. (2007). Table 6 shows the objective of the (previous) best known solution
+and running time of ’Gr’ to reach it. For our ILP approach we show the optimal objective
+Table 6 Shift design comparison
+set 1
+Inst.
+Objective
+Time (s)
+Gr
+ILP
+Gr
+ILP
+1-1
+480
+320
+1
+2
+1-2
+300
+212
+40
+21
+1-3
+600
+374
+2
+2
+1-4
+450
+340
+109
+165
+1-5
+480
+319
+2
+2
+1-6
+420
+213
+1
+1
+1-7
+270
+237
+7
+1
+1-8
+150
+147
+11
+149
+1-9
+150
+149
+9
+29
+1-10
+330
+289
+84
+141
+1-11
+30
+30
+1
+1
+1-12
+90
+81
+4
+3
+1-13
+105
+105
+4
+9
+1-14
+195
+187
+61
+425
+1-15
+180
+170
+0
+1
+1-16
+225
+209
+152
+1552
+1-17
+540
+394
+288
+283
+1-18
+720
+447
+7
+6
+1-19
+180
+177
+31
+54
+1-20
+540
+353
+2
+2
+1-21
+120
+119
+2
+7
+1-22
+75
+75
+4
+4
+1-23
+150
+150
+22
+100
+1-24
+480
+343
+1
+6
+1-25
+480
+352
+n.a.a
+168
+1-26
+600
+347
+9
+5
+1-27
+480
+393
+2
+3
+1-28
+270
+222
+4
+32
+1-29
+360
+289
+10
+58
+1-30
+75
+75
+2
+2
+Average
+318
+237
+30
+108
+aAuthors were not able to ﬁnd the best known solution using the Gr
+algorithm
+123
+
+Annals of Operations Research (2021) 302:341–362
+357
+Table 7 Shift design comparison
+set 3
+Inst.
+Objective
+Gr
+ILP
+3-1
+2386
+318
+3-2
+7691
+845
+3-3
+9597
+924
+3-4
+6681
+1427
+3-5
+9996
+551
+3-6
+2077
+1892
+3-7
+6087
+642
+3-8
+8861
+725
+3-9
+6036
+2527
+3-10
+3002
+462
+3-11
+5491
+1024
+3-12
+4171
+3514
+3-13
+4662
+3131
+3-14
+9661
+701
+3-15
+11, 445
+1112
+3-16
+10, 734
+638
+3-17
+4729
+3011
+3-18
+6692
+893
+3-19
+5157
+2677
+3-20
+9175
+1845
+3-21
+6054
+4674
+3-22
+12, 870
+2063
+3-23
+8390
+699
+3-24
+10, 418
+741
+3-25
+13, 252
+847
+3-26
+13, 118
+1042
+3-27
+10, 081
+1034
+3-28
+10, 604
+887
+3-29
+6690
+1045
+3-30
+13, 724
+1011
+Average
+7984
+1430
+value and the running time to ﬁnd and prove it. Table 7 shows the results of both approaches
+using a running time of 1 second.
+A.2 ILP shift design
+Sets
+Time Periods
+t
+days
+d
+template shifts
+s
+123
+
+358
+Annals of Operations Research (2021) 302:341–362
+Variables
+as
+Binary variable indicating whether template shift s is active
+wd,s
+Integer variable indicating how many workers will be working on template shift s on
+day d
+ut
+Will denote the understafﬁng at time period t
+ot
+Will denote the overstafﬁng at time period t
+Parameters
+Rt
+The requirement at time period t
+As,d,t
+Binary, indicating if the shift starting on day d of template shift s is active on time
+period t
+W1
+Penalty cost for overstafﬁng
+W2
+Penalty cost for understafﬁng
+W3
+Penalty cost for the number of template shifts
+M
+Is used as a large constant, here it is the maximum demand at any time period
+Constraints
+wd,s ≤M · as
+∀d, s
+
+s,d
+
+As,d,t · wd,s
+
++ ut ≥Rt
+∀t
+ot =
+
+s,d
+
+As,d,t · wd,s
+
++ ut −Rt
+∀t
+as ∈{0, 1}
+∀s
+wd,s ∈N0
+∀d, s
+ot, ut ≥0
+∀t
+Objective
+minimize W1
+
+t
+ot + W2
+
+t
+ut + W3
+
+s
+as
+(12)
+A.3 ILP break scheduling single shift
+Sets
+Time Periods
+t = {1, . . . , Length}, t∗= {1, . . . , Length + 1}
+Breaks
+b = {1, . . . , Mbreaks}
+Parameters
+Dt
+The demand for stafﬁng at time period t
+Mbreaks
+The maximum number of different breaks+1
+T bt
+The total amount of break time required
+Length
+Length of the duty s, in number of time periods
+Bminl (Bmaxl)
+Minimum (maximum) length of a break
+Mlwp
+Minimum long working period
+Lbml
+Long break minimum length
+123
+
+Annals of Operations Research (2021) 302:341–362
+359
+W pminl (W pmaxl)
+Working period minimum (maximum) length
+Ebs (Lbs)
+Earliest (latest )break start; breaks can start this many time periods
+after (from) shift start (end)
+L
+Binary, indicating whether a lunch break is required
+Elbs (Llbs)
+Earliest (Latest) lunch break start
+Lbl
+Lunch break length
+W1 (W2)
+Penalty cost for overstafﬁng (understafﬁng)
+M
+Used as a sufﬁciently large constant. Equal to the number of time
+periods in the duty
+Variables
+ab
+Binary variable indicating whether the bth break is active
+al
+b
+Binary variable indicating whether break b needs to be long
+lb
+Binary variable indicating whether break b is the lunch break
+bl
+b
+The length (in time slots) that the bth break takes
+bs
+b
+First time slot on which break b is active
+wpb
+Indicates the length of the bth working period
+zs
+t∗,b
+Binary indicating if the ﬁrst time period of the bth break is the t∗th time period
+ze
+t∗,b
+Binary indicating if the last time period of the bth break is the t∗th time period
+zt,b
+Binary1 indicating if the duty is on its bth break during time period t
+zb
+t,b
+Binary1 indicating if time period t is before the start of the bth break
+za
+t,b
+Binary1 indicating if time period t is after the end of the bth break
+xt
+Binary1 indicating if the duty is working during a time period t
+ut, ot
+Understafﬁng, Overstafﬁng in time period t
+Constraints
+ab ≤ab−1
+∀b ∈B \ {1}
+al
+b + lb ≤ab
+∀b
+
+b
+bl
+b = T bt
+M · (1 −ab) + bl
+b ≥Bminl
+∀b
+bl
+b ≤Bmaxl · (ab) + M · (lb)
+∀b
+al
+b · Lbml ≤bl
+b
+∀b
+bs
+b ≥Ebs
+∀b
+bs
+b ≤Length −Lbs + (1 −ab) · (1 + Lbs)
+∀b
+bs
+b ≥(Length + 1) · (1 −ab)
+∀b
+wp1 = bs
+1 −1
+wpb = bs
+b −(bs
+b−1 + bl
+b−1)
+∀b ∈B \ {1}
+wpb ≤W pmaxl
+∀b
+wp1 ≥W pminl
+1 These variables can be relaxed to continuous variables on [0, 1]. By the binary restriction on zs
+t,b and ze
+t,b
+the variables are forced to be either 0 or 1.
+123
+
+360
+Annals of Operations Research (2021) 302:341–362
+M · (1 −ab−1) + wpb ≥W pminl
+∀b ∈B \ {1}
+wpb −Mlwp + 1 ≤al
+b · M + lb · M + (1 −ab) · M
+∀b
+Mlwp −wpb ≤(1 −al
+b) · M
+∀b
+
+b
+lb = L
+(1 −lb) · M ≥Lbl −bl
+b
+∀b
+(1 −lb) · M ≥bl
+b −Lbl
+∀b
+(1 −lb) · M ≥Elbs −bs
+b
+∀b
+(1 −lb) · M ≥bs
+b −Llbs
+∀b
+
+t∗
+zs
+t∗,b = 1
+∀b
+
+t∗
+t∗· zs
+t,b = bs
+b
+∀b
+
+i=1>Length+1
+zs
+i,b = zb
+t,b
+∀t, b
+
+t∗
+ze
+t∗,b = 1
+∀b
+
+t∗
+t · ze
+t∗,b = bs
+b + bl
+b −1 + (1 −ab)
+∀b
+
+i=1<t−1
+ze
+i,b = za
+t,b
+∀t, b
+zt,b + za
+t,b + zb
+t,b = 1
+∀t, b
+1 −xt ≥
+
+b
+zt,b
+∀t ∈T
+1 −xt ≥
+
+b
+ze
+t−1,b
+∀t ∈T \ {1}
+1 −x1 ≤
+
+b
+z1,b
+1 −xt ≤
+
+b
+zt,b +
+
+b
+ze
+t−1,b
+∀t ∈T
+xt −1 + ut ≥Dt
+∀t
+ot −ut −xt + 1 = −Dt
+∀t
+ab, al
+b,lb ∈{0, 1}
+∀b
+zs
+t,b, ze
+t,b ∈{0, 1}
+∀t, b
+ot, ut ≥∀
+t
+Objective
+minimize W1
+
+t
+ot + W2
+
+t
+ut.
+(13)
+123
+
+Annals of Operations Research (2021) 302:341–362
+361
+References
+Akkermans, A. (2017). A two-phase approach to the shifts and breaks design problem using integer linear
+programming. Master’s thesis, University of Twente. Retrieved November 30, 2019, from http://essay.
+utwente.nl/74147/.
+Apt, K. (2003). Principles of constraint programming. New York, NY: Cambridge University Press.
+Aykin, T. (1996). Optimal shift scheduling with multiple break windows. Management Science, 42(4), 591–
+602.
+Bartholdi, J. J., Orlin, J. B., & Ratliff, H. D. (1980). Cyclic scheduling via integer programs with circular ones.
+Operations Research, 28(5), 1074–1085.
+Bechtold, S. E., & Jacobs, L. W. (1990). Implicit modeling of ﬂexible break assignments in optimal shift
+scheduling. Management Science, 36(11), 1339–1351.
+Beer, A., Gartner, J., Musliu, N., Schafhauser, W., & Slany, W. (2010). An AI-based break-scheduling system
+for supervisory personnel. IEEE Intelligent Systems, 25(2), 60–73.
+Bonutti, A., Ceschia, S., De Cesco, F., Musliu, N., & Schaerf, A. (2016). Modeling and solving a real-life
+multi-skill shift design problem. Annals of Operations Research, 252, 365–382.
+Brewka, G., Eiter, T., & Truszczynski, M. (2011). Answer set programming at a glance. Communications of
+the ACM, 54(12), 92–103.
+Dantzig, G. B. (1954). A comment on Edie’s “Trafﬁc Delays at Toll Booths”. Journal of the Operations
+Research Society of America, 2(3), 339–341.
+Database and Artiﬁcial Intelligence Group, Vienna University of Technology. (2017). Shift design and break
+scheduling benchmarks. Retrieved October 30, 2019, from http://www.dbai.tuwien.ac.at/proj/SoftNet/
+Supervision/Benchmarks/.
+Dechter, R., Meiri, I., & Pearl, J. (1991). Temporal constraint networks. Artiﬁcial Intelligence, 49(1), 61–95.
+Di Gaspero, L., Gärtner, J., Kortsarz, G., Musliu, N., Schaerf, A., & Slany, W. (2007). The minimum shift
+design problem. Annals of Operations Research, 155(1), 79–105.
+Di Gaspero, L., Gärtner, J., Musliu, N., Schaerf, A., Schafhauser, W., & Slany, W. (2010). A hybrid LS-CP
+solver for the shifts and breaks design problem. In 7th International workshop on hybrid metaheuristics,
+lecture notes in computer science (Vol. 6373, pp. 46–61). Heidelberg: Springer.
+Edie, L. C. (1954). Trafﬁc delays at toll booths. Journal of the Operations Research Society of America, 2(2),
+107–138.
+Ernst, A., Jiang, H., Krishnamoorthy, M., & Sier, D. (2004). Staff scheduling and rostering: A review of
+applications, methods and models. European Journal of Operational Research, 153(1), 3–27.
+Glover, F., & Laguna, M. (1999). Tabu search. In D. Z. Du & P. M. Pardalos (Eds.), Handbook of combinatorial
+optimization (Vol. 1-3, pp. 2093–2229). Boston, MA: Springer.
+Hochbaum, D. S., & Levin, A. (2006). Cyclical scheduling and multi-shift scheduling: Complexity and approx-
+imation algorithms. Discrete Optimization, 3(4), 327–340.
+IBM. (2017). IBM ILOG CPLEX Optimization Studio 12.7.1.
+Kirkpatrick,S.,Gelatt,C.D.,&Vecchi,M.P.(1983).Optimizationbysimulatedannealing.Science,220(4598),
+671–680.
+Kortsarz, G., & Slany, W. (2001). The minimum shift design problem and its relation to the minimum edge-cost
+ﬂow problem. Tech. Rep. DBAI-TR-2001-46, Technische Universität Wien.
+Microsoft. (1980). Microsoft Visual Studio Community 2013, Version 12.031101.00 Update 4.
+Minton, S., Johnston, M. D., Philips, A. B., & Laird, P. (1992). Minimizing conﬂicts: A heuristic repair method
+for constraint satisfaction and scheduling problems. Artiﬁcial Intelligence, 58(1), 161–205.
+Moscato, P. (1989). On evolution, search, optimization, genetic algorithms and martial arts—towards memetic
+algorithms. Technical Report, California Institute of Technology.
+Mulmuley, K., Vazirani, U., & Vazirani, V. (1987). Matching is as easy as matrix inversion. Combinatorica,
+7(1), 105–113.
+Musliu, N., Schaerf, A., & Slany, W. (2004). Local search for shift design. European Journal of Operational
+Research, 153(1), 51–64.
+Musliu, N., Schafhauser, W., & Widl, M. (2009). A memetic algorithm for a break scheduling problem. In
+Proceedings of the 8th metaheuristic international conference (MIC 2009), Hamburg, Germany.
+Rekik, M., Cordeau, J. F., & Soumis, F. (2010). Implicit shift scheduling with multiple breaks and work stretch
+duration restrictions. Journal of Scheduling, 13, 49–75.
+Van den Bergh, J., Beliën, J., De Bruecker, P., Demeulemeester, E., & De Boeck, L. (2013). Personnel schedul-
+ing: A literature review. European Journal of Operational Research, 226(3), 367–385.
+Veinott,A.F.,& Wagner,H.M.(1962).Optimal capacity scheduling—I. OperationsResearch,10(4),518–532.
+123
+
+362
+Annals of Operations Research (2021) 302:341–362
+Widl, M., & Musliu, N. (2010). An improved memetic algorithm for break scheduling. In M. J. Blesa, C. Blum,
+G. Raidl, A. Roli, & M. Sampels (Eds.), Hybrid metaheuristics: HM 2010, lecture notes in computer
+science (Vol. 6373, pp. 133–147). Berlin: Springer.
+Widl, M., & Musliu, N. (2014). The break scheduling problem: Complexity results and practical algorithms.
+Memetic Computing, 6(2), 97–112.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

@@ -1,0 +1,1732 @@
+TITLE: Online risk-averse submodular maximization
+JOURNAL: Annals_OR
+YEAR: 2022
+DOI: https://doi.org/10.1007/s10479-022-04835-9
+---
+
+Annals of Operations Research (2023) 320:393–414
+https://doi.org/10.1007/s10479-022-04835-9
+ORIGINAL RESEARCH
+Online risk-averse submodular maximization
+Tasuku Soma1
+· Yuichi Yoshida2
+Accepted: 13 June 2022 / Published online: 25 August 2022
+© The Author(s) 2022
+Abstract
+We present a polynomial-time online algorithm for maximizing the conditional value at
+risk (CVaR) of a monotone stochastic submodular function. Given T i.i.d. samples from
+an underlying distribution arriving online, our algorithm produces a sequence of solutions
+that converges to a (1 −1/e)-approximate solution with a convergence rate of O(T −1/4) for
+monotone continuous DR-submodular functions. Compared with previous ofﬂine algorithms,
+which require (T ) space, our online algorithm only requires O(
+√
+T ) space. We extend our
+online algorithm to portfolio optimization for monotone submodular set functions under
+a matroid constraint. Experiments conducted on real-world datasets demonstrate that our
+algorithm can rapidly achieve CVaRs that are comparable to those obtained by existing
+ofﬂine algorithms.
+Keywords Conditional value at risk · Submodular function · Stochastic optimization ·
+Online learning
+1 Introduction
+Submodular function maximization is a ubiquitous problem naturally arising in broad areas
+such as machine learning, social network analysis, economics, combinatorial optimization,
+and decision-making (Krause and Golovin, 2014; Buchbinder and Feldman, 2018). Submod-
+ular maximization in these applications is stochastic in nature, i.e., the input data could be
+a sequence of samples drawn from some underlying distribution, or there could be some
+uncertainty in the environment. In this paper, we consider nonnegative monotone continuous
+Tasuku Soma and Yuichi Yoshida have contributed equally to this work.
+B Tasuku Soma
+tasuku@mit.edu
+Yuichi Yoshida
+yyoshida@nii.ac.jp
+1
+Department of Mathematics, Massachusetts Institute of Technology, 77 Massachusetts Ave.,
+Cambridge 20139, MA, USA
+2
+National Institute of Informatics, 2-1-2 Hitotsubashi, Chiyoda-ku, Tokyo 101-8430, Japan
+123
+
+394
+Annals of Operations Research (2023) 320:393–414
+prob. α
+VaRα
+CVaRα
+objective value
+density of F(x; z) for ﬁxed x
+Fig. 1 Illustration of conditional value at risk
+DR-submodular1 Bian et al. (2017) functions F(x; z) parameterized by a random variable
+z drawn from some distribution D.2 For example, in inﬂuence maximization (Kempe et al.,
+2003), F is the multilinear extension of the inﬂuence submodular function, z represents an
+outcome of the random propagation process, and D is the distribution of the inﬂuence propa-
+gation. The simplest approach for such stochastic submodular objectives is to maximize the
+expectation Ez∼D[F(x; z)], which has been extensively studied (Karimi et al., 2017; Hassani
+et al., 2017; Mokhtari et al., 2018; Karbasi et al., 2019).
+However, in real-world decision-making tasks in ﬁnance, robotics, and medicine, we
+sometimesmustberisk-averse:Wewanttominimizetheriskofsufferingaconsiderablysmall
+gain rather than simply maximizing the expected gain (Mansini et al., 2007; Yau et al., 2011;
+Tamar et al., 2015). In medical applications, for example, we must avoid catastrophic events
+such as patient fatalities. In ﬁnance and robotics, all progress ceases when poor decisions
+cause bankruptcies or irreversible damage to robots.
+Conditionalvalueatrisk(CVaR)isapopularobjectiveforsuchrisk-aversedomains(Rock-
+afellar and Uryasev, 2000; Krokhmal et al., 2002). Formally, given a parameter α ∈[0, 1],
+the CVaR of a feasible solution x ∈Rn is deﬁned as
+CVaRα,D(x) = Ez∼D[F(x; z) | F(x; z) ≤VaRα,D(x)],
+where VaRα,D(x) is the α-quantile of the random variable F(x; z), i.e.,
+VaRα,D(x) = sup
+
+τ ∈R : Pr
+z∼D(F(x; z) ≤τ) ≤α
+
+.
+Note that when α = 1, the CVaR is simply the expected value of F(x; z). Since α is typically
+set to be 0.10 or 0.05 in practice, we assume that α is a ﬁxed constant throughout this paper.
+When α is clear from the context, we omit it from the notations. In words, CVaR is the
+conditional expectation on the α-fraction lower tail of the distribution of F(x; z); see Fig. 1.
+Therefore, optimizing CVaR would yield more risk-averse solutions rather than optimizing
+the expectation. CVaR can also be characterized by a variational formula:
+CVaRD(x) = max
+τ∈R τ −1
+α Ez∼D [τ −F(x; z)]+,
+where [·]+ = max{·, 0} (Rockafellar and Uryasev, 2000). One can check that the optimal τ
+equals VaRα,D(x) by taking the subgradient with respect to τ. For further details of CVaR,
+see Shapiro et al. (2014).
+1 See Sect. 2 for the deﬁnition of continuous DR-submodularity.
+2 Remark that our notation F(x; z) represents that F is a function of x and z is a parameter of F, not that F
+is a function of a concatenated vector [x; z].
+123
+
+Annals of Operations Research (2023) 320:393–414
+395
+Maehara (2015) initiated the study of maximizing the CVaR of stochastic submodular set
+functions. It was shown that the CVaR of a stochastic submodular set function is not necessar-
+ily submodular, and that it is impossible to compute a single set that attains any multiplicative
+approximation to the optimal CVaR. Ohsaka and Yoshida (2017) introduced a relaxed prob-
+lem of ﬁnding a portfolio over sets rather than a single set, and devised the ﬁrst CVaR
+maximization algorithm with an approximation guarantee for the inﬂuence maximization
+problem (Kempe et al., 2003), a prominent example of discrete submodular maximization.
+Wilder (2018) further considered this approach and devised an algorithm called RASCAL
+for maximizing the CVaR of continuous DR-submodular functions subject to a down-closed
+convex set.
+The algorithms mentioned above are ofﬂine (batch) methods, i.e., a set of samples drawn
+from the underlying distribution D is given as the input. However, because the number of
+samples needed to accurately represent D can be exceedingly large, it is often inefﬁcient or
+even impossible to store all the samples in memory. Further, when a new sample is observed,
+these ofﬂine algorithms must be rerun from scratch.
+In the machine learning community, online methods, which can efﬁciently handle large
+volumes of data, have been extensively studied (Hazan, 2016). Online methods read data
+in a streaming fashion, and update the current solution using a few data elements stored
+in memory. Further, online methods can update a solution at a low computational cost;
+Online algorithms can utilize stochastic gradients or minibatch gradients, whereas ofﬂine
+algorithms often require full gradients. For various practical applications, online algorithms
+arepreferablebecausecomputingfullgradientsareverytime-consumingandofteninfeasible.
+1.1 Our contributions
+In this work, we propose online algorithms for maximizing the CVaR of stochastic submod-
+ular objectives in continuous and discrete settings.
+1.1.1 Continuous setting
+Let z1, . . . , zT be i.i.d. samples drawn from D arriving sequentially and K ⊆Rn be a
+down-closed convex set. Our main result is a polynomial-time online algorithm, Stochas-
+ticRASCAL, that ﬁnds x ∈K such that
+E[CVaRD(x)] ≥
+
+1 −1
+e
+
+CVaRD(x∗) −O(T −1/4),
+for any x∗∈K, where the expectation is taken over z1, . . . , zT and the randomness of the
+algorithm. StochasticRASCAL only stores O(
+√
+T ) data in memory, drawing a contrast
+to RASCAL, which store all T data points. Note that the approximation ratio of 1 −1/e is
+optimal for any algorithm that performs polynomially many function value queries even if
+α = 1 (Vondrák, 2013). We also conduct several experiments on real-world datasets to show
+the practical efﬁciency of our algorithm. We demonstrate that our algorithm rapidly achieves
+CVaR comparable to that obtained by known ofﬂine methods.
+1.1.2 Discrete setting
+As an application of the above algorithm, we devise an online algorithm to create a portfolio
+that maximizes the CVaR of a discrete submodular function subject to a matroid constraint.
+123
+
+396
+Annals of Operations Research (2023) 320:393–414
+Let f (X; z) : 2V →[0, 1] be a monotone stochastic submodular set function on a ground
+set V and I ⊆2V be a matroid. The goal is to ﬁnd a portfolio P of feasible sets in I that
+maximizes
+CVaRD(P) = max
+τ∈[0,1] τ −1
+α Ez∼D[τ −EX∼P f (X; z)]+,
+given i.i.d. samples from D. We show that this problem can be reduced to online CVaR
+maximization of continuous DR-submodular functions on a matroid polytope, and devise a
+polynomial-time online approximation algorithm for creating a portfolio P such that
+E[CVaRD(P)] ≥
+
+1 −1
+e
+
+CVaRD(P∗) −O(T −1/10)
+for any portfolio P∗over feasible sets. Note that this algorithm is the ﬁrst online algorithm that
+converges to a (1 −1/e)-approximation portfolio in the discrete setting, which generalizes
+the known ofﬂine algorithm (Wilder, 2018) to the i.i.d. setting.
+1.2 Our techniques
+To analyze our online algorithms, we introduce a novel adversarial online learning problem,
+which we call adversarial online submodular CVaR learning. This online learning problem is
+described as follows. For t = 1, . . . , T , the learner chooses xt ∈K and τt ∈[0, 1] possibly
+in a randomized manner. After xt and τt are chosen, the adversary reveals a monotone
+continuous DR-submodular function Ft : K →[0, 1] to the learner. The goal of the learner
+is to minimize the approximate regret
+regret1−1/e(T ) =
+
+1 −1
+e
+
+T
+
+t=1
+Ht(x∗, τ ∗) −
+T
+
+t=1
+Ht(xt, τt)
+for arbitrary x∗∈K and τ ∗∈[0, 1], where the function Ht is given by
+Ht(x, τ) = τ −1
+α [τ −Ft(x)]+.
+We devise an efﬁcient algorithm that achieves O(T 3/4) approximate regret in expectation.
+Further, we show that, given an online algorithm with a sublinear approximate regret, we can
+construct an online algorithm that achieves a (1−1/e)-approximation to CVaR maximization,
+whose convergence rate is E[regret1−1/e(T )]/T . Combining these results, we obtain an
+online (1 −1/e)-approximation algorithm for CVaR maximization with a convergence rate
+of O(T −1/4).
+At a high level, our algorithm for adversarial online submodular CVaR learning is based
+on the online continuous greedy algorithm for online submodular maximization (Streeter
+et al., 2009; Golovin et al., 2014). The main challenges are (i) our objective function Ht
+is non-smooth, whereas continuous greedy requires the smoothness; and (ii) Ht is neither
+monotone nor DR-submodular, whereas the regret analysis of Streeter et al. (2009) assumes
+the monotonicity and DR-submodularity. We overcome these obstacles by employing the
+smoothing technique similar to Wilder (2018) and extending the regret analysis of the online
+continuous greedy algorithm.
+We remark that adversarial online submodular CVaR learning may be of interest in its own
+right: Although the objective function Ht is neither monotone nor continuous DR-submodular
+123
+
+Annals of Operations Research (2023) 320:393–414
+397
+in general, we can design an online algorithm with a sublinear (1 −1/e)-regret. As per our
+knowledge, an online algorithm for non-monotone and non-DR-submodular maximization
+does not exist in the literature.
+1.3 Related work
+Several studies focused on CVaR optimization in the adversarial online settings and i.i.d.
+settings. Tamar et al. (2015) studied CVaR optimization over i.i.d. samples and analyzed
+stochastic gradient descent under the strong assumption that CVaR is continuously differ-
+entiable. Recently, Cardoso and Xu (2019) introduced the concept of the CVaR regret for
+convex loss functions and provided online algorithms for minimizing the CVaR regret under
+bandit feedback.
+Online and stochastic optimization of submodular maximization have been extensively
+studied in Streeter and Golovin (2008), Streeter et al. (2009), Golovin et al. (2014), Karimi
+et al. (2017), Hassani et al. (2017), Mokhtari et al. (2018), Chen et al. (2018), Roughgarden
+and Wang (2018), Soma (2019), Karbasi et al. (2019), Zhang et al. (2019). These studies
+optimize either the approximate regret or the expectation and do not consider CVaR.
+Another line of related work is robust submodular maximization (Krause et al., 2008;
+Chen et al., 2017; Anari et al., 2019). In robust submodular maximization, we maximize the
+minimum of N submodular functions, i.e., minN
+i=1 fi(X). Robust submodular maximization
+isthelimitofCVaRmaximization,where D istheuniformdistributionover N valuesandα →
+0. Recently, Staib et al. (2019) proposed distributionally robust submodular optimization,
+which maximizes minD∈P Ez∼D f (X; z) for an uncertainty set P of distributions. It is known
+that CVaR can be formulated in the distributionally robust framework (Shapiro et al., 2014).
+However, the algorithms proposed by Staib et al. (2019) require that P is a subset of the
+N-dimensional probability simplex; moreover, their time complexity depends on N. Our
+algorithms work even if N is inﬁnite.
+1.4 Organization of this paper
+This paper is organized as follows. Section 2 introduces the background of submodular
+optimization. Section 3 describes our algorithm, StochasticRASCAL for stochastic DR-
+submodular functions. The convergence analysis of StochasticRASCAL is two-folded.
+In Sect. 4, we introduce our online algorithm, OnlineRASCAL, for the adversarial setting
+and prove an approximate-regret bound. In Sect. 5, we show online to batch conversion
+and give a formal convergence analysis of StochasticRASCAL via the regret bound in the
+previous section. Section 6 extends our algorithm from continuous DR-submodular functions
+to discrete submodular functions. Section 7 present experimental results using real-world
+dataset. Finally, we conclude this paper in Sect. 8.
+1.4.1 Remark on conference version
+A short version of this paper appeared in Soma and Yoshida (2021). The present paper
+contains complete proofs, details on the analysis, and improved presentations.
+123
+
+398
+Annals of Operations Research (2023) 320:393–414
+2 Preliminaries
+Throughout the paper, V denotes the ground set and n denotes the size of the ground set.
+For a set function f : 2V →R, the multilinear extension F : [0, 1]V →R is deﬁned as
+F(x) = 
+S⊆V f (S) 
+i∈S xi
+
+i /∈S(1 −xi). For a matroid on V , the base polytope is the
+convex hull of bases of the matroid. It is well-known that the linear optimization on a base
+polytope can be solved by the greedy algorithm (Fujishige, 2005).
+We denote the Euclidean norm and inner product by ∥·∥and ⟨·, ·⟩, respectively. The ℓp
+norm (1 ≤p ≤∞) is denoted by ∥·∥p. The Euclidean projection of x onto a set K is denoted
+by projK (x). A convex set K ⊆Rn
+≥0 is said to be down-closed if y ∈K and 0 ≤x ≤y
+imply x ∈K. A function f : Rn →R is said to be L-Lipschitz (continuous) for L > 0 if
+| f (x) −f (y)| ≤L ∥x −y∥for all x, y. We say that f is β-smooth for β > 0 if f is contin-
+uously differentiable and ∥∇f (x) −∇f (y)∥≤β ∥x −y∥. A smooth function F : Rn →R
+is said to be continuous DR-submodular (Bian et al., 2017) if
+∂2F
+∂xi∂x j ≤0 for all i, j. The
+multilinear extension of a submodular function is known to be DR-submodular (Calinescu et
+al., 2011). The continuous DR-submodularity implies up-concavity: For a continuous DR-
+submodular function F, x ∈Rn, and d ≥0, the univariate function t →F(x + td) is
+concave.
+The uniform distribution of a set K is denoted by Unif(K). The standard normal distri-
+bution is denoted by N(0, I).
+3 CVaR maximization of continuous DR-submodular functions
+We present our online algorithm for CVaR maximization via i.i.d. samples. Let Ft : Rn →
+[0, 1] be the monotone continuous DR-submodular function corresponding to the t-th sample
+zt, i.e.,
+Ft(x) = F(x; zt)
+for t = 1, . . . , T . Similarly, deﬁne an auxiliary function Ht with respect to zt by
+Ht(x, τ) = τ −1
+α [τ −Ft(x)]+ = τ −1
+α [τ −F(x; zt)]+.
+for t = 1, . . . , T . Let K ⊆Rn
+≥0 be a down-closed convex set. Formally, we make the
+following very mild assumptions on Ft and K.
+Assumption 3.1
+• For all t, Ft is L-Lipschitz and β-smooth, and ∥∇Ft∥≤G.
+• The diameter of K is bounded by D.
+• We are given a linear optimization oracle over K.
+When the underlying norm is the ℓp-norm with p ̸= 2, we write G p to emphasize it. For
+example, if Ft is the multilinear extension of a submodular set function ft : 2V →[0, 1] and
+K is the base polytope of a rank-k matroid, we have L = β = O(n), G∞= 1, D = O(
+√
+k).
+Our algorithm borrows some ideas from an algorithm called RASCAL (Wilder, 2018).
+First, we deﬁne a smoothed auxiliary function ˜Ht : [0, 1]V × [0, 1] →[0, 1] as
+˜Ht(x, τ) = 1
+u
+ u
+0
+
+τ + ξ −1
+α [τ + ξ −Ft(x)]+
+
+dξ,
+where u > 0 is a smoothing parameter speciﬁed later. This smoothing guarantees that ˜Ht is
+differentiable for all x and has Lipschitz continuous gradients.
+123
+
+Annals of Operations Research (2023) 320:393–414
+399
+Lemma 3.2 (Lemma 6 of Wilder (2018))
+1.
+
+Ht(x, τ) −˜Ht(x, τ)
+
+ ≤u(1+1/α)
+2
+for all x and τ.
+2. If Ft is L-Lipschitz and β-smooth, and ∥∇Ft∥≤G, then ∇x ˜Ht is 1
+α (β + LG
+u )-Lipschitz.
+Lemma 3.3 (Wilder, 2018) The function maxτ ˜Ht(·, τ) is monotone and up-concave.
+3.1 StochasticRASCAL
+We now formally describe our algorithm, StochasticRASCAL. We note that RASCAL runs
+the Frank-Wolfe algorithm on a function maxτ
+T
+t=1 ˜Ht(·, τ). Owing to the up-concavity and
+smoothness properties of this function, one can obtain (1 −1/e)-approximation. However,
+in our online setting, we cannot evaluate this function because ˜Ht will be revealed online,
+and hence we cannot simply run RASCAL.
+To overcome the issue above, ﬁrst we split the T samples into mini-batches of length B,
+which we specify later. The key idea is to use the following objective function
+¯Hb(x) = max
+τ
+1
+B
+bB
+
+t=(b−1)B+1
+˜Ht(x, τ)
+for each b-th mini-batch (b = 1, . . . , T /B). We can see that ¯Hb(x) is monotone, up-concave,
+and can be evaluated only using samples in the b-th mini-batch. Then, we run a perturbed
+version of Frank-Wolfe algorithm (Golovin et al., 2014; Bian et al., 2017) on ¯Hb. More
+formally, we ﬁrst initialize x0
+b+1 = 0 and for each s = 0, δ, 2δ, . . . , 1 −δ, we perform the
+update
+xs+δ
+b
+←xs
+b + δds
+b
+where δ is the step size, ds
+b is a solution to a perturbed linear optimization problem on K:
+ds
+b ∈argmaxd∈K ⟨∗⟩λ
+b
+
+b′=1
+∇¯Hb′(xs
+b′) + rs
+b, d.
+Here, rs
+b ∼DFPL is a perturbation vector. This perturbation trick aims to stabilize the algo-
+rithm so that we can maximize the true objective maxτ
+T
+t=1 ˜Ht(·, τ) using only mini-batch
+objectives.
+In each iteration of continuous greedy, we need the gradients ∇¯Hb(xs
+b), which in turn
+requires us to compute argmaxτ
+1
+B
+bB
+t=(b−1)B+1 ˜Ht(xs
+b, τ). These gradients and the optimal
+τ can be computed by SmoothGrad and SmoothTau subroutines, respectively, which were
+proposed in Wilder (2018); See Algorithms 2 and 3. The time complexities of SmoothGrad
+and SmoothTau subroutines are O(B) and O(B log B), respectively.
+Let us write xb := x1
+b for b = 1, . . . , T /B. The ﬁnal output of StochasticRASCAL is
+xb′ for a random index b′ chosen uniformly at random from {1, 2, . . . , T /B}. The pseudocode
+of StochasticRASCAL is presented in Algorithm 1.
+3.2 Convergence rate via regret bounds
+Let us consider the convergence rate of StochasticRASCAL. The main challenge of the
+analysis is how to set the parameters used in the algorithm, i.e., learning rates λ, step size
+123
+
+400
+Annals of Operations Research (2023) 320:393–414
+Algorithm 1 StochasticRASCAL
+Require: learning rates λ > 0, step size δ > 0, perturbation distribution DFPL, smoothing parameter u > 0,
+and mini-batch size B > 0
+1: Initialize x1 ∈K arbitrary.
+2: for b = 1, . . . , T /B do
+3:
+Observe samples z(b−1)B+1, . . . , zbB and store them in mini-batch Zb.
+4:
+/* continuous greedy */
+5:
+Let x0
+b ←0.
+6:
+for s = 0, δ, 2δ, . . . , 1 −δ do
+7:
+τ := SmoothTau(xs
+b, u, Zb)
+8:
+gs
+b := SmoothGrad(xs
+b, τ, u, Zb).
+9:
+Find a vertex ds
+b+1 of K that maximizes ⟨∗⟩λ b
+b′=1 gs
+b′ + rs
+b, d for d ∈K, where rs
+b ∼DFPL.
+10:
+xs+δ
+b
+←xs
+b + δds
+b
+11:
+end for
+12:
+Let xb = x1
+b.
+13: end for
+14: return xb′ for b′ chosen from {1, 2, . . . , T /B} uniformly at random.
+Algorithm 2 SmoothGrad(x, τ, u, Z)
+Require: x, τ, u, and mini-batch Z
+1: Iz(τ) := max{min{ F(x;z)−τ
+u
+, 1} for z ∈Z.
+2: return 
+z∈Z Iz(τ)∇x F(x, z)
+Algorithm 3 SmoothTau(x, u, Z)
+Require: x, u, and mini-batch Z
+1: B := {F(x; z) | z ∈Z} ∪{F(x; z) + u | z ∈Z}
+2: Sort B in ascending order, obtaining B = {b1, . . . , b|B|}.
+3: i∗:= min{i : 
+z∈Z Iz(bi) < α |Z|}
+4: A := {z ∈Z : bi∗−1 < F(x; z) < bi∗}
+5: C := {z ∈Z : F(x; z) ≤bi∗−1}
+6: return the solution τ of the linear equation
+
+z∈Z
+F(x; z) −τ
+u
++ |C| = α |Z| .
+δ, perturbation distribution DFPL, smoothing parameter u, and mini-batch size B, to achieve
+the desired O(T −1/4) convergence rate.
+To this end, using tools from online convex optimization, we prove an approximate regret
+bound for a variant of StochasticRASCAL for adversarial online submodular CVaR learn-
+ing (see Introduction for the deﬁnition). We then show that the above regret bound can be used
+to show a convergence rate of StochasticRASCAL. The technical detail of the adversarial
+setting and the proof of the following theorem is deferred to Sect. 5.
+Theorem 3.4 Under Assumption 3.1, StochasticRASCAL outputs x ∈K such that for any
+x∗∈K,
+E[CVaRD(x)] ≥
+
+1 −1
+e
+
+CVaRD(x∗) −O
+√CαGDn1/8
+√α
+
+T −1/4,
+123
+
+Annals of Operations Research (2023) 320:393–414
+401
+where we set B = αCα
+√
+T
+DGn1/4 , δ =
+α2
+D2
+
+(1+α)GL
+√
+T +αβT 1/4
+, λ = αDn1/4√B/T
+G
+, u =
+T −1/4
+(1+1/α),
+and DFPL = Unif([0, 1]n), and Cα := max{1, 1
+α −1}. Further, if K is an integral polytope
+contained in {x ∈[0, 1]n : 
+i xi = k}, then
+E[CVaRD(x)] ≥
+
+1 −1
+e
+
+CVaRD(x∗) −O
+√CαG∞k3/4 log1/4 n
+√α
+
+T −1/4
+for B =
+√
+2Cα
+√
+T α
+2G∞k3/2√
+log (n), δ =
+α2
+D2
+
+(1+α)GL
+√
+T +αβT 1/4
+, λ =
+
+B
+T k , u =
+T −1/4
+(1+1/α), and DFPL =
+N(0, I).
+Furthermore, for any δ ∈(0, 1), a similar approximation bound for 1
+T
+T
+t=1 CVaRD(xt)
+holds with probability at least 1 −δ, at the cost of an extra additive term of O
+
+log(1/δ)
+α2T
+
+.
+To achieve E[CVaRD(x)] ≥
+
+1 −1
+e
+
+CVaRD(x∗) −ε for a desired error ε > 0,
+StochasticRASCAL requires O( D2G2√n
+ε4
+) samples and O( DGn1.25
+ε2
+) space, whereas RAS-
+CAL (Wilder, 2018) requires O( n
+ε2 ) samples and O( n2
+ε2 ) space. Our algorithm runs in a
+smaller space when the parameters are of moderate size. For example, if β = D = O(1)
+and L = G = o(n1/4), the space complexity of StochasticRASCAL is better than that of
+RASCAL.
+4 Adversarial setting
+In this section, we present online algorithm for CVaR maximization in an adversarial envi-
+ronment.
+4.1 Preliminaries on online convex optimization
+We use the framework called online convex optimization (OCO) extensively, and will brieﬂy
+explain it below. For details, the reader is referred to a monograph (Hazan, 2016). In OCO, the
+learner is given a compact convex set K ⊆Rn. For each round t = 1, . . . , T , the learner must
+select xt ∈K and then the adversary reveals a concave reward function3 ft : K →[0, 1] to
+the learner. The goal of the learner is to minimize the (1-)regret
+regret(T ) = max
+x∗∈K
+T
+
+t=1
+fT (x∗) −
+T
+
+t=1
+ft(xt).
+An important subclass of OCO is online linear optimization (OLO), in which the objective
+functions are linear.
+We use the following OCO algorithms. Let η > 0 be a learning rate.
+Online gradient descent (OGD)
+xt+1 = projK (xt + η∇ft(xt))
+3 Although OCO is usually formulated as convex minimization, we state OCO in the form of concave max-
+imization for later use. Note that we can convert minimization to maximization by negating the objective
+function.
+123
+
+402
+Annals of Operations Research (2023) 320:393–414
+Follow the perturbed leader (FPL)
+xt+1 = argmaxx∈K ⟨∗⟩η
+t
+t′=1
+∇ft′(xt′) + rt, x
+where rt is a perturbation term drawn from some distribution DFPL.
+Lemma 4.1 (Hazan, 2016) If ∥∇ft∥≤G and the diameter of K is D, then the OGD sequence
+xt satisﬁes
+regret(T ) ≤ηT G2 + D2
+η .
+Lemma 4.2 (Hazan, 2016; Cohen and Hazan, 2015) If ft(x) = ⟨gt, x⟩,
+gt
+ ≤G, and the
+diameter of K is D, then the FPL sequence xt with DFPL = Unif([0, 1]n) satisﬁes
+E[regret(T )] ≤ηT G2 +
+√nD2
+η
+,
+where the expectation is taken over the randomness in the algorithm. Further, if
+gt
+
+∞≤1
+and K is an integral polytope contained in {x ∈[0, 1]n : 
+i xi = k}, then
+regret(T ) ≤k
+
+2 log n
+
+ηkT + 1
+η
+
+for DFPL = N(0, I).
+4.2 Online algorithm for adversarial online CVaR learning
+We now present our online algorithm, OnlineRASCAL, for adversarial online submodular
+CVaR learning. Let Ft : Rn →[0, 1] be a monotone continuous DR-submodular function
+with Ft(0) = 0 for t = 1, . . . , T . Let K ⊆Rn
+≥0 be a down-closed convex set. Onlin-
+eRASCAL maintains (xt, τt) ∈K × [0, 1]. Let us consider the b-th mini-batch and denote
+a variable in this mini-batch by xb. Within the b-th mini-batch, we play the same xb and use
+OGD to learn argmaxτ
+bB
+t=(b−1)B+1 ˜Ht(xb, τ). At the end of the b-th mini-batch, we update
+xb using online continuous greedy where each inner iteration performs FPL. The pseudocode
+can be found in Algorithm 4.
+Theorem 4.3 Under Assumption 3.1, OnlineRASCAL achieves
+
+1 −1
+e
+
+T
+
+t=1
+˜Ht(x∗, τ ∗) −
+T
+
+t=1
+˜Ht(xt, τt) ≤Bδ
+1−δ
+
+s=0
+rFPL,s(T /B) + T
+B rOGD(B) + δβu D2T
+for arbitrary x∗and τ ∗, where rFPL,s is the 1-regret of the s-th FPL, rOGD is the 1-regret of
+OGD, βu = 1
+α (β + LG
+u ), and D is the diameter of K.
+Before diving into the formal proof, we outline the proof. Recall that the 1-regret of the
+s-th FPL algorithm is
+rFPL,s(T /B) = max
+d∗∈K
+T /B
+
+b=1
+⟨gs
+b, d∗⟩−
+T /B
+
+b=1
+⟨gs
+b, ds
+b⟩
+123
+
+Annals of Operations Research (2023) 320:393–414
+403
+Algorithm 4 OnlineRASCAL
+Require: learning rates η, λ > 0, step size δ > 0, FPL distribution DFPL, and mini-batch size B > 0
+1: Initialize x1 ∈K.
+2: for b = 1, . . . , T /B do
+3:
+/* learn τ in mini-batch */
+4:
+Initialize τ(b−1)B+1 ∈[0, 1].
+5:
+for t = (b −1)B + 1, . . . , bB do
+6:
+Play (xb, τt) and observe Ft.
+7:
+γt ←∂τ ˜Ht(xb, τt).
+8:
+τt+1 ←proj[0,1](τt + ηγt).
+// OGD
+9:
+end for
+10:
+Let ¯Hb(x) = 1
+B maxτ
+bB
+t=(b−1)B+1 ˜Ht(x, τ).
+11:
+/* continuous greedy */
+12:
+Let x0
+b+1 ←0.
+13:
+for s = 0, δ, 2δ, . . . , 1 −δ do
+14:
+Compute gs
+b = ∇x ¯Hb(xs
+b) via SmoothGrad and SmoothTau.
+15:
+Take a vertex ds
+b+1 of K that maximizes ⟨∗⟩λ b
+b′=1 gs
+b′ + rs
+b, d for d ∈K, where rs
+b ∼DFPL. //
+FPL
+16:
+xs+δ
+b+1 ←xs
+b+1 + δds
+b+1
+17:
+end for
+18:
+Let xb+1 = x1
+b+1.
+19: end for
+for each s. Then, using the up-concavity of ¯Hb, we can prove
+T /B
+
+b=1
+¯Hb(x∗) −¯Hb(xs
+b) ≤
+T /B
+
+b=1
+⟨∇x ¯Hb(xs
+b), ds
+b⟩+ rFPL,s(T /B)
+for each s. On the other hand, for each s, we have
+T /B
+
+b=1
+¯Hb(xs+δ
+b
+) −¯Hb(xs
+b) ≥
+T /B
+
+b=1
+⟨∇¯Hb(xs
+b), δds
+b⟩−δ2βu D2 T
+B ,
+where βu is the smoothness parameter of ¯Hb. By combining these two inequalities, we can
+show
+
+1 −1
+e
+ T /B
+
+b=1
+¯Hb(x∗) −
+T /B
+
+b=1
+¯Hb(xb) ≤δ
+1−δ
+
+s=0
+rFPL,s(T /B) + δβu D2 T
+B .
+via the standard analysis of continuous greedy.
+The next step is to relate ¯Hb with the regret in terms of ˜Ht. We have
+bB
+
+t=(b−1)B+1
+˜Ht(xb, τt) ≥max
+τ
+bB
+
+t=(b−1)B+1
+˜Ht(xb, τ) −rOGD(B)
+= B · ¯Hb(xb) −rOGD(B),
+by the deﬁnition of the 1-regret of OGD. Combining these two bounds, we can prove Theo-
+rem 4.3.
+123
+
+404
+Annals of Operations Research (2023) 320:393–414
+Proof of Theorem 4.3 First, we obtain
+T /B
+
+b=1
+¯Hb(x∗) −¯Hb(xs
+b) ≤
+T /B
+
+b=1
+¯Hb(x∗∨xs
+b) −¯Hb(xs
+b)
+(monotonicty)
+≤
+T /B
+
+b=1
+⟨∇x ¯Hb(xs
+b), x∗∨xs
+b −xs
+b⟩
+(up-concavity)
+≤
+T /B
+
+b=1
+⟨∇x ¯Hb(xs
+b), x∗⟩
+(x∗≥x∗∨xs
+b −xs
+band∇xNHb(xs
+b) ≥0)
+≤
+T /B
+
+b=1
+⟨∇x ¯Hb(xs
+b), ds
+b⟩+ rFPL,s(T /B).
+(deﬁnition of 1-regret)
+On the other hand, we have
+T /B
+
+b=1
+¯Hb(xs+δ
+b
+) −¯Hb(xs
+b) ≥
+T /B
+
+b=1
+⟨∇¯Hb(xs+δ
+b
+), δds
+b⟩
+(up-concavity)
+≥
+T /B
+
+b=1
+
+⟨∇¯Hb(xs
+b), δds
+b⟩−δ2βu
+ds
+b
+2
+(Lipschitz continuouity of ∇NHb(·))
+≥
+T /B
+
+b=1
+⟨∇¯Hb(xs
+b), δds
+b⟩−δ2βu D2 T
+B ,
+(
+ds
+b
+ ≤D)
+Hence, we obtain
+T /B
+
+b=1
+¯Hb(xs+δ
+b
+) −¯Hb(xs
+b) ≥δ
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(xs
+b)) −δrFPL,s(T /B) −δ2βu D2 T
+B
+for s = 0, δ, 2δ, . . . , 1 −δ. Then,
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(xs+δ
+b
+))
+=
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(xs
+b)) −
+T /B
+
+b=1
+( ¯Hb(xs+δ
+b
+) −¯Hb(xs
+b))
+≤
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(xs
+b)) −δ
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(xs
+b)) + δrFPL,s(T /B) + δ2βu D2 T
+B
+= (1 −δ)
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(xs
+b)) + δrFPL,s(T /B) + δ2βu D2 T
+B
+123
+
+Annals of Operations Research (2023) 320:393–414
+405
+for s = 0, δ, 2δ, . . . , 1 −δ. Using this inequality inductively, we have
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(x1
+b))
+≤(1 −δ)1/δ
+T /B
+
+b=1
+( ¯Hb(x∗) −¯Hb(x0
+b)) + δ
+1−δ
+
+s=0
+rFPL,s(T /B) + δβu D2 T
+B
+≤1
+e
+T /B
+
+b=1
+¯Hb(x∗) + δ
+1−δ
+
+s=0
+rFPL,s(T /B) + δβu D2 T
+B ,
+where in the last inequality we used 1 + x ≤ex for x ∈R and ¯Hb(x0
+b) =
+¯Hb(0) = 0.
+Rearranging the terms and using xb := x1
+b, we obtain
+
+1 −1
+e
+ T /B
+
+b=1
+¯Hb(x∗) −
+T /B
+
+b=1
+¯Hb(xb) ≤δ
+1−δ
+
+s=0
+rFPL,s(T /B) + δβu D2 T
+B .
+(1)
+Finally,
+T
+
+t=1
+˜Ht(xt, τt)
+=
+T /B
+
+b=1
+bB
+
+t=(b−1)B+1
+˜Ht(xb, τt)
+(xt is a constant in each mini-batch)
+≥
+T /B
+
+b=1
+⎡
+⎣max
+τ
+bB
+
+t=(b−1)B+1
+˜Ht(xb, τ) −rOGD(B)
+⎤
+⎦
+= B
+T /B
+
+b=1
+¯Hb(xb) −T
+B rOGD(B)
+(deﬁnition of NHb)
+≥B
+⎡
+⎣
+
+1 −1
+e
+ T /B
+
+b=1
+¯Hb(x∗) −δ
+1−δ
+
+s=0
+rFPL,s(T /B) + δβu D2 T
+B
+⎤
+⎦−T
+B rOGD(B)
+(by (1))
+=
+
+1 −1
+e
+ T /B
+
+b=1
+max
+τ
+bB
+
+t=(b−1)B+1
+˜Ht(x∗, τ) −Bδ
+1−δ
+
+s=0
+rFPL,s(T /B) + T δβu D2 −T
+B rOGD(B)
+≥
+
+1 −1
+e
+ T /B
+
+b=1
+bB
+
+t=(b−1)B+1
+˜Ht(x∗, τ ∗) −Bδ
+1−δ
+
+s=0
+rFPL,s(T /B) + T δβu D2 −T
+B rOGD(B)
+=
+
+1 −1
+e
+
+T
+
+t=1
+˜Ht(x∗, τ ∗) −Bδ
+1−δ
+
+s=0
+rFPL,s(T /B) + T δβu D2 −T
+B rOGD(B).
+Thus we have the desired bound in Theorem 4.3.
+⊓⊔
+Finally, we need to convert the approximate regret bound in Theorem 4.3, which relates
+to the smoothed auxiliary functions ˜Ht, to the one relating the original auxiliary function
+Ht for CVaR. This is achieved by choosing the smoothing parameter u > 0 appropriately.
+Summarizing the above argument and plugging in the regret bounds of OGD and FPL, we
+obtain the following.
+123
+
+406
+Annals of Operations Research (2023) 320:393–414
+Theorem 4.4 Under Assumption 3.1, Algorithm 4 achieves
+
+1 −1
+e
+
+T
+
+t=1
+Ht(x∗, τ ∗) −
+T
+
+t=1
+Ht(xt, τt)
+≤Bδ
+1−δ
+
+s=0
+rFPL,s(T /B) + T
+B rOGD(B) + δβu D2T + uT
+
+1 + 1
+α
+
+.
+for any x∗and τ ∗. By setting B =
+αCα
+√
+T
+DGn1/4 , δ =
+α2
+D2
+
+(1+α)GL
+√
+T +αβT 1/4
+, η =
+1
+Cα
+√
+B ,
+λ = αDn1/4√B/T
+G
+, u =
+T −1/4
+(1+1/α), and DFPL = Unif([0, 1]n), we obtain
+
+1 −1
+e
+
+T
+
+t=1
+Ht(x∗, τ ∗) −
+T
+
+t=1
+Ht(xt, τt) ≤O
+√CαGDn1/8
+√α
+
+T 3/4,
+where Cα := max{1, 1
+α −1}. Further, if K is an integral polytope contained in {x ∈[0, 1]n :
+
+i xi = k}, then
+
+1 −1
+e
+
+T
+
+t=1
+Ht(x∗, τ ∗) −
+T
+
+t=1
+Ht(xt, τt) ≤O
+√CαG∞k3/4 log1/4 n
+√α
+
+T 3/4
+for B =
+√
+2Cα
+√
+T α
+2G∞k3/2√
+log (n), δ =
+α2
+D2
+
+(1+α)GL
+√
+T +αβT 1/4
+, η =
+1
+Cα
+√
+B , λ =
+
+B
+T k , u =
+T −1/4
+(1+1/α),
+and DFPL = N(0, I).
+Remark 4.5 One may wonder if we can replace the inner FPL algorithms with online mirror
+descent (OMD) (Hazan, 2016) to obtain a (theoretically) better bound. A drawback of OMD is
+that it requires an oracle that computes the Bregman projection on K, which is more powerful
+than the linear optimization oracle used in our algorithm. This difference has a signiﬁcant
+effect on computational complexity. For example, if K is a matroid polytope, then the linear
+optimization on K can be solved efﬁciently with the greedy algorithm, whereas the Bregman
+projection requires minimizing submodular functions multiple times (Suehiro et al., 2012).
+Therefore, we omit the OMD version in this paper.
+5 Online to batch conversion and Proof of Theorem 3.4
+In this section, we show that an algorithm for adversarial online submodular CVaR learning
+can be used for CVaR maximization in an i.i.d. environment. As an application, we show that
+StochasticRASCAL outputs feasible x that E[CVaRD(x)] ≥(1 −1/e) CVaRD(x∗) −
+O(T −1/4) for an arbitrary feasible x∗. The idea behind the conversion is similar to an online
+to batch conversion (Cesa-Bianchi et al., 2002)
+Let z1, . . . , zT be i.i.d. samples, Ft = F(·; zt), and Ht be a function deﬁned as
+Ht(x, τ) = τ −1
+α [τ −Ft(x)]+ = τ −1
+α [τ −F(x; zt)]+,
+for t = 1, . . . , T . Deﬁne a function H by
+H(x, τ) = τ −1
+α Ez∼D [τ −F(x; z)]+.
+123
+
+Annals of Operations Research (2023) 320:393–414
+407
+Note that CVaRD(P)
+=
+maxτ∈[0,1] H(P, τ). Further, for ﬁxed x and τ, we have
+Ezt Ht(x, τ) = H(x, τ).
+Lemma 5.1 (online to batch) Suppose that an online algorithm outputs (xt, τt) for
+F1, . . . , FT . Let x be sampled uniformly at random from x1, . . . , xT . Then, for an arbi-
+trary x∗∈K,
+E[CVaRD(x)] ≥
+
+1 −1
+e
+
+CVaRD(x∗) −1
+T E[regret1−1/e(T )],
+where the expectation is taken over z1, . . . , zT and the randomness of the online algorithm.
+Proof First, we note that
+Ez1,...,zT Ht(xt, τt) = Ez1,...,zt−1 Ezt [Ht(xt, τt) | z1, . . . , zt−1]
+= Ez1,...,zt−1 H(xt, τt),
+where in the last equality we used xt, τt is independent to zt by the deﬁnition of online
+algorithms. For an arbitrary x∗∈K, τ ∗∈[0, 1], we have
+E[CVaRD(x)]
+= 1
+T
+T
+
+t=1
+Ez1,...,zT [CVaRD(xt)]
+≥1
+T
+T
+
+t=1
+Ez1,...,zT [H(x, τt)]
+(since CVaRD(xt) = max
+ø∈[0,1] H(xt, ø) ≥H(xt, øt))
+= 1
+T
+T
+
+t=1
+Ez1,...,zT [Ht(xt, τt)]
+≥1
+T Ez1,...,zT
+
+1 −1
+e
+ T
+
+t=1
+Ht(x∗, τ∗) −1
+T Ez1,...,zT regret1−1/e(T )
+=
+
+1 −1
+e
+
+H(x∗, τ∗) −1
+T Ez1,...,zT regret1−1/e(T )
+(since Ez1,...,zT Ht(x∗, ø∗) = H(x∗, ø∗)).
+Since τ ∗is arbitrary, this implies
+E[CVaRD(x)] ≥
+
+1 −1
+e
+
+CVaRD(x∗) −1
+T E[regret1−1/e(T )].
+⊓⊔
+Hence, the online algorithm in the previous section immediately yields a (1 −1/e)-
+approximation algorithm for CVaR maximization with a convergence rate of O(T −1/4).
+We can also obtain a high-probability version of online to batch conversion.
+Lemma 5.2 (online to batch, high probability) Suppose that an online algorithm outputs
+(xt, τt) for F1, . . . , FT . Let δ ∈(0, 1). Then, for an arbitrary x∗∈K, with probability at
+least 1 −δ,
+1
+T
+T
+
+t=1
+CVaRD(xt) ≥
+
+1 −1
+e
+
+CVaRD(x∗) −
+regret1−1/e(T )
+T
+−2
+
+2T log(1/δ)
+α2T
+.
+123
+
+408
+Annals of Operations Research (2023) 320:393–414
+Proof Let Zt := Ht(xt, τt) −H(xt, τt) −
+
+1 −1
+e
+
+(Ht(x∗, τ ∗) + H(x∗, τ ∗)) for t =
+1, . . . , T . Then, one can check that (Zt)t is a martingale difference sequence and |Zt| ≤2/α.
+Furthermore, by a similar computation as above, we have
+1
+T
+T
+
+t=1
+CVaRD(xt) ≥
+
+1 −1
+e
+
+CVaRD(x∗) −
+regret1−1/e(T )
+T
+−1
+T
+T
+
+t=1
+Zt.
+By the Azuma-Hoeffding inequality, we have Pr(T
+t=1 Zt > β) ≤e
+−
+β2
+2(2/α)2T for any β > 0.
+Setting β = 2√
+2T log(1/δ)
+α
+, we have T
+t=1 Zt ≤2√
+2T log(1/δ)
+α
+with probability at least 1 −δ,
+which completes the proof.
+⊓⊔
+We now prove Theorem 3.4.
+Proof of Theorem 3.4 We only prove the expectation bound; the high probability bound is
+analogous. It is easy to see that StochasticRASCAL is obtained by OnlineRASCAL. We
+note that in StochasticRASCAL, the update of τt is omitted because τt is unnecessary for
+an i.i.d. environment. In other words, only the existence of τt generated by OGD is required.
+Hence, by Lemma 5.1, StochasticRASCAL has convergence rate E[regret1−1/e(T )]/T =
+O(T −1/4), where regret1−1/e(T ) is the (1 −1/e)-regret of OnlineRASCAL. The choice of
+parameters is immediate from Theorem 4.4.
+⊓⊔
+6 CVaR maximization of discrete submodular functions
+We now present our online algorithm for a monotone submodular set function and a matroid
+constraint. Let ft : 2V →[0, 1] be a monotone submodular function corresponding to the
+t-th sample and Ft be its multilinear extension for t = 1, . . . , T .
+The basic idea is to run StochasticRASCAL on the multilinear extensions Ft and the
+matroid polytope K. However, we must address several technical obstacles. First, we must
+compare the output portfolio with the optimal portfolio; the error bound in the previous
+sections compared it with the optimal solution. To this end, we make multiple copies of
+variables so that we can approximate an optimal portfolio by a uniform distribution over
+a multiset of feasible solutions. More precisely, we deﬁne a continuous DR-submodular
+function ¯Ft : K r →[0, 1] by
+¯Ft(x1, . . . , xr) = 1
+r
+r
+
+i=1
+Ft(xi)
+for some sufﬁciently large r. Then, we feed ¯F1, . . . , ¯FT to StochasticRASCAL. Suppose
+that we obtain (x1
+b, . . . , xr
+b) at Line 12 for each mini-batch b = 1, . . . , T /B. Abusing the
+notation, let us denote (x1
+t , . . . , xr
+t ) := (x1
+b, . . . , xr
+b) when the t-th sample is in the b-th
+mini-batch.
+Next, we need to convert x1
+t , . . . , xr
+t to feasible sets without signiﬁcantly deteriorating the
+values of the multilinear extensions. To this end, we independently apply randomized swap
+rounding (Chekuri et al., 2010) q times to each xi to obtain feasible sets Xi,1
+t , . . . , Xi,q
+t
+.
+Note that randomized swap rounding is oblivious rounding and independent from Ft. We can
+show that 1
+q
+q
+j=1 ft(Xi, j
+t
+) is close to Ft(xi
+t) by using a concentration inequality. Finally,
+after T rounds, we return the uniform portfolio over all Xi,q
+t
+. The pseudocode is given in
+Algorithm 5. Carefully choosing r and q, we obtain the following theorem.
+123
+
+Annals of Operations Research (2023) 320:393–414
+409
+Algorithm 5 Online algorithm for maximizing a monotone submodular set function subject
+to a matroid constraint.
+1: Run StochasticRASCAL for ¯F1, . . . , ¯FT and the matroid polytope K and let (x1t , . . . , xrt ) be the tem-
+porary solution at Line 12 in StochasticRASCAL for t = 1, . . . , T .
+2: Xi, j
+t
+←RandomizedSwapRounding(xit) for t = 1, . . . , T , i = 1, . . . ,r, and j = 1, . . . , q.
+3: return Uniform portfolio ¯P over all Xi, j
+t
+.
+Theorem 6.1 Algorithm 5 achieves
+E[CVaR( ¯P)] ≥
+
+1 −1
+e
+
+CVaRD(P∗) −O(k3/4 log1/4(n)T −1/10)
+for arbitrary portfolio P∗, where we set r = ˜O(T 1/5) and q = ˜O(T 3/4) and the expectation
+is taken over z1, . . . , zT and the randomness of the algorithm.
+We need the several lemma. Let ε, δ ∈(0, 1) be arbitrary constants.
+Lemma 6.2 (Wilder, 2018) Let P∗be an arbitrary portfolio. For r =
+˜O(1/ε2), there
+exists a portfolio P such that it is a uniform distribution on r sets and CVaRD,α(P) ≥
+CVaRD,α(P∗) −ε.
+Lemma 6.3 (Wilder, 2018) Suppose that we have q = O(log(1/δ)/ε3) samples X1, . . . , Xq
+of RandomizedSwapRounding applied to x. Then, for any submodular function f and its
+multilinear extension F, we have 1
+q
+q
+j=1 f (X j) ≥F(x)−ε with probability at least 1−δ.
+Now we prove Theorem 6.1. For any x∗1, . . . , x∗r and τ ∗, we have
+T
+
+t=1
+Ht(x1
+t , . . . , xr
+t , τt) ≥
+
+1 −1
+e
+
+T
+
+t=1
+Ht(x∗1, . . . , x∗r, τ ∗) −regret1−1/e(T ),
+where
+Ht(x1
+t , . . . , xr
+t , τt) = τt −1
+α
+
+τt −1
+r
+r
+
+i=1
+Ft(xr
+t )
+
++
+and
+regret1−1/e(T ) ≲T 3/4 (kr)3/4((1 + 1/α) log(nr))1/4
+√α
+by Theorem 4.4. Note that G∞= 1 for the multilinear extensions Ft and K r is contained in
+{x : 
+i xi = kr}. Applying RandomizedSwapRounding to xi
+t q times, we have
+1
+q
+q
+
+j=1
+ft(Xi, j
+t
+) ≥Ft(xi
+t) −ε
+(2)
+with probability at least 1 −δ by Lemma 6.3. By the union bound, we have (2) for all i, t
+with probability at least 1 −rT δ. Hence, by setting δ = O(1/rT ), we only suffer a constant
+regret from the event that (2) does not hold. Hence, we can assume that (2) holds for all i, t.
+Abusing the notation, let us deﬁne
+Ht(P, τ) := τ −1
+α [τ −EX∼P ft(X)]+
+123
+
+410
+Annals of Operations Research (2023) 320:393–414
+for a portfolio P and τ ∈R. Recall that Pt is the portfolio of Xi, j
+t
+for each t. Then, by (2),
+we have
+Ht(Pt, τt) ≥Ht(x1, . . . , xr, τt) −ε
+for all t. Summing this up for t = 1, . . . , T , we obtain
+T
+
+t=1
+Ht(Pt, τt) ≥
+T
+
+t=1
+Ht(x1, . . . , xr, τt) −εT
+≥
+
+1 −1
+e
+
+T
+
+t=1
+Ht(x∗1, . . . , x∗r, τ ∗) −εT −regret1−1/e(T ).
+By the online-to-batch conversion, we have
+Ez1,...,zT CVaRD( ¯P) ≥
+
+1 −1
+e
+
+CVaRD(P∗
+unif) −ε −1
+T Ez1,...,zT regret1−1/e(T ),
+where P∗
+unif is any uniform distribution on r sets. Setting ε = T −1/4, which in turn yields
+q =
+˜O(T 3/4), the entire error will be dominated by regret1−1/e(T ). Finally, we need to
+balance r. Setting r = ˜O(T 1/5), we can approximate an optimal portfolio P∗by a uniform
+portfolio P∗
+unif such that CVaRD(P∗) −CVaRD(P∗
+unif) ≤T −1/10 and r3/4/T 1/4 = T −1/10
+by Lemma 6.2.
+7 Experiments
+In this section, we show our experimental results. In all the experiments, the parameter α of
+CVaR was set to 0.1. The experiments were conducted on a Linux server with Intel Xeon
+Gold 6242 (2.8GHz) and 384GB of main memory.
+7.1 Problem description
+We conducted experiments on the sensor resource allocation problem, in which the goal is
+to rapidly detect a contamination spreading through a network using a limited budget (Bian
+et al., 2017; Leskovec et al., 2007; Soma and Yoshida, 2015).
+Here, we follow the conﬁguration of the experiments conducted in Wilder (2018). Let
+G = (V , E) be a graph on n vertices. A contamination starts at a random vertex and spreads
+over time according to some speciﬁc stochastic process. Let zv be the time at which the
+contamination reaches v, and let zmax = maxv∈V :zv<∞zv. If zv = ∞for some vertex v ∈V ,
+that is, the contamination does not reach v, we reassign zv = zmax, as described in Wilder
+(2018).
+The decision maker has a budget B (e.g., energy) to spend on sensing resources. Let xv
+represent the amount of energy allocated to the sensor at a vertex v. When contamination
+reaches v at time zv, the sensor detects it with probability 1 −(1 −p)xv, where p ∈[0, 1] is
+the probability that detects the contamination per unit of energy. The objective F on vectors
+x = (xv)v∈V and z = (zv)v∈V is the expected amount of detection time that is saved by the
+123
+
+Annals of Operations Research (2023) 320:393–414
+411
+(a)
+(b)
+(c)
+Fig. 2 CVaR and the number of samples T
+sensor placements:
+F(x; z) = zmax −
+n
+
+i=1
+zvi (1 −(1 −p)xvi )
+
+j<i
+(1 −p)xv j ,
+where the vertices are ordered so that zv1 ≤zv2 ≤· · · ≤zvn. It is known that the function F
+is DR-submodular (Bian et al., 2017).
+7.2 Datasets
+We consider two sensing models and generated three datasets. In all of them, the source
+vertex s is chosen uniformly at random.
+The ﬁrst model is the continuous time independent cascade model (CTIC). In this model,
+each edge uv ∈E has propagation time ρuv drawn from an exponential distribution with
+mean λ. The contamination starts at the source vertex s, i.e., zs = 0, and we iteratively
+set zv = minu∈N(v) zu + ρuv, where N(v) is the set of neighbors of v. Note that zv is the
+ﬁrst time that the contamination reaches v from its neighbor. We generated datasets using
+two real-world networks:4 NetScience, a collaboration network of 1461 network scientists,
+and EuroRoad, a network of 1174 European cities and the roads between them. For both
+networks, we set λ = 5 and p = 0.01, and we generated 1000 scenarios.
+4 http://konect.cc.
+123
+
+412
+Annals of Operations Research (2023) 320:393–414
+(a)
+(b)
+(c)
+Fig. 3 CVaR and budget B
+The second model, known as the Battle of Water Sensor Networks (BWSN) (Ostfeld et
+al., 2008), involves contamination detection in a water network. BWSM simulates the spread
+of contamination through a 126-vertex water network consisting of junctions, tanks, pumps,
+and the links between them, and the zv values are provided by a simulator. We set p = 0.001
+and generated 1000 scenarios.
+7.3 Methods
+We compared our method against two ofﬂine algorithms, RASCAL (Wilder, 2018) and the
+Frank–Wolfe (FW) algorithm (Bian et al., 2017). We note that the latter algorithm is designed
+to maximize the expectation of a DR-submodular function instead of its CVaR. We run those
+ofﬂine methods on the generated 1000 scenarios for each dataset. As our method is an online
+algorithm, we run our method on 20,000 samples in an online manner, where each sample
+was uniformly drawn from the set of generated scenarios.
+7.4 Results
+Figure 2 shows how the CVaR changes as T increases. For each dataset, as long as the batch
+size is not excessively small, the CVaR attained by our method approaches to that attained by
+123
+
+Annals of Operations Research (2023) 320:393–414
+413
+RASCAL. FW algorithm showed signiﬁcantly lower performance because it is not designed
+to maximize CVaR.
+Figure 3 shows how the CVaR changes as the budget B increases. For our method, we
+plotted the CVaR after processing 10, 000 samples. We can again conﬁrm that the CVaR
+attained by our method is close to that attained by RASCAL.
+8 Conclusion
+We devised StochasticRASCAL for maximizing CVaR of a monotone stochastic submod-
+ular function. We showed that StochasticRASCAL ﬁnds a (1−1/e)-approximate solution
+withaconvergencerateof O(T −1/4)formonotonecontinuousDR-submodularfunctions.We
+extended it to portfolio optimization for monotone submodular set functions under a matroid
+constraint. Experiments using CTIC and BWSN datasets demonstrated that our algorithm
+can rapidly achieve CVaRs that are comparable to RASCAL.
+Acknowledgements The authors thank the reviewers for their valuable comments. T.S. is supported by JST,
+ERATO, Grant Number JPMJER1903, Japan. Y.Y. is supported in part by JSPS KAKENHI Grant Number
+18H05291 and 20H05965.
+Funding Open Access funding provided by the MIT Libraries.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Anari, N., Pokutta, S., & Tech, G. et al. (2019). Structured robust submodular maximization: Ofﬂine and online
+algorithms. In AISTATS.
+Bian, A. A., Mirzasoleiman, B., Buhmann, J. et al. (2017). Guaranteed non-convex optimization: Submodular
+maximization over continuous domains (pp. 111–120).
+Buchbinder, N., & Feldman, M. (2018). Submodular functions maximization problems. In: Gonzalez, T. F.
+(Ed.), Handbook of approximation algorithms and metaheuristics (2nd ed., chap 42).
+Calinescu, G., Chekuri, C., Pál, M., et al. (2011). Maximizing a monotone submodular function subject to a
+matroid constraint. SIAM Journal on Computing, 40(6), 1740–1766.
+Cardoso, A. R., & Xu, H. (2019). Risk-averse stochastic convex bandit. In AISTATS (pp. 39–47).
+Cesa-Bianchi, N., Conconi, A., & Gentile, C. (2002). On the generalization ability of on-line learning algo-
+rithms. In NIPS (pp. 359–366).
+Chekuri, C., Vondrák, J., & Zenklusen, R. (2010). Dependent randomized rounding via exchange properties
+of combinatorial structures. In FOCS (pp. 575–584).
+Chen, L., Hassani, H., & Karbasi, A. (2018). Online continuous submodular maximization. In AISTATS (pp.
+1896–1905).
+Chen, R., Lucier, B., & Singer, Y. et al. (2017). Robust optimization for non-convex objectives. In NIPS (pp.
+4705–4714).
+Cohen, A., & Hazan, T. (2015). Following the perturbed leader for online structured learning. In ICML (pp.
+1034–1042).
+Fujishige, S. (2005). Submodular functions and optimization (2nd ed.). Elsevier.
+123
+
+414
+Annals of Operations Research (2023) 320:393–414
+Golovin, D., Krause, A., & Streeter, M. (2014). Online submodular maximization under a matroid constraint
+with application to learning assignments. arXiv.
+Hassani, H., Soltanolkotabi, M., & Karbasi, A. (2017). Gradient methods for submodular maximization. In
+NIPS (pp. 5841–5851).
+Hazan, E. (2016). Introduction to online convex optimization. Foundations and Trends® in Optimization,
+2(3–4), 157–325.
+Karbasi, A., Hassani, H., & Mokhtari, A. et al. (2019). Stochastic continuous greedy++: When upper and
+lower bounds match. In NeurIPS (pp. 13087–13097).
+Karimi, M. R., Lucic, M., & Hassani, H. et al. (2017). Stochastic submodular maximization: The case of
+coverage functions. In NIPS.
+Kempe, D., Kleinberg, J., & Tardos, É. (2003). Maximizing the spread of inﬂuence through a social network.
+In KDD (pp. 137–146).
+Krause, A., & Golovin, D. (2014). Submodular function maximization. In Tractability: Practical Approaches
+to Hard Problems (pp. 71–104). Cambridge University Press.
+Krause, A., McMahan, B., Guestrin, C., et al. (2008). Robust submodular observation selection. Journal of
+Machine Learning Research, 9, 2761–2801.
+Krokhmal, P., Palmquist, J., & Uryasev, S. (2002). Portfolio optimization with conditional value-at-risk objec-
+tive and constraints. Journal of Risk, 4, 43–68.
+Leskovec, J., Krause, A., & Guestrin, C. et al (2007). Cost-effective outbreak detection in networks. In KDD
+(pp. 420–429).
+Maehara, T. (2015). Risk averse submodular utility maximization. Operations Research Letters, 43(5), 526–
+529.
+Mansini, R., Ogryczak, W., & Speranza, M. G. (2007). Conditional value at risk and related linear programming
+models for portfolio optimization. Annals of Operations Research, 152(1), 227–256.
+Mokhtari, A., Hassani, H., & Karbasi, A. (2018). Conditional gradient method for stochastic submodular
+maximization: Closing the gap. In AISTATS (pp. 1886–1895).
+Ohsaka, N., & Yoshida, Y. (2017). Portfolio optimization for inﬂuence spread. In WWW (pp. 977–985).
+Ostfeld, A., Uber, J. G., Salomons, E., et al. (2008). The battle of the water sensor networks (BWSN): A design
+challenge for engineers and algorithms. Journal of Water Resources Planning and Management, 134(6),
+556–568.
+Rockafellar, R. T., & Uryasev, S. (2000). Optimization of conditional value-at-risk. Journal of Risk, 2, 21–42.
+Roughgarden, T., & Wang, J. R. (2018). An optimal algorithm for online unconstrained submodular maxi-
+mization. In COLT (pp. 1307–1325).
+Shapiro, A., Dentcheva, D., & Ruszczy´nski, A. (2014). Lectures on stochastic programming: Modeling and
+theory. SIAM.
+Soma, T. (2019). No-regret algorithms for online k-submodular maximization. In AISTATS (pp. 1205–1214).
+Soma, T., & Yoshida, Y. (2015). A generalization of submodular cover via the diminishing return property on
+the integer lattice. In NIPS (pp. 847–855).
+Soma, T., & Yoshida, Y. (2021). Online risk-averse submodular maximization. In Proceedings of the 30th inter-
+national joint conference on artiﬁcial intelligence (IJCAI) (pp. 2988–2994). https://doi.org/10.24963/
+ijcai.2021/411
+Staib, M., Wilder, B., & Jegelka, S. (2019). Distributionally robust submodular maximization. In AISTATS
+(pp. 506–516).
+Streeter, M., & Golovin, D. (2008). An online algorithm for maximizing submodular functions. In NIPS (pp.
+1577–1584).
+Streeter, M., Golovin, D., & Krause, A. (2009). Online learning of assignments. In NIPS (pp. 1794–1802).
+Suehiro, D., Hatano, K., & Kijima, S. et al. (2012). Online prediction under submodular constraints. In
+International conference on algorithmic learning theory (pp. 260–274). Springer.
+Tamar, A., Glassner, Y., & Mannor, S. (2015). Optimizing the CVaR via sampling. In AAAI.
+Vondrák, J. (2013). Symmetry and approximability of submodular maximization problems. SIAM Journal on
+Computing, 42(1), 265–304.
+Wilder, B. (2018). Risk-sensitive submodular optimization. In AAAI (pp. 6451–6458).
+Yau, S., Kwon, R. H., Rogers, J. S., et al. (2011). Financial and operational decisions in the electricity sector:
+Contract portfolio optimization with the conditional value-at-risk criterion. International Journal of
+Production Economics, 134(1), 67–77.
+Zhang, M., Chen, L., & Hassani, H. et al. (2019). Online continuous submodular maximization: From full-
+information to bandit feedback. In NeurIPS (pp. 9210–9221).
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

@@ -1,0 +1,4695 @@
+TITLE: Iterative Collaborative Filtering for Sparse Matrix Estimation
+JOURNAL: Operations_Research
+YEAR: 2021
+DOI: https://doi.org/10.1287/opre.2021.2193
+---
+
+arXiv:1712.00710v4 [math.ST] 10 Sep 2021
+Iterative Collaborative Filtering for Sparse Matrix Estimation
+Christian Borgs ∗Jennifer T. Chayes † Devavrat Shah ‡ Christina Lee Yu §
+Abstract
+We consider sparse matrix estimation where the goal is to estimate an n×n matrix from noisy
+observations of a small subset of its entries. We analyze the estimation error of the popularly
+utilized collaborative ﬁltering algorithm for the sparse regime. Speciﬁcally, we propose a novel
+iterative variant of the algorithm, adapted to handle the setting of sparse observations. We
+establish that as long as the fraction of entries observed at random scale as log1+κ(n)
+n
+for any
+ﬁxed κ > 0, the estimation error with respect to the max-norm decays to 0 as n →∞assuming
+the underlying matrix of interest has constant rank r.
+Our result is robust to model mis-
+speciﬁcation in that if the underlying matrix is approximately rank r, then the estimation error
+decays to the approximate error with respect to the max-norm. In the process, we establish
+algorithm’s ability to handle arbitrary bounded noise in the observations.
+1
+Introduction
+We consider the task of sparse matrix estimation given noisy observations. Let F be an n×n matrix
+which we would like to estimate, and let Z be a noisy signal of matrix F such that E[Z] = F. Let
+E ⊂[n] × [n] denote the subset of indices that are observed. In particular, we observe matrix M
+where M(u, v) = Z(u, v) for (u, v) ∈E, and M(u, v) = 0 for (u, v) /∈E. We assume that the
+entries of Z are independent random variables, and we assume a Bernoulli sampling model; each
+(u, v) ∈[n] × [n] is in E with probability p ∈(0, 1] independently. The goal is to estimate F.
+As a prototype for such a problem, consider a noisy observation of a social network where
+observed interactions are signals of true underlying connections. We might want to predict the
+probability that two users would choose to connect if recommended by the platform, e.g. LinkedIn.
+As a second example, consider a recommendation system where we observe movie ratings provided
+by users, and we may want to predict the probability distribution over ratings for speciﬁc movie-
+user pairs. A popular collaborative ﬁltering approach suggests using “similarities” between pairs
+of users to estimate the probability that a connection is formed or the probability a user likes
+a particular movie.
+Traditionally, the similarities between pair of users in a social network is
+computed by comparing the set of their friends, or in the context of movie recommendation, by
+comparing commonly rated movies. In the sparse setting, most pairs of users have no common
+friends, or most pairs of users have no commonly rated movies; thus there is insuﬃcient data to
+compute the traditional similarity metrics.
+In this work, the primary interest is to provide a principled way to extend the simple, intuitive
+approach of computing similarities between pair of users or items in order to perform sparse matrix
+estimation via nearest neighbor collaborative ﬁltering.
+We propose to do so by incorporating
+∗UC Berkeley, Berkeley, CA; borgs@berkeley.edu
+†UC Berkeley, Berkeley, CA; jchayes@berkeley.edu
+‡Massachusetts Institute of Technology, Cambridge, MA; devavrat@mit.edu
+§Cornell University, Ithaca NY; cleeyu@cornell.edu
+1
+
+information within a larger radius neighborhood of the data graph rather than restricting only to
+immediate neighbors. This variation of collaborative ﬁltering and its analysis in this work can be
+viewed as a natural extension of the work by [2, 4] in the context of stochastic block model and
+[51, 35] for traditional collaborative ﬁltering.
+1.1
+Summary of Contributions
+The primary contribution of this work is an analysis of an iterative collaborative ﬁltering algorithm
+in the sparse regime. We consider the setting of a latent variable model where the matrix F =
+[F(u, v)] can be described by a latent function f evaluated over latent variables associated to the
+coordinates. In particular, we assume that F(u, v) = f(θu, θv) where f is a piece-wise Lipschitz
+function, and θu, θv ∈[0, 1] are coordinate latent variables sampled uniformly at random. Details
+of the model are described in Section 2.
+As the main result of this work, we establish that with high probability the max entry-wise
+error associated with the resulting estimate converges to 0 as long as the latent function f when
+regarded as an integral operator has ﬁnite spectrum with constant rank r and p = Ω(n−1+κ) for
+κ > 0. In addition, if we have knowledge of the spectrum, the algorithm can be improved so that
+the max entry-wise error of the estimate converges to zero as long as p = Ω(n−1 ln1+κ n) for any
+κ > 0. We also establish robustness of our result with respect to the low rank requirement of f.
+In particular, we provide a robust version of our result that holds when f has ε-approximate rank
+r, i.e. there exists a rank r function that approximates f within ε with respect to the ℓ∞norm.
+We establish it by arguing that if all the observed entries are perturbed arbitrarily or adversarially
+within ε, then the algorithm estimates for each entry are perturbed by at most O(max(√ε, ε)).
+The eﬃcacy of the proposed algorithm with respect to arbitrary noise is an interesting result on
+its own.
+Algorithmically and methodologically, our work builds on [2, 3, 4], which estimates clusters
+of the stochastic block model by computing distances from local neighborhoods around vertices.
+We improve upon their algorithm and analysis to provide bounds on the maximum entrywise
+estimation error for the general latent variable model with ﬁnite spectrum. This includes a larger
+class of generative models such as mixed membership stochastic block models, in contrast to their
+work which focuses on the stochastic block model with non-overlapping communities. We note that
+the algorithm considered in this work, uses the knowledge of which entries are observed and which
+are not, in line with the literature on matrix estimation. In the setting of clustering cf. [2, 3, 4],
+such a knowledge is absent from the purview of the algorithm.
+Withthe exception of a few recent results, by and large the literature on matrix estimation
+has focused on providing estimation error bounds with respect to the normalized Frobenius norm.
+In contrast, we provide bounds on the max entry-wise estimation error which is a lot more chal-
+lenging.
+Our bounds are restricted to the latent variable model, while the traditional matrix
+estimation literature considers the underlying matrix to be an arbitrary instance from the family
+of (approximately) low-rank matrices with ‘incoherence’-like conditions. Indeed, understanding the
+relationship between these two seemingly diﬀerent model classes remains an important direction
+for future work.
+A weaker version of this result was published in the NeurIPS conference as [6]. In contrast, this
+paper provides sharper bounds for both the MSE and max-norm error that improves the exponent
+in the convergence rates.
+We have also included a perturbation analysis of the algorithm that
+shows under “adversarial” bounded noise, the error scales gracefully with the bound on the noise.
+This enables analysis of our work for the approximately low-rank setting. We have also included a
+modiﬁed algorithm that achieves the same rates with a reduced computational complexity, and we
+2
+
+have shown extensions of our results to relaxed modeling assumptions on the latent variable model.
+We have added empirical evaluation of our method compared with state-of-art methods.
+1.2
+Related Work
+The related work includes that of matrix estimation or completion, collaborative ﬁltering, and
+graphon estimation arising from the asymptotic theory of graphs. We provide a brief overview of
+prior works for each of these topics.
+In the context of matrix estimation or completion, there has been much progress under the
+low-rank assumption and additive noise model.
+Most theoretically founded methods are based
+on spectral decompositions or minimizing a loss function with respect to spectral constraints, c.f.
+[29, 30, 14, 16, 44, 42, 20, 18, 17, 49]. In a nutshell, this collection of works establishes that if
+the underlying matrix has rank r, then it can be estimated so that the estimator has normalized
+Mean Squared Error (MSE) going to 0 as n →∞as long as p = Ω(rn−1 log n). Furthermore,
+[30, 15] showed that ω(rn−1) samples are necessarily required for such a guarantee. These near
+optimal sample complexity results hold when the noise in each entry of the matrix is independent
+and identically distributed. For the setting of generic noise and the general latent variable model
+where the latent function is analytic, [17, 49] provide an estimator for which the MSE decays to 0
+as n →∞as long as p = Ω(n−1poly(log n)).
+The guarantee with respect to MSE does not necessarily guarantee recovery of all entries ac-
+curately. Indeed, bounding max entrywise error provides such a guarantee as established by our
+result. In parallel with our work, there has been recent progress on developing matrix estimation
+methods that provide max entrywise bounds for matrices with rank r. In particular, for suﬃciently
+‘nice’ rank r matrices, [1] establish that a simple spectral algorithm can recover the matrix with
+max entrywise error decaying to 0 as long as p = Ω(log n/n). Indeed, improving such max entry-
+wise guarantee has been actively pursued over the past few years witnessed in the growing body of
+works, cf. [19], [52], [13], [39] and [23].
+The collaborative ﬁltering method has been successfully employed across industry applications
+(Netﬂix, Amazon, Youtube) due to its simplicity and scalability, c.f. [27, 37, 33, 43]; however the
+theoretical results have been relatively sparse. We call special attention to the recent works by
+[51, 35, 36] which provide a non-parametric statistical perspective for the traditional collaborative
+ﬁltering method. In particular, they suggest that the practical success of these methods across a
+variety of applications may be due to its ability to capture local structure like the classical nearest
+neighbor or kernel regression method.
+They establish that as long as the latent function f is
+Lipschitz, the MSE of the resulting estimator decays to 0 as n →∞as long as p = ω(n−1
+2). A
+key limitation of this approach is that it requires a dense dataset with suﬃcient entries in order to
+compute similarity metrics, requiring that each pair of rows or columns has a growing number of
+overlapped observed entries, which does not hold when p = o(n−1/2).
+Graphons emerged as the limiting object of a sequence of large dense graphs, c.f. [12, 22, 38],
+with recent work extending the theory to sparse graphs, c.f.
+[10, 11, 9, 47].
+In the graphon
+estimation problem, one observes a single instance of a random graph sampled from an underlying
+latent variable model, and the goal is to estimate the function that governs the edge probabilities
+of the graph. [24, 31] provide minimax optimal rates for graphon estimation; however a majority
+of the proposed estimators are not computable in polynomial time, since they require optimizing
+over an exponentially large space (e.g. least squares or maximum likelihood), c.f. [48, 8, 7, 24,
+31]. [8] provides a polynomial time method based on degree sorting in the special case when the
+expected degree function is monotonic. [49] analyzes universal singular value thresholding (USVT)
+for graphon estimation in settings that the spectrum decays quickly, showing convergence rates
+3
+
+which matches the minimax optimal rate for low dimensional smooth functions.
+Stochastic block model (SBM) parameter estimation is an instance of graphon estimation, where
+the underlying function has a speciﬁc structure. Under the SBM, each vertex is associated to one
+of r community types, and the probability of an edge is a function of the community types of
+both endpoints. This implies that the edge probability function is block constant. Estimating the
+n × n parameter matrix becomes an instance of matrix estimation with a technical distinction –
+all entries are fully observed, i.e. each edge is present (1) or absent (0). In SBM, the expected
+matrix is at most rank r due to its block structure. Precise thresholds for cluster detection (better
+than random) and estimation have been established by [2, 3, 4]. As mentioned before, our work,
+both algorithmically and methodically is closely related to their work. The mixed membership
+stochastic block model (MMSBM) allows each vertex to be associated to a length r vector, which
+represents its weighted membership in each of the r communities.
+The probability of an edge
+is a function of the weighted community memberships vectors of both endpoints, resulting in an
+expected matrix with rank at most r. Recent work by [45] provides an algorithm for weak detection
+for MMSBM with sample complexity r2n, when the community membership vectors are sparse and
+evenly weighted. They provide partial results to support a conjecture that r2n is a computational
+lower bound, separated by a gap of r from the information theoretic lower bound of rn. This gap
+was ﬁrst shown in the simpler context of the stochastic block model [21]. [50] proposed a spectral
+clustering method for inferring the edge label distribution for a network sampled from a generalized
+stochastic block model. When the expected function has a ﬁnite spectrum decomposition, i.e. low
+rank, then they provide a consistent estimator for the sparse data regime, with Ω(n log n) samples.
+In the above discussion, we have focused primarily on the sample complexity required for con-
+sistent estimation, i.e. the scaling of the number of samples required (pn) such that the normalized
+estimation error such as the MSE or max-norm goes to 0. When consistent estimation is feasible,
+we can further consider the rate of decay of the error guarantees. To that end, we provide a brief
+overview of the minimax scaling with respect to boudns on the MSE. [17] identiﬁes a minimax lower
+bound on the scaling of the MSE for a generic matrix estimation task characterized by the nuclear
+norm of the target matrix. In particular, for symmetric matrices with nuclear norm bounded by
+δ, the minimax MSE scaling is lower bounded by min
+ δ
+√
+n3p, δ2
+n2, 1
+
+; furthermore [17] argues that
+the universal singular value thresholding achieves this scaling. This bound holds even in the sce-
+nario where observed entries are noiseless. This characterization however is loose for the setting
+of low-rank matrices. Observe that for rank r symmetric matrices with entries bounded in [−1, 1],
+the nuclear norm can scale as n√r; resulting in a bound of
+q
+r
+np (for small enough p) [17]. For
+the setting of rank r matrices with noiseless observations, [29, 30] provide an estimator with MSE
+scaling as
+r
+np for p = Ω(1/n). This points to the fact that the class of matrices with bounded nuclear
+norm is more complex than the class of rank r matrices with bounded entries. In the setting of low
+rank graphon estimation (i.e. binary observations), [25, 32] show a minimax lower bound on the
+MSE scaling as log r
+pn for small enough p = Ω(log r/n); however the existence of a computationally
+eﬃcient estimator that achieves this lower bound under the more general noise setting of graphon
+estimation is still an open research direction.
+2
+Setup
+2.1
+Model and Assumptions
+Recall that our goal is to estimate the n × n matrix F; Z is a noisy signal of matrix F such that
+E[Z] = F. The available data is denoted by (E, M), where E ⊂[n]×[n] denotes the subset of indices
+4
+
+for which data is observed, and M is the n × n data matrix where M(u, v) = Z(u, v) for (u, v) ∈E,
+and M(u, v) = 0 for (u, v) /∈E. The observations can be equivalently represented by an directed
+weighted graph G with vertex set [n], edge set E, and edge weights given by M. We assume that
+{Z(u, v)}(u,v)∈[n]2 are independent random variables across all indices with E[Z(u, v)] = F(u, v),
+and that the underlying matrix and observations are bounded, i.e. F(u, v), Z(u, v) ∈[0, 1]. We
+assume a uniform Bernoulli sampling model, where each entry is observed independently with
+probability p, i.e. {I((u, v) ∈E)}(u,v)∈[n]2 are independent Bernoulli(p) random variables.
+Latent Variable Model.
+Assume that each u ∈[n] is associated to a latent feature variable θu ∼
+U[0, 1], which is drawn independently across indices [n] uniformly on the unit interval. We assume
+that the expected data matrix can be described by the latent function f, i.e. F(u, v) = f(θu, θv),
+where f : [0, 1]2 →[0, 1] is a symmetric bounded function. The symmetry assumption can be easily
+relaxed but is assumed for ease of notation in the analysis. The latent function f is assumed to be
+ﬁxed and independent of the dimension n. We additionally impose local neighborhood properties
+that are primarily used in the nearest neighbor portion of the analysis. We will assume that f is
+Lipschitz, but this assumption can be relaxed as discussed in Section 2.2.
+Low Rank.
+We assume that the latent function f has ﬁnite spectrum with rank r when regarded
+as an integral operator, i.e. for any θu, θv ∈[0, 1],
+f(θu, θv) =
+r
+X
+k=1
+λkqk(θu)qk(θv),
+where λk ∈R for 1 ≤k ≤r, and qk are orthonormal ℓ2 functions for 1 ≤k ≤r such that
+Z 1
+0
+qk(y)2dy = 1 and
+Z 1
+0
+qk(y)qh(y)dy = 0 for k ̸= h ∈[r].
+We assume there exists some B such that supy∈[0,1] |qk(y)| ≤B for all k ∈[r]. Let Λ denote the
+r×r diagonal matrix with {λk}k∈[r] as the diagonal entries, and let Q denote the r×n matrix where
+Q(k, u) = qk(θu). Since Q is a random matrix depending on the sampled θ, it is not guaranteed
+to be an orthonormal matrix (even though qk are orthonormal functions). By deﬁnition, it follows
+that F = QT ΛQ. Let r′ ≤r be the number of distinct valued eigenvalues amongst {λk}k∈[r]. Let
+˜Λ denote the r × r′ matrix where ˜Λ(a, b) = λb−1
+a
+.
+The ﬁnite spectrum assumption also implies that the model can be represented by latent vari-
+ables in the r dimensional Euclidean space, where the latent variable for node i would be the vector
+(q1(θi), . . . qr(θi)), and the latent function would be bilinear, having the form
+f(⃗q, ⃗q′) =
+X
+k
+λkqkq′
+k = qTΛq′.
+This condition also implies that the expected matrix F is low rank, which includes scenarios such
+as the mixed membership stochastic block model and ﬁnite degree polynomials. The function f is
+ﬁxed with respect to n, the rank r is assumed to be ﬁnite in the low rank setting.
+The mixed membership model for network data can be represented with a ﬁnite spectrum
+latent variable model.
+Each coordinate is associated to a vector π ∈∆r, sampled iid from a
+distribution P. For two nodes with respective types π and π′, the observed interaction is f(π, π′) =
+P
+ij πiπ′
+jBij = πT Bπ′, where B ∈[0, 1]r×r and assumed to be symmetric. Since B is symmetric,
+there exists a diagonal decomposition B = U ˜ΛU T with uk denoting the eigenvectors, such that
+5
+
+f(π, π′) = Pr
+k=1 ˜λkuT
+k πuT
+k π′. It follows from this decomposition that the Hilbert-Schmidt integral
+operator associated to function f : ∆r × ∆r →[0, 1] has ﬁnite spectrum with rank at most r.
+Interaction data arising from symmetric ﬁnite degree polynomials also leads to ﬁnite spec-
+trum latent variable models.
+Let f(x, y) be a ﬁnite degree symmetric polynomial, represented
+by f(x, y) = Pr
+i=0
+Pr
+j=0 cijxiyj, where cij = cji for all ij.
+Let x = (1, x, x2, . . . xr) and y =
+(1, y, y2, . . . yr), and let C denote the (r+1)×(r+1) matrix with entries [cij], so that f(x, y) = xT Cy.
+Since C is symmetric, there exists a diagonal decomposition B = U ˜ΛU T with uk denoting the
+eigenvectors, such that f(x, y) = Pr
+k=1 ˜λkuT
+k xuT
+k y. It follows from this decomposition that the
+Hilbert-Schmidt integral operator associated to function f has ﬁnite spectrum with rank at most
+r.
+Approximately Low Rank.
+More generally, we shall consider approximately low-rank f cf.
+[46]. Speciﬁcally, for a given ε > 0, a symmetric function f is said to have ε-approximate rank r if
+sup
+θu,θv∈[0,1]
+f(θu, θv) −
+r
+X
+k=1
+λkqk(θu)qk(θv)
+ ≤ε,
+(1)
+where λk ∈R for 1 ≤k ≤r, and qk are orthonormal ℓ2 functions for 1 ≤k ≤r. In this case,
+it follows that F = QT ΛQ + ε where ε = [εij] ∈Rn×n is such that maxij |εij| ≤ε. That is, the
+matrix F is approximately rank r. Functions f which do not have ﬁnite spectrum, but for which
+the eigenvalues decay quickly can be shown to have approximately low rank.
+[17, 49] use this
+observation to analyze the USVT algorithm for latent variable model estimation with Lipschitz,
+Holder, and Sobolev functions. [46] also show that any analytic function with bounded derivatives
+has approximately low rank. Recall again that we assume the function f is ﬁxed with respect to n,
+but we can consider the choice of ε to be dependent on n, so that the ε approximate rank r would
+grow with respect to n.
+2.2
+Discussion on Latent Variable Model
+The latent variable model assumes a random generative model on the underlying matrix F, as
+opposed to the typical deterministic incoherence style conditions found in the literature.
+The
+generative model assuming i.i.d. sampled latent variables and boundedness of the eigenfunctions
+of f guarantee similar properties as incoherence with high probability, as any single row or column
+will not dominate the signal in a way that deviates too much from the typical values of f. The
+i.i.d. sampling assumption on the latent variables is used in analyzing the local neighborhoods of
+the observation graph, however this assumption can likely be replaced by regularity assumptions
+over the empirical distribution of the latent factors for large n, e.g. if the latent factors are close
+to a typical sample set from a well-behaved underlying distribution.
+The Lipschitzness assumption of f together with the assumption that θu ∼U[0, 1], guarantees
+that for any given u ∈[n] there are suﬃciently many other coordinates v ∈[n] such that the
+observed entries are similar across both rows or columns. These assumptions can be relaxed as
+long as the key property of “suﬃciently many similarly behaving coordinates” is maintained. As
+examples, a piecewise Lipschitz function f or a setting with ﬁnite latent types would also satisfy
+the needed local neighborhood properties. Similarly, the scalar assumption on the latent variables
+and the uniform distribution U[0, 1] are not crucial and can be relaxed to i.i.d. sampled random
+latent vectors from a larger class of distributions.
+The critical conditions to maintain are the
+ﬁnite spectrum of f, boundedness of eigenfunctions, and local neighborhood properties. The local
+measure needs to be concentrated enough relative to the rate of change in the function f so that
+6
+
+when n points are sampled from the space, there are suﬃcently many “nearby neighbors” for whom
+the function behaves similarly for any given point we would want to estimate. This primarily aﬀects
+the nearest neighbor portion of the algorithm and analysis. [36] also provides a formal discussion
+and results for extending the nearest neighbor analysis to accommodate settings beyond scalar
+Lipschitz functions. Our model can also be extended to asymmetric matrix settings and categorical
+data. Section 6 discuss how our theorem extend to some of these model variations.
+2.3
+Goal
+The goal is to produce ˆF, an estimate of F, using observation matrix M and knowledge of E. We
+measure the estimation error through the maximum entry-wise error and the mean squared error.
+The maximum entry-wise error or ∞-norm of the error matrix ˆF −F is deﬁned as
+∥ˆF −F∥max = max
+u,v | ˆF(u, v) −F(u, v)|.
+(2)
+We will provide bounds on this that hold with high probability, that is, with probability converging
+to 1 as n →∞. The mean squared error (MSE) is deﬁned as
+MSE( ˆF) = 1
+n2 E
+h X
+u,v
+( ˆF(u, v) −F(u, v))2i
+.
+(3)
+In measuring error either with high probability or in expectation, the randomness is considered
+over the data generation process.
+3
+Algorithm
+We propose and analyze a variation of the similarity based collaborative ﬁltering algorithm. At its
+core, the collaborative ﬁltering algorithm attempts to produce the estimate ˆF(u, v) by averaging
+over observed entries F(u′, v′) for a subset of tuples (u′, v′) such that u′ is “similar” to u and v′ is
+“similar” to v.
+Sample Splitting. To state the precise algorithm, for technical reasons, we shall use sample splitting.
+Recall that E ⊂[n]2 denotes the set of indices for which we observe noisy signals of F(u, v),
+i.e. for each (u, v) ∈E, M(u, v) = Z(u, v) where E[Z(u, v)] = F(u, v). We assumed that E is
+generated according to a Bernoulli(p) sampling model, i.e. for each (u, v) ∈[n]2, it belongs to E
+with probability p independently. We split the samples E into three subsets as follows: for each
+tuple or edge (u, v) ∈E, with probability 1/4 it is placed in E′, with probability 1/4 it is placed in
+E′′, and with the remaining 1/2 probability it is placed in E′′′ = E\(E′ ∪E′′).
+We will use additional “virtual” edges that will aid in estimating the distance as part of
+the algorithm.
+To that end, note that conditioned on the edge set E′, for some (u, v) /∈E′,
+P ((u, v) ∈E′′|E′) =
+p
+4−p = p′.
+Furthermore, conditioned on E′, I((u, v) ∈E′′) are independent
+random variables.
+Conditioned on E′, we generate a random subset E′
+ind ⊆E′ such that each
+(u, v) ∈E′ is included in E′
+ind independently with probability p′ =
+p
+4−p. Therefore, conditioned
+on E′, the set E′
+ind ∪E′′ is distributed according to a Bernoulli(p′) sampling model, where each
+(u, v) ∈[n]2 are included in E′
+ind ∪E′′ independently with probability p′.
+For each u, v ∈[n], deﬁne M′(u, v) = I((u, v) ∈E′)M(u, v), M′
+ind(u, v) = I((u, v) ∈E′
+ind)M(u, v),
+M′′(u, v) = I((u, v) ∈E′′)M(u, v), and M′′′(u, v) = I((u, v) ∈E′′′)M(u, v); let M′ = [M′(u, v)],
+M′
+ind = [M′
+ind(u, v)], M′′ = [M′′(u, v)] and M′′′ = [M′′′(u, v)] denote the associated n × n matrices.
+Note that M′
+ind is strictly contained within M′ as E′
+ind ⊆E′. The algorithm will use observations
+7
+
+M′ and M′′ to producing distance estimates ˆd, and it uses observations M′′′ to produce the ﬁnal
+estimate ˆF given ˆd.
+Noisy Nearest Neighbor Algorithm. We consider the following noisy nearest neighbor algorithm
+described below, followed by three diﬀerent subroutines to compute distances depending on the
+sparsity regime of the dataset.
+(1) Compute distances ˆd(u, v) between pairs of coordinates u, v ∈[n]2 using M′ and M′′.
+(2) For each u, v ∈[n]2, produce an estimate
+ˆF(u, v) =
+1
+|E′′′
+uv|
+P
+(a,b)∈E′′′
+uv M′′′(a, b),
+(4)
+where E′′′
+uv = {(a, b) ∈E′′′ : ˆd(u, a) < η, ˆd(v, b) < η} for some small enough η > 0.
+We will choose the threshold η = η(n) depending on the local geometry of the latent feature
+space with respect to ˆd(u, v), in order to guarantee that η(n) is small enough to drive the bias
+to zero, yet large enough to ensure |E′′′
+uv| diverges so that the variance due to observation noise is
+small. The key part of the algorithm is determining how to estimate the distances ˆd(u, v). In what
+follows, we describe three variations depending upon the observation density, p.
+3.1
+Estimating Distance ˆd
+Dense Regime. When p = ω(n−1
+2 ), it is feasible to compute distances by simply looking at the
+overlapping entries; this is popularly done in practice [27] as well as analyzed theoretically in the
+recent works [51, 35]. For any (u, a) ∈[n]2,
+ˆd(u, a) =
+1
+|Oua|
+P
+y∈Oua(M(u, y) −M(a, y))2,
+(5)
+where Oua = {y ∈[n] : (u, y), (a, y) ∈E′}. This is a ﬁnite sample approximation of
+R 1
+0 (f(θu, y) −
+f(θv, y))2 dy. When p = ω(n−1
+2), it follows that |Oua| = ω(1) for all u, a ∈[n]2 with high probability,
+so that ˆd(u, a) ≈
+R 1
+0 (f(θu, y) −f(θv, y))2 dy. [35] subsequently prove that for any Lipschitz latent
+function f the MSE decays to 0 as n →∞as long as p = ω(n−1
+2 ). The arguments of [35] can
+be adapted to show that the maximum entry-wise error decays to 0 with high probability as well.
+However, for p = o(n−1
+2), for most u, a ∈[n]2, Oua = ∅with high probability and hence a diﬀerent
+approach is needed – overcoming the sparse regime is the primary interest of this work.
+Sparse Regime. Consider the sparse regime where p = n−1+κ for any κ ∈(0, 1
+2); in this regime the
+overlap is small and thus new distance estimates are required. Recall that the function f has ﬁnite
+spectrum, i.e.
+f(θu, θv) = P
+k λr
+k=1qk(θu)qk(θv). We propose an estimator which approximates
+d(u, v) = ∥ΛtQ(eu −ev)∥2
+2 by comparing depth t neighborhoods of u and v in the data graph G =
+([n], E′). Speciﬁcally, let the weight of an edge (a, b) ∈E′ in graph G be the observed value M(a, b)
+(= M′(a, b)). By assumption, in expectation this weight equals F(a, b) = f(θa, θb). Therefore,
+the product of weights along a path from u to y, of length t, denoted as (u, x1, . . . , xt−1, y) with
+(u, x1), (x1, x2), . . . , (xt−1, y) ∈E′, in expectation equals
+EX1,...,Xt−1
+h
+f(θu, X1) ×
+t−2
+Y
+s=1
+f(Xs, Xs+1) × f(Xt−1, θy)|θu, θy
+i
+= Pr
+k=1 λt
+kqk(θu)qk(θy)
+= eT
+u QT ΛtQey.
+(6)
+8
+
+Therefore, the product of weights along the path connecting u to y is a good proxy of quantity
+eT
+u QT ΛtQey. Recall that each entry is observed independently with probability p due to our assumed
+Bernoulli sampling model. Therefore, for any u ∈[n], the number of neighbors of u in G scale as
+pn = nκ. More generally, for 1 ≤t ≤1/κ, the number of nodes at distance t from u scale as nκt.
+We choose t large enough to guarantee that for any two nodes u and v, there is a suﬃcient overlap
+between the two subset of nodes at distance y from nodes u and v respectively. This suggests that
+we choose t so that nκt ≈n
+1
+2 , which in eﬀect aggregates enough data in the sparse regime to match
+the expected number of observations per row in the dense regime. We formalize this intuition in
+the following construction of the distance estimates.
+Let Su,s denote the set of vertices which are at distance s from vertex u in the graph deﬁned by
+edge set E′. Speciﬁcally, i ∈Su,s if the shortest path in G = ([n], E′) from u to i has a length of s.
+Let Tu denote a breadth-ﬁrst tree in G rooted at vertex u. The breadth-ﬁrst property ensures that
+the length of the path from u to i within Tu is equal to the length of the shortest path from u to
+i in G. Let T t
+u ⊂Tu denote the sub-tree containing all nodes and edges in Tu up to and including
+depth t. If there is more than one valid breadth-ﬁrst tree rooted at u, choose one uniformly at
+random. Let Nu,t ∈[0, 1]n denote the following vector with support on the boundary of the depth-t
+neighborhood of vertex u (we also call Nu,t the neighborhood boundary):
+Nu,t(i) =
+(Q
+(a,b)∈pathTu(u,i) M′(a, b)
+if i ∈Su,t,
+0
+if i /∈Su,t,
+where pathTu(u, i) denotes the set of edges along the path from u to i in the tree Tu. The sparsity of
+Nu,t(i) is equal to |Su,t|, and the value of the coordinate Nu,t(i) is equal to the product of weights
+along the path from u to i. Let ˜Nu,t denote the normalized neighborhood boundary such that
+˜Nu,t = Nu,t/|Su,t|. For each tuple (u, v) ∈[n]2, compute ˆd(u, v) according to
+ˆd(u, v) =
+  1
+p′
+  ˜Nu,t −˜Nv,t
+T (M′′ + M′
+ind)
+  ˜Nu,t+1 −˜Nv,t+1
+
+.
+(7)
+Sparser Regime. Consider the even sparser regime where p = n−1 ln1+κ n for some κ > 0. Let
+us assume that the algorithm knows the eigenvalues {λk}k∈[r].
+Recall that r′ ≤r denotes the
+number of distinct valued eigenvalues amongst {λk}k∈[r]. Recall that Λ is the diagonal matrix with
+Λkk = λk, and ˜Λ is the r × r′ Vandermonde matrix where ˜Λ(a, b) = λb−1
+a
+. Let z ∈Rr′ be the vector
+that satisﬁes Λ2t+2 ˜Λz = Λ21; z always exists and is unique because ˜Λ is a Vandermonde matrix,
+and Λ−2t1 lies within the span of its columns. For every (u, v) ∈[n]2, compute distance according
+to
+ˆd(u, v) =
+  1
+p′
+ P
+ℓ∈[r′] zℓ
+  ˜Nu,t −˜Nv,t
+T (M′′ + M′
+ind)
+  ˜Nu,t+ℓ−˜Nv,t+ℓ
+
+.
+(8)
+3.2
+Reducing computation by subsampling vertices
+The pairwise distances can only be estimated up to a limited precision depending on the sparsity
+of the data and amount of noise in the observations, and furthermore we tune the nearest neighbor
+threshold to tradeoﬀbetween bias and variance. As a result, the performance of the algorithm can
+be maintained with reduced computation by clustering the coordinates so that not all n2 pairwise
+distances need to be computed. This would involve adding an extra step at the beginning of the
+algorithm that samples suﬃciently many “anchor” vertices K ⊂[n] that cover the space well. |K|
+should be chosen large enough such that for any vertex u ∈[n], there exists some anchor vertex
+i ∈K which is “close” to u in the sense that ∥ΛQ(eu −ei)∥2
+2 is small. For all n vertices, we only
+9
+
+compute the distances to each of the |K| anchor vertices, and we let π : [n] →K be a mapping
+from each vertex to the anchor vertex that minimizes the estimated distance ˆd as computed in the
+original algorithm statement, π(u) = arg mini∈K ˆd(u, i). The ﬁnal estimate then is given by
+ˆF(u, v) = ˆF(π(u), π(v)) =
+1
+|Eπ(u)π(v)|
+X
+(a,b)∈Eπ(u)π(v)
+M′′′(a, b),
+where Eπ(u)π(v) denotes the set of undirected edges (a, b) such that (a, b) ∈E3 and both ˆd(π(u), a)
+and ˆd(π(v), b) are less than some threshold η. We can compute Eπ(u)π(v) by the clustering assign-
+ments and distances of all vertices to the anchor vertices.
+3.3
+Computational Complexity
+To analyze the computational complexity of the algorithm, we consider each step. Growing local
+neighborhoods around each vertex costs at most n|E|, since there are n vertices and the BFS trees
+visit each edge at most once. Computing the inner product for all pairs of vertices given the local
+neighborhood vectors costs at most n2|E|, since there are n2 vertex pairs and |E| entries in the data
+matrix M. The ﬁnal nearest neighbor estimator involves a (weighted) average of the datapoints,
+which costs at most n2|E|, as there are n2 entries in the matrix to estimate, and at worst the estimate
+would involve averaging over |E| datapoints. This extremely crude bound leads to a computational
+complexity of O(pn4). The bottleneck of the algorithm is the ﬁnal nearest neighbor estimate, which
+may be reduced by using approximate nearest neighbor methods.
+If we instead used the modiﬁed algorithm that subsamples |K| anchor vertices at random and
+treats them as “cluster centers”, there are only (|K|2 + n|K|) pairwise distances computed, for a
+computational cost of (|K|2 + n|K|)|E| instead of n2|E|. Once we cluster the vertices, the ﬁnal
+estimate is only computed for the pairwise cluster blocks, as the ﬁnal estimate is a block constant
+matrix with only |K|2 distinct valued estimates. This results in |K|2|E| computation for the ﬁnal
+step of the estimation. The computational complexity reduces from O(n2|E|) to O((|K|2+n|K|)|E|).
+The choice of |K| depends on the distribution of latent variables, the shape of the latent function,
+and the error tolerance. In a setting with ﬁnitely many latent types, then |K| would be roughly
+linear in the number of latent types.
+A practical beneﬁt of our algorithm is that it is amenable to a distributed and parallelized im-
+plementation. The key computational step of our algorithm involves comparing the expanded local
+neighborhoods of pairs of vertices to ﬁnd the “nearest neighbors”. As the algorithm is inherently
+local with respect to the data graph, it can be easily implemented for large scale datasets where
+the data may be stored in a distributed fashion optimized for local graph computations. The local
+neighborhoods can be computed in parallel, as they are independent computations. Using approx-
+imate nearest neighbor techniques and subsampling vertices to cluster will additionally reduce the
+computation.
+3.4
+Discussion
+In practice, we may not know the model parameters, and we would use cross validation to tune
+the BFS tree depth t and nearest neighbor threshold η. If the depth t is either too small or too
+large, then the vector Nu,t will be too sparse, and will not optimally aggregate the datapoints. The
+threshold η trades oﬀbetween bias and variance of the ﬁnal estimate. When the sampled obser-
+vations are not uniform across entries, the algorithm may require more modiﬁcations to properly
+normalize for high degree hub vertices, as the optimal choice of depth t may diﬀer depending on
+the local sparsity.
+10
+
+In our algorithm, we assumed that we observed the edge set E. Speciﬁcally, this means that
+we are able to distinguish between entries of the matrix that have value zero because they are
+not observed, i.e. (i, j) /∈E, or if the entry was observed to be value zero, i.e. (i, j) ∈E and
+M(i, j) = Z(i, j) = 0. This ﬁts well for applications such as recommendations, where the system
+does know the information of which entries are observed or not. Some social network applications
+contain this information (e.g. facebook would know if they have recommended a link which was
+then ignored) but other network information may lack this information, e.g. we do not know if link
+does not exist because observations are sparse, or because observations are dense but the probability
+of an edge is small. The absence of this knowledge would primarily aﬀect the normalization of the
+neighborhood vectors as well as the normalization in the ﬁnal averaging step.
+The idea of comparing vertices by looking at larger radius neighborhoods was introduced in
+[2], and has connections to belief propagation [21, 4] and the non-backtracking operator [34, 28,
+41, 40, 5]. The non-backtracking operator was introduced to overcome the issue of sparsity. For
+sparse graphs, vertices with high-degree dominate the spectrum, such that the informative compo-
+nents of the spectrum get hidden behind the high degree vertices. The non-backtracking operator
+avoids paths that immediately return to the previously visited vertex in a similar manner as belief
+propagation, and its spectrum has been shown to be more well-behaved, perhaps adjusting for the
+high degree vertices, which get visited very often by paths in the graph. In our algorithm, the
+neighborhood paths are deﬁned by ﬁrst selecting a rooted tree at each vertex, thus enforcing that
+each vertex along a path in the tree is unique. This is important in our analysis, as it guarantees
+that the distribution of vertices at the boundary of each subsequent depth of the neighborhood is
+unbiased, since the sampled vertices are freshly visited.
+4
+Results
+In all of the results below, we assume the latent variable model assumptions laid out in Section
+2. As a reminder, we assume uniform Bernoulli sampling with density p, independent bounded
+observation noise, and a generative latent variable model where coordinates are associated to i.i.d.
+sampled latent variables and the underlying matrix behaves according to a bounded latent function
+f that is Lipschitz and low rank (or approximately low rank) with bounded eigenfunctions.
+4.1
+f has rank r
+We ﬁrst provide theoretical bounds for the estimation error in both sparse regimes mentioned above
+when f has ﬁnite spectrum with rank r.
+Sparse Regime. Theorem 4.1 shows that the maximum entrywise error of the collaborative ﬁltering
+algorithm using distance function (7) converges to zero in the sparse regime when p = n−1+κ for
+some κ ∈(0, 1
+2).
+Theorem 4.1. Let f have rank r, p = n−1+κ for some κ ∈(0, 1
+2) so that 1/κ is not an integer.
+Consider the estimates produced by the nearest neighbor algorithm using the distance deﬁned in (7)
+for t = ⌊ln(1/p)
+ln(np) ⌋and selecting the nearest neighbor distance threshold to satisfy η = Θ(n−1
+2(κ−ρ))
+for any ρ ∈(0, κ). Let Cf = |λ1|/|λr| denote the condition number of the latent function f. With
+probability 1 −o(1),
+∥ˆF −F∥max = O
+
+rC1/κ
+f
+n−1
+4 (κ−ρ)
+.
+(9)
+11
+
+Furthermore,
+MSE( ˆF) = 1
+n2 ∥ˆF −F∥2
+F r = O
+
+r2C2/κ
+f
+n−1
+2(κ−ρ)
+.
+(10)
+Sparser Regime. Theorem 4.2 shows that the maximum entrywise error of the collaborative ﬁltering
+algorithm using distance function (8) converges to zero in the sparser regime when p = n−1 ln1+κ n
+for some κ > 0.
+Theorem 4.2. Let f have rank r, p = n−1 ln1+κ n for some κ > 0. Consider the estimates produced
+by the nearest neighbor algorithm using the distance deﬁned in (8) for t = ⌈ln(0.08/p)
+ln(0.275np) −r′⌉and
+selecting the nearest neighbor distance threshold to satisfy η = Θ
+
+(ln n)−1
+2(κ−ρ)
+for any ρ ∈(0, κ).
+With probability 1 −o(1),
+∥ˆF −F∥max = O
+
+(ln n)−1
+4(κ−ρ)
+.
+(11)
+Furthermore,
+MSE( ˆF) = O
+
+(ln n)−1
+2 (κ−ρ)n
+
+.
+(12)
+Theorems 4.1 and 4.2 show that for symmetric sparse matrix estimation, as long as the fraction
+of entries observed at random scale as log1+κ(n)
+n
+for any ﬁxed κ > 0, the estimation error of our
+proposed iterative variant of the classical collaborative ﬁltering algorithm with respect to the max-
+norm decays to 0 as n →∞assuming the underlying matrix of interest has constant rank r.
+4.2
+f has ε-approximate rank r
+We extend the above stated result to the setting when the latent function f has ε-approximate rank
+r; this captures settings where f may have inﬁnite but quickly decaying spectrum. We formally
+state the extension in the sparse regime (p = n−1+κ), but we believe that a similar result is likely to
+hold for the sparser regime (p = n−1 log1+κ(n)) as well, which we omit for simplicity of presentation.
+Theorem 4.3. Let f have ε-approximate rank r for some ε > 0, p = n−1+κ for some κ ∈(0, 1
+2) so
+that 1/κ is not an integer. Consider the estimates produced by the nearest neighbor algorithm using
+the distance deﬁned in (7) for t = ⌊ln(1/p)
+ln(np) ⌋< 1
+κ −1 and selecting the nearest neighbor distance
+threshold to satisfy η = Θ(n−1
+2(κ−ρ)) for any ρ ∈(0, κ). Let Cf,r = |λ1|/|λr| denote the condition
+number of the rank r approximation to the latent function f. With probability 1 −o(1),
+∥ˆF −F∥max = O
+
+rC1/κ
+f,r n−1
+4 (κ−ρ)
++ O
+
+|λr|−1
+κ √r
+r ε
+κ(1 + ε)
+1
+2κ−1
+2 + ε
+κ(1 + ε)
+1
+κ−3
+2
+ 
+(13)
+Furthermore,
+MSE( ˆF) = O
+
+r2C
+2
+κ
+f,rn−1
+2(κ−ρ)
++ O
+
+|λr|−2
+κ r
+ ε
+κ(1 + ε)
+1
+κ −1 + ε2
+κ2 (1 + ε)
+2
+κ −3
+ 
+.
+(14)
+As we assume the function values are bounded in [0, 1], we can assume that ε ∈[0, 1], such that
+the dominating terms in (13) are O
+
+rC1/κ
+f,r n−1
+4(κ−ρ)
++ O
+q
+εr|λr|−2
+κ κ−1
+
+, and the dominating
+12
+
+terms in (14) are O
+
+r2C2/κ
+f,r n−1
+2(κ−ρ)
++ O
+
+εr|λr|−2
+κ κ−1
+. While we assume the function f is ﬁxed
+with respect to n, when the function f has inﬁnite spectrum, we can choose ε to decrease with n
+in order to tradeoﬀbetween the two terms in the error bound. Note that the approximate rank
+r and the approximate condition number Cf,r also depend on the choice of ε. In particular the
+relationship between ε, r, and Cf,r will depend on the spectrum of f and how quickly the tail decays
+to zero. Choosing a larger value of r will increase the condition number as |λr| will be smaller, and
+it will decrease the approximation error ε. Below we present a speciﬁc example as a consequence
+of Theorem 4.3.
+Corollary 4.4. Let p = n−1+κ for some κ ∈(0, 1
+2) so that 1/κ is not an integer. Consider f such
+that for any r ≥1, it has εr-approximate rank r with |λr| corresponding to rank r approximation
+with Cf,r = |λ1|/|λr| being the condition number such that |λ1| = O(1) and
+lim
+r→∞εr|λr|−2/κr = 0.
+(15)
+Then, for any δ > 0, for all n large enough, with probability 1 −o(1), ∥ˆF −F∥max = O
+√
+δ
+
+.
+Further, MSE( ˆF) = O
+
+δ
+
+.
+Proof of Corollary 4.4.
+For any δ > 0, by (15), there exists large enough r = r(δ) such that
+εr|λr|−2/κr ≤δ. Due to |λ1| = O(1), Cf,r = O(|λr|−1). Given choice of r = r(δ), for n large enough
+we have rC1/κ
+f,r n−1
+4 (κ−ρ) ≤
+√
+δ. By (13) of Theorem 4.3 it follows that ∥ˆF −F∥max = O(
+√
+δ) with
+probability at least 1 −o(1). By (14) of Theorem 4.3, it follows that MSE( ˆF) = O(δ).
+□
+From Corollary 4.4, it follows that ∥ˆF −F∥max = o(1) with probability 1−o(1) and MSE( ˆF) =
+o(1) when the spectrum decays in such a way that limr→∞εr|λr|−2/κr = 0.
+4.3
+Discussion
+In our latent variable model, the latent function f is ﬁxed with respect to n, so the max norm of
+the truth matrix is constant ∥F∥max = Θ(1), and the Frobenius norm of the truth matrix scales
+linear with the matrix dimension so that
+1
+n2∥F∥2
+F r = Θ(1). As a result the above stated results
+also show the convergence rates with respect to the relative errors of the max norm and normalized
+Frobenius norm.
+The overall proof sketch can be split into two parts. First we prove that the estimated pairwise
+distances concentrate to a metric computed with respect to the true latent function f. Second we
+prove that given well behaved estimated distances, the nearest neighbor estimate with properly
+chosen thresholds to balance mean and variance will converge at the above stated rate.
+This
+second part of the proof is straightforward and follows the standard proof for any nearest neighbor
+style algorithm. The crux of the proof is arguing that in sparse settings the computed distances
+concentrate well. This relies on the uniform sampling assumption, independence of the observation
+noise, regularity of the latent feature variables, and the ﬁnite spectrum assumption of the latent
+function. The assumptions on the speciﬁc distribution of the latent variables and the Lipschitzness
+of the latent function are in fact primarily used for the second nearest neighbor portion of the
+proof, and thus can be relaxed.
+The key property needed is that there are suﬃciently many
+“nearest neighbor” coordinates; the precise distribution of the latent variables and shape of the
+latent function will aﬀect the tuning of the threshold parameter to tradeoﬀbetween bias and
+variance. We provide formal statements for a few variations of the model in Section 6.
+13
+
+In addition to providing bounds on the MSE, our theorem also provides bounds on the maximum
+entrywise error of the estimate. The rate of our maximum entrywise error is the square root of the
+MSE rate, which suggests that the error is uniformly spread across all entries. This is a stronger
+guarantee that the typical MSE bounds found in the literature, and it can be useful for downstream
+results that use the estimates for decision making such as ranking and recommendations.
+Thus far, we have focused on ﬁnding conditions on p that allow for consistent estimation with
+respect to both the MSE and max entrywise error. Our results also provide the rate at which the
+error decays. Speciﬁcally, our bound for the mean squared error (MSE) scales as O((pn)−1/2+ρ) for
+any arbitrarily small constant ρ > 0, and our bound for the max entrywise error is O((pn)−1/4+ρ)
+for any small ρ.
+5
+Proof Sketch for Analyzing Noisy Nearest Neighbors
+As the algorithm uses a ﬁxed radius nearest neighbor estimate, the analysis boils down to arguing
+that the distance functions as deﬁned in (7) and (8) have certain desired properties that enable
+the classical nearest neighbor algorithm to be eﬀective. In this section we characterize the needed
+properties for the convergence of noisy nearest neighbors.
+Our algorithm estimates F(u, v), i.e. f(θu, θv), according to (4), which simply averages over
+datapoints M(u′, v′) corresponding to tuples (u′, v′) for which u′ is close to u and v′ is close to v
+according to the estimated distance function ˆd. This simple nearest neighbor averaging estimator
+suggests that the last step of the analysis involves choosing the threshold η to tradeoﬀbetween bias
+and variance.
+The primary desired property is that the data-driven distance estimates ˆd(u, v) concentrate
+around some ideal data-independent distance d(θu, θv) for d : [0, 1]2 →R+. We can then sub-
+sequently argue that the nearest neighbor estimate produced by (4) using d(θu, θv) in place of
+ˆd(u, v) will yield a good estimate by properly choosing the threshold η to tradeoﬀbetween bias and
+variance. The bias will depend on the local geometry of the function f relative to the distances
+deﬁned by d. The variance depends on the measure of the latent variables {θu}u∈[n] relative to the
+distances deﬁned by d, i.e. the number of observed tuples (u′, v′) ∈E′′′ such that d(θu, θu′) ≤η and
+d(θv, θv′) ≤η needs to be suﬃciently large. We formalize the above stated desired properties.
+Property 5.1 (Good Distance). We call an ideal distance function d : [0, 1]2 →R+ to be a
+bias-good distance function for some bias : R+ →R+ if for any given η > 0 it follows that
+|f(θa, θb)−f(θu, θv)| ≤bias(η) for all (θa, θb, θu, θv) ∈[0, 1]4 such that d(θu, θa) ≤η and d(θv, θb) ≤
+η.
+Property 5.1 follows from choosing an appropriate ideal distance function d. In particular we
+will choose d with respect to the spectral representation of f, and the desired property and the
+expression for bias(η) will follow from the low rank assumption as well as the boundedness of the
+eigenfunctions.
+Property 5.2 (Good Distance Estimation). For some ∆> 0, we call distance ˆd : [n]2 →R+ a
+∆-good estimate for ideal distance d : [0, 1]2 →R+, if |d(θu, θa) −ˆd(u, a)| ≤∆for all (u, a) ∈[n]2.
+Showing property 5.2 is the crux of the proof and follows from the design of the algorithm along
+with the assumptions of uniform sampling and the latent variable model. It essentially uses all the
+model assumptions except for Lipschitzness of f.
+14
+
+Property 5.3 (Suﬃcient Representation). The collection of coordinate latent variables {θu}u∈[n] is
+called meas-represented for some meas : R+ →R+ if for any u ∈[n] and η′ > 0, 1
+n
+P
+a∈[n] I(d(u, a) ≤
+η′) ≥meas(η′).
+Property 5.3 is only used for the ﬁnal step of the nearest neighbor analysis.
+In particular,
+as the estimate averages datapoints within an estimated nearby region of the target coordinates,
+there is a bias variance tradeoﬀthat depends on how the datapoints are locally distributed. In
+particular, we need to guarantee that for any (a, b) ∈[n]2, there exists suﬃciently many observed
+pairs (u, v) ∈[n]2 such that the function behaves similarly, i.e. f(a, b) is close to f(u, v). This
+property follows from our assumption that the latent variables are sampled i.i.d. from U[0, 1], and
+that the function f is L-Lipschitz. As discussed in section 2, these assumptions can be relaxed, but
+alternative assumptions would need to guarantee property 5.3 for some reasonable local measure
+function meas(η).
+Given the above three properties, we can then prove Lemma 5.1, which characterizes the error
+of the noisy nearest neighbor algorithm as a function of the bias function, meas function, and
+estimation error ∆. Section 8 uses Lemma 5.1 to establish Theorems 4.1, 4.2, and 4.3 by simply
+showing the three properties for suitable choices of bias, meas, and ∆, and tuning η accordingly to
+balance between diﬀerent terms of the error. Proving that the distance estimates concentrate well,
+i.e. property 5.2, is the most involved part of the analysis, which we defer to sections 9 and 10.
+Property 5.1 follows from the low rank assumption and property 5.3 arises from the latent variable
+model assumptions, in particular the distribution of the latent variables and shape of the latent
+function.
+Lemma 5.1. Assume that properties 5.1-5.3 hold with probability 1 −α for some η, ∆, and η′ =
+η−∆; in particular d is a bias-good distance function, ˆd as estimated from M′ and M′′ is a ∆-good
+distance estimate for d, and {θu}u∈[n] is meas-represented. The noisy nearest neighbor estimate ˆF
+computed according to (4) satisﬁes
+MSE( ˆF) ≤bias2(η + ∆) +
+2
+(1 −δ)p (meas(η −∆)n)2 + exp
+ 
+−δ2p (meas(η −∆)n)2
+4
+!
++ α,
+for any δ ∈(0, 1). Furthermore, for any δ′ ∈(0, 1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)| ≤bias(η + ∆) + δ′,
+with probability at least
+1 −n2 exp
+
+−1
+4δ2p (meas(η −∆)n)2
+−n2 exp
+
+−δ′2(1 −δ)p (meas(η −∆)n)2
+−α.
+Proof of Lemma 5.1.
+Recall that the algorithm uses sample splitting, where ˆd is computed using
+M′ and M′′, and the ﬁnal estimate ˆF is computed using M′′′. Therefore, for some (a, b) ∈E′′′, the
+observation M(a, b) = Z(a, b) is independent of ˆd, and E[M(a, b)] = f(θa, θb). Conditioned on E′′′,
+15
+
+by deﬁnition of ˆF and by assuming properties 5.1 and 5.2, it follows that
+E[( ˆF(u, v) −f(θu, θv))2] =
+
+
+1
+|E′′′
+uv|
+X
+(a,b)∈E′′′
+uv
+f(θa, θb) −f(θu, θv)
+
+
+2
++
+1
+|E′′′
+uv|2
+X
+(a,b)∈E′′′
+uv
+Var[M(a, b)]
+(a)
+≤bias2(η + ∆) +
+1
+|E′′′
+uv|.
+Inequality (a) follows from Properties 5.1-5.2: |d(u, a)−ˆd(u, a)| ≤∆and ˆd(u, a) ≤η =⇒d(u, a) ≤
+η +∆. By deﬁnition M(a, b) ∈[0, 1] for all (a, b), which implies Var[M(a, b)] ≤1 for all (a, b) ∈E′′′.
+Deﬁne Vuv = {(a, b) ∈[n]2 : d(u, a) < η −∆, d(v, b) < η −∆}. Assuming property 5.3,
+|Vuv| = |{a ∈[n] : d(u, a) < η −∆}| |{b ∈[n] : d(v, b) < η −∆}|
+≥(meas(η −∆)n)2 .
+By the Bernoulli sampling model and sample splitting process, each tuple (a, b) ∈[n]2 belongs to
+E′′′ with probability p/2 independently. By a straightforward application of Chernoﬀ’s bound, it
+follows that for any δ ∈(0, 1),
+P
+
+|E′′′ ∩Vuv| ≤(1 −δ)p
+2
+(meas(η −∆)n)2
+
+≤exp
+ 
+−δ2p (meas(η −∆)n)2
+4
+!
+.
+(16)
+Therefore, by assuming property 5.2, it follows that with probability at least 1−exp
+
+−δ2p(meas(η−∆)n)2
+4
+
+,
+|E′′′
+uv| = |{(a, b) ∈E′′′ : ˆd(u, a) < η, ˆd(v, b) < η}|
+≥|{(a, b) ∈E′′′ : d(u, a) < η −∆, d(v, b) < η −∆}|
+= |E′′′ ∩Vuv|
+≥(1 −δ)p
+2
+(meas(η −∆)n)2 .
+Deﬁne the event H = {|E′′′
+uv| ≥(1−δ)p
+2
+(meas(η −∆)n)2 |}. It follows that P (Hc) ≤exp
+
+−1
+4δ2p (meas(η −∆)n)2
+By deﬁnition, F(u, v) = f(θu, θv) ∈[0, 1] for all u, v ∈[n]. Therefore, assuming properties 5.1-5.3
+hold,
+E[( ˆF(u, v) −f(θu, θv))2]
+≤E[( ˆF(u, v) −f(θu, θv))2  H] + P (Hc)
+≤bias2(η + ∆) +
+2
+(1 −δ)p (meas(η −∆)n)2 + exp
+
+−1
+4δ2p (meas(η −∆)n)2
+
+.
+We add an additional α in the ﬁnal MSE bound to account for the probability that properties
+5.1-5.3 are violated.
+To obtain the high-probability bound on the maximum entry-wise error, note that M(a, b) are
+independent across indices (a, b) ∈E′′′ as well as independent of observations in E′∪E′′. Additionally,
+the model assumes that M(a, b), F(a, b) ∈[0, 1], and E[M(a, b)] = F(a, b) for observed tuples (a, b).
+16
+
+By an application of Hoeﬀding’s inequality for bounded, zero-mean independent variables, for any
+δ′ ∈(0, 1) it follows that assuming properties 5.1-5.3 hold,
+P
+
+
+
+P
+(a,b)∈E′′′
+uv(M(a,b)−F (a,b))
+
+|E′′′
+uv|
+≥δ′
+
+H
+
+≤exp
+
+−δ′2(1 −δ)p (meas(η −∆)n)2
+.
+By union bound it follows that
+max
+(u,v)∈[n]2 | ˆFuv −f(θu, θv)| ≤bias(η + ∆) + δ′,
+with probability at least
+1 −n2 exp
+
+−1
+4δ2p (meas(η −∆)n)2
+
+−n2 exp
+
+−δ′2(1 −δ)p (meas(η −∆)n)2
+−α.
+This completes the proof of Lemma 5.1.
+□
+6
+Extensions
+6.1
+Subsampled Anchor Vertices
+As mentioned in Section 3.2, we can reduce the computational complexity of the algorithm by
+subsampling a set of anchor vertices K and only computing pairwise distances relative to the
+anchor vertices, equivalent to computing a clustering amongst vertices and using that to estimate.
+For pairs of anchor vertices (a, b) ∈K2 which we also refer to as cluster centers, the algorithm
+estimates ˆF(a, b) according to the original stated algorithm with no modiﬁcations. For u /∈K, we
+denote π(u) = arg mini∈K ˆd(u, i) to be a clustering that maps from u to the closest anchor vertex
+in K. The ﬁnal estimate for (u, v) /∈K2 is then given by the estimate of the associated anchor
+vertices, which act as cluster centers, ˆF(u, v) = ˆF(π(u), π(v)).
+The original argument provides high probability bounds on | ˆF(u, v)−F(u, v)| for cluster centers
+(u, b) ∈K2, as nothing changed in the algorithm for the cluster centers.
+The only additional
+part of the proof is to bound the additional bias for non cluster centers, as | ˆF(u, v) −F(u, v)| ≤
+| ˆF(π(u), π(v))−F(π(u), π(v))|+|F(π(u), π(v))−F(u, v)|. The ﬁrst term is directly bounded by the
+current analysis, and the bias from the second term will depend on the size of |K|. Recall our latent
+variable model assumption that each vertex u is associated to a latent variable θu
+P U[0, 1] such
+that F(u, v) = f(θu, θv) and f is L-Lipschitz with respect to the latent variables. For |K| = 2
+δ log(1
+δ),
+with probability at least 1 −δ, each interval [(i −1)δ, iδ] for i ∈[1/δ] contains at least one anchor
+point in K, as the latent variables of these anchor points are chosen at random. Under this good
+event, then maxu∈[n] mini∈K |θu −θi| ≤δ.
+We discuss the results and analysis for the sparse setting when p = n−1+κ for some κ ∈(0, 1
+2),
+however a similar argument applies for the sparser setting of p = n−1 ln1+κ n as well. Equation
+(20) will show that d(θu, θv) ≤|λ1|2tL2|θu −θv|2, so that for some u ∈[n], the closest anchor point
+a ∈K with respect to the latent representation will also satisfy d(θu, θa) ≤|λ1|2tL2δ2. As Property
+5.2 guarantees |d(θu, θa) −ˆd(u, a)| ≤∆for all estimated distances, it follows that d(θu, θπ(u)) ≤
+|λ1|2tL2δ2 +2∆for all u ∈[n]. By Property 5.1, |F(π(u), π(v))−F(u, v)| ≤bias(|λ1|2tL2δ2 +2∆).
+We choose |K| so that δ =
+√
+∆
+L|λ1|t, and we plug in the choice of ∆and t from Theorem 4.1, resulting
+in δ = Br|λ1|(κ+1)/κL−1n−1
+4 (κ−ρ) = o(1) so that |K| = Θ(n
+1
+4 (κ−ρ)). This choice of |K| will guarantee
+that the extra added bias does not change the existing guarantees in Theorem 4.1 by more than a
+constant.
+17
+
+6.2
+Local Geometry
+We can generalize the latent variable model beyond scalar valued latent variables and Lipschitz
+latent functions. These assumptions only aﬀect the function meas in Property 5.3, and thus it
+only changes the last portion of the nearest neighbor proof in which we tune the threshold η to
+tradeoﬀbetween the bias and variance terms. We present two examples of extending our results to
+a diﬀerent local geometry, illustrating the modiﬁcations for the sparse setting when p = n−1+κ for
+some κ ∈(0, 1
+2).
+If there were only m distinct latent types such that θu ∈[m] and pmin = mini∈[m] P (θu = i) > 0,
+then meas(η′) could be chosen to be a constant slightly less than pmin for every value of η′ > 0. If the
+minimum distance measured by d(θu, θv) between any two distinct types θu ̸= θv is larger than 2∆,
+then we can choose η to be ∆so that by Property 5.2, the algorithm will achieve perfect clustering.
+In particular, if Property 5.2 holds then no vertex of a diﬀerent type will have estimated distance
+less than η and bias(η + ∆) = 0. Given this, each type has at least pminn instances realized, on
+average. Therefore, for a given u, v ∈[n], there are roughly (pminn)2 entries (u′, v′) ∈[n] × [n] such
+that u, u′ and v, v′ are of the same type. Each of these (pminn)2 is observed with probability p.
+Therefore, by taking average over these observed entries, the Mean Squared Error should scale as
+1/(p(pminn)2) and the max entry-wise error would scale as (p(pminn)2)−1/2. In the case that the
+minimum distance between any two distinct types is less than ∆, then the bias term will still be
+there and the limiting term is still bias(∆), and thus the convergence rate would be limited by the
+same rate as stated in Theorem 4.1.
+Next we discuss a higher dimensional setting. Assume the latent variables are sampled uni-
+formly over a m-dimensional hypercube such that θu ∼U([0, 1]m) and the latent function f is
+L-Lipschitz with respect to an underlying metric dm, such that the measure of a ball with radius δ
+is Θ(δm). Property 5.3 would instead hold for meas(η′) = Θ((
+√η′
+λtL)m), resulting in a diﬀerent choice
+of threshold η to balance between bias and variance. If m ≤(κ + 2)/κ, then the current bias(∆)
+term dominates such that we would choose η = Θ(∆), and the error convergence rate will be the
+same as that stated in Theorem 4.1. For high dimension m > (κ + 2)/κ, we choose the threshold
+η = Θ((pn2)−1/(m+1)) such that the MSE bound will scale as Θ((pn2)−1/(m+1)) = Θ(n−(1+κ)/(m+1))
+and the max entrywise error bound will scale as Θ(n−(1+κ)/2(m+1)).
+6.3
+Asymmetric Matrix
+Even though our stated results are for symmetric models, we can transform an asymmetric latent
+variable model to a symmetric model as long as the row and column dimensions grow proportionally
+to one another.
+Consider an n × m matrix F which we would like to learn, where F(u, v) =
+f(αu, βv) ∈[0, 1], and f has ﬁnite spectrum. We can construct a (n + m) × (n + m) matrix where
+F is placed on the oﬀ-diagonal blocks and the diagonal n × n and m × m blocks are set to zero.
+We can argue that this constructed matrix is sampled form a symmetric latent model, so that we
+can apply our algorithm and analysis directly.
+6.4
+Categorical Valued Data
+If the edge labels are categorical instead of real-valued, then the goal is instead to estimate the
+distribution over the diﬀerent categories or labels. This is particularly suitable for a setting in
+which there is no obvious metric between the categories such that an aggregate statistic such as the
+expected label would not be meaningful. If the edge labels take values within m category types, we
+can split the data is split into m diﬀerent matrices, each containing the information for a separate
+category (or edge label). For each category or label ℓ∈[m], the associated matrix Fℓrepresents the
+18
+
+probability that each datapoint is labeled with ℓ, such that P(Z(u, v) = ℓ) = Fℓ(u, v) = fℓ(αu, αv),
+where f is a symmetric function having ﬁnite spectrum. The algorithm can then be applied to each
+matrix separately to estimate the probability of each category across the diﬀerent entries. Since we
+need the estimates across diﬀerent categories for the same entry to sum to 1, we can simply let the
+estimate for the m-th category one minus the sum of the estimates for the ﬁrst m −1 categories.
+To obtain an error bound, we can simply use union bound across the m −1 applications of the
+algorithm, which simply multiplies the error probability by m −1.
+6.5
+Non-Uniform Sampling
+We assumed a uniform sampling model, where each entry is observed independently with probability
+p. However, in reality the probability that entries are observed may not be uniform across all pairs
+(i, j). Our results can be extended to a setting where the sampling probability is instead a function
+of the latent variable, i.e. entry (i, j) is observed with probability cng(θi, θj) where g is a Lipschitz
+low rank function independent of n and cn is a scaling factor governing the density. The observed
+data M(i, j) would then be sampled according to
+M(i, j) =
+(
+0
+with probability 1 −cng(θi, θj)
+Z(i, j)
+with probability cng(θi, θj).
+for E[Z(i, j)] = f(θi, θj).
+Whereas previously we had E[M(i, j)] = pf(θi, θj), in this modiﬁed
+model, E[M(i, j)] = cng(θi, θj)f(θi, θj). A limitation of this model is that we need the sampling
+probabilities to all scale at the same order with respect to n. The model is not fully identiﬁable as
+we could multiply cn by a constant and divide g by the same constant and obtain the same data
+distribution, and thus we can only estimate up to a constant scaling factor.
+We can essentially then apply our algorithm twice, ﬁrst using data matrix M to estimate the
+product g(θi, θj)f(θi, θj) up to a scaling factor.
+Second we apply our algorithm to the binary
+adjacency matrix representing the sparsity of the observation set Ωin order to estimate g(θi, θj) up
+to scaling factor. The one nuance one would have to handle is that since the set of observed entries
+is not uniformly sampled, the constructed BFS trees will grow non-uniformly, which will aﬀect the
+normalization and scaling terms. As the model is only recoverable up to scaling, this is the best
+we can do. If we had data from a two-step sampling process in which we ﬁrst observe binary edges
+sampled uniformly with probability cn, and then subsequently observed datapoints sampled with
+an additional probability g(θi, θj), then the model would exactly fall into our assumptions and the
+results could directly be applied to estimating g(θi, θj) and the product g(θi, θj)f(θi, θj).
+7
+Experiments
+We show results on synthetic data to illustrate the performance of our algorithm. We did not
+do sample splitting as it is primarily introduced for the purpose of the analysis. We computed
+distances according to equation (7) (but again without sample splitting) for ﬁxed radius parameters
+of t ∈{0, 1, 2, 3, 4}. Note that the depth for expanding the BFS tree is until t + 1. We did not
+speciﬁcally tune the nearest neighbor threshold η, but simply chose it to be the 70th percentile
+amongst all estimated distances. As a result, the expected number of entries used to compute the
+ﬁnal weighted average estimate is 0.49pn2. We compare against a naive baseline which predicts
+using the column-wise mean. And we compare against the softimpute implementation in python’s
+fancyimpute package and alternating least squares with rank 2 from parafac algorithm in the python
+tensorly package (higher rank performed more poorly in the sparse setting as it overﬁt to noise).
+19
+
+0.00
+0.02
+0.04
+0.06
+0.08
+p
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+adjusted MSE
+500-by-500 matrix, σ = 0.072
+col_mean
+softImpute
+ALS
+sparseCF
+0.00
+0.02
+0.04
+0.06
+p
+0.4
+0.6
+0.8
+1.0
+1.2
+adjusted MSE
+1000-by-1000 matrix, σ = 0.078
+col_mean
+softImpute
+ALS
+sparseCF
+0.00
+0.01
+0.02
+0.03
+p
+0.4
+0.6
+0.8
+1.0
+1.2
+adjusted MSE
+5000-by-5000 matrix, σ = 0.063
+col_mean
+softImpute
+ALS
+sparseCF
+Figure 1: Adjusted MSE of missing entries vs. sampling probability p. The rank of the ground
+truth matrix is 10, and the observations are perturbed with mean zero additive Gaussian noise
+with variance σ2. Results are shown left to right for matrices of sizes 500-by-500, 1000-by-1000,
+and 5000-by-5000.
+Nuclear norm minimization was too slow for the size of instances that we show and thus was
+omitted.
+The matrix F is generated as follows. For rank r = 10, we ﬁrst sample two Gaussian n×r latent
+factor matrices U ∈Rn×r and V ∈Rn×r. Each entry of the latent factor matrices is sampled from
+an independent Gaussian distribution with mean 10 and standard deviation 10. Next we compute
+F according to
+F = (UV T −mean(UV T ))
+max(abs(UV T ))
+.
+For a κ ∈(0, 1], the density is chosen to be p = n−1+κ, and each entry is observed (and thus
+included in sample set Ω) with probability p independently of all other entries. For each observed
+entry (u, v) ∈Ω, there is an added independent Gaussian noise M(u, v) = F(u, v) + ε(u, v), where
+ε(u, v) ∼N(0, σ2) where σ is chosen to be the 40th percentile of the magnitude of entries in F. We
+show results for n = 500, 1000, and 5000.
+We compute an adjusted mean squared error (MSE), limited to the error in predicting missing
+entries, and we normalize by the squared error of predicting with zeros. When the adjusted MSE
+is larger than 1, it means the estimate is worse than predicting all zeros.
+adjusted MSE =
+P
+(u,v)/∈Ω( ˆF(u, v) −F(u, v))2
+P
+(u,v)/∈ΩF(u, v)2
+Figure 1 shows the adjusted MSE of the algorithms with respect to the sampling probability
+p. When p is very small, then our algorithm with the optimal choice of the depth parameter t
+performs better than ALS and SoftImpute, however when it is too sparse than either the simple
+mean estimate or predicting with all zeros is best. Note that we did not do any tuning of the
+nearest neighbor parameter η, and thus there may be additional gains possible for our algorithm.
+If we consider the minimum density for which the algorithm performs better than the simple mean,
+SoftImpute requires the most dense observation. The minimum density required for our algorithm
+depends on optimally choosing the depth parameter t, but for an optimal choice of t, our algorithm
+requires less data than ALS before it performance better than the simple mean.
+Figure 2 shows the adjusted MSE of the algorithms with respect to the exponent of the density
+parameter κ where p = n−1+κ. This rescales the x-axis so that the small values of p are more
+20
+
+0.2
+0.4
+0.6
+κ
+0.4
+0.6
+0.8
+1.0
+1.2
+1.4
+adjusted MSE
+500-by-500 matrix, σ = 0.072
+col_mean
+softImpute
+ALS
+sparseCF
+0.2
+0.4
+0.6
+κ
+0.4
+0.6
+0.8
+1.0
+1.2
+adjusted MSE
+1000-by-1000 matrix, σ = 0.078
+col_mean
+softImpute
+ALS
+sparseCF
+0.2
+0.4
+0.6
+κ
+0.4
+0.6
+0.8
+1.0
+1.2
+adjusted MSE
+5000-by-5000 matrix, σ = 0.063
+col_mean
+softImpute
+ALS
+sparseCF
+Figure 2: Adjusted MSE of missing entries vs. sampling probability exponent κ = ln(pn)/ ln(n).
+The rank of the ground truth matrix is 10, and observations are perturbed with mean zero additive
+Gaussian noise with variance σ2.
+Results shown left to right for matrices of sizes 500-by-500,
+1000-by-1000, and 5000-by-5000.
+0.2
+0.4
+0.6
+κ
+0
+10
+20
+30
+elapsed time (sec)
+500-by-500 matrix, σ = 0.072
+col_mean
+softImpute
+ALS
+sparseCF
+0.2
+0.4
+0.6
+κ
+0
+20
+40
+60
+80
+100
+elapsed time (sec)
+1000-by-1000 matrix, σ = 0.078
+col_mean
+softImpute
+ALS
+sparseCF
+0.2
+0.4
+0.6
+κ
+0
+1000
+2000
+3000
+4000
+elapsed time (sec)
+5000-by-5000 matrix, σ = 0.063
+col_mean
+softImpute
+ALS
+sparseCF
+Figure 3: Computation time vs.
+sampling probability exponent κ = ln(pn)/ ln(n).
+The rank
+of the ground truth matrix is 10, and the observations are perturbed with mean zero additive
+Gaussian noise with variance σ2. Results are shown left to right for matrices of sizes 500-by-500,
+1000-by-1000, and 5000-by-5000.
+visible. We plot only up to κ = 0.6 as we are focusing on the sparse regime with little overlaps
+in entries between pairs of rows and columns. Notice the dependence on the performance of our
+algorithm with respect to the radius parameter t as illustrated best in Figure ??. For too small
+values of t the alg is suboptimal as it does not aggregate data suﬃciently, but for too large values
+of t the algorithm again is suboptimal as it simply estimates zeros due to the BFS trees running
+out of vertices.
+Figure 3 shows the time each of the algorithms took to run. We can see that our proposed
+algorithm is faster than SoftImpute, and this gap in speed is ampliﬁed with large n. Alternating
+Least Squares (ALS) is very fast, nearly as fast as the simple mean. Nuclear norm minimization
+was too slow to run on the size of instances in our example and thus was not included.
+8
+Proofs for Theorems 4.1, 4.2, and 4.3
+In this section, we use the noisy nearest neighbor lemma 5.1 along with to establish Theorems 4.1,
+4.2, and 4.3. Proofs of the concentration of distance estimates is deﬀered to sections 9 and 10.
+21
+
+8.1
+Analyzing Sparse Regime: Proofs of Theorem 4.1 and 4.3
+We prove that as long as p = n−1+κ for any κ ∈(0, 1
+2), with high probability, properties 5.1-5.3
+hold for an appropriately chosen function d, and for distance estimates ˆd computed according to (7)
+with t = ⌊ln(1/p)
+ln(np) ⌋. We subsequently use Lemma 5.1 to conclude Theorem 4.1. The most involved
+part in the proof is establishing that property 5.2 holds with high probability for an appropriately
+chosen ∆, which is delegated to Lemma 8.1.
+Good distance d and Property 5.1. We start by deﬁning the ideal distance d as follows. For all
+(u, v) ∈[n]2, let
+d(θu, θv) = ∥Λt+1Q(eu −ev)∥2
+2 =
+r
+X
+k=1
+λ2(t+1)
+k
+(qk(θu) −qk(θv))2.
+(17)
+Recall that t = ⌊ln(1/p)
+ln(np) ⌋. Assuming p = n−1+κ, κ ∈(0, 1
+2)
+t =
+$
+ln(1/p)
+ln(np)
+%
+=
+$
+1
+κ −1
+%
+.
+(18)
+We want to show that there exists bias : R+ →R+ so that |f(θa, θb) −f(θu, θv)| ≤bias(η)for
+any η > 0 and (u, a, v, b) ∈[n]4 such that d(θu, θa) ≤η and d(θv, θb) ≤η. By the ﬁnite spectrum
+characterization of the function f, it follows that
+|f(θu, θv) −f(θa, θb)| = |eT
+u QT ΛQev −eT
+a QT ΛQeb|
+= |eT
+u QT ΛQ(ev −eb) −(ea −eu)T QT ΛQeb|
+(a)
+≤B√r∥ΛQ(ev −eb)∥2 + B√r∥ΛQ(eu −ea)∥2
+≤B√r|λr|−t∥Λt+1Q(ev −eb)∥2 + B√r|λr|−t∥Λt+1Q(eu −ea)∥2
+= B|λr|−t√r
+p
+d(θv, θb) +
+p
+d(θu, θa)
+
+≤2B|λr|−t√rη ≡bias(η),
+(19)
+where (a) follows from assuming that |qk(θ)| ≤B for all k ∈[r] and θ ∈[0, 1]. In summary, property
+5.1 is satisﬁed for distance function d deﬁned according to (17) and bias(η) = 2B|λr|−t√rη.
+Good distance estimate ˆd and Property 5.2. We state the following Lemma when f has rank r,
+whose proof is delegated to Section 9.
+Lemma 8.1. Let f has rank r, p = n−1+κ for κ ∈(0, 1
+2) such that 1/κ is not an integer. Consider
+ˆd as computed in (7) with t = ⌊ln(1/p)
+ln(np) ⌋. For any ρ ∈(0, κ)
+max
+u,a∈[n]2 |d(θu, θa) −ˆd(u, a)| = O(Br|λ1|2/κn−1
+2 (κ−ρ)),
+with probability at least 1 −O
+
+n2 exp
+ −Θ(nmin(ρ,κ(t−1
+2)))
+
+.
+Lemma 8.1 implies that property 5.2 holds with probability 1−o(1) for some ∆= Θ(Br|λ1|2/κn−(κ−ρ)/2)
+and any ρ ∈(0, κ). The distance error bound ∆is minimized by choosing ρ arbitrarily close to 0
+so that ∆can be arbitrarily close to Θ(Br|λ1|2/κn−κ/2) = Θ(Br|λ1|2/κ(pn)−1/2).
+The corresponding statement for f that has ε-approximate rank r is stated below.
+22
+
+Lemma 8.2. Let f have ε-approximate rank r, p = n−1+κ for κ ∈(0, 1
+2) such that 1/κ is not an
+integer. Consider ˆd as computed in (7) with t = ⌊ln(1/p)
+ln(np) ⌋. For any ρ ∈(0, κ)
+max
+u,a∈[n]2 |d(θu, θa) −ˆd(u, a)| = O(Br|λ1|2/κn−1
+2 (κ−ρ)) + O
+
+tε(1 + ε)t + t2ε2(1 + ε)2t−1
+,
+with probability at least 1 −O
+
+n2 exp
+ −Θ(nmin(ρ,κ(t−1
+2)))
+
+.
+Suﬃcient representation and Property 5.3. Since f is L-Lipschitz, the distance d as deﬁned in (17)
+is bounded above by the squared ℓ2 distance:
+d(θu, θv) = ∥Λt+1Q(eu −ev)∥2
+2
+≤|λ1|2t∥ΛQ(eu −ev)∥2
+2
+= |λ1|2t
+Z 1
+0
+(f(θu, y) −f(θv, y))2dy
+≤|λ1|2tL2|θu −θv|2.
+(20)
+We assumed that the latent parameters {θu}u∈[n] are sampled i.i.d. uniformly over [0, 1]. Therefore,
+for any θu ∈[0, 1], for any v ∈[n] and η′ > 0,
+P
+ d(θu, θv) ≤η′  θu
+
+≥P
+ |λ1|2tL2|θu −θv|2 ≤η′  θu
+
+= P
+
+|θu −θv| ≤
+√η′
+|λ1|tL
+ θu
+
+≥min
+
+1,
+√η′
+|λ1|tL
+
+.
+Let us deﬁne
+meas(η′) = (1 −δ)√η′
+|λ1|tL
+(21)
+for all η′ ∈(0, |λ1|2tL2). By an application of Chernoﬀ’s bound and a simple majorization argument,
+it follows that for all η′ ∈(0, |λ1|2tL2) and δ ∈(0, 1),
+P
+
+
+1
+n −1
+X
+a∈[n]\u
+I
+ d(u, a) ≤η′
+≤meas(η′)
+ θu
+
+≤exp
+
+−δ2(n −1)√η′
+2|λ1|tL
+
+.
+By using union bound over all n indices, it follows that for any η′ ∈(0, |λ1|2tL2), with probability
+at least 1 −n exp
+
+−δ2(n−1)√η′
+2|λ1|tL
+
+, property 5.3 is satisﬁed with meas as deﬁned in (21).
+Concluding Proof of Theorem 4.1. In summary, with probability at least 1 −α for
+α = O(n2 exp
+
+−Θ(nmin(ρ,κ(t−1
+2 )))
+
+) + n exp
+
+−δ2(n −1)√η −∆
+2|λ1|tL
+
+,
+23
+
+properties 5.1-5.3 are satisﬁed for the estimate ˆd computed from (7) with t = ⌊ln(1/p)
+ln(np) ⌋, and the
+choices of
+d(θu, θv) = ∥Λt+1Q(eu −ev)∥2
+2,
+bias(η) = 2B|λr|−t√rη,
+∆= Θ(Br|λ1|2/κn−1
+2(κ−ρ)),
+meas(η′) = (1 −δ)√η′
+|λ1|tL
+,
+(22)
+for any η > 0, ρ ∈(0, κ), δ ∈(0, 1) and η′ = η −∆∈(0, |λ1|2tL2). By substituting the expressions
+for bias, meas, and α into Lemma 5.1, it follows that
+MSE( ˆF) ≤4B2|λr|−2tr(η + ∆) +
+2|λ1|2tL2
+(1 −δ)3pn2(η −∆) + exp
+ 
+−δ2pn2(1 −δ)2(η −∆)
+4L2|λ1|2t
+!
++ O(n2 exp
+
+−Θ(nmin(ρ,κ(t−1
+2 )))
+
+) + n exp
+
+−δ2(n −1)√η −∆
+2|λ1|tL
+
+.
+(23)
+Additionally, for any δ′ ∈(0, 1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)| ≤2B|λr|−tp
+r(η + ∆) + δ′
+(24)
+with probability at least
+1 −n2 exp
+
+−δ2(1−δ)2pn2(η−∆)
+4|λ1|2tL2
+
+−n2 exp
+
+−δ′2(1−δ)3pn2(η−∆)
+|λ1|2tL2
+
+−O(n2 exp
+
+−Θ(nmin(ρ,κ(t−1
+2)))
+
+) −n exp
+
+−δ2(n −1)√η′
+2|λ1|tL
+
+.
+By selecting η = Θ
+ Br|λ1|2/κn−1
+2(κ−ρ)
+with a large enough constant, it follows that
+η ± ∆= Θ(η) = Θ(∆),
+pn2η = Θ(Br|λ1|2/κn1+κ−1
+2(κ−ρ)) = Ω(Br|λ1|2/κn1+κ/2),
+n√η = ω(
+√
+Br|λ1|1/κn
+7
+8).
+By substituting this choice of η and δ = 1
+2 into (23), it follows that
+MSE( ˆF) = O
+
+r2B3|λr|2(|λ1|/|λr|)2/κn−1
+2 (κ−ρ)
+.
+(25)
+By choosing δ′ = 2B|λr|−tp
+r(η + ∆), it follows that δ′2pn2η = Ω(n). Therefore, by substituting
+into (24), it follows that with probability 1 −o(1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)| = O
+
+rB3/2|λr|(|λ1|/|λr|)1/κn−1
+4(κ−ρ)
+.
+(26)
+This completes the proof of Theorem 4.1.
+□
+Concluding Proof of Theorem 4.3. Like Proof of Theorem 4.1, with probability at least 1 −α for
+α = O(n2 exp
+
+−Θ(nmin(ρ,κ(t−1
+2 )))
+
+) + n exp
+
+−δ2(n −1)√η −∆
+2|λ1|tL
+
+,
+24
+
+properties 5.1-5.3 are satisﬁed for the estimate ˆd computed from (7) with t = ⌊ln(1/p)
+ln(np) ⌋, and the
+choices of
+d(θu, θv) = ∥Λt+1Q(eu −ev)∥2
+2,
+bias(η) = 2B|λr|−t√rη,
+∆= Θ(Br|λ1|2/κn−1
+2 (κ−ρ)) + Θ
+
+tε(1 + ε)t + t2ε2(1 + ε)2t−1
+,
+meas(η′) = (1 −δ)√η′
+|λ1|tL
+,
+(27)
+for any η > 0, ρ ∈(0, κ), δ ∈(0, 1) and η′ = η−∆∈(0, |λ1|2tL2). Note that the only diﬀerence is in
+choice of ∆due to Lemma 8.2 for f that has ε-approximate rank r. By substituting the expressions
+for bias, meas, and α into Lemma 5.1, it follows that
+MSE( ˆF) ≤4B2|λr|−2tr(η + ∆) +
+2|λ1|2tL2
+(1 −δ)3pn2(η −∆) + exp
+ 
+−δ2pn2(1 −δ)2(η −∆)
+4L2|λ1|2t
+!
++ O(n2 exp
+
+−Θ(nmin(ρ,κ(t−1
+2 )))
+
+) + n exp
+
+−δ2(n −1)√η −∆
+2|λ1|tL
+
+.
+(28)
+Additionally, for any δ′ ∈(0, 1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)| ≤2B|λr|−tp
+r(η + ∆) + δ′
+(29)
+with probability at least
+1 −n2 exp
+
+−δ2(1−δ)2pn2(η−∆)
+4|λ1|2tL2
+
+−n2 exp
+
+−δ′2(1−δ)3pn2(η−∆)
+|λ1|2tL2
+
+−O(n2 exp
+
+−Θ(nmin(ρ,κ(t−1
+2)))
+
+) −n exp
+
+−δ2(n −1)√η′
+2|λ1|tL
+
+.
+By selecting η = Θ
+ Br|λ1|2/κn−1
+2 (κ−ρ)
++ Θ(tε(1 + ε)t + t2ε2(1 + ε)2t−1
+with appropriately large
+enough constants, it follows that
+η ± ∆= Θ(η) = Θ(∆),
+pn2η = Ω(n1+κ/2),
+n√η = ω(n
+7
+8 ).
+By substituting this choice of η and δ = 1
+2 into (23), and using t < 1/κ −1, it follows that
+MSE( ˆF) = O
+
+r2(|λ1|/|λr|)2/κn−1
+2(κ−ρ)
++ O
+
+|λr|−2/κr
+ ε
+κ(1 + ε)1/κ−1 + ε2
+κ2 (1 + ε)2/κ−3
+ 
+.
+(30)
+By choosing δ′ = Θ(B|λr|−tp
+r(η + ∆)), it follows that δ′2pn2η = Ω(n). Therefore, by substituting
+into (24), it follows that with probability 1 −o(1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)|
+= O
+
+r(|λ1|/|λr|)1/κn−1
+4 (κ−ρ)
++ O
+
+|λr|−1
+κ √r(
+r ε
+κ(1 + ε)
+1
+2κ −1
+2 + ε
+κ(1 + ε)
+1
+κ−3
+2)
+
+.
+(31)
+This completes the proof of Theorem 4.3.
+□
+25
+
+8.2
+Analyzing Sparser Regime: Proof of Theorem 4.2
+Similar to the proof of Theorem 4.1, we prove that as long as p = log n1+κ
+n
+for any κ > 0, with high
+probability, properties 5.1-5.3 are satisﬁed for an appropriately chosen function d and for distance
+estimates ˆd computed according to (8) with t = ⌈ln(0.08/p)
+ln(0.275pn) −r′⌉. We subsequently use Lemma 5.1
+to conclude Theorem 4.2. The most involved part in the proof is establishing that property 5.2
+holds with high probability for an appropriately chosen ∆, which is delegated to Lemma 8.3.
+Good distance d and Property 5.1. We start by deﬁning the ideal distance d as follows. For all
+(u, v) ∈[n]2,
+d(θu, θv) = ∥ΛQ(eu −ev)∥2
+2 =
+Z 1
+0
+(f(θu, y) −f(θv, y))2dy.
+(32)
+For any u, v, a, b ∈[n] with corresponding θu, θv, θa, θb ∈[0, 1],
+|f(θu, θv) −f(θa, θb)| = |eT
+u QT ΛQev −eT
+a QT ΛQeb|
+= |eT
+u QT ΛQ(ev −eb) −(ea −eu)T QT ΛQeb|
+(a)
+≤B√r∥ΛQ(ev −eb)∥2 + B√r∥ΛQ(eu −ea)∥2,
+= B√r(
+p
+d(θv, θb) +
+p
+d(θu, θa)),
+where (a) follows from assuming that |qk(θ)| ≤B for all k ∈[r] and θ ∈[0, 1]. It follows that for any
+η > 0, if d(θu, θa) ≤η and d(θv, θb) ≤η, then |f(θu, θv)−f(θa, θb)| ≤2B√rη. In summary, property
+5.1 is satisﬁed for distance d deﬁned in (32) with bias : R+ →R+ deﬁned as bias(η) = 2B√rη.
+Good distance estimation ˆd and Property 5.2. We state the following Lemma whose proof is dele-
+gated to Section 9.
+Lemma 8.3. Assume that p = n−1 ln1+κ n for some κ > 0. Consider ˆd as computed in (8) with
+t =
+&
+ln(0.08/p)
+ln(0.275np) −r′
+'
+.
+For any ρ ∈(0, κ),
+max
+u,a∈[n]2 |d(θu, θa) −ˆd(u, a)| ≤c(ln n)−1
+2 (κ−ρ)
+with probability at least
+1 −O
+
+n2 exp(−Θ((ln n)1+ρ))
+
+,
+where c = c(λ1, λr, λgap, r, B) is independent of n and λgap = min1≤s<s′≤r |λs −λ′
+s|.
+Therefore, property 5.2 is satisﬁed with probability 1 −o(1) for some ∆= Θ
+
+(ln n)−1
+2(κ−ρ)
+for any ρ ∈(0, κ).
+Suﬃcient representation and Property 5.3. Since f is L-Lipschitz, the distance d as deﬁned in (17)
+is bounded above by squared ℓ2 distance:
+d(θu, θv) = ∥ΛQ(eu −ev)∥2
+2 =
+Z 1
+0
+(f(θu, y) −f(θv, y))2dy
+(33)
+≤L2|θu −θv|2.
+(34)
+26
+
+Note that the only diﬀerence in (20) and (34) is the constant L2|λ1|2t versus L2. It follows by
+a similar argument that with probability at least 1 −n exp
+
+−δ2(n−1)√η′
+2L
+
+, for any η′ ∈(0, L2),
+property 5.3 is satisﬁed with meas(η′) = (1−δ)√η′
+L
+.
+Concluding Proof of Theorem 4.2. In summary, with probability at least 1 −α for
+α = O
+
+n2 exp(−Θ((ln n)1+ρ))
+
++ n exp
+
+−δ2(n −1)√η′
+2L
+
+,
+properties 5.1-5.3 are satisﬁed for the estimate ˆd computed from (8) with t = ⌈ln(0.08/p)
+ln(0.275np) −r′⌉, and
+the choices of
+d(θu, θv) = ∥ΛQ(eu −ev)∥2
+2,
+bias(η) = 2B√rη,
+∆= Θ
+
+(ln n)−1
+2(κ−ρ)
+,
+meas(η′) = (1 −δ)√η′
+L
+,
+(35)
+for any η > 0, ρ ∈(0, κ), δ ∈(0, 1) and η′ = η −∆∈(0, L2). By substituting the expressions for
+bias, meas, and α into Lemma 5.1, it follows that
+MSE( ˆF) ≤4B2r(η + ∆) +
+2σ2L2
+(1 −δ)3pn2(η −∆) + exp
+ 
+−δ2pn2(1 −δ)2(η −∆)
+4L2
+!
++ O
+
+n2 exp(−Θ((ln n)1+ρ))
+
++ n exp
+
+−δ2(n −1)√η −∆
+2L
+
+.
+(36)
+Additionally, for any δ′ ∈(0, 1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)| ≤2B
+p
+r(η + ∆) + δ′
+(37)
+with probability at least
+1 −n2 exp
+
+−δ2(1−δ)2pn2(η−∆)
+4L2
+
+−n2 exp
+
+−δ′2(1−δ)3pn2(η−∆)
+L2
+
+−O
+
+n2 exp(−Θ((ln n)1+ρ))
+
+−n exp
+
+−δ2(n −1)√η −∆
+2L
+
+.
+By selecting η = Θ
+
+ln1+ρ n
+np
+1/2
+= Θ
+
+(ln n)−1
+2 (κ−ρ)
+with a large enough constant, it follows
+that
+η ± ∆= Θ(η) = Θ(∆),
+pn2η = Ω(n),
+n√η = ω(√n).
+By substituting this choice of η and δ = 1
+2 into (36) it follows that
+MSE( ˆF) = O(η) = O
+
+(ln n)−1
+2(κ−ρ)
+.
+(38)
+27
+
+By choosing δ′ = Θ(√η), it follows that δ′2pn2η = ω(√n). Therefore, by substituting into (37), it
+follows that with probability 1 −o(1),
+max
+(u,v)∈[n]2 | ˆF(u, v) −f(θu, θv)| = O(√η) = O
+
+(ln n)−1
+4(κ−ρ)
+.
+(39)
+This completes the proof of Theorem 4.2.
+□
+9
+Proving distance estimates are close when f has rank r
+This section is dedicated to establishing that the distance estimates (7) and (8) are good approx-
+imations of the desired ideal distances as claimed in the statements of Lemmas 8.1 and 8.3 when
+f has rank r. We start by establishing key auxiliary concentration results which will lead to their
+proofs.
+9.1
+Regular enough growth of bread-ﬁrst-search tree
+Recall that we grow the neighborhood of each u ∈[n] in G = ([n], E′) and use associated observations
+in M′ as well as M′′ to compute the distance estimates ˆd. By the assumed Bernoulli sampling
+model, any tuple (a, b) ∈[n]2 is independently included in E′ with probability p/4. Therefore, the
+expected number of immediate neighbors of u (not including itself) is (n −1)p/4 ≈np/4. The
+expected number of nodes at distance s ≥1 from a given u scales as (np/4)s. We deﬁne some
+necessary notation before we present the formal statement of this event. Given δ ∈(0, 1), deﬁne
+φ(δ) = 1 −
+ 
+1 −δ
+1 −δ
+p
+2/3
+!1/2
+< 1.
+(40)
+For any p = ω
+  1
+n
+
+and p = o(1),
+s∗(δ, p, n) = sup
+n
+s ≥1 : p
+8
+(1 + δ)np
+4
+s−1
+≤φ(δ)
+o
+.
+(41)
+For any given δ, s∗(δ, p, n) is well deﬁned for n large enough since p = o(1).
+Lemma 9.1. Let ω( 1
+n) ≤p ≤o(1), δ ∈(0, 1). For 1 ≤s ≤s∗(δ, p, n),
+P
+ s[
+h=1
+(
+|Su,h| /∈
+"(1 −δ)np
+4
+h
+,
+(1 + δ)np
+4
+h#)!
+≤4 exp
+ 
+−δ2((1 −δ)np)
+12(1 −δ
+p
+2/3)
+!
+The proof of Lemma 9.1 follows from standard argument using repeated application of Cher-
+noﬀ’s bound and is well known in the literature in various forms.
+For completeness, we have
+included it in the Appendix. Lemma 9.1 suggests deﬁnition of events that will hold with high
+probability. Speciﬁcally, for any u ∈[n] and h ≥1, deﬁne
+A1
+u,h(δ) =
+(
+|Su,h| ∈
+"(1 −δ)np
+4
+h
+,
+(1 + δ)np
+4
+h#)
+.
+(42)
+We note that by event A1
+u,h(δ) we simply require that the number of nodes at distance h from a
+given node u ∈[n] is nearly (np/4)h. However, it does not impose any restrictions on how the
+nodes are connected or the latent parameters associated with the nodes themselves.
+28
+
+9.2
+Concentration of a Quadratic Form One
+The event ∩s+ℓ
+h=1A1
+u,h(δ) implies that the size of |Su,h| grows regularly as expected for h ≤s + ℓ≤
+s∗(δ, p, n). Conditioned on this event, we prove that a speciﬁc quadratic form concentrates around
+its mean. This will be used as the key property to eventually establish that the distance estimates
+are a good approximation to the ideal distances.
+Lemma 9.2. Let ω( 1
+n) ≤p ≤o(1), δ ∈(0, 1), s ≥0, ℓ≥1 for s + ℓ≤s∗(δ, p, n). Then
+P
+
+|eT
+k Q ˜Nu,s+ℓ−eT
+k ΛℓQ ˜Nu,s| ≥λℓ
+k((1 −δ)np/4)−(s+1)/2x
+ ∩s+ℓ
+h=1 A1
+u,h(δ)
+
+≤2 exp
+
+−x2λ2
+k
+4
+
+,
+as long as x < 2((1−δ)np/4)(s+1)/2
+B|λk|(1+|λk|)
+.
+Proof of Lemma 9.2.
+Recall that conditioning on event ∩s+ℓ
+h=1A1
+u,h(δ) simply imposes the re-
+striction that the neighborhood of u ∈[n] grows at a speciﬁc rate, i.e. number of nodes at distances
+h ≤s + ℓis within ((1 ± δ)np/4)h. However, this event is independent from latent parameters
+{θi}i∈[n] and the realization of observations M(i, j) = Z(i, j) for (i, j) ∈[n] × [n]. Consider any re-
+alization of the tree T s+ℓ
+u
+satisfying ∩s+ℓ
+h=1A1
+u,h(δ); the tree contains information regarding the depth
+s+ℓneighborhood of u. Given such a realization, let Fu,h for 0 ≤h ≤s+ℓdenote the sigma-algebra
+containing information about the latent parameters, edges and the values associated with T h
+u , i.e.
+the depth h BFS tree rooted at u. Speciﬁcally, Fu,0 contains information about latent parameter
+θu associated with u ∈[n]; Fu,s contains information about latent parameters ∪s
+h=1{θi}i∈Su,h and
+all edges and observations involved in the depth h BFS tree, i.e. {M(i, j)}(i,j)∈T h
+u . This implies
+that Fu,0 ⊂Fu,1 ⊂Fu,2, etc.
+We shall consider a speciﬁc martingale sequence with respect to the ﬁltration Fu,h that will
+help establish the desired concentration of eT
+k Q ˜Nu,s+ℓ−eT
+k ΛℓQ ˜Nu,s. For s + 1 ≤h ≤s + ℓ, deﬁne
+Yu,h = eT
+k Λs+ℓ−hQ ˜Nu,h
+Du,h = Yu,h −Yu,h−1
+Yu,s+ℓ−Yu,s = eT
+k Q ˜Nu,s+ℓ−eT
+k ΛℓQ ˜Nu,s
+=
+s+ℓ
+X
+h=s+1
+Du,h
+Note that Yu,h is measurable with respect to Fu,h because eT
+k Λs+ℓ−hQ ˜Nu,h only depends on observa-
+tions in T h
+u and latent variables associated to vertices in Su,h. We will show that Yu,h is martingale
+with ﬁnite mean with respect to Fu,h for s + 1 ≤h ≤s + ℓ,
+E[Yu,h −Yu,h−1 | Fu,h−1] = 0 and E[|Du,h|] < ∞.
+(43)
+29
+
+For any s + 1 ≤h ≤s + ℓ,
+Du,h = Yu,h −Yu,h−1
+= λs+ℓ−h
+k
+
+eT
+k Q ˜Nu,h −λkeT
+k Q ˜Nu,h−1
+
+= λs+ℓ−h
+k
+
+1
+|Su,h|eT
+k QNu,h −λkeT
+k Q ˜Nu,h−1
+
+= λs+ℓ−h
+k
+
+
+1
+|Su,h|
+X
+i∈Su,h
+Nu,h(i)qk(θi) −λkeT
+k Q ˜Nu,h−1
+
+
+=
+X
+i∈Su,h
+Xi,
+where for i ∈Su,h, we deﬁne
+Xi ≜λs+ℓ−h
+k
+|Su,h|
+
+Nu,h(i)qk(θi) −λkeT
+k Q ˜Nu,h−1
+
+.
+(44)
+By deﬁnition,
+Nu,h(i) =
+X
+j∈Su,h−1
+I((i, j) ∈E′)M(i, j)Nu,h−1(j).
+(45)
+Conditioned on Fu,h−1, Nu,h−1(j) for j ∈Su,h−1 is determined and so is θj. However, θi is con-
+ditionally independent random variable. Also, given the construction of the breadth-ﬁrst-search
+tree, for any given i ∈Su,h any of the j ∈Su,h−1 is equally likely to be its parent with probability
+1/|Su,h−1|. Therefore, we have that Xi, i ∈Su,h are independent and
+E
+h
+Xi|Fu,h−1
+
+(46)
+= λs+ℓ−h
+k
+|Su,h|
+
+X
+j∈Su,h−1
+1
+|Su,h−1|E[f(θi, θj)qk(θi)|θj]Nu,h−1(j) −λkeT
+k Q ˜Nu,h−1
+
+.
+Now Nu,h−1(j)/|Su,h−1| = ˜Nu,h−1(j). And
+E[f(θi, θj)qk(θi)|θj] =
+r
+X
+k′=1
+λk′E[qk′(θi)qk′(θj)qk(θi)|θj]
+=
+r
+X
+k′=1
+λk′qk′(θj)E[qk′(θi)qk(θi)]
+= λkqk(θj),
+where we use the orthonormality of qk′, k′ ∈[r]. Therefore,
+X
+j∈Su,h−1
+1
+|Su,h−1|E[f(θi, θj)qk(θi)|θj]Nu,h−1(j) =
+X
+j∈Su,h−1
+λkqk(θj) ˜Nu,h−1(j)
+= λkeT
+k Q ˜Nu,h−1.
+30
+
+Therefore, we conclude that for i ∈Su,h
+E
+h
+Xi|Fu,h−1
+
+= 0.
+(47)
+That is, E[Yu,h −Yu,h−1|Fu,h−1] = 0. By deﬁnition, we have Nu,h(i) ∈[0, 1] for any i ∈Su,h and
+∥qk∥∞≤B. Therefore, it follows that for any i ∈Su,h,
+|Xi| ≤B(1 + |λk|)|λk|s+ℓ−h
+|Su,h|
+.
+(48)
+Therefore, it follows that
+|Du,h| ≤B(1 + |λk|)|λk|s+ℓ−h.
+(49)
+Thus, we have {(Du,h, Fu,h) : s+1 ≤h ≤s+ℓ} as a martingale diﬀerence sequence with diﬀerences
+being uniformly bounded. Now we wish to establish its concentration. To that end, consider Xi
+for i ∈Su,h as deﬁned in (44). Its variance is bounded as
+Var[Xi | Fu,h−1]
+= λ2(s+ℓ−h)
+k
+|Su,h|2 Var
+h
+X
+j∈Su,h−1
+I((i, j) ∈E′)M(i, j)Nu,h−1(j)qk(θi) | Fu,h−1
+i
+.
+Since Var[Z] ≤E[Z2] for any Z, we can upper bound the variance expression by the second moment,
+additionally using the fact that I((i, j) ∈E′) only takes value 1 for a single j ∈Su,h−1 and otherwise
+takes value 0,
+Var[Xi | Fu,h−1]
+= λ2(s+ℓ−h)
+k
+|Su,h|2 E
+h
+X
+j∈Su,h−1
+I((i, j) ∈E′)M(i, j)2N 2
+u,h−1(j)q2
+k(θi) | Fu,h−1
+i
+.
+We use the fact that M(i, j)2 ≤1, E[q2
+k(θi)] = 1 due to orthonormality assumptions on qk, for
+i ∈Su,h it holds that E[I((i, j) ∈E′ | Fu,h−1] =
+1
+|Su,h−1|, so that
+Var[Xi | Fu,h−1] ≤λ2(s+ℓ−h)
+k
+|Su,h|2
+∥Nu,h−1∥2
+2
+|Su,h−1|
+(a)
+≤λ2(s+ℓ−h)
+k
+|Su,h|2
+where (a) follows from the assumption that Nu,h−1 has sparsity Su,h−1 and has entries bounded in
+[0, 1]. It follows that Xi conditioned on Fu,h−1 is sub-exponential with parameters
+ 
+λ(s+ℓ−h)
+k
+|Su,h| , B(1 + |λk|)|λk|s+ℓ−h
+|Su,h|
+!
+.
+Now Du,h is sum of such Xi for i ∈Su,h which are independent of each other conditioned on Fu,h−1.
+Therefore, it follows that conditioned on Fu,h−1, Du,h is sub-exponential with parameters
+λ(s+ℓ−h)
+k
+p
+|Su,h|
+, B(1 + |λk|)|λk|s+ℓ−h
+|Su,h|
+
+.
+31
+
+Since {(Du,h, Fu,h) : s+1 ≤h ≤s+ℓ} is a martingale diﬀerence sequence, Ps+ℓ
+h=s+1 Du,h conditioned
+on Fu,s is sub-exponential with parameters
+ v
+u
+u
+t
+s+ℓ
+X
+h=s+1
+λ2(s+ℓ−h)
+k
+|Su,h|
+,
+max
+h∈[s+1,s+ℓ]
+B(1 + |λk|)|λk|s+ℓ−h
+|Su,h|
+!
+.
+Under event ∩s+ℓ
+h=1A1
+u,h(δ), for any realization of the breadth-ﬁrst-search tree of u, |Su,h| ∈[((1 −
+δ)np/4)h, ((1+δ)np/4)h] for all h ∈[s+ℓ]. Therefore, we can bound the sub-exponential parameters
+of Ps+ℓ
+h=s+1 Du,h conditioned on Fu,s using the property p = ω(1/n) or np = ω(1) as
+ 
+λℓ−1
+k
+√
+2
+(1 −δ)np
+4
+−(s+1)/2
+, B(1 + |λk|)|λk|ℓ−1
+(1 −δ)np
+4
+−(s+1) !
+.
+By Azuma’s concentration inequality, for 0 < x < 2((1−δ)np/4)(s+1)/2
+B|λk|(1+|λk|)
+,
+P
+
+|eT
+k Q ˜Nu,s+ℓ−eT
+k ΛℓQ ˜Nu,s| ≥λℓ
+k((1 −δ)np/4)−(s+1)/2x | ∩s+ℓ
+h=1 A1
+u,h(δ), Fu,s
+
+≤2 exp
+ 
+−min
+ 
+x2λ2
+k
+4
+, x|λk|((1 −δ)np/4)(s+1)/2
+2B(1 + |λk|)
+!!
+≤2 exp
+
+−x2λ2
+k
+4
+
+.
+This completes the proof of Lemma 9.2.
+□
+Lemma 9.2 suggests the following high probability events: for any u ∈[n], k ∈[r], x > 0, s ≥
+0, ℓ≥1, δ ∈(0, 1), deﬁne
+A2
+u,k,s,ℓ(x, δ) =
+n
+|eT
+k Q ˜Nu,s+ℓ−eT
+k ΛℓQ ˜Nu,s| ≤λℓ
+k((1 −δ)np/4)−(s+1)/2x
+o
+.
+9.3
+Concentration of a Quadratic Form Two
+We state a useful concentration that builds on Lemma 9.2 towards establishing Lemma 8.1.
+Lemma 9.3. Let ω( 1
+n) ≤p ≤o(1), δ ∈(0, 1), s ≥0, ℓ≥1 with s + ℓ≤s∗(δ, p, n), and x ≤
+B((1 −δ)np/4)1/2.
+Consider any u, v ∈[n].
+Then, conditioned on event ∩r
+k=1(A2
+u,k,0,s(x, δ) ∩
+A2
+v,k,0,s+ℓ(x, δ)), we have
+ ˜N T
+u,sF ˜Nv,s+ℓ−eT
+u QT Λ2s+ℓ+1Qev
+ ≤
+3Bx
+((1 −δ)np/4)1/2
+
+r
+X
+k=1
+|λk|2s+ℓ+1
+.
+and
+ ˜N T
+u,sF ˜Nv,s+ℓ
+ ≤4B2
+r
+X
+k=1
+|λk|2s+ℓ+1
+.
+32
+
+Proof of Lemma 9.3.
+Assuming event ∩r
+k=1(A2
+u,k,0,s(x, δ)∩A2
+v,k,0,s+ℓ(x, δ)) holds, and using the
+fact that F = QTΛQ, it follows that
+| ˜N T
+u,sF ˜Nv,s+ℓ−eT
+u QT Λ2s+ℓ+1Qev|
+≤|( ˜N T
+u,sQT −eT
+u QTΛs)(ΛQ ˜Nv,s+ℓ−Λs+ℓ+1Qev)|
++ |( ˜N T
+u,sQT −eT
+u QT Λs)Λs+ℓ+1Qev| + |eT
+u QT Λs+1(Q ˜Nv,s+ℓ−Λs+ℓQev)|
+≤
+
+r
+X
+k=1
+(eT
+k Q ˜Nu,s −eT
+k ΛsQeu)(eT
+k ΛQ ˜Nv,s+ℓ−eT
+k Λs+ℓ+1Qev)
+
++
+
+r
+X
+k=1
+(eT
+k Q ˜Nu,s −eT
+k ΛsQeu)eT
+k Λs+ℓ+1Qev
+
++
+
+r
+X
+k=1
+(eT
+k Λs+1Qeu)(eT
+k Q ˜Nv,s+ℓ−eT
+k Λs+ℓQev)
+
+≤
+x
+((1 −δ)np/4)1/2
+ 
+x
+((1 −δ)np/4)1/2 + 2B
+! 
+r
+X
+k=1
+|λk|2s+ℓ+1
+!
+≤
+3Bx
+((1 −δ)np/4)1/2
+ 
+r
+X
+k=1
+|λk|2s+ℓ+1
+!
+,
+(50)
+where we have used the conditioned event ∩r
+k=1(A2
+u,k,0,s(x) ∩A2
+v,k,0,s+ℓ(x)), the model assumption
+that ∥Q∥∞≤B, and the fact that x ≤B((1 −δ)np/4)1/2 for n suﬃciently large. From (50), it
+follows that
+| ˜N T
+u,tF ˜Nv,t+ℓ|
+≤|eT
+u QT Λ2t+ℓ+1Qev| + | ˜N T
+u,tF ˜Nv,t+ℓ−eT
+u QT Λ2t+ℓ+1Qev|
+≤(B2 + 3B2)
+
+r
+X
+k=1
+|λk|2t+ℓ+1
+.
+□
+9.4
+Concentration of a Quadratic Form Three
+We establish a ﬁnal concentration that will lead us to the proof of good distance function property.
+Lemma 9.4. Let ω( 1
+n) ≤p ≤o(1), δ ∈(0, 1), s ≥0, ℓ≥1 with s + ℓ≤s∗(δ, p, n) and 0 < x ≤
+B((1 −δ)np/4)1/2. Let u, v ∈[n]. Deﬁne event
+A′(u, v, s, ℓ)(x) = ∩r
+k=1(A2
+u,k,0,s(x) ∩A2
+v,k,0,s+ℓ(x)) ∩A1
+u,s ∩A1
+v,s+ℓ.
+For 0 < z ≤4B2
+r Pr
+k=1 |λk|2s+ℓ+1
+
+× p′((1 −δ)np/4)2s+ℓ, conditioned on the event A′(u, v, s, ℓ)(x),
+with probability at least
+1 −2 exp
+
+−z2
+8B2
+
+−exp
+ 
+−Θ
+ 
+p′
+(1 −δ)np
+4|λr|−1
+2s+ℓ−1
+2
+!!
+,
+it holds that
+| 1
+p′ ˜Nu,s
+ M′′ + M′
+ind
+ ˜Nv,s+ℓ−˜Nu,sF ˜Nv,s+ℓ| ≤|λr|2s
+(pn)1/2 + z
+s Pr
+k=1 |λk|2s+ℓ+1
+p′((1 −δ)np/4)2s+ℓ.
+33
+
+Proof of Lemma 9.4.
+We establish this result by arguing that conditioned on the event A′(u, v, s, ℓ)(x),
+the matrix M′′ + M′
+ind is statistically very similar to a freshly sampled dataset with density p′. Re-
+call that E′
+ind was constructed so that conditioned on E′, the set E′
+ind ∪E′′ is distributed according
+to a Bernoulli(p′) sampling model, where each (u, v) ∈[n]2 are included in E′
+ind ∪E′′ indepen-
+dently with probability p′. The event A′(u, v, s, ℓ)(x) depends on E′ and the values M(i, j) such
+that (i, j) ∈T s
+u ∪T s+ℓ
+v
+. Therefore datapoints M(i, j) = Z(i, j) for tuples (i, j) /∈T s
+u ∪T s+ℓ
+v
+are
+independent from the event A′(u, v, s, ℓ)(x).
+Let us deﬁne M′′
+ind = [M′′
+ind(i, j)] where
+M′′
+ind(i, j) =
+(
+M(i, j) = Z(i, j)
+if (i, j) ∈(E′′ ∪E′
+ind) and (i, j) /∈T s
+u ∪T s+ℓ
+v
+Zind(i, j)
+if (i, j) ∈E′
+ind and (i, j) ∈T s
+u ∪T s+ℓ
+v
+,
+and Zind(i, j) is a freshly sampled observation for edge (i, j), distributed equivalently to Z(i, j).
+Conditioned on E′ and the event A′(u, v, s, ℓ)(x), M′′
+ind has sparsity pattern E′′ ∪E′
+ind, which is
+distributed according to a Bernoulli(p′) sampling model where each (i, j) ∈[n]2 is included in
+E′′ ∪E′
+ind with probability p′. Furthermore, conditioned on A′(u, v, s, ℓ), for each (i, j) ∈E′′ ∪E′
+ind
+with probability p′, the datapoint M′′
+ind(i, j) is independent of all observations used to compute ˜Nu,s
+and ˜Nv,s+ℓ. As a result, M′′
+ind(i, j) is a fresh independent signal of F(i, j), distributed according to
+Z(i, j). First we will argue that
+  1
+p′
+ ˜N T
+u,s(M′′ + M′
+ind) ˜Nv,s+1 ≈
+  1
+p′
+ ˜N T
+u,sM′′
+ind ˜Nv,s+1.
+By construction, M′′
+ind diﬀers from M′′ +M′
+ind only for indices (i, j) ∈E′
+ind ∩(T s
+u ∪T s+ℓ
+v
+). Therefore,
+it follows that
+|Nu,sM′′
+indNv,s+ℓ−Nu,s
+ M′′ + M′
+ind
+
+Nv,s+ℓ|
+≤
+X
+i,j
+I((i, j) ∈E′
+ind ∩(T s
+u ∪T s+ℓ
+v
+))|Zind(i, j) −Z(i, j)|Nu,s(i)Nv,s+ℓ(j).
+By the boundedness assumption, |Zind(i, j) −Z(i, j)| ≤1. Furthermore, Nu,s(i)Nv,s+ℓ(j) ∈[0, 1] is
+only nonzero for (i, j) ∈Su,s × Sv,s+ℓ. Therefore,
+|Nu,sM′′
+indNv,s+ℓ−Nu,s
+ M′′ + M′
+ind
+
+Nv,s+ℓ|
+≤
+X
+i,j
+I((i, j) ∈E′
+ind ∩(T s
+u ∪T s+ℓ
+v
+))I((i, j) ∈Su,s × Sv,s+ℓ)
+= |{(i, j) ∈E′
+ind ∩(T s
+u ∪T s+ℓ
+v
+) ∩(Su,s × Sv,s+ℓ)}| =: X.
+Conditioned on E′ and the event A′(u, v, s, ℓ)(x), the quantity above, denoted as X, is distributed as
+a Binomial random variable, where each pair (i, j) ∈(T s
+u ∪T s+ℓ
+v
+) ∩(Su,s × Sv,s+ℓ) is included in the
+set E′
+ind independently with probability p′. The number of tuples in (T s
+u ∪T s+ℓ
+v
+) ∩(Su,s × Sv,s+ℓ) is
+bounded above by |Su,s|+|Sv,s+ℓ|, since the only edges in T s
+u ∪T s+ℓ
+v
+that intersect with Su,s×Sv,s+ℓ
+must be at the last layer of T s
+u or T s+ℓ
+v
+. By construction, the number of edges in tree T s
+u at depth s
+is equal to |Su,s|. For suﬃciently large n, by event A′(u, v, s, ℓ)(x), it follows that |Su,s| ≤|Sv,s+ℓ|.
+Therefore the random variable X is stochastically dominated by a Binomial(2|Sv,s+ℓ|, p′) random
+variable. For suﬃciently large n, conditioned on E′ and the event A′(u, v, s, ℓ)(x), by Chernoﬀ’s
+34
+
+bound,
+P
+
+X ≥p′|Su,s||Sv,s+ℓ|
+|λr|−2s(pn)1/2
+
+≤exp
+
+−1
+3
+p′|Su,s||Sv,s+ℓ|
+|λr|−2s(pn)1/2 −2p′|Sv,s+ℓ|
+
+= exp
+
+−2
+3p′|Sv,s+ℓ|
+
+|Su,s|
+2|λr|−2s(pn)1/2 −1
+
+≤exp
+ 
+−2
+3p′
+(1 −δ)np
+4
+s+ℓ 
+(1 −δ)1/2
+4|λr|−1
+(1 −δ)np
+4|λr|−2
+s−1
+2
+−1
+!!
+= exp
+ 
+−Θ
+ 
+p′
+(1 −δ)np
+4|λr|−1
+2s+ℓ−1
+2
+!!
+It follows that conditioned on event A′(u, v, s, ℓ)(x), with probability at least 1−exp
+
+−Θ
+
+p′ 
+(1−δ)np
+4|λr|−1
+2s+ℓ−1
+2
+
+,
+| 1
+p′ ˜Nu,sM′′
+ind ˜Nv,s+ℓ−1
+p′ ˜Nu,s
+ M′′ + M′
+ind
+ ˜Nv,s+ℓ| ≤
+X
+p′|Su,s||Sv,s+ℓ|
+≤|λr|2s
+(pn)1/2 .
+(51)
+Next, we prove that with high probability,
+  1
+p′
+  ˜Nu,s −˜Nv,s
+T M′′
+ind
+  ˜Nu,s+1 −˜Nv,s+1
+
+≈˜N T
+u,sF ˜Nv,s+ℓ.
+Let F(u, v, s, ℓ, x) denote all the information related to T s
+u and T s+ℓ
+v
+, including the node latent
+parameters and observations in M′ that are associated to edges in T s
+u ∪T s+ℓ
+v
+. Furthermore, let
+F(u, v, s, ℓ, x) be conditioned on the event that A′(u, v, s, ℓ)(x) holds, which is fully determined by
+the realization of edges and weights in T s
+u and T s+ℓ
+v
+. We establish concentration of N T
+u,sM′′
+indNv,s+ℓ
+by showing that the expression can be written as a sum of independent random variables conditioned
+on F(u, v, s, ℓ, x),
+N T
+u,sM′′
+indNv,s+ℓ=
+X
+i,j
+I((i, j) ∈E′′ ∪E′
+ind)M′′
+ind(i, j)Nu,s(i)Nv,s+ℓ(j),
+where each term of the summation is bounded in [0, 1] due to the fact that all observed entries are
+bounded in [0, 1]. Let
+φ(i, j) = I((i, j) ∈E′′ ∪E′
+ind)M′′
+ind(i, j)Nu,s(i)Nv,s+ℓ(j).
+By construction, {φ(i, j)}(i,j)∈[n]2 are independent random variables conditioned on F(u, v, s, ℓ, x),
+because Nu,s and Nv,s+ℓare measurable with respect to F(u, v, s, ℓ, x), and conditioned on E′,
+E′′ ∪E′
+ind is distributed according to the Bernoulli(p′) sampling model, and the corresponding ob-
+servations in M′′
+ind are constructed to be independent due to resampling observations Zind(i, j) for
+35
+
+(i, j) ∈T s
+u ∪T s+ℓ
+v
+. We can verify that
+E[φ(i, j)|F(u, v, s, ℓ, x)] = p′F(i, j)Nu,s(i)Nv,s+ℓ(j),
+and
+Var[φ(i, j)|F(u, v, s, ℓ, x)]
+= (Nu,s(i)Nv,s+ℓ(j))2E[I((i, j) ∈E′′ ∪E′
+ind)M′′
+ind(i, j)2 | F(u, v, s, ℓ, x)]
+(a)
+≤Nu,s(i)Nv,s+ℓ(j)E[I((i, j) ∈E′′ ∪E′
+ind)M′′
+ind(i, j) | F(u, v, s, ℓ, x)]
+≤p′Nu,s(i)Nv,s+ℓ(j)F(i, j)
+where inequality (a) follows from the assumption that observed entries are within [0, 1]. Therefore,
+E[N T
+u,sM′′
+indNv,s+ℓ|F(u, v, s, ℓ, x)] = p′N T
+u,sFNv,s+ℓ,
+(52)
+and
+Var[N T
+u,sM′′
+indNv,s+ℓ|F(u, v, s, ℓ, x)] ≤p′N T
+u,sFNv,s+ℓ
+≤4p′|Su,s||Sv,s+ℓ|B2
+r
+X
+k=1
+|λk|2s+ℓ+1
+.
+(53)
+The last inequality follows from Lemma 9.3. By an application of Bernstein’s inequality, for z ≤
+4B2 Pr
+k=1 |λk|2s+ℓ+1
+,
+P
+ 1
+p′ ˜Nu,sM′′
+ind ˜Nv,s+ℓ−˜Nu,sF ˜Nv,s+ℓ| > z | F(u, v, s, ℓ, x)
+
+= P
+ N T
+u,sM′′
+indNv,s+ℓ−p′N T
+u,sFNv,s+ℓ
+ > p′|Su,s||Sv,s+ℓ|z | F(u, v, s, ℓ, x)
+
+≤2 exp
+
+−min
+
+
+z2p′|Su,s||Sv,s+ℓ|
+8B2
+ Pr
+k=1 |λk|2s+ℓ+1
+, zp′|Su,s||Sv,s+ℓ|
+2
+
+
+
+
+≤2 exp
+
+−
+p′|Su,s||Sv,s+ℓ|z2
+8B2
+ Pr
+k=1 |λk|2s+ℓ+1
+
+|
+
+.
+Conditioned on the event A′(u, v, s, ℓ)(x), |Su,s| and |Sv,s+ℓ| are lower bounded by ((1 −δ)np/4)s
+and ((1 −δ)np/4)s+ℓ. By reparametrizing z →z
+q Pr
+k=1 |λk|2s+ℓ+1
+p′((1−δ)np/4)2s+ℓ, we conclude that
+P
+ 
+ 1
+p′ ˜Nu,sM′′
+ind ˜Nv,s+ℓ−˜Nu,sF ˜Nv,s+ℓ| > z
+s Pr
+k=1 |λk|2s+ℓ+1
+p′((1 −δ)np/4)2s+ℓ
+ F(u, v, s, ℓ, x)
+!
+≤2 exp
+
+−z2
+8B2
+
+,
+for 0 < z ≤4B2
+r Pr
+k=1 |λk|2s+ℓ+1
+
+× p′((1 −δ)np/4)2s+ℓ.
+The ﬁnal step in the proof is to
+combine the above probability bound with the inequality stated in (51).
+□
+Deﬁne event
+A3
+u,v,s,ℓ(z, δ) =
+(
+ 1
+p′ ˜Nu,s
+ M′′ + M′
+ind
+ ˜Nv,s+ℓ−˜Nu,sF ˜Nv,s+ℓ| ≤
+(54)
+|λr|2s
+(pn)1/2 + z
+s Pr
+k=1 |λk|2s+ℓ+1
+p′((1 −δ)np/4)2s+ℓ
+)
+.
+36
+
+9.5
+Proof of Lemma 8.1
+By statement of Lemma 8.1, we have t = ⌊ln(1/p)
+ln(np) ⌋with p = n−1+κ where 1/κ is not an integer. We
+wish to establish that distance ˆd, as deﬁned in (7) is a good proxy of distance d as deﬁned in (17).
+We shall establish this result under event A where
+A = A1(0.1) ∩A2(nρ/2, 0.1) ∩A3(nρ/2, 0.1),
+(55)
+where
+A3(nρ/2, 0.1) = ∩u,v∈[n]A3
+u,v,t,1(nρ/2, 0.1),
+A2(nρ/2, 0.1) = ∩u∈[n] ∩k∈[r] (A2
+u,k,0,t(nρ/2, 0.1) ∩A2
+u,k,0,t+1(nρ/2, 0.1)),
+A1(0.1) = ∩u∈[n] ∩t+1
+s=1 A1
+u,s(0.1).
+We shall use Lemmas 9.1, 9.2, 9.3 and 9.4 to conclude the desired result. To that end, we verify
+that appropriate conditions required in the statement of these Lemmas are satisﬁed.
+A crucial condition is that t + 1 ≤s∗(n, p, δ) originally imposed by Lemma 9.1. By deﬁnition
+of s∗(n, p, δ), it is suﬃcient to establish that
+p
+8
+(1 + δ)np
+4
+t
+≤φ(δ)
+(56)
+where recall φ(δ) = 1 −
+
+1−δ
+1−δ√
+2/3
+1/2
+.
+We shall ﬁx δ = 0.1 for the convenience through the
+remainder of the proof. To that end, it can be checked that φ(0.1) > 0.01. Therefore, it is suﬃcient
+to have
+t ≤ln(0.08/p)
+ln(0.275np) < ln(8φ(0.1)/p)
+ln(0.275np) .
+We have chosen t = ⌊ln(1/p)
+ln(np) ⌋. That is,
+t =
+j(1 −κ) ln n
+κ ln n
+k
+=
+j(1 −κ)
+κ
+k
+< 1 −κ
+κ
+,
+since 1/κ is not an integer. And,
+ln(8φ(0.1)/p)
+ln(0.275np) ≥ln 0.08 + (1 −κ) ln n
+ln 0.275 + κ ln n
+→1 −κ
+κ
+>
+j(1 −κ)
+κ
+k
+= t.
+for n large enough. That is, for all n large enough, t + 1 ≤s∗(n, p, 0.1). Since 1/κ is not an integer,
+for some γ ∈(0, 1)
+t =
+j(1 −κ)
+κ
+k
+= 1 −κ
+κ
+−γ.
+That is,
+κ(t + 2) −1 = κ(1 −γ) > 0.
+(57)
+37
+
+For ρ ∈(0, κ), we use x = nρ/2 in statement of Lemmas 9.2, 9.3 and 9.4, and z = nρ/2 in statement
+of Lemma 9.4. We need to verify condition on x and z. Note that δ, B, |λk|, r, t are all constant
+with respect to n. Lemma 9.2 requires
+x < 2((1 −δ)np/4)1/2
+B|λk|(1 + |λk|)
+= Θ((np)1/2)
+and Lemma 9.3 requires
+x < B((1 −δ)np/4)1/2 = Θ((np)1/2).
+Since np = nκ and x = nρ/2 with ρ < κ, both of the above conditions are satisﬁed for suﬃciently
+large n. For Lemma 9.4, we require
+z < 4B2 p′((1 −δ)np/4)2t+1 × (
+r
+X
+k=1
+|λk|2t+2)
+1/2
+= Θ((p′(np)2t+1)1/2).
+Now p′(np/4)2t+1 = Θ(n2κ(t+1)−1). By (57), 2κ(t + 1) −1 = κ(t + 2) −1 + κt > κt ≥κ. By choice,
+z = nρ/2 for ρ < κ ≤2κ(t + 1) −1. Therefore, for suﬃciently large n, the above condition is also
+satisﬁed.
+Now we are ready to bound the diﬀerence between d(u, v) and ˆd(u, v) for any u, v ∈[n]. Recall,
+d(θu, θv) = ∥Λt+1Q(eu −ev)∥2 = (eu −ev)T QT Λ2t+2Q(eu −ev)
+(58)
+= eT
+u QT Λ2t+2Qeu + eT
+v QT Λ2t+2Qev −eT
+u QT Λ2t+2Qev −eT
+v QT Λ2t+2Qeu.
+Recall, that according to (7),
+ˆd(u, v) =
+  1
+p′
+  ˜Nu,t −˜Nv,t
+T (M′′ + M′
+ind)
+  ˜Nu,t+1 −˜Nv,t+1
+
+,
+(59)
+= 1
+p′ ˜N T
+u,t(M′′ + M′
+ind) ˜Nu,t+1 + 1
+p′ ˜N T
+v,t(M′′ + M′
+ind) ˜Nv,t+1
+−1
+p′ ˜N T
+u,t(M′′ + M′
+ind) ˜Nv,t+1 −1
+p′ ˜N T
+v,t(M′′ + M′
+ind) ˜Nu,t+1.
+Under event A as deﬁned in (55), by Lemmas 9.3 and 9.4,
+ 1
+p′ ˜N T
+u,t(M′′ + M′
+ind) ˜Nu,t+1 −eT
+u QT Λ2t+2Qeu
+
+≤
+3Bx
+((1 −δ)np/4)1/2
+
+r
+X
+k=1
+|λk|2t+2
++ |λr|2t
+(pn)1/2 + z
+s
+Pr
+k=1 |λk|2t+2
+p′((1 −δ)np/4)2t+1
+≤
+3Bnρ/2
+(0.225np)1/2
+
+r
+X
+k=1
+|λk|2t+2
++ |λr|2t
+(pn)1/2 + nρ/2
+s Pr
+k=1 |λk|2t+2
+p′(0.225np)2t+1
+= O(Br|λ1|2t+2n−(κ−ρ)/2) + O(|λr|2tn−κ/2) + O((r|λ1|2t+2)1/2n−(2κ(t+1)−1−ρ)/2)
+= O
+
+Br|λ1|2t+2n−1
+2 (κ−ρ)
+,
+where the last equality follows from observing that the ﬁrst term asymptotically dominates with
+respect to n as ρ < κ ≤2κ(t + 1) −1. Similarly, all other three terms on the right hand side in
+(58) and (59) can be bounded by same quantities. Therefore, we conclude that for any u, v ∈[n]
+d(θu, θv) −ˆd(u, v)
+ = O
+
+Br|λ1|2/κn−1
+2 (κ−ρ)
+,
+(60)
+38
+
+where we used t < 1−κ
+κ .
+To conclude the proof, we need to argue that event A holds with high enough probability. To
+that end, through union bound and Lemmas 9.1, 9.2, and 9.4, we have
+P (¬A) ≤P
+
+¬A3(nρ/2, 0.1) | A1(0.1) ∩A2(nρ/2, 0.1)
+
++
+P
+
+¬A2(nρ/2, 0.1) | A1(0.1)
+
++ P
+ ¬A1(0.1)
+
+.
+By union bound and Lemma 9.4, we have that
+P
+
+¬A3(nρ/2, 0.1) | A1(0.1) ∩A2(nρ/2, 0.1)
+
+≤O
+ 
+n2 exp
+ −Θ(nρ)
+
++ n2 exp
+ 
+−Θ
+ 
+p′
+(1 −δ)np
+4|λr|−1
+2t+ 1
+2
+!!!
+(a)
+≤O
+
+n2 exp
+ −Θ(nρ)
+
++ n2 exp
+
+−Θ
+
+(np)t−1
+2
+
+≤O
+
+n2 exp
+ −Θ(nρ)
+
++ n2 exp
+
+−Θ
+
+nκ/2
+.
+where the inequality (a) follows from the choice of t, and the fact that δ and t are constant with
+respect to n. By union bound and Lemma 9.2, we have that
+P
+
+¬A2(nρ/2, 0.1) | A1(0.1)
+
+≤O
+ nr exp
+ −Θ(nρ)
+
+.
+By union bound and Lemma 9.1, we have that
+P
+ ¬A1(0.1)
+
+≤O
+ n exp
+ −Θ(nκ)
+
+.
+In summary, (60) holds with probability 1 −O
+ n2 exp
+ −Θ(nmin(ρ,κ(t−1
+2 )))
+
+. This completes the
+proof of Lemma 8.1.
+□
+9.6
+Concentration in The Sparser Regime
+We state consequence of earlier results that will help establish Lemma 8.3.
+Lemma 9.5. Fix δ = 0.1, p = n−1 ln1+κ n for some κ > 0. Let
+t =
+&
+ln(0.08/p)
+ln(0.275np) −r′
+'
+.
+Let ρ ∈(0, κ). Suppose the events, ∩r
+k=1(A2
+u,k,0,t(ln(1+ρ)/2(n), δ)∩A2
+v,k,0,t(ln(1+ρ)/2(n), δ)), ∩k∈[r]∩r′
+ℓ=1
+A2
+v,k,t,ℓ(ln(1+ρ)/2(n), δ), ∩r′
+ℓ=1A3
+u,v,t,ℓ(ln(1+ρ)/2(n), δ) and ∩t+r′
+s=1
+ A1
+u,s(δ) ∩A1
+v,s(δ)
+
+hold. Then,
+ P
+k′∈[r′] zk′  1
+p′
+ ˜N T
+u,t(M′′ + M′
+ind) ˜Nv,t+k′ −eT
+u QT Λ2Qev
+ ≤c ln−(κ−ρ)
+2
+n
+for some constant c = c(λ1, λr, λgap, r, B), independent of n with λgap = min1≤s<s′≤r |λs −λs′|.
+39
+
+Proof of Lemma 9.5.
+By choice of t, we have that
+ln(0.08/p)
+ln(0.275np) −r′ ≤t < ln(0.08/p)
+ln(0.275np) −r′ + 1.
+(61)
+We would like to verify that t+r′ ≤s∗(δ, p, n) for δ = 0.1. By deﬁnition of s∗(n, p, δ), it is suﬃcient
+to establish that
+1
+8p
+(1 + δ)np
+4
+t+r′−1
+≤φ(δ)
+where recall φ(δ) = 1−
+
+1−δ
+1−δ√
+2/3
+1/2
+. For δ = 0.1, it can be veriﬁed that φ(0.1) > 0.01. Therefore,
+it is suﬃcient to have
+t + r′ −1 ≤ln(0.08/p)
+ln(0.275np),
+which is implied by (61).
+For p = n−1 ln1+κ n, ln np = ln ln1+κ n = (1 + κ) ln ln n. We choose ρ ∈(0, κ), which implies
+ρ ∈(0, ln(np)
+ln ln n −1). Throughout the proof, we will denote x = ln(1+ρ)/2 n = ω(1). It follows that for
+suﬃciently large n,
+x2((1 −δ)np/4)−1 = 4(1 −δ)−1(ln n)−(κ−ρ) = o(1).
+(62)
+Next, we verify properties of z. Recall that z is a vector that satisﬁes Λ2t+2 ˜Λz = Λ21. That is,
+for any k ∈[r],
+X
+k′∈[r′]
+zk′λk′−1
+k
+= λ−2t
+k
+.
+(63)
+Therefore,
+X
+k′∈[r′]
+zk′eT
+u QT Λ2t+k′+1Qev = eT
+u QT Λ2Qev.
+(64)
+Let L be the r′ × r′ diagonal matrix containing only the distinct eigenvalues amongst {λk}k∈[r],
+such that Lhh denotes the h-th distinct eigenvalue. Let ˜L denote the associated r′×r′ Vandermonde
+matrix containing only the distinct eigenvalues, i.e.
+if ˜Lab takes the value of the a-th distinct
+eigenvalue raised to the (b −1)-th power. Note that Λ2t+2 ˜Λz = Λ21 is satisﬁed whenever
+L2t+2 ˜Lz = L1
+is satisﬁed.
+Let us deﬁne a diagonal matrix D with Dbb = |λ1|−(b−1).
+Therefore the explicit
+expression for z is given by
+z = D(˜LD)−1L−2t1,
+such that for ℓ∈[r′],
+zℓ=
+X
+h∈[r′]
+|λ1|−(h−1)(˜LD)−1
+ℓh L−2t
+hh .
+(65)
+40
+
+Theorem 1 of [26] provides bounds on the sum of entries of the inverse of a Vandermonde matrix.
+It states that for a N ×N Vandermonde matrix V such that Vab = λb−1
+a
+, if V −1 denotes the inverse
+of V , then
+max
+j∈[N]
+X
+i∈[N]
+|(V −1)ij| ≤max
+j∈[N]
+Y
+i̸=j
+1 + |λi|
+|λi −λj|.
+Using this result, we obtain
+X
+j∈[r′]
+X
+i∈[r′]
+|(˜LD)−1
+ij | ≤
+X
+j∈[r′]
+Y
+i̸=j
+ 1 + |Lii|/|λ1|
+|Lii −Ljj|/|λ1|
+
+≤r′
+
+|λ1| + |λ1|
+mini,j |Lii −Ljj|
+r′−1
+= r′
+2|λ1|
+λgap
+r′−1
+,
+(66)
+where λgap is the minimum gap between eigenvalues only amongst the distinct eigenvalues,
+λgap = min
+i,j |Li −Lj| =
+min
+i,j:λi̸=λj |λi −λj|.
+Our interest is in bounding
+| P
+k′∈[r′] zk′  1
+p′
+ ˜N T
+u,t(M′′ + M′
+ind) ˜Nv,t+k′ −eT
+u QT Λ2Qev|
+≤|
+X
+k′∈[r′]
+zk′
+  1
+p′
+ ˜N T
+u,t(M′′ + M′
+ind) ˜Nv,t+k′ −˜N T
+u,tF ˜Nv,t+k′
+
+|
+(67)
++ |
+X
+k′∈[r′]
+zk′
+
+˜N T
+u,tQT ΛQ ˜Nv,t+k′ −˜N T
+u,tQT Λk′+1Q ˜Nv,t
+
+|
+(68)
++ |
+X
+k′∈[r′]
+zk′
+
+˜N T
+u,tQT Λk′+1Q ˜Nv,t −eT
+u QT Λ2t+k′+1Qev
+
+|
+(69)
+Conditioned on events ∩r
+k=1(A2
+u,k,0,t(x, δ) ∩A2
+v,k,0,t(x, δ)) and given that all conditions of Lemma
+9.3 are satisﬁed, it follows that
+|(69)| =
+
+X
+k∈[r]
+λ2
+k
+
+(eT
+k Q ˜Nu,t)(eT
+k Q ˜Nv,t) −(eT
+k ΛtQeu)(eT
+k ΛtQev)
+  X
+k′∈[r′]
+zk′λk′−1
+k
+
+(a)
+=
+
+X
+k∈[r]
+λ2−2t
+k
+
+eT
+k Q ˜Nu,t −eT
+k ΛtQeu
+ 
+eT
+k Q ˜Nv,t −eT
+k ΛtQev + eT
+k ΛtQev
+ 
++
+X
+k∈[r]
+λ2−2t
+k
+eT
+k ΛtQeu
+
+eT
+k Q ˜Nv,t −eT
+k ΛtQev
+
+≤
+X
+k∈[r]
+|λk|2−2t
+ 
+|λk|2tx2
+(1 −δ)np
+4
+−1
++ 2B|λk|2tx
+(1 −δ)np
+4
+−1/2!
+≤x
+(1 −δ)np
+4
+−1/2 
+x
+(1 −δ)np
+4
+−1/2
++ 2B
+! X
+k∈[r]
+|λk|2,
+41
+
+where (a) follows from (63).
+Similarly, conditioned on events ∩r
+k=1 ∩r′
+ℓ=1 (A2
+u,k,t,ℓ(x, δ)∩A2
+v,k,t,ℓ(x, δ)) with x = ln(1+ρ)/2 n and
+δ = 0.1, we have
+|(68)| ≤
+X
+k′∈[r′]
+zk′
+
+X
+k
+λk(eT
+k Q ˜Nu,t)
+
+eT
+k Q ˜Nv,t+k′ −eT
+k Λk′Q ˜Nv,t
+ 
+(a)
+≤
+X
+k′∈[r′]
+zk′Bx
+(1 −δ)np
+4
+−(t+1)/2 X
+k∈[r]
+|λk|k′+1
+(b)
+=
+X
+k′∈[r′]
+X
+h∈[r′]
+|λ1|−k′+1(˜LD)−1
+k′hL−2t
+hh Bx
+(1 −δ)np
+4
+−(t+1)/2   X
+k∈[r]
+|λk|k′+1
+(c)
+≤|λ1|2|λr|2Brx
+(1 −δ)|λr|4np
+4
+−(t+1)/2  X
+k′∈[r′]
+X
+h∈[r′]
+(˜LD)−1
+k′h
+
+(d)
+≤|λ1|2|λr|2Brx
+(1 −δ)|λr|4np
+4
+−(t+1)/2
+r′
+2|λ1|
+λgap
+r′−1
+,
+where (a) follows from events ∩r
+k=1∩r′
+ℓ=1(A2
+u,k,t,ℓ(x, δ)∩A2
+v,k,t,ℓ(x, δ)) and showing that eT
+k Q ˜Nu,t ≤B
+due to the boundedness of Q and ∥˜Nu,t∥1 ≤1 by normalization; (b) follows from (65); (c) follows
+from |λk| ≤|λ1| and |L−1
+hh| ≤|λr|−1;(d) follows from (66).
+Conditioned on the event ∩r′
+ℓ=1A3
+u,v,t,ℓ(ln(1+ρ)/2(n), δ) and Lemma 9.3, x = ln(1+ρ)/ 2n and δ =
+0.1 it follows that
+|(67)| ≤
+X
+k′∈[r′]
+zk′
+
+x
+ Pr
+k=1 |λk|2t+k′+1
+p′((1 −δ)np/4)2t+k′
+!1/2
++ |λr|2t
+(pn)1/2
+
+
+(a)
+≤
+X
+k′∈[r′]
+X
+h∈[r′]
+L−2t
+hh (˜LD)−1
+k′h|λ1|−k′+1
+
+x
+ Pr
+k=1 |λk|2t+k′+1
+p′((1 −δ)np/4)2t+k′
+!1/2
++ |λr|2t
+(pn)1/2
+
+
+≤|λr|−2t
+ 
+x
+
+r|λ1|2t+2
+p′((1 −δ)np/4)2t+1
+1/2
++ max(1, |λ1|−r′+1)
+(pn)1/2
+!  X
+k′∈[r′]
+X
+h∈[r′]
+(˜LD)−1
+k′h
+
+(b)
+≤
+ 
+x2r|λr|2|λ1|
+p′((1 −δ)|λr|2|λ1|−1np/4)2t+1
+1/2
++ max(1, |λ1|−r′+1)
+(pn)1/2
+!
+r′
+2|λ1|
+λgap
+r′−1
+where (a) follows using (65) as well as the fact that np = ω(1) and hence for n suﬃciently large,
+((1 −δ)np/4)−t ≥((1 −δ)np/4)−t−k′ for any k′ ≥0; (b) follows using (66).
+42
+
+In summary, we conclude
+| P
+k′∈[r′] zk′  1
+p′
+ ˜N T
+u,t(M′′ + M′
+ind) ˜Nv,t+k′ −eT
+u QT Λ2Qev|
+≤
+ 
+x2r|λr|2|λ1|
+p′((1 −δ)|λr|2|λ1|−1np/4)2t+1
+1/2
++ max(1, |λ1|−r′+1)
+(pn)1/2
+!
+r′
+2|λ1|
+λgap
+r′−1
+(70)
++ |λ1|2|λr|2Brx
+(1 −δ)|λr|4np
+4
+−(t+1)/2
+r′
+2|λ1|
+λgap
+r′−1
+(71)
++ x
+(1 −δ)np
+4
+−1/2 
+x
+(1 −δ)np
+4
+−1/2
++ 2B
+! X
+k∈[r]
+|λk|2.
+(72)
+Observe that due to (62), x((1 −δ)np/4)−1/2 = o(1) and t = Θ(ln n/ ln ln n) = ω(1), hence there
+exists some constant c1 = c1(λ1, λr, λgap, r, B), independent of n, such that
+|term(71) + term(72)| + max(1, |λ1|−r′+1)
+(pn)1/2
+r′
+2|λ1|
+λgap
+r′−1
+≤c1x(np)−1
+2.
+(73)
+Recall that we chose t such that by (61),
+ln(p′) = ln(p) −ln(4 −p)
+= ln(0.08/(4 −p)) −ln(0.08/p)
+≥ln(0.08/(4 −p)) −(t + r′) ln(0.275np).
+It follows by t = Θ(ln(1/p)
+ln(np) ) = Θ( ln(n)
+ln ln n) = ω(1) that,
+ln(p′((1 −δ)|λr|2|λ1|−1np/4)2t)
+≥ln(0.08/(4 −p)) −(t + r′) ln(0.275np) + 2t(ln((1 −δ)|λr|2
+4|λ1|
+) + ln np)
+= t ln(np) + ln(0.08/(4 −p)) −r′ ln(0.275np) + t
+
+2 ln((1 −δ)|λr|2
+4|λ1|
+) −ln(0.275)
+
+= Θ(t ln(np)) = Θ(ln(n)) = ω(1).
+(74)
+This implies that for some constant c2 = c2(λ1, λr, λgap, r, B), the square of the ﬁrst term in (70)
+satisﬁes
+x2r|λr|2|λ1|
+p′((1 −δ)|λr|2|λ1|−1np/4)2t+1 (r′)2
+2|λ1|
+λgap
+2(r′−1)
+≤c2x2(np)−1.
+(75)
+Putting everything together, we have that for some constant c = c(λ1, λr, λgap, r, B)
+| P
+k′∈[r′] zk′  1
+p′
+ ˜N T
+u,t(M′′ + M′
+u,v,t,k′)) ˜Nv,t+k′ −eT
+u QT Λ2Qev| ≤cx(np)−1/2.
+(76)
+Replacing x = ln(1+ρ)/2 n, we obtain the desired result.
+□
+43
+
+9.7
+Proof of Lemma 8.3
+The proof of Lemma 8.3 would follow from Lemma 9.5 and once we verify the probability of events
+required to hold for Lemma 9.5 to be applicable. To that end, given κ > 0 so that p = n−1 ln1+κ n,
+let ρ ∈(0, κ) be parameter of choice. We set
+t =
+&
+ln(0.08/p)
+ln(0.275np) −r′
+'
+.
+Deﬁne event A where
+A = A1(0.1) ∩A2(ln(1+ρ)/2(n), 0.1) ∩A3(ln(1+ρ)/2(n), 0.1),
+(77)
+where
+A3(ln(1+ρ)/2(n), 0.1) = ∩u,v∈[n] ∩r′
+ℓ=1 A3
+u,v,t,ℓ(ln(1+ρ)/2(n), 0.1),
+A2(ln(1+ρ)/2(n), 0.1) = ∩u∈[n] ∩k∈[r] A2
+u,k,0,t(ln(1+ρ)/2(n), 0.1)
+∩u∈[n] ∩k∈[r] ∩r′
+ℓ=1 A2
+u,k,t,ℓ(ln(1+ρ)/2(n), 0.1),
+A1(0.1) = ∩u∈[n] ∩t+r′
+s=1 A1
+u,s(0.1).
+We shall use Lemmas 9.1, 9.2, 9.3 and 9.4 to conclude the desired result. To that end, we verify
+that appropriate conditions required in the statement of these Lemmas are satisﬁed.
+To argue that A1(0.1) holds with high probability, we wish to apply Lemmas 9.1 which requires
+verifying t+r′ ≤s∗(n, p, 0.1) which is done in proof of Lemma 9.5. To argue that A2(ln(1+ρ)/2(n), 0.1)
+and A3(ln(1+ρ)/2(n), 0.1) hold with high probability, we will utilize Lemmas 9.2, 9.3 and 9.4 with
+x = ln(1+ρ)/2(n) as well as z = ln(1+ρ)/2(n) in statement of Lemma 9.4. We need to verify condition
+on x and z. Lemma 9.2 requires
+x ≤2((1 −δ)np/4)1/2
+B|λk|(1 + |λk|)
+and Lemma 9.3 requires
+x ≤B((1 −δ)np/4)1/2.
+For suﬃciently large n these conditions are satisﬁed by our choice of x due to ρ < κ. For Lemma
+9.4, we require
+z ≤4B2 p′((1 −δ)np/4)2t+ℓ× (
+r
+X
+k=1
+|λk|2t+ℓ+1)
+1/2.
+Now z = ln(1+ρ)/2 n and np = ln1+κ n and since ρ < κ we have that z = o((np)1/2).
+By the
+same argument as (74) in the proof of Lemma 9.5, p′((1 −δ)|λr|np/4)2t = ω(1). As a result, the
+right hand side of the inequality is ω((np)ℓ/2), which implies that for suﬃciently large n, the above
+condition on z is satisﬁed.
+Conditioned on event A, by Lemma 9.5 it follows immediately that for distances deﬁned as per
+(32) and (8),
+max
+u,v∈[n] |d(θu, θv) −ˆd(u, v)| = O
+
+ln−κ−ρ
+2 n
+
+= O
+ s
+ln1+ρ n
+np
+!
+.
+(78)
+44
+
+To conclude the proof, we need to argue that event A holds with high enough probability. To
+that end, through union bound and Lemmas 9.1, 9.2, and 9.4, we have
+P (¬A) ≤P
+
+¬A3(ln(1+ρ)/2(n), 0.1) | A1(0.1) ∩A2(ln(1+ρ)/2(n), 0.1)
+
++
+P
+
+¬A2(ln(1+ρ)/2(n), 0.1) | A1(0.1)
+
++ P
+ ¬A1(0.1)
+
+.
+By union bound and Lemma 9.4, we have that
+P
+
+¬A3(ln(1+ρ)/2(n), 0.1) | A1(0.1) ∩A2(ln(1+ρ)/2(n), 0.1)
+
+(79)
+≤O
+
+n2r′ exp
+ −Θ(ln1+ρ n)
+
++ O
+
+n2r′ exp
+ 
+−Θ
+ 
+p′
+(1 −δ)np
+4|λr|−1
+2t+ 1
+2
+!! 
+.
+(80)
+By the choice of t to satisfy (61), it follows that p(0.275np)t+r′ ≥0.08. Therefore,
+p′
+(1 −δ)np
+4|λr|−1
+2t+ℓ−1
+2
+≥
+p
+4 −p(0.275np)t+r′  (1 −δ)
+1.1|λr|−1
+t+r′ (1 −δ)np
+4|λr|−1
+t+ 1
+2−r′
+= 0.08
+4 −p
+ (1 −δ)
+1.1|λr|−1
+2r′−1
+2 (1 −δ)2np
+4.4|λr|−2
+t+ 1
+2−r′
+= Θ
+ (1 −δ)2np
+4.4|λr|−2
+t+ 1
+2−r′!
+= Ω(np) = Θ(ln1+κ n),
+where we used the fact that δ, |λr|, r′ are all constants, while t = ω(1) and np = ω(1). By union
+bound and Lemma 9.2, we have that
+P
+
+¬A2(ln(1+ρ)/2(n), 0.1) | A1(0.1)
+
+≤O
+
+nrr′ exp
+ −Θ(ln1+ρ n)
+
+.
+(81)
+By union bound and Lemma 9.1, we have that
+P
+ ¬A1(0.1)
+
+≤O
+
+n exp
+ −Θ(ln1+κ n)
+
+.
+(82)
+In summary, the desired claim holds with probability 1 −O
+
+n2 exp
+ −Θ((ln n)1+ρ)
+
+. This com-
+pletes the proof of Lemma 8.3.
+□
+10
+Proving distance estimate is close when f has ε-approximate
+rank r
+In this section, we extend the result that distance estimate (7) is good approximation of the desired
+ideal distance as claimed in the statement of Lemma 8.2 when f has ε-approximate rank r. We will
+primarily establish robustness of the distance estimate with respect to arbitrary, additional error
+of magnitude at most ε in each observed entry. This will help conclude Lemma 8.2 from Lemma
+8.1.
+45
+
+10.1
+Robustness of The Quadratic Form In (7)
+When f has ε-approximate rank r, the F = QT ΛQ + ε with ∥ε∥max ≤ε. In contrast, when f has
+rank r, ε = 0, i.e. F = QT ΛQ. That is, the setting of f has ε-approximate rank r can be viewed
+as a perturbation of the setting with f having rank r: each observation M(i, j) is ﬁrst generated
+as per rank r setting and then arbitrary perturbation or adversarial noise εij is added to it where
+|εij| ≤ε. Therefore, we shall analyze the distance estimate as deﬁned in (7) for the setting of f that
+has ε-approximate rank r by bounding the perturbation (or change) induced in distance estimates
+for the setting of f that is rank r, due to the addition of such an arbitrary perturbation εij.
+Lemma 10.1. Let f have rank r, ω( 1
+n) ≤p ≤o(1), δ ∈(0, 1), t ≥0 with t + 1 ≤s∗(δ, p, n) and
+0 < x ≤B((1 −δ)np/4)1/2. Let u, v ∈[n]. As before, deﬁne event
+A′(u, v, t, 1)(x) = ∩r
+k=1(A2
+u,k,0,t(x) ∩A2
+v,k,0,t+1(x)) ∩A1
+u,t ∩A1
+v,t+1.
+We condition on the event that A′(u, v, t, 1)(x) holds. Let ˆd(u, v) be the distance estimate computed
+according to (7). Upon adding arbitrary εij ∈[−ε, ε] to M(i, j) for each (i, j) ∈E, with probability
+at least
+1 −exp
+ 
+−Θ
+ 
+p′
+(1 −δ)np
+4
+2t+1!!
+,
+ˆd(u, v) changes at most by O(tε(1 + ε)t + t2ε2(1 + ε)2t−1).
+Proof of Lemma 10.1.
+Recall that ˆd(u, v) is the sum of four quadratic terms (see (59) for
+example). For each of these terms, we shall argue that it changes by O(ε+tε(1+ε)t+t2ε2(1+ε)2t−1)
+with high probability as claimed.
+This will conclude the proof.
+To that end, let us start by
+considering 1
+p′ ˜N T
+u,t ¯
+M ˜Nu,t+1 where ¯
+M = M′′ + M′
+ind; others follow in a similar manner. Speciﬁcally,
+consider
+N T
+u,t ¯
+MNv,t+1 =
+X
+i,j
+I((i, j) ∈E′′ ∪E′
+ind) ¯
+M(i, j)Nu,t(i)Nv,t+1(j).
+Let F(u, v, t, 1, x) denote all the information related to T t
+u and T t+1
+v
+, including the node latent
+parameters and observations in
+¯
+M that are associated to edges in T t
+u ∪T t+1
+v
+. Furthermore, let
+F(u, v, t, 1, x) be conditioned on the event that A′(u, v, t, 1)(x) holds, which is fully determined by
+the realization of edges and weights in T t
+u and T t+1
+v
+. We wish to understand how N T
+u,t ¯
+MNv,t+1
+changes if we perturb each entry M(i, j) by adding arbitrary εij so that |εij| ≤ε for all (i, j) ∈E.
+To that end, deﬁne
+φ(i, j) = I((i, j) ∈E′′ ∪E′
+ind) ¯
+M(i, j)Nu,t(i)Nv,t+1(j).
+By construction, {φ(i, j)}(i,j)∈[n]2 in non-zero only if all four terms in its product are.
+Given
+F(u, v, t, 1, x) and conditioned on E′, I((i, j) ∈E′′ ∪E′
+ind) are i.i.d. Bernoulli(p′). Each ¯
+M(i, j) is
+perturbed at most by ε. By deﬁnition Nu,t(i) is a product t terms, each of which takes value in
+[0, 1] and is perturbed by at most ε (in absolute) value. Let Nu,t(i) = Qt
+s=1 ws with |ws| ≤1 for
+all s ≤t. Let εs be perturbation added to ws with |εs| ≤ε for all s ≤t. The change in Nu,t(i) is
+46
+
+bounded as
+
+tY
+s=1
+ws −
+tY
+s=1
+(ws + εs)
+ =
+
+X
+S⊂[t]:S̸=∅
+Y
+s∈S
+εs
+Y
+s∈[t]\S
+ws
+ ≤
+X
+S⊂[t]:S̸=∅
+Y
+s∈S
+|εs|
+Y
+s∈[t]\S
+|ws|
+≤
+X
+S⊂[t]:S̸=∅
+ε|S| =
+t
+X
+s=1
+t
+s
+
+εs
+= ε
+ t−1
+X
+s=0
+t!
+(t −s −1)!(s + 1)!εs
+≤tε
+ t−1
+X
+s=0
+(t −1)!
+((t −1) −s)!s!εs
+= tε
+ t−1
+X
+s=0
+t −1
+s
+
+εs
+= tε(1 + ε)t−1.
+(83)
+Similarly, the perturbation in Nv,t+1(j) can be bounded above by (t + 1)ε(1 + ε)t.
+That is,
+the overall perturbation in
+¯
+M(i, j)Nu,t(i)Nv,t+1(j) is bounded above as O(tε(1 + ε)t + t2ε2(1 +
+ε)2t−1) since each of the ¯
+M(i, j), Nu,t(i), Nv,t+1(j) are O(1). Therefore, the overall perturbation
+in N T
+u,t ¯
+MNv,t+1 is bounded above by O(tε(1 + ε)t + t2ε2(1 + ε)2t−1) times the number of (i, j)
+such that Nu,t(i), Nv,t+1(j) are non-zero and I((i, j) ∈E′′ ∪E′
+ind). Given F(u, v, t, 1, x), this is pre-
+cisely Binomial(|Su,t||Sv,t+1|, p′). Therefore, by Chernoﬀ’s bound, it follows that P
+i,j∈[n] I((i, j) ∈
+E′′ ∪E′
+ind) is at most 2|Su,t||Sv,t+1|p′ with probability at least 1−exp
+ −|Su,t||Sv,t+1|p′/3
+
+. That is,
+perturbation in N T
+u,t ¯
+MNv,t+1 is bounded above by O(|Su,t||Sv,t+1|p′)×O(tε(1+ε)t+t2ε2(1+ε)2t−1)
+with probability at least 1 −exp
+ −|Su,t||Sv,t+1|p′/3
+
+. Conditioned on the event A′(u, v, t, 1)(x),
+|Sv,s+ℓ| are lower bounded by ((1 −δ)np/4)t and ((1 −δ)np/4)t+1. That is, the above claim holds
+with probability at least 1 −exp
+ −(1 −δ)np/4)2t+1p′/3
+
+. Recall that ˜Nu,t = Nu,t/|Su,t|. It fol-
+lows that the perturbation in
+1
+p′ ˜N T
+u,t ¯
+M ˜Nu,t+1 is bounded above by O(tε(1 + ε)t + t2ε2(1 + ε)2t−1)
+with probability at least 1 −exp
+ −(1 −δ)np/4)2t+1p′/3
+
+. Using an identical argument, the same
+conclusion holds for perturbation induced in the other three terms in distance estimate (7). This
+completes the proof of Lemma 10.1.
+□
+10.2
+Proof of Lemma 8.2
+Using Lemma 10.1 and Lemma 8.1, we establish the proof of Lemma 8.2. As argued in the proof of
+Lemma 8.1, for choice of t = ⌊ln(1/p)
+ln(np) ⌋with p = n−1+κ where 1/κ is not an integer and δ = 0.1, we
+have that t+1 ≤s∗(n, p, 0.1) for n large enough. Further, np = nκ and p′(np/4)2t+1 = Θ(n2κ(t+1)−1)
+with κ ≤2κ(t + 1) −1. As in Lemma 8.1, we choose x = nρ/2 for ρ ∈(0, κ) in Lemma 10.1. By
+this selection, we have x ≤(np/4)
+1
+2 for n large enough. As in Lemma 8.1, the event A (recall
+deﬁnition from (55)) holds with probability at least 1 −O
+ n2 exp
+ −Θ(nmin(ρ,κ(t−1
+2)))
+
+. Indeed,
+A implies the condition required for Lemma 10.1 to hold with x = nρ/2 for all u ̸= v ∈[n].
+Finally, given this, the conclusion of Lemma 10.1 holds for all u ̸= v ∈[n] with probability at least
+1 −exp
+
+n2 exp
+ −Θ(nκ)
+
+. In summary, from Lemma 10.1 and Lemma 8.1, it follows that
+|d(u, v) −ˆd(u, v)| ≤O
+
+Br|λ1|2/κn−1
+2 (κ−ρ)
++ O
+
+tε(1 + ε)t + t2ε2(1 + ε)2t−1
+,
+(84)
+holds with probability at least 1 −O
+ n2 exp
+ −Θ(nmin(ρ,κ(t−1
+2 )))
+
+. This completes the proof of
+Lemma 8.2.
+□
+47
+
+Acknowledgements
+We gratefully acknowledge funding from the NSF under grants CCF-1948256, CNS-1955997, CMMI-
+1462158, CMMI-1634259, and a TRIPODS phase I project.
+References
+[1] Emmanuel Abbe, Jianqing Fan, Kaizheng Wang, Yiqiao Zhong, et al. Entrywise eigenvector
+analysis of random matrices with low expected rank. Annals of Statistics, 48(3):1452–1474,
+2020.
+[2] Emmanuel Abbe and Colin Sandon. Community detection in general stochastic block models:
+Fundamental limits and eﬃcient algorithms for recovery. In Foundations of Computer Science
+(FOCS), 2015 IEEE 56th Annual Symposium on, pages 670–688. IEEE, 2015.
+[3] Emmanuel Abbe and Colin Sandon. Recovering communities in the general stochastic block
+model without knowing the parameters. In Advances in neural information processing systems,
+2015.
+[4] Emmanuel Abbe and Colin Sandon. Detection in the stochastic block model with multiple
+clusters: proof of the achievability conjectures, acyclic bp, and the information-computation
+gap. Advances in neural information processing systems, 2016.
+[5] Charles Bordenave, Marc Lelarge, and Laurent Massouli´e.
+Non-backtracking spectrum of
+random graphs: community detection and non-regular ramanujan graphs. In Foundations of
+Computer Science (FOCS), 2015 IEEE 56th Annual Symposium on, pages 1347–1357. IEEE,
+2015.
+[6] Christian Borgs, Jennifer Chayes, Christina E. Lee, and Devavrat Shah. Thy friend is my
+friend: Iterative collaborative ﬁltering for sparse matrix estimation.
+In I. Guyon, U. V.
+Luxburg, S. Bengio, H. Wallach, R. Fergus, S. Vishwanathan, and R. Garnett, editors, Ad-
+vances in Neural Information Processing Systems, volume 30, pages 4715–4726. Curran Asso-
+ciates, Inc., 2017.
+[7] Christian Borgs, Jennifer Chayes, and Adam Smith. Private graphon estimation for sparse
+graphs. In Advances in Neural Information Processing Systems, pages 1369–1377, 2015.
+[8] Christian Borgs, Jennifer T Chayes, Henry Cohn, and Shirshendu Ganguly. Consistent non-
+parametric estimation for heavy-tailed sparse graphs. arXiv preprint arXiv:1508.06675, 2015.
+[9] Christian Borgs, Jennifer T Chayes, Henry Cohn, and Nina Holden.
+Sparse exchangeable
+graphs and their limits via graphon processes. arXiv preprint arXiv:1601.07134, 2016.
+[10] Christian Borgs, Jennifer T Chayes, Henry Cohn, and Yufei Zhao. An Lp theory of sparse
+graph convergence I: limits, sparse random graph models, and power law distributions. arXiv
+preprint arXiv:1401.2906, 2014.
+[11] Christian Borgs, Jennifer T Chayes, Henry Cohn, and Yufei Zhao. An Lp theory of sparse
+graph convergence II: Ld convergence, quotients, and right convergence.
+arXiv preprint
+arXiv:1408.0744, 2014.
+48
+
+[12] Christian Borgs, Jennifer T Chayes, L´aszl´o Lov´asz, Vera T S´os, and Katalin Vesztergombi.
+Convergent sequences of dense graphs I: Subgraph frequencies, metric properties and testing.
+Advances in Mathematics, 219(6):1801–1851, 2008.
+[13] Changxiao Cai, Gen Li, Yuejie Chi, H Vincent Poor, and Yuxin Chen. Subspace estimation
+from unbalanced and incomplete data matrices: l2,∞statistical guarantees. arXiv preprint
+arXiv:1910.04267, 2019.
+[14] Emmanuel Candes and Benjamin Recht. Exact matrix completion via convex optimization.
+Communications of the ACM, 55(6):111–119, 2009.
+[15] Emmanuel J Candes and Yaniv Plan. Matrix completion with noise. Proceedings of the IEEE,
+98(6):925–936, 2010.
+[16] Emmanuel J Cand`es and Terence Tao. The power of convex relaxation: Near-optimal matrix
+completion. IEEE Transactions on Information Theory, 56(5):2053–2080, 2010.
+[17] Sourav Chatterjee. Matrix estimation by universal singular value thresholding. The Annals of
+Statistics, 43(1):177–214, 2015.
+[18] Yudong Chen and Martin J Wainwright.
+Fast low-rank estimation by projected gradient
+descent: General statistical and algorithmic guarantees.
+arXiv preprint arXiv:1509.03025,
+2015.
+[19] Yuxin Chen, Jianqing Fan, Cong Ma, and Kaizheng Wang. Spectral method and regularized
+mle are both optimal for top-k ranking. Annals of statistics, 47(4):2204, 2019.
+[20] Mark A Davenport, Yaniv Plan, Ewout van den Berg, and Mary Wootters.
+1-bit matrix
+completion. Information and Inference, 3(3):189–223, 2014.
+[21] Aurelien Decelle, Florent Krzakala, Cristopher Moore, and Lenka Zdeborov´a.
+Asymptotic
+analysis of the stochastic block model for modular networks and its algorithmic applications.
+Phys. Rev. E, 84:066106, Dec 2011.
+[22] Persi Diaconis and Svante Janson. Graph limits and exchangeable random graphs. Rendiconti
+di Matematica, VII(28):33–61, 2008.
+[23] Lijun Ding and Yudong Chen. Leave-one-out approach for matrix completion: Primal and
+dual analysis. IEEE Transactions on Information Theory, 2020.
+[24] Chao Gao, Yu Lu, and Harrison H Zhou. Rate-optimal graphon estimation. The Annals of
+Statistics, 43(6):2624–2652, 2015.
+[25] Chao Gao, Yu Lu, Harrison H Zhou, et al.
+Rate-optimal graphon estimation.
+Annals of
+Statistics, 43(6):2624–2652, 2015.
+[26] Walter Gautschi. On inverses of vandermonde and conﬂuent vandermonde matrices. Numer.
+Math., 4(1):117–123, dec 1962.
+[27] David Goldberg, David Nichols, Brian M. Oki, and Douglas Terry. Using collaborative ﬁltering
+to weave an information tapestry. Commun. ACM, 1992.
+[28] Brian Karrer, M. E. J. Newman, and Lenka Zdeborov´a. Percolation on sparse networks. Phys.
+Rev. Lett., 113:208702, Nov 2014.
+49
+
+[29] Raghunandan H Keshavan, Andrea Montanari, and Sewoong Oh. Matrix completion from a
+few entries. IEEE Transactions on Information Theory, 56(6):2980–2998, 2010.
+[30] Raghunandan H Keshavan, Andrea Montanari, and Sewoong Oh. Matrix completion from
+noisy entries. Journal of Machine Learning Research, 11(Jul):2057–2078, 2010.
+[31] Olga Klopp, Alexandre B Tsybakov, and Nicolas Verzelen. Oracle inequalities for network
+models and sparse graphon estimation. To appear in Annals of Statistics, 2015.
+[32] Olga Klopp, Alexandre B Tsybakov, Nicolas Verzelen, et al. Oracle inequalities for network
+models and sparse graphon estimation. Annals of Statistics, 45(1):316–354, 2017.
+[33] Yehuda Koren and Robert Bell. Advances in collaborative ﬁltering. In Recommender Systems
+Handbook, pages 145–186. Springer US, 2011.
+[34] Florent Krzakala, Cristopher Moore, Elchanan Mossel, Joe Neeman, Allan Sly, Lenka Zde-
+borov´a, and Pan Zhang. Spectral redemption in clustering sparse networks. Proceedings of the
+National Academy of Sciences, 110(52):20935–20940, 2013.
+[35] Christina E. Lee, Yihua Li, Devavrat Shah, and Dogyoon Song. Blind regression: Nonpara-
+metric regression for latent variable models via collaborative ﬁltering. In Advances in Neural
+Information Processing Systems 29, pages 2155–2163, 2016.
+[36] Y. Li, D. Shah, D. Song, and C. L. Yu. Nearest neighbors for matrix estimation interpreted
+as blind regression for latent variable model.
+IEEE Transactions on Information Theory,
+66(3):1760–1784, 2020.
+[37] Greg Linden, Brent Smith, and Jeremy York. Amazon.com recommendations: Item-to-item
+collaborative ﬁltering. IEEE Internet Computing, 7(1):76–80, 2003.
+[38] L´aszl´o Lov´asz. Large networks and graph limits, volume 60. American Mathematical Society
+Providence, 2012.
+[39] Cong Ma, Kaizheng Wang, Yuejie Chi, and Yuxin Chen. Implicit regularization in noncon-
+vex statistical estimation: Gradient descent converges linearly for phase retrieval and matrix
+completion. In International Conference on Machine Learning, pages 3345–3354, 2018.
+[40] Laurent Massouli´e. Community detection thresholds and the weak ramanujan property. In
+Proceedings of the Forty-sixth Annual ACM Symposium on Theory of Computing, STOC ’14,
+pages 694–703, New York, NY, USA, 2014. ACM.
+[41] Elchanan Mossel, Joe Neeman, and Allan Sly. A proof of the block model threshold conjecture.
+Combinatorica, Aug 2017.
+[42] Sahand Negahban and Martin J Wainwright. Estimation of (near) low-rank matrices with
+noise and high-dimensional scaling. The Annals of Statistics, pages 1069–1097, 2011.
+[43] Xia Ning, Christian Desrosiers, and George Karypis. Recommender Systems Handbook, chapter
+A Comprehensive Survey of Neighborhood-Based Recommendation Methods, pages 37–76.
+Springer US, 2015.
+[44] Benjamin Recht. A simpler approach to matrix completion. Journal of Machine Learning
+Research, 12(Dec):3413–3430, 2011.
+50
+
+[45] David Steurer and Sam Hopkins. Bayesian estimation from few samples: community detection
+and related problems. 2017.
+[46] Madeleine Udell and Alex Townsend. Why are big data matrices approximately low rank?
+SIAM Journal on Mathematics of Data Science, 1(1):144–160, 2019.
+[47] Victor Veitch and Daniel M Roy.
+The class of random graphs arising from exchangeable
+random measures. arXiv preprint arXiv:1512.03099, 2015.
+[48] Patrick J Wolfe and Soﬁa C Olhede.
+Nonparametric graphon estimation.
+arXiv preprint
+arXiv:1309.5936, 2013.
+[49] Jiaming Xu. Rates of convergence of spectral methods for graphon estimation. In Jennifer
+Dy and Andreas Krause, editors, Proceedings of the 35th International Conference on Ma-
+chine Learning, volume 80 of Proceedings of Machine Learning Research, pages 5433–5442,
+Stockholmsm¨assan, Stockholm Sweden, 10–15 Jul 2018. PMLR.
+[50] Jiaming Xu, Laurent Massouli´e, and Marc Lelarge. Edge label inference in generalized stochas-
+tic block models: from spectral theory to impossibility results. In Conference on Learning
+Theory, pages 903–920, 2014.
+[51] Yuan Zhang, Elizaveta Levina, and Ji Zhu. Estimating network edge probabilities by neigh-
+borhood smoothing. arXiv preprint arXiv:1509.08588, 2015.
+[52] Yiqiao Zhong and Nicolas Boumal. Near-optimal bounds for phase synchronization. SIAM
+Journal on Optimization, 28(2):989–1016, 2018.
+A
+Proof of Extra Lemmas
+Lemma A.1. We use two simple inequalities to argue when a summation is dominated by the
+single largest term. For any ρ ≥2,
+r
+X
+s=1
+ρs ≤2ρr
+For any ρ ≥r1/(r−1), it holds that ρs ≥sρ for all s ≤r. If additionally exp(−aρ) ≤1
+2,
+r
+X
+s=1
+exp(−aρs) ≤2 exp(−aρ)
+Recall the deﬁnitions of φ and s∗,
+φ(δ) = 1 −
+ 
+1 −δ
+1 −δ
+p
+2/3
+!1/2
+< 1.
+(85)
+For any p = ω
+  1
+n
+
+and p = o(1),
+s∗(δ, p, n) = sup
+n
+s ≥1 : p
+8
+(1 + δ)np
+4
+s−1
+≤φ(δ)
+o
+.
+(86)
+For any given δ, s∗(δ, p, n) is well deﬁned for n large enough since p = o(1). Event A1
+u,s(δ) is deﬁned
+as
+A1
+u,s(δ) :=
+
+|Su,s| ∈
+(1 −δ)np
+4
+s
+,
+(1 + δ)np
+4
+s
+.
+51
+
+Lemma A.2. Let ω( 1
+n) ≤p ≤o(1), δ ∈(0, 1). For 1 ≤s ≤s∗(δ, p, n),
+P
+ ¬A1
+u,s(δ) | ∩s−1
+h=1 A1
+u,h(δ)
+
+≤2 exp
+ 
+−
+δ2
+3(1 −δ
+p
+2/3)
+(1 −δ)np
+4
+s!
+.
+It follows that for t + ℓ≤s∗(δ, p, n),
+P
+
+∪t+ℓ
+s=1¬A1
+u,s(δ)
+
+≤4 exp
+ 
+−δ2((1 −δ)np)
+12(1 −δ
+p
+2/3)
+!
+.
+Proof of A.2.
+By deﬁnition, s ≤s∗(δ, p, n) implies that
+1
+8p
+(1 + δ)np
+4
+s−1
+≤1 −
+ 
+1 −δ
+1 −δ
+p
+2/3
+!1/2
+=: φ(δ),
+(87)
+Let us denote Bu,s−1 = ∪s−1
+h=1Su,h. Conditioned on ∩s−1
+h=1A1
+u,h(δ), we can upper bound |Bu,s−1|
+by
+|Bu,s−1| = 1 +
+s−1
+X
+h=1
+|Su,h| ≤1 +
+s−1
+X
+h=1
+((1 + δ)np
+4
+)h ≤1 + 2((1 + δ)np
+4
+)s−1,
+where the last step follows from Lemma A.1 showing that the summation is dominated by the
+largest term for suﬃciently large n. By assuming s ≤s∗(δ, p, n), it follows that for suﬃciently large
+n, because np = ω(1),
+|Bu,s−1| ≤1 + 16φ(δ)n
+np
+≤φ(δ)n.
+Conditioned on the set Bu,s−1 and the set Su,s−1, any vertex i ∈[n] \ Bu,s−1 is in Su,s indepen-
+dently with probability (1 −(1 −p
+4)|Su,s−1|). Thus the number of vertices in Su,s is distributed as a
+binomial random variable. By Chernoﬀ’s bound,
+P
+
+|Su,s| > (1 + δ)(n −|Bu,s−1|)
+
+1 −
+
+1 −p
+4
+|Su,s−1|  Bu,s−1, Su,s−1, A1
+u,s−1
+
+≤exp
+
+−1
+3δ2(n −|Bu,s−1|)
+
+1 −
+
+1 −p
+4
+|Su,s−1|
+(a)
+≤exp
+
+−1
+3δ2(n −|Bu,s−1|)
+p|Su,s−1|
+4
+ 
+1 −1
+8p|Su,s−1|
+
+(b)
+≤exp
+ 
+−1
+12δ2np(1 −φ(δ))
+(1 −δ)np
+4
+s−1
+(1 −φ(δ))
+!
+= exp
+
+−1
+3δ2 (1 −φ(δ))2
+1 −δ
+((1 −δ)np
+4
+)s
+
+(c)
+= exp
+ 
+−
+δ2
+3(1 −δ
+p
+2/3)
+(1 −δ)np
+4
+s!
+,
+where inequality (a) follows from (1−(1−x)y) ≥xy(1−1
+2xy) for x ∈(0, 1) and y ∈Z+, inequality
+(b) follows from the event A1
+u,s−1 and the assumption s ≤s∗(δ, p, n), and equality (c) follows from
+52
+
+the fact that we constructed φ such that (1 −δ
+p
+2/3)(1 −φ(δ))2 = (1 −δ). We obtain a lower
+bound on |Su,s| by a similar argument using Chernoﬀ’s bound,
+P
+
+|Su,s| < (1 −δ
+p
+2/3)(n −|Bu,s−1|)
+
+1 −
+
+1 −p
+4
+|Su,s−1|  Bu,s−1, Su,s−1, A1
+u,s−1
+
+≤exp
+
+−1
+2(δ
+p
+2/3)2(n −|Bu,s−1|)
+
+1 −
+
+1 −p
+4
+|Su,s−1|
+≤exp
+
+−1
+3δ2(n −|Bu,s−1|)
+p|Su,s−1|
+4
+ 
+1 −1
+8p|Su,s−1|
+
+≤exp
+ 
+−
+δ2
+3(1 −δ
+p
+2/3)
+(1 −δ)np
+4
+s!
+.
+Conditioned on A1
+u,s−1, the above two inequalities show that A1
+u,s holds with high probability. The
+upper bound follows from
+|Su,s| ≤(1 + δ)(n −|Bu,s−1|)
+
+1 −
+
+1 −p
+4
+|Su,s−1|
+≤(1 + δ)np
+4 |Su,s−1| ≤
+(1 + δ)np
+4
+s
+and the lower bound follows from
+|Su,s| ≥(1 −δ
+p
+2/3)(n −|Bu,s−1|)
+
+1 −
+
+1 −p
+4
+|Su,s−1|
+≥(1 −δ
+p
+2/3)n(1 −φ(δ))p|Su,s−1|
+4
+
+1 −1
+8p|Su,s−1|
+
+≥(1 −δ
+p
+2/3)np
+4 (1 −φ(δ))|Su,s−1|
+ 
+1 −1
+8p
+(1 + δ)np
+4
+s−1!
+≥(1 −δ
+p
+2/3)np
+4 (1 −φ(δ))|Su,s−1|(1 −φ(δ))
+= (1 −δ
+p
+2/3)np
+4 |Su,s−1|(1 −φ(δ))2
+(b)
+= (1 −δ)np
+4
+|Su,s−1| ≥
+(1 −δ)np
+4
+s
+.
+where equality (b) follows from the fact that we constructed φ such that (1 −δ
+p
+2/3)(1 −φ(δ))2 =
+(1 −δ).
+We ﬁnally lower bound the probability of event ∩t+ℓ
+s=1A1
+u,s, by a repeated application of Chernoﬀ’s
+bound for all s ∈[t + ℓ],
+P
+
+∪t+ℓ
+s=1¬A1
+u,s(δ)
+
+=
+t+ℓ
+X
+s=1
+P
+ ¬A1
+u,s(δ) | ∩s−1
+h=1 A1
+u,h(δ)
+
+≤
+t+ℓ
+X
+s=1
+2 exp
+ 
+−
+δ2
+3(1 −δ
+p
+2/3)
+(1 −δ)np
+4
+s!
+(a)
+≤4 exp
+ 
+−δ2((1 −δ)np)
+12(1 −δ
+p
+2/3)
+!
+,
+where inequality (a) follows from the assumption that pn = ω(1) such that the largest term in the
+summation dominates.
+□
+53

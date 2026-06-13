@@ -1,0 +1,3774 @@
+TITLE: A non-anticipative learning-optimization framework for solving multi-stage stochastic programs
+JOURNAL: Annals_OR
+YEAR: 2024
+DOI: https://doi.org/10.1007/s10479-024-06100-7
+---
+
+Annals of Operations Research (2025) 355:2859–2899
+https://doi.org/10.1007/s10479-024-06100-7
+ORIGINAL RESEARCH
+A non-anticipative learning-optimization framework for
+solving multi-stage stochastic programs
+Dogacan Yilmaz1 · ˙I. Esra Büyüktahtakın2
+Received: 18 May 2023 / Accepted: 3 June 2024 / Published online: 3 July 2024
+© The Author(s) 2024
+Abstract
+We present a non-anticipative learning- and scenario-based prediction-optimization (Scen-
+PredOpt) framework that combines deep learning, heuristics, and mathematical solvers for
+solving combinatorial problems under uncertainty. Speciﬁcally, we transform neural machine
+translation frameworks to predict the optimal solutions of scenario-based multi-stage stochas-
+tic programs. The learning models are trained efﬁciently using the input and solution data of
+the multi-stage single-scenario deterministic problems. Then our ScenPredOpt framework
+creates a mapping from the inputs used in training into an output of predictions that are
+close to optimal solutions. We present a Non-anticipative Encoder-Decoder with Attention
+(NEDA) approach, which ensures the non-anticipativity property of multi-stage stochas-
+tic programs and, thus, time consistency by calibrating the learned information based on the
+problem’s scenario tree and adjusting the hidden states of the neural network. In our ScenPre-
+dOpt framework, the percent predicted variables used for the solution are iteratively reduced
+through a relaxation of the problem to eliminate infeasibility. Then, a linear relaxation-based
+heuristic is performed to further reduce the solution time. Finally, a mathematical solver
+is used to generate the complete solution. We present the results on two NP-Hard sequen-
+tial optimization problems under uncertainty: stochastic multi-item capacitated lot-sizing and
+stochastic multistage multidimensional knapsack. The results show that the solution time can
+be reduced by a factor of 599 with an optimality gap of only 0.08%. We compare the results
+of the ScenPredOpt framework with cutting-edge exact and heuristic solution algorithms
+for the problems studied and ﬁnd that our framework is more effective. Additionally, the
+computational results demonstrate that ScenPredOpt can solve instances with a larger num-
+ber of items and scenarios than the trained ones. Our non-anticipative learning-optimization
+approach can be beneﬁcial for stochastic programming problems involving binary variables
+that are solved repeatedly with various types of dimensions and similar decisions at each
+period.
+Dogacan Yilmaz, Esra Büyüktahtakın have contributed equally to this work.
+B ˙I. Esra Büyüktahtakın
+esratoy@vt.edu
+Dogacan Yilmaz
+dy234@njit.edu
+1
+Department of Mechanical and Industrial Engineering, New Jersey Institute of Technology, 200
+Central Ave, Newark, NJ 07114, US
+2
+Grado Department of Industrial and Systems Engineering, Virginia Tech, 250 Perry St, Blacksburg, VA
+24061, US
+123
+
+2860
+Annals of Operations Research (2025) 355:2859–2899
+Keywords Multi-stage stochastic programming · Machine learning · Lot-sizing · Knapsack ·
+Sequential decision-making · Combinatorial optimization · Relax-and-ﬁx heuristics
+1 Introduction
+In this paper, we present a study at the intersection of machine learning (ML) and opera-
+tions research (OR). In recent years, signiﬁcant effort and interest have been put into the
+ﬂourishing area of using ML to solve OR problems. Although signiﬁcant results have been
+achieved, there is still a need for frameworks that can handle the special requirements of
+various OR problems. Here, we focus on this direction and address OR problems involv-
+ing uncertainty. We present a framework for solving scenario-based multi-stage stochastic
+programs by combining learning, heuristics, and mathematical solvers.
+The uncertainty is crucial in many OR problems and must be addressed for accurate
+and realistic representations of systems of interest. Although modeling uncertainty can take
+many forms, we focus on scenario-based problems, which can be formulated in two or more
+stages. In general, scenario-based programs are complex to solve. Multi-stage stochastic
+optimization models are considered to be much harder than two-stage stochastic models.
+The sequence ξt, t = 2, . . . , T is the stochastic process, and the decision made at period t
+is xt, t = 1, . . . , T . In a multi-stage stochastic program, a decision x1 is taken before the
+observation of an uncertainty ξ2, but then the decision process repeats itself:
+decide(x1) →observe(ξ2) →decide(x2) →... →decide(xT ) →observe(ξT )
+The decision xt is made in period t and may depend on the data of the process up to and
+including period t, but not on the future due to the non-anticipativity of the unrealized future
+uncertainty outcomes. Then the T-stage multi-stage stochastic programs can be expressed as:
+min
+A1x1=b1
+x1≥0
+c⊺
+1 x1 + E[
+min
+B2x1+A2x2=b2
+x2≥0
+c⊺
+2 x2 + E[· · · + E[
+min
+BT xT−1+AT xT =bT
+xT ≥0
+c⊺
+T xT ]]],
+(1a)
+where xt ∈{0, 1}nt . The ﬁrst-stage matrices c1, A1, and b1 are known with sizes of n1 × 1,
+m1 ×n1, and m1 ×1, respectively. For the other stages, t = 2, . . . , T , matrices ct, Bt, At, and
+bt have sizes of nt ×1, mt ×nt−1, mt ×nt and mt ×1, respectively. At stage t, the number of
+variables is nt ∈Z+, and the number of constraints is mt ∈Z+ for all t = 1, . . . , T . Some
+or all of these matrices can contain uncertainty.
+Multi-stage stochastic programs are very practical in modeling various applications,
+including airline revenue management (Möller et al., 2008), capacity planning (Huang &
+Ahmed, 2009), epidemic control planning (Yin & Büyüktahtakın, 2021; Yin et al., 2023b; Yin
+& Büyüktahtakın, 2022; Yin et al., 2023a), invasive species control and surveillance (Kıbı¸s
+et al., 2021; Chen et al., 2023), and risk-averse optimization (Homem-de Mello andPagnon-
+celli, 2016; Bushaj et al., 2022). Despite their modeling power, they pose a computational
+challenge and usually require specially designed algorithms and heuristics. Exact solution
+approaches include Lagrangian relaxation (Chen et al., 2002), Dantzig-Wolfe decomposition
+(Singh et al., 2009), and branch-and-price (Lulli & Sen, 2004).
+Most solution algorithms for multi-stage stochastic mixed-integer programs include some
+form of decomposition or cutting-plane approach, including include Lagrangian relaxation
+(Chen et al., 2002), Dantzig-Wolfe decomposition (Singh et al., 2009), branch-and-price
+(Lulli & Sen, 2004), and scenario dominance cuts (Büyüktahtakın, 2022, 2023), and
+decomposition-based heuristics, such as progressive hedging (Watson & Woodruff, 2011).
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2861
+In this study, we propose a learning strategy and a testing framework to solve multi-stage
+stochastic programming problems with binary and continuous variables in a fast setting.
+Optimization problems are solved repeatedly on a daily basis or more frequently in various
+areas, including but not limited to logistics (Schmidt & Wilhelm, 2000), energy (Vespucci et
+al., 2012), healthcare (Guerriero & Guido, 2011), and the air transport industries (Barnhart
+et al., 2003). Stochastic programs can be used to generate realistic pictures of systems and
+provide beneﬁts over deterministic problems (Zakaria et al., 2020). However, their size and
+solution time can limit their beneﬁt. Therefore, problem-speciﬁc methods are often required
+for applications that are frequently solved. This process requires an expert and can be time-
+consuming. We address this issue and provide a general learning framework for solving
+scenario-based multi-stage stochastic programs, particularly those that entail making similar
+decisions over a speciﬁed time horizon.
+Furthermore, multi-stage stochastic problems require the property of non-anticipativity.
+Simply put, it ensures that we cannot use information from future periods and the imple-
+mentability of solutions. The non-anticipativity constraints are fundamental for multi-stage
+stochastic problems, and they can grow rapidly with the number of scenarios. The underlying
+stochastic process can be represented with scenarios with a ﬁnite number of realizations. The
+frameworkthatweareproposingisspeciﬁcallydesignedtohandlescenario-basedmulti-stage
+problems and non-anticipativity requirements. We propose a new type of neural network:
+Non-anticipative Encoder-Decoder with Attention or NEDA, where the Encoder-Decoder
+with Attention part of the algorithm is based on the neural translation architecture of Luong
+et al. (2015).
+In this study, we propose the ScenPredOpt learning optimization framework, built on Pre-
+dOptdevelopedinYilmazandBüyüktahtakın(2024)formulti-perioddeterministicproblems.
+The PredOpt utilizes an encoder-decoder model with attention to learning from the solutions
+of deterministic multi-stage problems. The PredOpt framework also eliminates infeasible pre-
+dictions that are reported as a challenge in Yilmaz and Büyüktahtakın (2023b). The PredOpt
+framework predicts the values of both binary decision variables and tight or close-to-tight
+constraints. These predicted tight constraints are used to create a relaxation of the model.
+The relaxed model is then used to ﬁnd a level of predictions that does not cause an infeasible
+solution. Then, once a suitable level is found, the problem is solved full-scale to generate the
+solution. The PredOpt reduces the solution time by three orders of magnitude with a small
+optimality gap below 0.1%. Furthermore, models can predict longer instances with more
+items than they are trained with.
+This study presents NEDA to tackle the challenge of non-anticipativity of the predictions
+by reconstructing the attention calculations of the model presented in Luong et al. (2015).
+NEDA ensures that at each node, the same decision will be made for a subset of scenarios that
+share that same node of the scenario tree at any stage t. Additionally, a new training paradigm
+is developed for the proposed NEDA based on deterministic instances that are much easier
+to solve than scenario-based stochastic instances. We utilize the presented framework by
+enabling a heuristic to further improve the solution time. The heuristic can capture solution
+characteristics of a stochastic problem that are not identiﬁed by a learning model, since it
+is trained with deterministic instances. The linear programming (LP)-based heuristic further
+reduces the solution time while still maintaining solution quality. Additionally, we present a
+variance-based item-wise expansion strategy.
+We present the computational results for ScenPredOpt through stochastic versions of two
+fundamental OR problems: capacitated lot-sizing and knapsack. In the stochastic multi-item
+capacitated lot-sizing (SMCLSP), several items are considered for production in a planning
+horizon. The aim is to minimize the sum of production, setup, and inventory costs while
+123
+
+2862
+Annals of Operations Research (2025) 355:2859–2899
+satisfying the demand. The lot-sizing problem is considered central to production planning
+with a diverse range of variations and applications (Jans & Degraeve, 2008; Tempelmeier,
+2013). The stochastic multi-stage multi-dimensional knapsack (SMSMK) is a dynamic and
+stochastic version of the classical knapsack problem. The objective is to ﬁnd stable solutions
+by maximizing the proﬁt and the stability bonus while satisfying the resource requirements.
+The stability of solutions over time can be highly crucial for many cases, since frequently
+changing decisions can be costly or unimplementable. Some examples where stability might
+be required include generating human-interpretable dashboards, routing, anomaly detection,
+and audience-aware advertising (Cohen et al., 2016). Even though we present the com-
+putational results of our framework for these two problems, we do not modify our solution
+frameworkforthem.Therefore,ourframeworkisgeneralandcanbeappliedtootherscenario-
+based multi-stage stochastic programs where similar set of decisions are made in each stage.
+Both the knapsack and lot-sizing are regarded as general stochastic multi-stage problems and
+are employed frequently to measure the computational advances in solving scenario-based
+multi-stage stochastic programs (Guan et al., 2009; Büyüktahtakın, 2023).
+The main research contribution of this study is a prediction-optimization framework that
+can efﬁciently solve scenario-based multi-stage stochastic programs involving binary and
+continuous variables. We utilize neural machine translation frameworks with heuristics and
+optimizers to predict the optimal solutions of those multi-stage stochastic programs. Our
+training data involves all parameters and optimal solutions to simpler single-scenario prob-
+lems. The rationale behind the approach is to create an efﬁcient deep learning-based mapping
+from the inputs used in training into an output of solution predictions that are close to opti-
+mal. Our learning schema involved training, validation, and test sets that contain 3,500,000,
+10,000, and 20 instances, respectively. We compare the results of the ScenPredOpt frame-
+work with Gurobi (Gurobi Optimization, LLC, 2022) and cutting-edge solution algorithms
+such as stochastic dual dynamic integer programming and progressive hedging and heuristics
+such as relax-and-ﬁx and adaptive ﬁxing. The details of these baselines used to compare our
+approach are described in Sect.5.2.
+As an innovative feature of this study, we address the challenge of non-anticipativity with
+a new neural architecture called NEDA that is speciﬁcally designed to solve scenario-based
+multi-stage stochastic programs. A training mechanism based on deterministic instances,
+rather than stochastic programs, is presented to signiﬁcantly reduce training data genera-
+tion time. Additionally, a novel framework, ScenPredOpt, is presented to utilize predictions
+from the proposed NEDA neural network. ScenPredOpt integrates a heuristic based on LP
+relaxation to further improve solution time reductions. Moreover, we propose a variance-
+based item-wise generalization algorithm that considers the variability of the predictions and
+extends the predictions to instances with a larger number of items. Our goal is to reduce
+the solution times of multi-stage stochastic programming problems where they are solved
+repeatedly, such as vehicle routing, electric power systems, and airline crew planning. Our
+motivationistodevelopageneralframeworkthatcansolvethoseproblemswithoutaproblem-
+speciﬁc design and generate fast and close-to-optimal solutions to multi-stage stochastic
+programs with many scenarios, periods, and varying dimensions.
+2 Literature review
+In recent years, the ﬁeld of machine learning (ML) for solving OR has drawn signiﬁcant
+attention. For an excellent review on this subject, we refer to Bengio et al. (2021). Speciﬁcally,
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2863
+using ML for solving scenario-based two-stage stochastic programs has gained traction. The
+closest study to ours is presented by Frejinger and Larsen (2019). They utilize a learning
+framework based on a neural translation architecture to solve two-stage stochastic programs.
+Even though they share the same motivation as ours, i.e., reducing the solution times of
+stochastic programs, their methodology is signiﬁcantly different. While we present a new
+neural architecture that can handle non-anticipativity for multi-stage problems, Frejinger
+and Larsen (2019) do not consider the non-anticipativity aspect of the two-stage problem.
+Frejinger and Larsen (2019) present a training paradigm based on fully solved stochastic
+problems, while we present a training strategy based on deterministic and easy-to-solve
+instances. In addition, Frejinger and Larsen (2019) ensure the feasibility of predictions using
+a probability mask, but we present an iterative methodology to select a prediction level that
+eliminates infeasibility. Additionally, while they predict an averaged solution description
+for the recourse decision, we output the fully detailed solution for all stages and scenarios
+of the problem. In a similar vein, Larsen et al. (2022b) present a framework to solve two-
+stage stochastic programs. The authors work on a problem in which the solution for the
+second stage is computationally demanding. Therefore, they predict a higher-level and less
+detailed solution description instead of predicting fully detailed second-stage decisions using
+multilayer perceptrons.
+Abbasi et al. (2020) present a methodology to solve stochastic optimization problems
+in two stages using well-known machine learning algorithms and a case study on blood
+transshipment problems with uncertain demand. Abbasi et al. (2020) train their models on
+the solutions of fully solved stochastic problems and predict only the ﬁrst-stage decision
+variables. The ﬁrst-stage variables are directly actionable; the second-stage variables appear
+to handle uncertainty and are not actionable. They use classical ML algorithms such as
+classiﬁcation and regression trees, k-nearest neighbors, random forest, and neural networks.
+In practice, the solution framework outperforms the existing policy, but has an optimal-
+ity gap of 14%. Wu et al. (2021) utilize a conditional variational auto-encoder to solve
+graph-based two-stage stochastic optimization problems. An encoder is used to generate
+low-dimensional representations of scenarios, which can be used through a decoder for tasks
+like scenario reduction and objective prediction. The presented methodology can be used for
+larger problems and more scenarios than the ones they are trained with. In Crespo-Vazquez
+et al. (2018), a methodology based on ML is presented to solve the participation problem
+of wind and storage power plants deﬁned as a two-stage stochastic programming model.
+They utilize multivariate clustering to generate a set of scenarios from historical data, and
+the probabilities of scenarios are calculated by a trained Long-Short-Term Memory (LSTM)
+model. Bengio et al. (2020) present a framework to solve two-stage stochastic programs
+by predicting a representative scenario of all uncertainty. Therefore, the problem can be
+solved with a representative scenario deterministically instead of all scenarios and achieve
+the same solution faster than the Gurobi solver. Also, by only generating a surrogate problem,
+ﬁrst-stage feasibility is ensured since the surrogate problem is solved with Gurobi in their
+framework.
+Zheng et al. (2021) propose an encoder-decoder-based framework to solve the online
+route planning problem that is formulated as a two-stage stochastic program. For supervised
+learning, the labels are generated by a heuristic algorithm, and probability masking is applied
+to ensure feasibility. Dumouchelle et al. (2022) utilize neural networks to solve two-stage
+problems by estimating the expected second-stage cost, which can be done in two ways. In
+the single-cut version, the expected cost is predicted for a set of scenarios, and in the multi-cut
+version, the expected cost is predicted for a single scenario. Then, those estimations from the
+neural network are used in an approximate formulation containing the ﬁrst-stage decisions.
+123
+
+2864
+Annals of Operations Research (2025) 355:2859–2899
+The resulting framework can be used to solve large problems in seconds. Larsen et al. (2022a)
+present a study to solve two-stage programs using ML to speed up difﬁcult-to-solve second-
+stage problems. They propose to use multilayer perceptrons and predict the value of the target
+function when performing the well-known L-shaped method.
+In a recent study, Nair et al. (2020) present a learning framework to enhance mixed-
+integer programming (MIP) solvers using two neural networks. One network is trained to
+perform multiple partial assignments for its integer variables, which generates smaller sub-
+problems that can be paralleled. The model is trained using feasible solutions instead of
+optimal solutions. Another network is trained for variable selection during the branch-and-
+bound algorithm to generate a bound for the objective function value with a smaller tree. Shen
+et al. (2021) present a new methodology to enhance branch-and-bound algorithms using ML.
+In the ﬁrst step, a graph convolutional network is trained using optimal solutions to problems
+that can be expressed as graphs. Then, for testing, the trained model outputs a value for
+each decision variable that represents the probability of being in the optimal solution. In the
+next step, a probabilistic branching technique with a guided depth-ﬁrst search is proposed
+to utilize the optimal solutions predicted. Liu et al. (2022) propose a learning framework
+by predicting the size of the local branching neighborhood. In the ﬁrst step, the size of
+the branching is predicted as a regression task using graph neural networks. In the second
+stage, the predicted size is dynamically adapted within the local branching algorithms using
+a trained reinforcement learning model. The results show that the size parameter can be
+learned, resulting in signiﬁcant performance gains.
+Yilmaz and Büyüktahtakın (2023a) present a deep-reinforcement learning framework to
+solve stochastic programs based on a two-stage scenario. The authors utilize two different
+agents for each stage of the problem and can generate solutions for hard problems in a fraction
+of a second. Bushaj and Büyüktahtakın (2024) present a novel 2-D Deep Reinforcement
+Learning (DRL) framework that is supported by K-means where the agent, mimicking robot
+movements, assigns a value of 1 or 0 to each of the variables for the multi-dimensional
+knapsack problem. Bushaj et al. (2023) integrate an agent-based simulation with a DRL
+framework for epidemic intervention planning where a governor DRL agent can enforce
+interventions in the agent-based simulation environment.
+Ding et al. (2020) present a study at the intersection of ML and OR. In their framework,
+a graph convolutional network is trained to predict values of binary decision variables. Then
+those predictions can either be used to generate a heuristic prediction with a local branching
+type cut or result in an exact solution with a root branching rule. In a recent study, Jiménez-
+Cordero et al. (2022) present a methodology for constraint generation that is used to warm-
+start the solution process. They train an ML model to predict invariant constraints, which is
+the set of constraints that cannot be removed from the integer programs without changing the
+feasible region. Shen et al. (2022) aim to improve the solution time of large-scale optimization
+problems by presenting an ML-based pricing heuristic for the column generation algorithm.
+The ML model is trained using optimal solutions to the pricing problem in the column
+generation algorithm, which is the bottleneck of the algorithm. When you have an ML model
+thatpredictstheoptimalsolutiontothepricingproblem,theefﬁciencyofthebranch-and-price
+increases signiﬁcantly, which is an exact method.
+In Kotary et al. (2021), the authors are interested in learning the OR solution using ML
+when there are multiple optimal solutions. Additionally, as a result of randomization within
+combinatorial optimization techniques, the learning task may face a challenge. To overcome
+this, the problem of optimal dataset design is introduced with a heuristic to ﬁnd solutions
+with the smallest total variation. Paulus et al. (2021) present a framework in which integer
+programming solvers are integrated into neural network architectures as layers that can be
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2865
+learned. The main idea is to provide gradients for both the cost terms and the constraints of
+an integer program. Therefore, the proposed model can learn the cost and constraints of the
+problem without explicitly specifying it. Huang et al. (2022) suggest a methodology to rank
+cuts in a cutting plane algorithm since a good set of cuts can signiﬁcantly reduce the solution
+time. The main idea is to learn a scoring function that can measure the efﬁciency of the cuts
+and that can be generalized to other instances. The proposed framework can be used during
+branch-and-cut algorithms with a solver.
+Recently, Dai et al. (2021) have introduced Neural Stochastic Dual Dynamic Programming
+(v-SDDP) to combat high-dimensional and long-horizon stochastic dynamic programs that
+can be hard to solve with Stochastic Dual Dynamic Programming (SDDP). They utilize a
+neural network to predict a high-quality value function to increase the efﬁciency of the SDDP
+solution. Their study has a similar ﬂavor to ours in terms of its high-level objective, i.e.
+using ML to help solve sequential stochastic optimization problems. However, they focus on
+stochastic dynamic programs rather than multi-stage stochastic programs and their solution
+methodology is entirely different from ours.
+2.1 Key contributions of the study
+An extensive amount of interest has recently been put toward learning to solve optimization
+problems; however, there is still a lack of research for solving scenario-based multi-stage
+stochastic programs. Speciﬁcally, deep learning-based supervised methodologies can be
+considered to solve challenges of training, feasibility, and non-anticipativity in multi-stage
+stochastic programs. Our motivation is two-fold. First, recent advances at the intersection
+of machine learning and mathematical optimization programs show a promising direction in
+solving combinatorial optimization problems (Liu et al., 2022; Larsen et al., 2022b). Second,
+the vast-applicability and computational difﬁculties of scenario-based multi-stage stochastic
+programs inspire us to tackle the computational complexity of the problem. Our goal is to sig-
+niﬁcantly enhance learning-optimization solution algorithms for scenario-based multi-stage
+stochastic programs by presenting a general framework. Our contributions are summarized
+below.
+To the best of our knowledge, this is the ﬁrst study that utilizes an encoder-decoder model
+to learn the solutions of multi-stage stochastic programs. We present an innovative attention-
+based encoder-decoder model called NEDA, in which the hidden states of the models are
+adjusted based on the scenario tree to ensure the non-anticipativity of the predicted decision
+variables. We propose a novel training paradigm for NEDA based on deterministic instances
+and scenario sampling. This strategy prevents solving stochastic optimization problems to
+generate training labels, which is computationally intractable.
+We introduce the ScenPredOpt framework to handle multi-stage programs by utilizing a
+general LP-based heuristic to speed up the solution. The ScenPredOpt framework is designed
+to handle general scenario-based multi-stage programs with binary variables by integrat-
+ing decisions made by learning models, heuristics, and commercial solvers. Moreover, we
+improve the item-wise generalization algorithm to account for the variability of the prediction
+in predicting problems with a large number of items. We test the success of the ScenPredOpt
+algorithm with a varying number of periods, items, and scenarios. The results show that it
+outperforms heuristics and that the solution time can be improved by a factor of 599 with a
+gap of only 0.08%.
+Our ScenPredOpt framework provides signiﬁcant novelty over the PredOpt presented
+in Yilmaz and Büyüktahtakın (2024) including but not limited to LP relaxation. ScenPre-
+123
+
+2866
+Annals of Operations Research (2025) 355:2859–2899
+dOpt outlines a general methodology to solve scenario-based multi-stage stochastic MIPs,
+where PredOpt focuses on multi-period deterministic MIP problems. Multi-stage stochastic
+programming presents quite different challenges and, therefore, requires novel methodolo-
+gies. First, the ScenPredOpt framework involves a novel ML framework, namely the NEDA
+network, which generates predictions that meet the non-anticipativity requirement of the
+multi-stage stochastic programs while PredOpt fails to satisfy this property. Furthermore, we
+extend the item-wise generalization algorithm with a variance-based strategy and compare
+it with PredOpt.
+Section 3 presents the formulation of SMCLSP and SMSMK and a brief review dis-
+cussion of the traditional solution approaches. Section4 outlines the details of NEDA,
+scenario sampling-based training, ScenPredOpt framework, and item-wise generalization
+algorithm. Then in Sect.5, implementation details, including instance generation, training,
+and evaluation, are presented. Section6 demonstrates the computational results along with
+generalization experiments. Finally, Sect.7 concludes the study with suggestions for future
+directions.
+3 Problems
+3.1 Stochastic multi-item capacitated lot-sizing problem
+Lot-sizing applications have been central for many industries, including but not limited to
+glass, chemical, pharmaceutical, steel, paper, and manufacturing. The lot size problem has
+many variations, including setup times, multiple machines, cyclical schedules, and perishable
+inventories (Jans & Degraeve, 2008). In this study, we present a scenario-based version of the
+classical MCLSP. Here, some or all parameters of the problem can be uncertain and can be
+represented with scenarios. The objective is to minimize the total cost of production, setup,
+and inventory costs while satisfying the demand for each item under all scenarios. Therefore,
+MCLSP and SMCLSP are NP-Hard (Bitran & Yanasse, 1982).
+SMCLSP can be expressed as an MIP, with the number of periods T , items I, and scenarios
+S. The parameters of the problems are assumed to be non-negative and are as follows:
+production cost ps
+it, setup cost f s
+it, inventory cost per unit hs
+it, demand ds
+it, and capacity cs
+t
+∀i ∈{1, . . . , I} , ∀t ∈{1, . . . , T } , ∀s ∈{1, . . . , S}. The probability of each scenario is
+represented by ωs. The set of scenarios that share the same scenario path with scenario s up
+to and including period t for item i is represented by s
+it. Non-negative continuous variables
+xs
+it and vs
+it represent the units produced and inventory at the end of each period, respectively.
+The binary variable ys
+it takes the value 1 if the item i is produced in period t for scenario s,
+and 0 if not. The SMCLSP formulation:
+min
+S
+
+s=1
+ωs
+I
+
+i=1
+T
+
+t=1
+(ps
+itxs
+it + f s
+it ys
+it + hs
+itvs
+it)
+(2a)
+s.t. vs
+i,t−1 + xs
+it −ds
+it = vs
+it
+∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S
+(2b)
+I
+
+i=1
+xs
+it ≤cs
+t
+∀t = 1, . . . , T , ∀s = 1, . . . , S
+(2c)
+xs
+it ≤ys
+itcs
+t
+∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S
+(2d)
+xs
+it = xs′
+it
+∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S, s′ ∈s
+it
+(2e)
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2867
+ys
+it = ys′
+it
+∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S, s′ ∈s
+it
+(2f)
+vs
+it = vs′
+it
+∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S, s′ ∈s
+it
+(2g)
+xs
+it, vs
+it ≥0 ∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S
+(2h)
+ys
+it ∈{0, 1} ∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S.
+(2i)
+The objective function (2a) minimizes the expected cost of production, setup, and inven-
+tory in all scenarios, items, and periods. Constraints (2b) assure the ﬂux of inventory in
+a periodic setting, while demand is satisﬁed for each item i. Constraints (2c) limit the
+amount produced for each item by a shared capacity for all items, and constraints (2d)
+administer the setup cost for the item i produced in period t. Constraints (2e), (2f), and
+(2g) are non-anticipativity constraints for xs
+it, ys
+it, and vs
+it, respectively. Then constraints (2h)
+establish the nonnegativity of xs
+it and vs
+it. Finally, the constraints (2i) put binary restrictions
+on ys
+it.
+The variants of the lot-sizing problem include uncertain demand (Brandimarte, 2006), bio-
+fuel production (Kantas et al., 2015), and carbon emissions (Benjaafar et al., 2012). Lot-sizing
+solution approaches have been studied extensively in the literature. Notably, an exact solu-
+tion framework was presented by Florian et al. (1980). Furthermore, another important exact
+approach with valid (ℓ,S) inequalities and a separation algorithm was introduced by Barany
+et al. (1984). More recently, Büyüktahtakın et al. (2018) present dynamic programming-
+based inequalities to improve the solution of the multi-item capacitated lot-sizing problem.
+Büyüktahtakın and Liu (2016) present a study on solving single-item capacitated lot-sizing
+problem by combining dynamic programming with data ﬁtting and approximation. We refer
+to Pochet and Wolsey (2006) for a review of algorithms on lot-sizing. For general information
+on stochastic lot-sizing problems, we refer to the review by Tempelmeier (2013). Stochastic
+lot-sizing problems can be much more challenging, and thus solution approaches such as
+dynamic programming (Huang & Küçükyavuz, 2008) and progressive hedging (Haugen et
+al., 2001) are used. Also, more general approaches that are speciﬁcally developed to solve
+multi-stage scenario-based programs can be utilized to solve SMCLSP. One of the most recent
+and highly successful approaches has been developed by Zou et al. (2019). Their developed
+stochastic dual dynamic integer programming (SDDiP) framework utilizes different types
+of cutting planes and achieves a state-of-the-art solution framework for solving multi-stage
+stochastic programs in different settings (Lara et al., 2020; Yu & Shen, 2020). In another
+recent study, Büyüktahtakın (2023) proposes scenario dominance cutting planes to solve
+SMCLSP quickly and with high quality. Heuristic approaches based on the relax-and-ﬁx
+approach are highly used to solve both deterministic and stochastic versions of the MCLSP
+(Helber & Sahling, 2010; Toledo et al., 2015; Absi & van den Heuvel, 2019; Beraldi et al.,
+2006).
+3.2 Stochastic multi-stage multi-dimensional knapsack problem
+The stochastic multi-stage multi-dimensional knapsack problem is a periodical version of
+the well-known knapsack problem that also includes uncertainty. In this setting, the aim is
+to maintain a stable solution over time by maximizing the proﬁt and the stabilization bonus
+while ensuring that capacity constraints are not violated. Even in a single-dimensional setting,
+the problem is NP-Hard (Bampis et al., 2022). The consideration of stability over time plays
+a vital role in applications such as periodically changing prices, energy, raw materials, and
+resources.
+123
+
+2868
+Annals of Operations Research (2025) 355:2859–2899
+SMSMK is formulated as a binary integer program for a number of periods T , items I,
+and scenarios S. The binary variable xs
+it denotes the decision to insert the item i ∈{1, . . . , I},
+in period t ∈{1, . . . , T }, in scenario s ∈{1, . . . , S} by taking a value of 1, and 0 otherwise.
+The binary variable ys
+it is introduced as the stabilization bonus and assigned a value of 1 if
+the decision in period t and t + 1 is identical, that is, xs
+it, xs
+i,t+1 = 0, or xs
+it, xs
+i,t+1 = 1.
+Otherwise, ys
+it takes the value 0. For item i, period t and scenario s the proﬁt is denoted by
+ps
+it, and the bonus is denoted by bs
+it except for t ̸= T since T −1 is the last period the stability
+bonus is added. The problem considers J different knapsack constraints, and the weights are
+denoted by ws
+i jt for each item i ∈{1, . . . , I}, knapsack constraint j ∈{1, . . . , J}, period
+t ∈{1, . . . , T }, and scenario s ∈{1, . . . , S}. For each resource constraint, the capacity of
+the knapsack is indicated by cs
+jt. s
+it is the set of scenario indexes that share the same path
+with scenario s up to and including period t for item i. In addition, ωs is the probability of
+each scenario. We modify the formulation in Bampis et al. (2022) to include scenarios and
+present the problem as:
+max
+S
+
+s=1
+ωs(
+I
+
+i=1
+T
+
+t=1
+ps
+itxs
+it +
+I
+
+i=1
+T −1
+
+t=1
+bs
+it ys
+it)
+(3a)
+s.t.
+I
+
+i=1
+ws
+i jtxs
+it ≤cs
+jt
+∀t = 1, . . . , T , ∀j = 1, . . . , J, ∀s = 1, . . . , S
+(3b)
+ys
+it ≤−xs
+i,t+1 + xs
+it + 1 ∀i = 1, . . . , I, ∀t = 1, . . . , T −1, ∀s = 1, . . . , S
+(3c)
+ys
+it ≤xs
+i,t+1 −xs
+it + 1 ∀i = 1, . . . , I, ∀t = 1, . . . , T −1, ∀s = 1, . . . , S (3d)
+xs
+it = xs′
+it
+∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S, s′ ∈s
+it
+(3e)
+ys
+it = ys′
+it
+∀i = 1, . . . , I, ∀t = 1, . . . , T −1, ∀s = 1, . . . , S, s′ ∈s
+it
+(3f)
+xs
+it ∈{0, 1} ∀i = 1, . . . , I, ∀t = 1, . . . , T , ∀s = 1, . . . , S
+(3g)
+ys
+it ∈{0, 1} ∀i = 1, . . . , I, ∀t = 1, . . . , T −1, ∀s = 1, . . . , S.
+(3h)
+The objective function (3a) maximizes the expected proﬁt and stability bonus over all
+scenarios. Constraints (3b) are knapsack constraints that limit the weights of selected items
+by capacity. The following constraints (3c) and (3d) secure the enforcement of the bonus
+if xit = xi,t+1. Precisely, they represent the linear equivalent of ys
+it = 1 −|xs
+i,t+1 −xs
+it|.
+Constraints (3e) and (3f) ensure the non-anticipativity for xs
+it and ys
+it, respectively. Finally,
+binary restrictions for xs
+it and ys
+it are given in constraints (3g) and (3h).
+The knapsack problem has been studied extensively in the OR literature in various forms.
+The knapsack problem has a wide range of applications, and many types of complex OR
+problems can be expressed as knapsack-type sub-problems (Varnamkhasti, 2012). Examples
+include multiple objectives (Ishibuchi et al., 2014), online knapsack (Cygan et al., 2016),
+stochastic knapsack (Kosuch & Lisser, 2011), and probabilistic constraints (Gaivoronski et
+al., 2011). Numerous exact and heuristic approaches have been developed to solve different
+versions of the knapsack problem. We refer to Cacchiani et al. (2022) for a discussion of
+recent advances in knapsack problems. As there are not many solution approaches specially
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2869
+developed for SMSMK (3a)-(3h), we utilize a well-known solution framework, namely pro-
+gressive hedging (PH), for scenario-based multi-stage problems. Introduced by Rockafellar
+and Wets (1991), PH uses the idea of relaxing non-anticipativity constraints and solves sub-
+problems independently. Later, a punishment for violating non-anticipativity is added to the
+objective for each sub-problem. PH performs well in various stochastic integer problems (Gul
+et al., 2015; Veliz et al., 2015). Büyüktahtakın (2022) presents the scenario dominance con-
+cept and a new scenario sub-problem that respects the non-anticipativity constraints to derive
+bounding relations between scenario couples and solve the multi-stage stochastic knapsack
+problem.
+4 Methodology
+Our methodology innovatively integrates deep learning with heuristics and optimization
+solvers to ﬁnd efﬁcient solutions to multi-stage stochastic optimization problems. The deep
+learning aspect of our methodology utilizes neural machine translation frameworks to pre-
+dict solutions that are close to optimal. This is achieved by learning a mapping from input
+deﬁned by the problem parameters to an output deﬁned by solver-generated optimal solu-
+tions. The details of the neural machine translation for the multi-stage stochastic programs
+and non-anticipative encoder-decoder with attention (NEDA) are given in Sect.4.1. Then, in
+Sect.4.2, we introduce the ScenPredOpt framework that combines learning-based decision
+making, heuristics, and mathematical optimization solvers, achieving remarkable reductions
+in solution time, as demonstrated in Sect.6.
+4.1 Non-anticipative encoder-decoder with attention
+4.1.1 Neural machine translation and the requirements for multi-stage
+non-anticipativity
+Amachinetranslationsystemisusedtotranslatefromonelanguagetoanother.Inrecentyears,
+neural network-based translation systems have gained signiﬁcant attention and achieved
+remarkable results (Stahlberg, 2020). In such systems, the sequence x1, x2, . . . , xm is the
+input of the source language and is translated into the target language by generating the
+output sequence y1, y2, . . . , yn. The neural machine translation model is trained using pairs
+of input and output sequence pairs by maximizing the conditional probability: P(y | x) =
+n
+t=1 P(yt | yi|i<t, x). The readers can refer to Stahlberg (2020) for a detailed review
+of neural machine translation systems. We develop our NEDA based on the architecture
+presented by Luong et al. (2015).
+The neural architecture presented by Luong et al. (2015) includes three main components.
+The encoder is responsible for processing the input sequence to generate a high-dimensional
+representation of the input sequence at each time step. Ideally, all characteristics of the input
+sequence, such as meaning, grammar, and semantics, are captured by this high-dimensional
+representation. The decoder is responsible for generating the output sequence one word at
+a time using the encoder representation and the already translated words. Both the encoder
+and decoder are recurrent neural networks, usually with the choice of computing units being
+123
+
+2870
+Annals of Operations Research (2025) 355:2859–2899
+Fig. 1 An example scenario tree that contains four stages and eight scenarios, where s = ω represents the
+scenario ω. The black dashed rectangular ﬁgure shows the scenario groups with the same decisions
+LSTMs. The link between the encoder and the decoder is established through a module
+called attention, which allows the decoder to selectively focus on crucial information from
+the encoder. Sequence-to-sequence models are suitable for predicting periodic optimization
+problems since they can handle information ﬂow between periods of the problem. This can
+be a challenge with traditional ML algorithms that do not consider patterns over time. In
+addition, they perform well on a variety of tasks. For detailed information on the original
+neural network, we refer to Luong et al. (2015), and for its adaptation, we refer to Yilmaz
+and Büyüktahtakın (2024).
+The PredOpt framework presented in Yilmaz and Büyüktahtakın (2024) predicts the deci-
+sion variables of multi-period deterministic problems to be integrated with a commercial
+solver. PredOpt can reduce the solution time to up to three orders of magnitude with opti-
+mality gaps lower than 0.1% for deterministic problems. However, the PredOpt framework
+is not out-of-the-box reconcilable with the scenario-based multi-stage stochastic problems.
+The main incompatibility between the learning network presented in Yilmaz and Büyük-
+tahtakın (2024) and scenario-based multi-stage stochastic problems is the non-anticipative
+nature of the decision variables. Figure1 shows a representation of a scenario tree of a prob-
+lem with four stages, two scenarios per stage and therefore a total of eight scenarios. In
+Fig.1a, the scenario tree is presented in standard form, and in Fig.1b, the scenario tree is
+presented in a disaggregated form. In the scenario formulation of the problem, the variables
+are deﬁned independently for each scenario, as in Fig.1b. However, they are connected with
+a non-anticipativity constraint since two variables that share the same scenario path up to
+stage t should be assigned the same decisions for the implementability of the solutions. The
+grouping of constraints is shown with dashed lines for each stage in Fig.1b. The decision
+variables should take the same value if they share the same realizations of the scenarios up
+to the node’s stage, which is also known as time consistency. For example, all decisions for
+scenario one should be identical; therefore, there is only one scenario group. In stage two,
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2871
+there are two scenario groups: The upper group for scenarios one to four and the lower group
+for scenarios ﬁve to eight.
+The learning network can generate predictions using the data in tabular and extended
+formats, as presented in Fig.1b. However, this raises a critical complication for the problem
+of interest with non-anticipativity. This is because the attention-based neural network uses
+the processed input information from the preceding and subsequent periods. The former case
+is harmless since the information from the preceding periods is the same for all scenarios
+that have the same parent node. However, for the succeeding periods, the child nodes will
+have different parameters to represent changing scenario data. In effect, the original input
+data and, therefore, the processed input data are likely to be different for each distinct child
+node. Since those generated hidden states will be used within the attention mechanism, the
+predictions can end up being different for each scenario group that requires non-anticipativity.
+This would lead to a violation of the non-anticipative structure of the problem and would
+result in an unimplementable decision. For example, we can consider predicting the ﬁrst
+scenario group consisting of scenarios one to four in the second stage. The parameters and,
+therefore, the input data for the ﬁrst stage would be the same for scenarios one to four. On
+the other hand, when we are at stage three, only scenarios one and two are identical.
+Similarly, scenarios three and four are identical, considering only stage three. Assuming
+that the attention-based learning model decides by only considering the preceding and suc-
+ceeding periods, i.e., the attention window of size one, the predictions made would be the
+same for scenarios one and two and the same for scenarios three and four at stage three.
+These two sets of predictions would probably be different from each other at stage three,
+since the encoder uses fourth-stage data when predicting. This would violate the fundamental
+non-anticipativity requirement. In this small example, if the size of the attention window is
+two, then four different predictions can be made for the ﬁrst scenario group, that is, scenarios
+one to four of the second stage. The learner network makes use of input data for the fourth
+period and the third period, which would have different parameters for child nodes. Having
+this violating condition makes the predictions for the scenario-based multi-stage stochas-
+tic program infeasible and inexecutable. In order to eliminate this violation, we propose a
+novel neural network architecture called Non-anticipative Encoder-Decoder with Attention
+or NEDA.
+4.1.2 NEDA framework
+The proposed NEDA model is based on the network presented by Luong et al. (2015) and
+modiﬁed to handle the non-anticipative nature of the issue of interest. The main idea is to
+generate the same encoder hidden state information for all succeeding periods that share the
+same parent node. Building on previous example, in Fig.1b, we can consider generating a
+second-stage prediction for the ﬁrst scenario group consisting of scenarios 1 to 4. To generate
+a prediction that ensures non-anticipativity, the hidden states on the next periods within the
+attention windows should be the same. This is accomplished by averaging the encoder hidden
+states of child nodes. Here, the hidden states of scenarios 1 to 8 of the ﬁrst stage and the
+scenarios 1 to 4 of the third stage have been averaged separately to generate predictions
+using an attention window of one. The alignment for averaging operations depends on the
+123
+
+2872
+Annals of Operations Research (2025) 355:2859–2899
+structure of the scenario tree and is performed separately for each stage and scenario group
+when generating predictions. When generating the second stage prediction for the second
+scenario group consisting of scenarios ﬁve to eight, the hidden states of scenarios 1 to 8
+of the ﬁrst stage and those of 5 to 8 of the third stage have been averaged separately. The
+encoder processes all input sequences at once and generates the hidden states, which ideally
+capture the characteristics and features of the problem parameters. The forward encoder layer
+LST Me
+f generates the hidden state −→
+h e
+t,s and the backward encoder layer LST Me
+b generates
+the hidden state ←−
+h e
+t,s. Given the current period t and the length of the attention window D,
+we can represent the hidden state generated for each scenario s ∈{1, . . . , S} as:
+−→
+h e
+t−D,s, . . . , −→
+h e
+t,s, . . . , −→
+h e
+t+D,s = LST Me
+f (xt−D,s, . . . , xt,s, . . . , xt+D,s),
+(4a)
+←−
+h e
+t−D,s, . . . , ←−
+h e
+t,s, . . . , ←−
+h e
+t+D,s = LST Me
+b(xt−D,s, . . . , xt,s, . . . , xt+D,s).
+(4b)
+The hidden states of the forward and backward LSTM layers within the attention window
+are concatenated and represented as a single encoder hidden state he
+t,s = [−→
+h e
+t,s, ←−
+h e
+t,s] ∀t ∈
+{t −D, . . . , t, . . . , t + D} ∀s ∈{1, . . . , S}. Let t,s denote the indices of scenarios that
+share the same scenario realization up to the current period t with scenarios s. Therefore, for
+each scenario s in the problem, averaged hidden states he
+t,s can be calculated as:
+he
+t,s =
+
+s∈t,s he
+t,s
+|t,s|
+.
+(5)
+The explanation behind the the averaging step is to determine all groups of scenarios that
+have a hidden state similar to the current prediction period t. If those hidden states are close
+to each other, then the averages of the hidden states would be close to each other. In the end,
+the model would make a similar prediction of binary variables. However, if the hidden states
+vary from each other, the trained NEDA model would get varying hidden states throughout
+the periods. Therefore, the attention scores and context calculated in succeeding steps would
+lead to differently predicted binary variables for the same scenario clusters violating non-
+anticipativity. To prevent that, the NEDA model would make an unsure prediction using the
+averaged hidden states, and the determination of those decision variables would be left to
+the ScenPredOpt framework, therefore, to the commercial solver to ﬁnd the best obtainable
+values.
+The decoder cell state is initialized as the scenario average and produces the output
+sequence. The decoder LST Md also generates the decoder hidden state hd
+t,s for the cur-
+rent period t using the decision made in the previous period:
+hd
+t,s = LST Md(yt−1,s),
+(6)
+Then the attention module is used to further incorporate averaged encoder hidden state he
+i,s
+by making a comparison with the current decoder hidden state hd
+t,s. The attention score ai,s
+is calculated as:
+ai,s =
+exp(score(hd
+t,s, he
+i,s))
+t+D
+t′=t−D exp(score(hd
+t,s, he
+t′,s))
+∀i ∈{t −D, . . . , t + D} , ∀s ∈{1, . . . , S} ,(7)
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2873
+and the score is calculated by the following formula:
+score(hd
+t,s, he
+i,s) = hd
+t,s
+⊺Wαhe
+i,s
+∀i ∈{t −D, . . . , t + D} .
+(8)
+Using the attention scores, a weighted average of encoder hidden states is taken to calculate
+the context:
+cnt,s =
+t+D
+
+i=t−D
+ai,s × he
+i,s.
+(9)
+Finally, context cnt,s is concatenated with the decoder hidden state and passed through a
+linear layer to generate a prediction for scenario s in period t. Note that for all scenarios that
+share the same scenario realization up to period t, the predicted values would be the same
+since the predictions are calculated from the same averaged hidden states calculated with Eq.
+(5).
+4.2 The ScenPredOpt framework
+4.2.1 Training and scenario sampling
+In the ScenPredOpt framework, the learner is responsible for decisions in all periods over all
+scenario paths that are linked with non-anticipativity constraints, as ensured by the NEDA
+framework.
+One major challenge for solving scenario-based multi-stage stochastic programs is the
+generation of training instances. The encoder-decoder models require a signiﬁcant amount
+of training data generated by a commercial solver in the order of millions to learn the optimal
+solutions. Therefore, this instance generation approach would be unsuitable for scenario-
+based multi-stage stochastic programs, even for short-period instances, as they are much
+more complex and signiﬁcantly harder to solve than deterministic multi-stage problems.
+To overcome this computation challenge, we propose a training strategy based on scenario
+sampling. In this strategy, at each training epoch, we sample a single scenario for each instance
+and perform a training step using that scenario data and its optimal solution.
+Our proposed training based on scenario sampling achieves a few computational advan-
+tages. First, considering that the model is trained by the optimal solutions of 3,500,000
+instances, it can be computationally infeasible to solve many multi-stage stochastic prob-
+lems with multiple scenarios. However, solving the problem with only a single scenario, i.e.,
+a single scenario path in Fig.1b, only takes a few seconds with the Gurobi solver. In this
+setting, the non-anticipativity constraints in the formulation are removed, and therefore, each
+subproblem of scenarios can be solved independently in a fast manner. Second, by sampling
+a problem with a single scenario path, we increase the learning efﬁciency in a manner similar
+to experience replay (Mnih et al., 2013). In scenario formulation, the parameters of a single
+instance can be very similar if they share a common scenario path, e.g., scenarios 1 and 2 in
+Fig.1a. This powerful correlation can reduce training efﬁciency and cause instability (Zha
+et al., 2019). By sampling a single scenario of the individual problem for each epoch, we
+overcome this challenge. Therefore, the model is not trained on scenario-based multi-stage
+problems, but on deterministic multi-stage problems where only a single scenario is con-
+sidered throughout the planning horizon. Thus, for each epoch during training, a problem
+123
+
+2874
+Annals of Operations Research (2025) 355:2859–2899
+Fig. 2 The high-level ﬂow chart of ScenPredOpt (Algorithm 1)
+containing a single scenario and its solution is used for a training step. As a result, the hidden
+states of the model are not averaged using Eq. (5) during training and only averaged during
+testing when the problem contains all scenarios.
+4.2.2 Predicting tight constraints
+IntheScenPredOptparadigm,themodelistrainedtopredicttightorclose-to-tightconstraints,
+as well as binary variables. The aim is to reduce the problem’s size with those predictions;
+therefore, the solution time is reduced with ScenPredOpt. The tight or close-to-tight con-
+straints are included in the formulation, and others are excluded for faster computation. For
+the SMCLSP, constraints (2c) are labeled tight if I
+i=1 xs
+it ≥ηcs
+t for a given tightness coef-
+ﬁcient η ∈[0, 1]. If xs
+it ≥ηys
+itcs
+t , the constraints (2d) are assumed to be tight. Similarly,
+for SMSMK, constraints (3b) are labeled as tight if I
+i=1 ws
+i jtxs
+it ≥ηcs
+jt. The remaining
+constraints related to bonus enforcement are removed from the relaxation, since they do not
+affect the feasible region. The technique deﬁned on the tightness coefﬁcient η is general and
+can be applied to any inequalities in various forms (≤, ≥) or types (budget and ﬁxed-charge
+constraints).
+During training, the model learns tight or close-to-tight constraints, and this information
+is used during testing to ensure the feasibility of the variables predicted by the model used,
+thus speeding up the ScenPredOpt framework. Also, the predicted tight constraints do not
+impact the feasibility of the ScenPredOpt solution framework since the original formulation
+with all constraints are used to determine the full solution rather than the relaxed formulation
+(Fig.2). The tightness coefﬁcient η is chosen according to the positive class ratio of the binary
+variables, ensuring that the positive class ratio of labeled tight constraints remains consistent.
+This helps prevent class imbalance that arises from labeling and ensures effective training.
+4.2.3 ScenPredOpt algorithm
+Unlike the PredOpt for deterministic multi-period problems presented in Yilmaz and Büyük-
+tahtakın (2024), the ScenPredOpt presents an additional loop with LP relaxation of the
+problem, as a helper to the ML and optimizer, for solving scenario-based multi-stage prob-
+lems, as described in Algorithm 1. Here, a portion of the binary variables obtained by the
+LP-relaxation solution is used in combination with the model-predicted binary variables to
+improve the efﬁciency of the solutions. The high-level structure of the ScenPredOpt algorithm
+is presented in Fig.2.
+A large number of approaches utilize LP relaxations to solve a multitude of problems
+involving integers. Commonly, the main idea is to solve the LP relaxation of the problem and
+ﬁx some integer variables to reduce the solution time. LP-based heuristics with a variable
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2875
+ﬁxing strategy have been extensively employed in some of the most well-known and exten-
+sively studied problems in OR, such as lot-sizing (Denizel & Süral, 2006), knapsack (Chen
+& Hao, 2014), vehicle routing (Cacchiani et al., 2014), and facility location (Guastaroba &
+Speranza, 2014). With a similar motive, we propose ﬁxing binary variables based on the
+LP relaxation of the problem in an iterative way to maintain feasibility. Preliminary results
+showed that the LP-based approach has further reduced solution time without decreasing
+solution quality. The NEDA model is trained on deterministic instances based on scenario
+sampling and not on the exact solutions of stochastic programs. We believe that including
+the LP relaxation solution of the original problem helps ScenPredOpt capture discoveries
+that were not identiﬁed in the model due to training on deterministic instances and averaging
+hidden states. For various problems, different heuristics can be integrated instead of the LP
+relaxation-based heuristic to suit the problem needs better.
+Algorithm 1 presents the details of the ScenPredOpt algorithm. For testing, the ScenPre-
+dOpt algorithm takes a trained NEDA model M, input data from the test set α, initial level
+(percent) for model-predicted binary variables θM, initial level (percent) for LP relaxation-
+assigned binary variables θL P, reduction in the level (percent) for model-predicted binary
+variables λM, and reduction in the level (percent) for LP relaxation-assigned binary vari-
+ables λL P. The output of the framework is the best objective function value determined by
+the ScenPredOpt framework. Also, four operators are deﬁned. First, the operator F M I P is
+an MIP solver, and the inputs to F M I P are the problem parameters α, the binary variables
+predicted by the model and used at a certain level β f
+M, the binary variables assigned by the
+relaxation of the LP and used at a certain level β f
+L P, and the set of constraints C. MIP solver
+F M I P returns z as the best solution found or ∅that denotes an infeasible problem. Second,
+the operator F M I P−FE AS is a feasibility checker for an MIP and takes a set of arguments
+similar to that of an MIP solver F M I P. Here, it is assumed when the sets β f
+M or β f
+L P are ∅,
+and the problem is solved without ﬁxing those variables. Also, instead of using the set of
+all constraints C, the feasibility check is performed using a set of predicted tight constraints
+
+C. The feasibility-checker operator F M I P−FE AS terminates when a ﬁrst feasible solution is
+found, or the original problem is certiﬁed to be infeasible, which is denoted by ∅. Third, the
+operator F L P is an LP solver and takes the same arguments as F M I P except for LP-assigned
+binary variables β f
+L P since they are not yet determined. Unlike the MIP solver F M I P, the LP
+solver F L P removes the restrictions of binary variables from the formulation and solves the
+problem as an LP. Finally, the operator P is the top prediction generator and takes a pair of
+inputs as a set of variables: all of the predicted binary variables by model βM and prediction
+level θM, or LP relaxation assigned binary variables βL P and prediction level θL P. Here, the
+predicted variables are selected up to the desired percent of all variables by a function of
+max(βM, 1 −βM), where βM ∈[0, 1] is the predicted value for the variables predicted by
+the model. Similarly, LP-assigned variables are determined by using max(βL P, 1 −βL P),
+where βL P ∈[0, 1]. The calculated values are ordered from the smallest to the largest and
+selected up to the input prediction level or prediction percent of the total variables. This
+approach determines a set of variables closest to binary values (0 or 1); thus, the model is
+more conﬁdent in its prediction. The selected variables are labeled as 0 or 1 based on their
+proximity. The output of this operator is a set of ﬁxed variables: β f
+M or β f
+L P, depending on
+the input.
+123
+
+2876
+Annals of Operations Research (2025) 355:2859–2899
+The ScenPredOpt algorithm, presented in Algorithm 1, starts by predicting binary vari-
+ables βM and tight constraints 
+C in steps 1 and 2, respectively. In Step 3, the set of variables
+predicted and ﬁxed by the model, β f
+M, is determined with an initial level θM. Next, the
+prediction level feasibility loop is introduced in Step 4, and it is continued until a feasible
+solution is found using the MIP feasibility checker F M I P−FE AS. Note that in this step, we
+use predicted variables from the model and a set of tight constraints 
+C but do not include
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2877
+any LP-assigned binary variables β f
+L P. Within this loop, if no feasible solution is found,
+the prediction level θM is reduced by λM, and a smaller set of β f
+M is generated. Once this
+loop ends, a linear relaxation of the problem is solved using LP solver F L P in step 8 using
+determined predictions β f
+M and all constraints C instead of predicted tight constraints 
+C. The
+resulting variables constitute the set of LP-assigned binary variables βL P. Then in step 9, the
+set of ﬁxed variables is determined with an initial level for LP-assigned binary variables θL P.
+Here, β f
+L P excludes the set of model-predicted variables β f
+M, i.e., β f
+L P ∩β f
+M = ∅always
+holds. In Step 10, a new loop begins and continues until a feasible solution is found. This
+loop is necessary to overcome the possible infeasibility resulting from ﬁxing binary variables
+from the LP relaxation. Similarly to the loop in Step 4, this loop solves the problem using
+model-predicted variables β f
+M and a set of tight constraints 
+C, but also includes ﬁxing LP-
+assigned binary variables β f
+L P during the solution. Within the loop, the level for LP-assigned
+binary variables θL P is reduced by λL P, and the set of LP-assigned ﬁxed binary variables
+β f
+L P is updated. Once a feasible solution is found, a new loop begins in step 14 to achieve a
+solution to report by ScenPredOpt. However, this loop utilizes the complete formulation of
+the problem considering all constraints C and not just the predicted set of tight constraints
+
+C, and either solves the problem fully or reports infeasibility. This is to ensure that the fea-
+sibility is maintained with the original problem. The loop deﬁned by Steps 14 to 18 is only
+used when it is necessary to ensure feasibility and is not run often by ScenPredOpt since the
+former loops ﬁnd a feasible solution with high success. If no feasible solution is found, both
+the ﬁxed levels for the model-predicted binary variables θM and the LP relaxation-assigned
+binary variables θL P are reduced by λM and λL P, respectively. Then, in the next iteration,
+both the variables predicted by the model β f
+M and the variables assigned by LP relaxation
+β f
+L P are updated. Then, in Step 20, the best solution is determined by ScenPredOpt, and
+the corresponding objective function value is returned from the solution found in the loop
+starting at Step 14.
+4.3 Generalization with Item-wise Expansion
+Here, we present an item-wise generalization algorithm that enables a NEDA model trained
+withafewitemstopredictproblemswithalargesetofitems.Thispresentsanimportantaspect
+of the ScenPredOpt solution framework because then models can be trained using small-sized
+problems that are easier to solve, providing a signiﬁcant time reduction in generating training
+instances and model training time. The NEDA model can be used to process variable-length
+input sequences due to the recursive nature of LSTMs. Therefore, a trained NEDA model can
+be used to predict instances with similar distributions that have a different number of periods
+withoutanymodiﬁcation.InYilmazandBüyüktahtakın(2024),theauthorsintroduceanitem-
+wise generalization algorithm and show that the model is very successful in generalizing in
+the item dimension. Here, we improve the item-wise generalization algorithm by considering
+the variability in the predictions made.
+123
+
+2878
+Annals of Operations Research (2025) 355:2859–2899
+Algorithm 2 presents the details of the variance-based item-wise generalization algorithm.
+The inputs to the algorithm are the trained model M, the number of items during model
+training I M, the input data from the test set α, the set of items in the test set i ∈{1, . . . , I} and
+the threshold prediction count δ. The output is a set of predictions ˆβi ∀i ∈{1, . . . , I}. In Step
+1, we initialize the prediction count γi to zero, for each item i. Then the cumulative prediction
+βi is initialized as 0 for each item i. In Step 3, we initialize the set of saved predictions πi for
+each item i ∈{1, . . . , I}, which is a set to save the predictions made at each iteration. Next, an
+iteration is started until each item i is predicted at least a threshold prediction count δ times.
+In Step 5, we sample a subset of items B with a size equal to the number of items with which
+the model is trained, that is, |B| = I M. Later, we generate predictions ˆθB using the trained
+model M. The input to the model is the data from the selected subset αB, in which the right-
+hand coefﬁcients are resized to account for an increase in the number of items. For SMCLSP,
+we adjust Eq. (2c) as cs
+t = cs
+t ×
+
+i∈B ds
+it
+I
+i=1 ds
+it
+, ∀t = 1, . . . , T , ∀s = 1, . . . , S,. For SMSMK, we
+adjust Eq. (3b) to cs
+jt = cs
+jt ×
+
+i∈B ws
+i jt
+I
+i=1 ws
+i jt
+, ∀t = 1, . . . , T , ∀j = 1, . . . , J, ∀s = 1, . . . , S.
+Effectively, we reduce the test instance to the size of the training instance. In Step 7, we sum
+the current predictions ˆθi with ˆβi for the selected subset B. In Step 8, we save the current
+predictions ˆθi by concatenating them with the existing predictions πi. Then, the prediction
+count γi is increased for each item i ∈B. In Step 11, we calculate the standard deviation σi for
+all items i ∈{1, . . . , I} using the set of saved predictions πi. Then, in Step 12, we divide the
+cumulative predictions ˆβi by their respective counts γi. Then, for each item i ∈{1, . . . , I}, we
+calibrate the predictions with the calculated standard deviations. The main idea is to push the
+variables with higher variability closer to 0.5 so that they are determined by the ScenPredOpt
+instead of directly ﬁxing them. Here, we intend to hold variables with lower variability in high
+regard. For example, if two variables have similar predictions, we prefer the variables that
+are consistently predicted rather than the more uncertain and inconsistently predicted ones.
+Therefore, we add or subtract the variability from predictions based on their proximity to 0
+or 1. Then, those variables with higher deviations would be left to the solver. Also, we add
+or subtract variance instead of the standard deviation since we found empirically that using
+the latter is a severe punishment for variability, and the former performs better. Furthermore,
+the variance σ 2
+i is smaller than the standard deviation σi since all predictions are between
+0 and 1. In Step 15, if the resulting prediction ˆβi is smaller than 0.5, we add the variance
+σ 2
+i . Then we ensure that the prediction is not more than 0.5; otherwise, it might be predicted
+as 1 within the ScenPredOpt framework. Otherwise, the variance σ 2
+i is subtracted from the
+prediction ˆβi to push more uncertain predictions to the middle ground, to be determined by
+the commercial solver. Similarly, we ensure that the ﬁnal prediction value is not less than
+0.5.
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2879
+5 Implementation and Experimentation Details
+In this section, the details of generating instances, experimentation setup, and evaluation
+metrics are presented. A high-performance computing cluster is used for instance generation,
+training, and testing. The cluster runs on Linux 3.10.0 with Intel Xeon Gold 6226R 2.90 GHz,
+96 GB of memory, and an NVIDIA Tesla T4 GPU. Test instances are solved using Gurobi
+Optimizer 9.5 instead of CPLEX 20.1.0 since it was faster on preliminary stochastic multi-
+stage test problems. Python 3.8.5 and PyTorch 1.7.1 are used for training and testing. Gurobi
+is used with Python API. All reported solution times are in CPU seconds. All models are
+trained using GPUs.
+123
+
+2880
+Annals of Operations Research (2025) 355:2859–2899
+5.1 Instance generation
+Theparametersoftheinstancesaresampledfromthenonnegativeuniformintegerdistribution
+between the integers a and b represented by U [a, b]. For testing instances, we also employ
+a scenario-capping strategy to reduce the exponentially growing number of scenarios with
+increasing time periods. In this setting, after the capping period, no new scenario is generated,
+and the data from the remaining stages are assumed to be the same or deterministic. After
+the capping period, for each scenario node, the set of succeeding scenarios is generated to
+be the same. For example, in Fig.1a, all parameters of the fourth stage scenario would be
+the same if the capping period is set to three. Otherwise, the parameters for scenarios 1,3,5,
+and 7 would be identical and the parameters for scenarios 2,4,6, and 8 would be identical. In
+Appendix A, we present further details of the generated test instances.
+SMCLSP Instances: Instance generation for SMCLSP is implemented according to the
+approach given in Büyüktahtakın et al. (2018). The hardness of the SMCLSP is controlled
+by two main factors: capacity-to-demand ratios c ∈{10, 14} and setup-to-holding cost ratio
+r = 1, 000.Theproductioncost ps
+it isdrawnfromU [1, 200],theinventorycosths
+it issampled
+from U [1, 100], and the demand ds
+it is drawn from U [500, 1500]. The overall means of d
+and h are represented by ¯d and ¯h, respectively. Capacity ct is drawn from U
+
+0.8c ¯d, 1.2c ¯d
+
+and setup cost f s
+it is drawn from U
+
+0.9r ¯h, 1.1r ¯h
+
+. Two different models are trained for
+SMCLSP: The ﬁrst model is trained with T = 40 periods and I = 8 items. The second
+model is trained with T = 30 periods and I = 12 items. For both models, data sets with
+some combinations of T ∈{10, 15} and S ∈{32, 64, 81, 125, 243, 512}, where S is the
+number of scenarios, are used for testing. For item-wise expansion, we used T ∈{15, 10},
+S ∈{32, 64, 81}, and I ∈{24, 32, 16} for the ﬁrst model with I = 8 and T ∈{15, 10},
+S ∈{32, 64, 81}, and I ∈{36, 48, 24} for the second model with I = 12. For SMCLSP, 18
+test sets are generated, each including 20 test instances.
+SMSMK Instances: Instances are generated similar to Angulo et al. (2016). Proﬁt
+ps
+it is drawn from U [1, 1000], stability bonus bs
+it is drawn from U [1, 1000], weights
+of the elements wi jt are drawn from U [1, 1000], and capacity cs
+jt is drawn from
+U
+
+0.5 I
+i=1 wi jt, 0.8 I
+i=1 wi jt
+ 
+. Two models are trained for SMSMK: The one with
+T = 30 periods with I = 8 items and the second with T = 30 periods with I =
+10 items. The test set for both models has some combination of T
+∈{10, 15} and
+S ∈{32, 64, 81, 125, 243, 512}. For the ﬁrst model trained with I = 8, instances with
+T ∈{15, 10}, S ∈{32, 64, 81}, and I ∈{24, 32, 16} are used to test item-wise expansion.
+For the second model trained with I = 10, the test set with T ∈{15, 10}, S ∈{32, 64, 81},
+and I ∈{30, 40, 20} are generated with item-wise expansion. A total of 30 test sets, each
+with 20 instances, have been generated.
+5.2 Implementation Specifications
+For SMCLSP, we implement SDDiP based on Ding et al. (2019) with a default setting and
+a time limit of 7200s until 20 stable iterations are achieved. Additionally, we implement a
+heuristic based on Absi and van den Heuvel (2019) to generate a baseline for comparison.
+Within the heuristic, the number of ﬁxed periods is assigned as T
+20, and the periods with
+binary variables are assigned as T
+10. For SMSMK, we utilize the PH approach presented by
+Watson and Woodruff (2011) to compare the quality of our solution. Their PH algorithm is
+an enhanced version of the classical PH algorithms that address convergence issues. SDDiP
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2881
+is not applicable for SMSMK, since SDDiP requires the complete or relatively complete
+recourse condition, and SMSMK is not completely recourse. Additionally, we utilize the
+heuristic solution presented in Bertsimas and Demir (2002) for the benchmark, as there is
+no existing heuristic approach speciﬁcally developed for SMSMK given by Eq. (3). Their
+heuristic solves an LP relaxation of the problem at each iteration. Due to the computational
+challenge of this heuristic, we set 0.1% of binary variables to 0 instead of a single variable
+at each step of the iteration. This modiﬁcation results in a much faster heuristic solution
+at the cost of a slightly increased optimality gap for instances with a very large number of
+variables. Our objective with this modiﬁcation is to present a more fair time comparison
+between ScenPredOpt and the heuristic of Bertsimas and Demir (2002).
+We set the initial level for model-predicted binary variables θM = 50% for SMCLSP
+and θM = 40% for SMSMK. For both problem types, we assign the initial level for the
+LP relaxation-assigned binary variables θL P = 5%. Also, the reduction in the level for
+the model-predicted binary variables λM = 10% and the reduction in the level for the LP
+relaxation-assigned binary variables λL P = 1%. The time to generate predictions is less than
+one second for all instances and is included in timeScenPredOpt. For all tables, we present
+the number of stages T and the total number of scenarios sc.
+5.3 Model training
+The NEDA models are trained with longer period problems than the instances in the test
+set to capture and learn more sequential decision structures with the attention structure.
+The instances used in the training set are deterministic and solved in 1.7s on average. The
+SMCLSP models in Tables 1 and 2 have 128 and 64 hidden units in the decoder for both the
+forward and backward layers, respectively. The former SMCLSP model is trained for 18h
+using a training set with T = 40. The latter SMCLSP model is trained using T = 30 problems
+in 30h. The SMSMK models with the results presented in Tables 4 and 5 are trained using
+instances with T = 30 and contain 256 and 128 hidden units in both forward and backward
+layers, respectively. The encoders contain two bidirectional LSTM layers, while the decoder
+contains a unidirectional 2-layer LSTM. We have utilized a standard learning schema by
+applying training, validation, and test sets that contain 3,500,000, 10,000, and 20 instances,
+respectively (Alpaydin, 2020). Furthermore, a dropout schema (Srivastava et al., 2014) is
+used to regularize learning with a random rate of {0.25, 0.30, 0.35}, which is known to limit
+overﬁtting. We use the popular Adam optimizer with an initial learning rate of 0.01 for
+SMCLSP and 0.001 for SMSMK (Kingma & Ba, 2014).
+5.4 Evaluation methodology
+We have utilized the following metrics to measure the success of ScenPredOpt solution time
+and its quality compared to exact and heuristic approaches.
+• timeGRB: Average solution time in CPU seconds for SMCLSP or SMSMK with Gurobi
+9.5 in its default settings.
+• timeScenPredOpt: Average solution time in CPU seconds for SMCLSP or SMSMK
+with the ScenPredOpt framework.
+• timeHeur: Average solution time in CPU seconds for the heuristic of Absi and van den
+Heuvel (2019) for SMCLSP and the heuristic of Bertsimas and Demir (2002) for
+SMSMK.
+123
+
+2882
+Annals of Operations Research (2025) 355:2859–2899
+• timeSDDiP: Average solution time in CPU seconds for SMCLSP with SDDiP.
+• timePH: Average solution time in CPU seconds for SMSMK with the PH algorithm.
+• accScenPredOpt(%): Percentage of correct binary variables predicted and ﬁxed by
+ScenPredOpt (or accScenPredOptWoLP for ScenPredOpt without LP relaxation) with
+respect to the Gurobi solution.
+In addition, we deﬁne the following metrics:
+Deﬁnition 1 The optimality gap between the ScenPredOpt solution ˆx∗(heuristic solution
+for optGapHeur, SDDiP solution for optGapSDDiP, and PH solution for optGapPH) and
+Gurobi solution x∗. Let Z(•) be the corresponding operator to calculate the value of the
+function given any solution. Then the optimality gap is:
+optGapScenPredOpt(%) =
+
+Z(ˆx∗) −Z(x∗)
+
+Z(x∗)
+× 100.
+(10)
+Deﬁnition 2 The solution time improvement factor achieved by employing the ScenPredOpt
+framework (heuristic time improvement for timeImpHeur, SDDiP time improvement for
+timeImpSDDiP, and PH time improvement for timeImpPH) compared to Gurobi solution
+time is:
+timeImpScenPredOpt =
+timeGRB
+timeScenPredOpt .
+(11)
+Deﬁnition 3 The one-sided Wilcoxon signed rank test is used to measure if both samples are
+from the same population. It is a nonparametric alternative to the t test and appropriate for
+statistically comparing solution times of ML-based OR approaches (Accorsi et al., 2022). We
+conclude that ScenPredOpt is statistically faster than the heuristic if the p-value is smaller
+than 0.01. The hypotheses are as follows:
+H0 : median(timeHeur −timeScenPredOpt) < 0,
+(12a)
+H1 : median(timeHeur −timeScenPredOpt) > 0.
+(12b)
+6 Results
+This section provides a discussion of computational experiments. We compare the ScenPre-
+dOpt framework with the optimization solver, exact, and heuristic approaches. The test set
+for each speciﬁed characteristic of an instance includes 20 test instances, and all the results
+presented in the tables are average values for those 20 instances. All instances are solved
+using Gurobi 9.5 with a 2h time limit (Gurobi Optimization, LLC, 2022).
+6.1 Quality of predictions for SMCLSP
+Table 1 presents the detailed computational results for the ﬁrst set of SMCLSP instances.
+The 8-item model is trained using deterministic instances sampled by scenarios with T = 40
+periods and 8 items. The local attention structure helps the model to generalize instances with
+a varying number of periods. In the ﬁrst set of Table 1, the test has 32 scenarios and T = 10
+stages. Gurobi achieves an average solution time of more than 3000s, while SDDiP reduces
+the solution time to nearly 450s with a gap of 0.03% to the Gurobi value. The heuristic
+signiﬁcantly reduces the solution time to almost 8s, with a relatively high optimality gap of
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2883
+Table 1 Average results of experiments for SMCLSP with 8 items
+T
+10
+10
+10
+15
+15
+15
+Avg
+Mdn
+Std
+#sc
+32
+64
+81
+125
+243
+512
+176
+103
+165
+timeGRB
+3042
+4582
+5773
+6508
+7203
+6,850
+5660
+7200
+2,919
+timeScenPredOpt
+4
+13
+16
+53
+77
+95
+43
+18
+60
+timeSDDiP
+454
+738
+924
+4342
+2151
+1715
+1721
+1203
+1553
+timeHeur
+8
+89
+80
+341
+749
+743
+335
+103
+385
+timeImpScenPredOpt
+600
+376
+599
+264
+145
+105
+348
+141
+498
+timeImpSDDiP
+6
+8
+10
+2
+4
+4
+6
+4
+6
+timeImpHeur
+319
+148
+150
+34
+13
+10
+112
+14
+207
+optGapGRB(%)
+0.02
+0.07
+0.07
+0.13
+0.18
+0.11
+0.10
+0.07
+0.09
+optGapScenPredOpt(%)
+0.16
+0.07
+0.08
+0.09
+0.51
+0.36
+0.21
+0.09
+0.35
+optGapSDDiP(%)
+0.03
+0.03
+0.03
+0.02
+0.02
+0.03
+0.03
+0.02
+0.01
+optGapHeur(%)
+2.13
+1.88
+1.78
+1.14
+1.18
+1.14
+1.54
+1.45
+0.61
+accScenPredOpt(%)
+99.64
+99.90
+99.90
+99.89
+99.05
+99.26
+99.61
+99.93
+0.78
+accScenPredOptWoLP(%)
+99.64
+99.90
+99.90
+99.89
+99.05
+99.26
+99.61
+99.93
+0.78
+2.13%. ScenPredOpt remedies the trade-off between solution time and quality and achieves
+a 3.6-second solution with only a 0.16% optimality gap. Here, the solution time is reduced
+by a factor of 600, when compared to Gurobi. For the third set of instances with 81 scenarios,
+ScenPredOpt achieves a similar solution time improvement with a gap of only 0.08%. The
+Gurobisolutiontimeoftheinstancesisnotnecessarilyproportionaltothenumberofscenarios
+or stages; rather, it is likely related to the structure of scenario trees. However, ScenPredOpt
+can solve the 8-item SMCLSP for all cases much faster than Gurobi, SDDiP, and heuristic.
+Also, compared to the heuristic, the optimality gaps are much smaller. The p-values for
+the Wilcoxon signed rank test are all below 0.01, ensuring that ScenPredOpt is faster than
+the heuristic. The time improvement factor values for ScenPredOpt decrease as problems
+become more difﬁcult because the solution time is set to a 2-hour time limit. Gurobi would
+require a much longer solution time than two hours for harder instances, as proved by the
+increasing optimality gap. Since ScenPredOpt has no solution time set, the solution with
+ScenPredOpt starts to take a long time, and the time improvement values appear to shrink.
+The time improvement values would be much higher if the Gurobi benchmark instances did
+not terminate early on.
+Table 2 shows the computational results with 12-item SMCLSP. Here, the model is trained
+using T = 30-period instances with 12 items. The results show a similar trend to that of Table
+1, favoring ScenPredOpt over the heuristic. Gurobi solves the ﬁrst three sets of instances in
+Table 2 on an average of more than 6000s. ScenPredOpt solves all three of those instances
+in less than a minute, achieving a small optimality gap of less than 0.41%. The SDDiP
+halves solution time with a small optimality gap, but still does not reach a fast solution
+like ScenPredOpt. The last three sets of instances are signiﬁcantly challenging since none
+of the individual instances can be solved to optimality in the set 2-hour time limit using
+Gurobi, hence the average Gurobi solution time of approximately 7200s. For such instances,
+the heuristic time is close to or more than 1000s, whereas the ScenPredOpt time is closer to
+100s with a signiﬁcantly lower optimality gap compared to the heuristic. Also, LP-relaxation
+provides an accuracy improvement in the ScenPredOpt.
+123
+
+2884
+Annals of Operations Research (2025) 355:2859–2899
+Table 2 Average results of experiments for SMCLSP with 12 items
+T
+10
+10
+10
+15
+15
+15
+Avg
+Mdn
+Std
+#sc
+32
+64
+81
+125
+243
+512
+176
+103
+165
+timeGRB
+6187
+6185
+6158
+7200
+7202
+7201
+6689
+7200
+1815
+timeScenPredOpt
+43
+17
+24
+58
+150
+95
+64
+41
+80
+timeSDDiP
+3548
+3681
+3790
+7131
+7145
+7197
+5415
+7082
+292
+timeHeur
+212
+242
+289
+967
+996
+1,355
+677
+610
+566
+timeImpScenPredOpt
+322
+623
+462
+165
+89
+115
+296
+159
+348
+timeImpSDDiP
+2
+2
+2
+1
+1
+1
+2
+1
+1
+timeImpHeur
+101
+90
+83
+10
+8
+6
+49
+10
+77
+optGapGRB(%)
+0.07
+0.07
+0.10
+0.17
+0.15
+0.10
+0.11
+0.11
+0.07
+optGapScenPredOpt(%)
+0.26
+0.30
+0.41
+0.17
+0.25
+0.87
+0.38
+0.31
+0.33
+optGapSDDiP(%)
+0.03
+0.03
+0.03
+0.03
+0.03
+0.03
+0.03
+0.03
+0.01
+optGapHeur(%)
+2.12
+1.92
+1.91
+1.17
+1.31
+1.18
+1.60
+1.56
+0.54
+accScenPredOpt(%)
+98.79
+99.02
+98.66
+99.41
+98.81
+97.21
+98.67
+98.94
+1.01
+accScenPredOptWoLP(%)
+98.70
+99.01
+98.70
+99.39
+98.90
+97.05
+98.63
+98.88
+1.05
+All p-values of the Wilcoxon test are smaller than 0.01, suggesting that ScenPredOpt is
+faster with a much smaller optimality gap than the heuristic. Therefore, ScenPredOpt achieves
+a notable computational advance by generating fast, high-quality solutions to challenging
+scenario-based multi-stage stochastic programs. Also, for Tables 1 and 2, the overall average
+and median solution time with the ScenPredOpt is smaller than the heuristic solution time
+with a lower standard deviation. Therefore, we can highlight that ScenPredOpt outperforms
+the heuristic in the solution.
+6.1.1 Comparison of ScenPredOpt and Gurobi in the ﬁrst few seconds
+Figure3 presents the progress of the normalized objective function values during the ﬁrst
+seconds of the solution for ScenPredOpt and Gurobi. Speciﬁcally, Fig.3a and b show the
+progress of the solution for the third and ﬁfth sets of instances in Table 1, with 81 and 243
+scenarios, respectively. Figures3c and d show the progress of the solution for the third and
+ﬁfth sets of instances in Table 2, having 81 and 243 scenarios, respectively. All four ﬁgures
+highlight that ScenPredOpt reduces the objective function value at a faster rate compared
+to Gurobi. In addition, the progress of the objective value stabilizes earlier, underlining the
+success of ScenPredOpt.
+6.1.2 Instance-by-Instance results and comparison with PredOpt
+In Table 3, we present the instance-by-instance results for 10 SMCLSP instances with larger
+scenarios than the previously-presented ones. The problem contains 8 items, 13 periods,
+and 2 scenarios per stage without scenario-capping. Therefore, each instance contains 4096
+scenarios. The results are generated using the 8-item model in Table 1. The Gurobi does
+not reach an optimal solution for any problem within the given 2-hour solution time limit.
+In addition, SDDiP cannot reach a better solution than Gurobi in a given 20-stable iteration
+limit. The solution time of ScenPredOpt changes between 80 and 882s. The heuristic has
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2885
+Fig. 3 Progress of Gurobi and ScenPredOpt objective values during the ﬁrst few seconds of the solution
+process. All solution times are given in CPU seconds
+a higher solution time than ScenPredOpt for all 10 instances within the range of 1222 to
+2086s. This translates to a higher time-improvement factor of ScenPredOpt compared to the
+heuristic for all instances. Also, the optimality gaps between ScenPredOpt and heuristic dif-
+fer considerably in favor of the ScenPredOpt. Table 3 demonstrates that ScenPredOpt is not
+only dominant in averages but also superior in instance-by-instance cases compared to the
+heuristic solution times and the optimality gap and solution time of exact approaches. Further-
+more, Table 3 presents a comparison between ScenPredOpt and the PredOpt introduced in
+Yilmaz and Büyüktahtakın (2024). The solution time of PredOpt is denoted by timePredOpt,
+the time improvement factor achieved by PredOpt is denoted by timeImpPredOpt, and the
+resulting optimality gap is denoted by optGapPredOpt. In 8 over 10 instances, ScenPredOpt
+outperforms PredOpt in terms of both the solution time and the optimality gap. In instance
+2, ScenPredOpt has a better optimality gap than PredOpt, but with a slightly higher solution
+time. The third instance presents the opposite case, where ScenPredOpt has a better solution
+time with a larger optimality gap compared to PredOpt. The averages highlight the superi-
+ority of ScenPredOpt over PredOpt, with the former having a lower average solution time, a
+higher time improvement, and a lower optimality gap.
+To summarize the results presented in Tables 1, 2, and 3 and Fig.3, ScenPredOpt achieves
+a better solution than the heuristic and PredOpt in a statistically faster process. The optimality
+gap of state-of-the-art SDDiP is lower than that of ScenPredOpt at the cost of signiﬁcantly
+increased solution time. Therefore, ScenPredOpt can be a favorable alternative to Gurobi and
+SDDiP by providing a fast and high-quality solution at a fraction of the computational cost
+without requiring expert knowledge about the problem solved.
+123
+
+2886
+Annals of Operations Research (2025) 355:2859–2899
+Table 3 Detailed results of experiments for SMCLSP with 8 items
+#instance
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+Avg
+timeGRB
+7201
+7201
+7207
+7201
+7208
+7201
+7201
+7201
+7201
+7201
+7202
+timeScenPredOpt
+80
+89
+374
+166
+882
+85
+90
+100
+100
+92
+206
+timePredOpt
+92
+74
+505
+237
+1405
+157
+136
+101
+143
+168
+302
+timeSDDiP
+1297
+856
+3317
+1260
+2261
+1454
+845
+1368
+896
+1121
+1468
+timeHeur
+2086
+1222
+1591
+2074
+1581
+1637
+2033
+1917
+1751
+1493
+1738
+timeImpScenPredOpt
+90
+81
+19
+43
+8
+85
+80
+72
+72
+78
+63
+timeImpPredOpt
+78
+97
+14
+30
+5
+46
+53
+71
+50
+43
+49
+timeImpSDDiP
+6
+8
+2
+6
+3
+5
+9
+5
+8
+6
+6
+timeImpHeur
+3
+6
+5
+3
+5
+4
+4
+4
+4
+5
+4
+optGapGRB(%)
+0.15
+0.02
+0.05
+0.08
+0.05
+0.10
+0.14
+0.11
+0.04
+0.10
+0.09
+optGapScenPredOpt(%)
+0.13
+0.58
+0.07
+0.66
+0.22
+0.29
+0.05
+0.43
+0.01
+0.74
+0.32
+optGapPredOpt(%)
+0.16
+0.65
+0.04
+0.76
+0.27
+0.44
+0.07
+0.60
+0.07
+0.92
+0.40
+optGapSDDiP(%)
+0.03
+0.03
+0.03
+0.03
+0.03
+0.03
+0.03
+0.04
+0.03
+0.03
+0.03
+optGapHeur(%)
+1.87
+1.16
+1.80
+1.17
+0.97
+1.24
+0.90
+1.93
+1.86
+1.94
+1.48
+6.2 Quality of predictions for SMSMK
+Table 4 presents the ﬁrst set of results for SMSMK. The model is trained with T = 30-period
+instances. For the ﬁrst set with 32 scenarios, the solution time is reduced from more than
+1000s with Gurobi to only one second with ScenPredOpt. This is much faster compared to
+the heuristic with a better optimality gap, i.e., a 2.73% gap with the heuristic compared to
+1.09% with ScenPredOpt. The PH improves the Gurobi solution time for most cases with a
+slight optimality gap, but it is much slower compared to the heuristic or ScenPredOpt. For
+example, PH reduces the solution time more than half with only a 0.02% optimality gap in
+almost 2000s in the fourth test set of Table 4. The ScenPredOpt can provide a solution in less
+than 5s with only a 0.82% optimality gap. While the heuristic outperforms PH in solution
+time, ScenPredOpt outperforms the heuristic in terms of both solution time and optimality
+gap. Also, all p-values of the Wilcoxon signed-rank are smaller than 0.01 highlighting the
+success of the ScenPredOpt over the heuristic.
+Table 5 presents another set of instances for SMSMK with 10 items. The results highlight
+the quality of the ScenPredOpt solution over the heuristic and the time improvement over
+Gurobi and PH, similar to Table 4. For example, in the last data set with 512 scenarios, the
+solution time is reduced to almosta minute from two hours. This signiﬁcanttime improvement
+factor of 150 is achieved with an optimality gap of only 0.77%. Similarly to the tables
+presented previously with SMCLSP and SMSMK, all p-values for the Wilcoxon test are
+less than 0.01. Also, the optimality gaps of the heuristic are much larger than those of the
+ScenPredOpt for all instances. Furthermore, LP-relaxation enhances ScenPredOpt accuracy.
+To sum up Tables 4 and 5, ScenPredOpt achieves a signiﬁcant reduction in solution time
+compared to Gurobi and PH at the cost of a small optimality gap. Also, it outperforms the
+heuristic in terms of solution quality and time for all cases. Thus, ScenPredOpt is a promising
+alternativetootherexactandheuristicalgorithmsforgeneratingfastbuthigh-qualitysolutions
+to complex problems that need to be solved repeatedly and quickly. Furthermore, both models
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2887
+Table 4 Average results of experiments for SMSMK with 8 items
+T
+10
+10
+10
+15
+15
+15
+Avg
+Mdn
+Std
+#sc
+32
+64
+81
+125
+243
+512
+176
+103
+165
+timeGRB
+1155
+2149
+2144
+4501
+7200
+6949
+4016
+6954
+3348
+timeScenPredOpt
+1
+2
+2
+5
+12
+17
+6
+2
+8
+timePH
+77
+708
+1051
+1936
+7355
+6760
+2981
+657
+3305
+timeHeur
+4
+9
+11
+29
+179
+170
+67
+17
+86
+timeImpScenPredOpt
+1013
+1585
+1617
+1206
+713
+533
+1111
+525
+1775
+timeImpPH
+17
+10
+3
+5
+1
+1
+6
+1
+19
+timeImpHeur
+245
+233
+185
+154
+46
+44
+151
+48
+286
+optGapGRB(%)
+0.03
+0.03
+0.07
+0.22
+1.21
+1.01
+0.43
+0.01
+0.65
+optGapScenPredOpt(%)
+1.09
+1.06
+1.28
+0.82
+1.31
+1.30
+1.14
+1.10
+0.61
+optGapPH(%)
+0.09
+0.02
+0.05
+0.02
+0.18
+0.17
+0.09
+0.02
+0.16
+optGapHeur(%)
+2.73
+3.61
+3.11
+2.82
+3.44
+2.71
+3.07
+3.07
+1.15
+accScenPredOpt(%)
+92.84
+94.26
+91.53
+95.17
+93.00
+94.67
+93.58
+95.50
+5.47
+accScenPredOptWoLP(%)
+92.84
+94.26
+91.53
+95.17
+93.00
+94.67
+93.58
+95.50
+5.47
+Table 5 Average results of experiments for SMSMK with 10 items
+T
+10
+10
+10
+15
+15
+15
+Avg
+Mdn
+Std
+#sc
+32
+64
+81
+125
+243
+512
+176
+103
+165
+timeGRB
+2351
+5344
+5130
+6400
+7200
+7200
+5604
+7200
+2868
+timeScenPredOpt
+1
+2
+4
+14
+34
+69
+21
+6
+34
+timePH
+1920
+2489
+1958
+2989
+5670
+7406
+3739
+3037
+3180
+timeHeur
+3
+9
+11
+29
+66
+168
+48
+18
+61
+timeImpScenPredOpt
+2374
+4502
+2047
+660
+329
+150
+1677
+330
+2840
+timeImpPH
+18
+13
+8
+4
+1
+1
+7
+1
+19
+timeImpHeur
+633
+597
+449
+228
+115
+45
+344
+143
+471
+optGapGRB(%)
+0.05
+0.30
+0.26
+0.61
+0.95
+1.22
+0.57
+0.37
+0.58
+optGapScenPredOpt(%)
+1.10
+1.27
+1.11
+1.01
+0.82
+0.77
+1.01
+0.91
+0.61
+optGapPH(%)
+0.08
+0.06
+0.05
+0.06
+0.11
+0.22
+0.10
+0.04
+0.15
+optGapHeur(%)
+2.83
+2.83
+2.30
+2.58
+2.37
+2.11
+2.50
+2.39
+0.97
+accScenPredOpt(%)
+91.66
+91.45
+92.46
+94.48
+95.61
+95.70
+93.73
+94.99
+5.44
+accScenPredOptWoLP(%)
+91.33
+91.37
+91.32
+94.48
+95.72
+94.66
+93.27
+95.09
+5.56
+are tested with the parameters given for the two-stage problem and the results are presented
+in Appendix B.
+6.3 Generalization: quality of predictions for item-wise expansion algorithm
+In this section, we present the computational results for test sets with a larger number of items
+than the models are trained with. In the previous section, the results showed that the models
+can maintain high-quality solutions with the increasing number of periods and scenarios.
+The expansion in the period dimension is organic since encoder-decoder models can handle
+123
+
+2888
+Annals of Operations Research (2025) 355:2859–2899
+variable-length input and output structures. Also, the presented NEDA model can handle a
+varying number of scenarios by averaging different groups of scenarios based on the scenario
+tree of the problem using Eq. (5). This provides substantial ﬂexibility to solve instances with
+a changing number of scenarios and periods. However, predicting a problem with a different
+number of items is not straightforward with the NEDA, since the predictions are made using a
+ﬁxed-length output. Algorithm 2 presents an item-wise expansion algorithm that can generate
+predictions for a problem with a large number of items using a model trained with a small
+number of items. The main idea is to generate predictions for a subset of items multiple
+times with the trained model of a ﬁxed number of items and combine them to generate a ﬁnal
+prediction for all items considered in the test instance. This algorithm provides signiﬁcant
+beneﬁts, as a trained model has the potential to make predictions for a problem with any
+number of periods, scenarios, and items for a certain distribution of input data. Therefore,
+the ScenPredOpt framework can provide high levels of ﬂexibility without generating training
+instances and performing training for the new set of instances with a larger number of items.
+Furthermore, we compare this with the item-wise expansion strategy presented in Yilmaz
+and Büyüktahtakın (2024) and show that the deviation-based item-wise expansion method is
+a further improvement over the former one. For these results, we use metrics timePredOpt,
+timeImpPredOpt, optGapPredOpt, and optGapPredOpt.
+Table 6 presents the results of the item-wise expansion for the SMCLSP. The ﬁrst three
+sets of results are generated using the model trained with 8 items in Table 1, and the last three
+sets of results are generated using the model trained with 12 items in Table 2. The results
+demonstrate that the ScenPredOpt used within the item-wise expansion algorithm can provide
+high-quality solutions. For example, in the third set of instances with 16 items, predictions
+from the 8-item model yield a time improvement of 300, which is signiﬁcantly more than the
+heuristic time improvement of 65. In addition, the optimality gap of ScenPredOpt is 0. 09%,
+which is 20 times lower than the heuristic optimality gap of 1.84%. Also, in the ﬁrst, second,
+fourth, and ﬁfth datasets, ScenPredOpt outperforms SDDiP in terms of optimality gap and
+solution time. For all the test sets in Table 6, ScenPredOpt outperforms the heuristic in terms
+of solution time and optimality gap. Also, all p-values for the Wilcoxon signed-rank test are
+all lower than 0.01, conﬁrming that ScenPredOpt is statistically faster than the relax-and-ﬁx
+heuristic. Moreover, ScenPredOpt outperforms PredOpt in terms of optimality gap in 3 out
+of 6 test sets and has the same average optimality gap for the remaining 3 instances at the cost
+of reduced time improvement. Therefore, the variance-based item-wise algorithm achieves
+a better optimality gap compared to Yilmaz and Büyüktahtakın (2024).
+Table 7 presents the item-wise expansion results for SMSMK, similar to Table 6. The ﬁrst
+three results are produced with the 8-item model in Table 4, and the remaining three sets
+of results are produced using the 10-item model in Table 5. The results highlight that the
+models can be used to predict instances with a varying number of items coming from the
+same distribution using Algorithm 2. The instances presented in Table 7 do not terminate
+within a set solution time limit of 7200s and achieve signiﬁcant optimality gaps with Gurobi.
+For example, Gurobi achieves an optimality gap of 0.67% for the second dataset. The Scen-
+PredOpt terminates in only 13s on average and achieves a 0.70% optimality gap compared
+to the best solution found by Gurobi. For the same test set, the heuristic terminates in 27s
+with a larger gap of 1.07%. On average, ScenPredOpt reduces the solution time by more than
+700, with an optimality gap below 1%. The heuristic has an average time improvement factor
+of 377 with a larger gap. We also conclude that the ScenPredOpt is faster than the heuristic
+since p-values for the Wilcoxon signed rank test are below 0.01 except for the fourth test
+set. Additionally, the variance-based item-wise strategy given in Algorithm 2 outperforms
+the strategy given by Yilmaz and Büyüktahtakın (2024) in terms of the optimality gap for
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2889
+Table 6 Average results of generalization experiments for SMCLSP
+T
+15
+10
+10
+15
+10
+10
+Avg
+Mdn
+Std
+#sc
+32
+64
+81
+32
+64
+81
+59
+64
+20
+Train Items
+8
+12
+10
+10
+2
+Test Items
+24
+32
+16
+36
+48
+24
+30
+28
+10
+timeGRB
+1954
+3708
+6273
+4380
+2664
+7200
+4363
+7200
+3439
+timeScenPredOpt
+36
+166
+188
+93
+93
+107
+114
+40
+299
+timePredOpt
+43
+115
+32
+46
+75
+77
+65
+34
+95
+timeSDDiP
+7220
+7232
+7037
+7227
+7249
+7223
+7198
+7223
+221
+timeHeur
+69
+298
+237
+123
+232
+531
+248
+103
+283
+timeImpScenPredOpt
+45
+29
+300
+73
+19
+117
+97
+35
+170
+timeImpPredOpt
+72
+42
+406
+105
+29
+142
+133
+50
+210
+timeImpSDDiP
+0
+1
+1
+1
+0
+1
+1
+1
+0
+timeImpHeur
+30
+16
+65
+49
+10
+25
+33
+12
+47
+optGapGRB(%)
+0.01
+0.02
+0.05
+0.02
+0.02
+0.05
+0.03
+0.02
+0.03
+optGapScenPredOpt(%)
+0.04
+0.09
+0.09
+0.16
+0.16
+0.19
+0.12
+0.11
+0.10
+optGapPredOpt(%)
+0.04
+0.09
+0.09
+0.19
+0.21
+0.24
+0.15
+0.12
+0.12
+optGapSDDiP(%)
+0.10
+0.13
+0.04
+0.25
+0.25
+0.06
+0.14
+0.10
+0.10
+optGapHeur(%)
+1.39
+2.13
+1.84
+1.35
+2.17
+2.06
+1.82
+1.82
+0.46
+accScenPredOpt(%)
+99.95
+99.99
+99.96
+99.53
+99.64
+99.32
+99.73
+99.90
+0.37
+accScenPredOptWoLP(%)
+99.93
+99.95
+99.89
+99.20
+99.34
+98.93
+99.54
+99.73
+0.54
+all test sets in Table 7. On average, the reduction of the optimality gap with Algorithm 2 is
+greater than 0. 2% with an increased average solution time of 6s. In addition, the accuracy
+of the ﬁxed binary variables is increased by more than 2% as a result of the LP-relaxation in
+the ScenPredOpt framework.
+In summary, the ScenPredOpt framework with the variance-based item-wise expansion
+algorithm can be used to predict instances with a varying number of items. This provides
+signiﬁcant ﬂexibility for model training, since training can be performed using problems with
+a small number of items, which is easier to solve. Also, trained models do not need to retrain
+with changing number of items. Tables 6 and 7 provide the generalization results, in which
+ScenPredOpt outperforms the heuristics in terms of solution time and quality in 11 of 12
+instances. Furthermore, Algorithm 2 reaches a better or the same optimality gap as Yilmaz
+and Büyüktahtakın (2024) at the cost of an increased solution time.
+7 Conclusions and future work
+In this study, we presented a learning-enabled framework for solving scenario-based multi-
+stage stochastic programs. We address the non-anticipativity of predicted variables by
+developing the NEDA based on attentional encoder-decoder models. Additionally, generat-
+ing labels for training instances can be untraceable when considering signiﬁcant training data
+requirements. We overcome this issue by sampling a scenario and solving this deterministic
+problem to optimality, which is used for training. Furthermore, we present the ScenPre-
+dOpt algorithm to utilize the predictions without causing any infeasibility. We integrate an
+123
+
+2890
+Annals of Operations Research (2025) 355:2859–2899
+Table 7 Average results of generalization experiments for SMSMK
+T
+15
+10
+10
+15
+10
+10
+Avg
+Mdn
+Std
+#sc
+32
+64
+81
+32
+64
+81
+59
+64
+20
+Train Items
+8
+10
+9
+9
+1
+Test Items
+24
+32
+16
+30
+40
+20
+27
+27
+8
+timeGRB
+7,200
+7,200
+7,200
+7,200
+7,200
+7,200
+7,200
+7,200
+0
+timeScenPredOpt
+11
+13
+13
+16
+26
+13
+15
+12
+13
+timePredOpt
+8
+7
+8
+9
+13
+8
+9
+7
+5
+timePH
+8,925
+7,430
+3,148
+7,358
+9,866
+4,540
+6,878
+7,243
+6,058
+timeHeur
+18
+27
+21
+14
+29
+19
+21
+20
+7
+timeImpScenPredOpt
+875
+716
+809
+685
+381
+752
+703
+604
+440
+timeImpPredOpt
+1,043
+1,261
+1,328
+1,114
+721
+1,101
+1,095
+970
+535
+timeImpPH
+1
+1
+4
+1
+1
+2
+2
+1
+2
+timeImpHeur
+424
+274
+368
+541
+260
+395
+377
+358
+124
+optGapGRB(%)
+0.69
+0.67
+0.65
+0.54
+0.54
+0.68
+0.63
+0.57
+0.24
+optGapScenPredOpt(%)
+0.64
+0.70
+0.84
+0.70
+0.59
+0.81
+0.71
+0.68
+0.25
+optGapPredOpt(%)
+0.92
+0.93
+1.11
+0.93
+0.76
+1.02
+0.94
+0.88
+0.33
+optGapPH(%)
+0.26
+0.34
+0.10
+0.29
+0.62
+0.08
+0.28
+0.12
+0.33
+optGapHeur(%)
+1.29
+1.07
+1.82
+1.04
+0.80
+1.48
+1.25
+1.15
+0.48
+accScenPredOpt(%)
+94.36
+94.35
+94.27
+94.68
+94.89
+95.25
+94.63
+95.17
+2.24
+accScenPredOptWoLP(%)
+91.95
+92.06
+91.25
+92.89
+92.85
+93.65
+92.44
+92.88
+2.52
+Table 8 Details of test instances for SMCLSP
+Table
+T
+sc
+scPer
+capPer
+binVar
+contVar
+const
+NAC
+testItems
+1
+10
+32
+2
+6
+2,560
+5,120
+8,536
+3,096
+8
+10
+64
+4
+4
+5,120
+10,240
+14,984
+4,104
+8
+10
+81
+3
+5
+6,480
+12,960
+20,586
+6,816
+8
+15
+125
+5
+4
+15,000
+30,000
+40,131
+8,256
+8
+15
+243
+3
+6
+29,160
+58,320
+88,221
+26,256
+8
+15
+512
+2
+10
+61,440
+122,880
+228,888
+98,328
+8
+2
+10
+32
+2
+6
+3,840
+7,680
+12,644
+4,644
+12
+10
+64
+4
+4
+7,680
+15,360
+22,156
+6,156
+12
+10
+81
+3
+5
+9,720
+19,440
+30,474
+10,224
+12
+15
+125
+5
+4
+22,500
+45,000
+59,259
+12,384
+12
+15
+243
+3
+6
+43,740
+87,480
+130,509
+39,384
+12
+15
+512
+2
+10
+92,160
+184,320
+339,492
+147,492
+12
+6
+15
+32
+2
+6
+11,520
+23,040
+32,808
+9,288
+24
+10
+64
+4
+4
+20,480
+40,960
+58,016
+16,416
+32
+10
+81
+3
+5
+12,960
+25,920
+40,362
+13,632
+16
+15
+32
+2
+6
+17,280
+34,560
+48,972
+13,932
+36
+10
+64
+4
+4
+30,720
+61,440
+86,704
+24,624
+48
+10
+81
+3
+5
+19,440
+38,880
+60,138
+20,448
+24
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2891
+LP-based heuristic to further reduce the solution time and to integrate heuristic solution capa-
+bilities that might not be captured with a learning methodology. We present the results of our
+framework by generating benchmark instances with a commercial solver, exact approaches,
+and heuristics. The results show that the solution time can be reduced by three orders of
+magnitude by achieving a small optimality gap of less than 1%. Additionally, we present a
+variance-based item-wise expansion algorithm and test if the models can be used to predict
+instances with a larger number of items than they are trained with. The results show that the
+trained models and ScenPredOpt provide a high amount of ﬂexibility and can be utilized
+to solve instances with varying stages, scenarios, and items. Our framework is general and
+can be utilized to solve scenario-based multi-stage stochastic programs with binary variables
+where such problems need to be solved repeatedly quickly, such as resource allocation, price
+optimization, and scheduling.
+We have demonstrated the applicability of our methodology in the context of two promi-
+nent multi-stage stochastic programs: multi-item lot-sizing and dynamic knapsack. The
+multi-item lot-sizing problem can be relaxed to the multi-item knapsack problem (Pochet
+& Wolsey, 2006). The multi-item knapsack problem resembles the broader class of general
+multi-stage stochastic MIPs. By considering diverse dimensions, such as items, locations,
+products, processes, and more, our approach accommodates a ﬂexible framework. Conse-
+quently, our item-wise expansion method can be employed to enhance the scalability of
+predictions to larger instances, applying to a variety of dimension types.
+Our study shows a way to successfully integrate learning models, heuristics, and existing
+mathematical solvers to achieve signiﬁcant reductions in solution time. In this way, the
+best of each approach can be used. The scenario-based multi-stage stochastic programs
+have a wide range of applications in which learning-based frameworks can be exploited.
+Further studies can focus on solving multi-stage stochastic programs by integrating scenario-
+generation mechanisms into the framework. Further studies can focus on advancing the
+scalability of the proposed ScenPredOpt framework for larger dimensional instances. Also,
+risk-averse stochastic programs can be tackled by adjusting the NEDA model, the probability
+of scenarios and the distribution of uncertain elements. Another direction relates to the
+integration of heuristics. Instead of general LP-based heuristics, problem-speciﬁc heuristics
+can be integrated into the ScenPredOpt solution framework to achieve better solutions faster.
+AppendixA The details of the test instances
+Here, we present the details of our testing instances for each table in Sect.6. Table 8 gives
+the details of SMCLSP instances presented in Tables 1, 2, and 6. Table 9 gives the details
+of SMSMK instances presented in Tables 4, 5, and 7. We denote the number of scenarios
+sc, the number of scenarios per period scPer, and the period in which no further scenarios
+are generated for the problem as capPer. These three variables are interconnected as: sc =
+scPercapPer−1. We have utilized a scenario-capping strategy to combat the exponentially
+growing number of scenarios. Additionally, the number of binary variables is denoted by
+binVar, and the number of continuous variables is denoted by contVar. Note that SMSMK
+does not contain any continuous variables. We also present the total number of constraints
+excluding variable restrictions as const and the number of non-anticipativity constraints as
+N AC, and the number of items in the test set as test Items.
+123
+
+2892
+Annals of Operations Research (2025) 355:2859–2899
+Table 9 Details of test instances for SMSMK
+Table
+T
+sc
+scPer
+capPer
+binVar
+const
+NAC
+testItems
+4
+10
+32
+2
+6
+4,864
+8,272
+2,064
+8
+10
+64
+4
+4
+9,728
+15,152
+2,736
+8
+10
+81
+3
+5
+12,312
+20,258
+4,544
+8
+15
+125
+5
+4
+29,000
+42,879
+5,504
+8
+15
+243
+3
+6
+56,376
+90,161
+17,504
+8
+15
+512
+2
+10
+118,784
+218,640
+65,552
+8
+5
+10
+32
+2
+6
+6,080
+9,620
+2,580
+10
+10
+64
+4
+4
+12,160
+17,500
+3,420
+10
+10
+81
+3
+5
+15,390
+23,500
+5,680
+10
+15
+125
+5
+4
+36,250
+49,380
+6,880
+10
+15
+243
+3
+6
+70,470
+104,500
+21,880
+10
+15
+512
+2
+10
+148,480
+256,020
+81,940
+10
+10
+2
+4
+-
+-
+72
+89
+0
+8
+2
+16
+-
+-
+264
+341
+0
+8
+2
+64
+-
+-
+1,032
+1,349
+0
+8
+2
+256
+-
+-
+4,104
+5,381
+0
+8
+2
+1,024
+-
+-
+16,392
+21,509
+0
+8
+2
+4,096
+-
+-
+65,544
+86,021
+0
+8
+11
+2
+4
+-
+-
+90
+100
+0
+10
+2
+16
+-
+-
+330
+388
+0
+10
+2
+64
+-
+-
+1,290
+1,540
+0
+10
+2
+256
+-
+-
+5,130
+6,148
+0
+10
+2
+1,024
+-
+-
+20,490
+24,580
+0
+10
+2
+4,096
+-
+-
+81,930
+98,308
+0
+10
+7
+15
+32
+2
+6
+22,272
+30,096
+6,192
+24
+10
+64
+4
+4
+38,912
+51,008
+10,944
+32
+10
+81
+3
+5
+24,624
+36,466
+9,088
+16
+15
+32
+2
+6
+27,840
+36,540
+7,740
+30
+10
+64
+4
+4
+48,640
+62,320
+13,680
+40
+10
+81
+3
+5
+30,780
+43,760
+11,360
+20
+AppendixB Quality of predictions for 2SMK
+In this section, we present the results for a two-stage multi-dimensional knapsack problem
+(2SMK). The traditional solution methodologies for two-stage problems can be notably
+separated from the multi-stage problem. While the latter is usually considered more complex
+with growing scenario trees and non-anticipativity constraints, two-stage problems are highly
+utilized for various applications. Our aim here is to show that our trained model can still be
+used as an out-of-the-box solution approach if a model has already been trained for a multi-
+stage problem.
+Table 10 presents the results for the two-stage problem with 8 items, similar to Table
+4, and Table 11 demonstrates the results for 2SMK with 10 items, as in Table 5. For both
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2893
+Table 10 Average results of experiments for 2SMK with 8 Items
+T
+2
+2
+2
+2
+2
+2
+Avg
+Mdn
+Std
+sc
+4
+16
+64
+256
+1,024
+4,096
+910
+160
+1,474
+timeGRB
+0.01
+0.05
+0.32
+1.24
+15.78
+301.93
+53.22
+0.53
+172.49
+timeScenPredOpt
+0.01
+0.02
+0.08
+0.33
+2.63
+28.50
+5.26
+0.23
+11.79
+timePH
+19.67
+91.09
+369.65
+85.43
+1,239.67
+7,245.41
+1,508.49
+30.92
+2,769.87
+timeHeur
+0.02
+0.10
+0.61
+2.49
+17.01
+218.58
+39.80
+1.17
+83.71
+timeImpScenPredOpt
+1
+2
+4
+4
+8
+15
+6
+2
+12
+timeImpPH
+0
+0
+0
+0
+0
+0
+0
+0
+0
+timeImpHeur
+0
+0
+1
+1
+1
+1
+1
+0
+1
+optGapGRB(%)
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+optGapScenPredOpt(%)
+0.26
+0.98
+1.67
+2.21
+2.19
+2.58
+1.65
+0.27
+2.66
+optGapPH(%)
+0.60
+0.11
+0.21
+0.11
+0.11
+0.56
+0.28
+0.00
+0.59
+optGapHeur(%)
+3.76
+4.27
+4.26
+5.05
+4.10
+2.77
+4.03
+2.50
+4.68
+Table 11 Average results of experiments for 2SMK with 10 items
+T
+2
+2
+2
+2
+2
+2
+Avg
+Mdn
+Std
+sc
+4
+16
+64
+256
+1,024
+4,096
+910
+160
+1,474
+timeGRB
+0.02
+0.06
+0.33
+3.11
+18.75
+419.07
+73.56
+0.53
+226.31
+timeScenPredOpt
+0.01
+0.03
+0.07
+0.61
+59.35
+31.35
+15.24
+0.22
+101.46
+timePH
+25.68
+2.07
+369.30
+523.64
+1,822.98
+7,892.68
+1,772.73
+33.43
+3,023.11
+timeHeur
+0.02
+0.10
+0.53
+2.92
+16.73
+235.86
+42.70
+1.13
+90.04
+timeImpScenPredOpt
+2
+2
+5
+5
+5
+18
+6
+4
+9
+timeImpPH
+0
+0
+0
+0
+0
+0
+0
+0
+0
+timeImpHeur
+1
+1
+1
+1
+1
+2
+1
+1
+1
+optGapGRB(%)
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+0.00
+optGapScenPredOpt(%)
+0.17
+1.99
+3.15
+2.78
+2.58
+3.64
+2.39
+1.65
+2.53
+optGapPH(%)
+0.33
+0.13
+0.08
+0.05
+0.04
+0.92
+0.26
+0.00
+0.51
+optGapHeur(%)
+2.75
+4.29
+3.58
+4.58
+3.28
+3.98
+3.75
+2.77
+3.81
+Tables 10 and 11, the ﬁrst three sets of instances are solved in a second with Gurobi, since
+the number of scenarios and, therefore, the size of the problem is small. Even in these cases,
+the solution time of ScenPredOpt is shorter than that of all other approaches. As instances
+become harder and larger, the beneﬁts of ScenPredOpt become clearer. For example, the last
+data set from Table 10 is solved in more than 5min on average. ScenPredOpt reduces the
+average solution time below 30s, achieving a faster solution than Gurobi, heuristic, and PH.
+For all the cases in Tables 10 and 11, the p-values for the Wilcoxon test are smaller than 0.01,
+conﬁrming that the ScenPredOpt outperforms the heuristic solution time. Additionally, the
+average optimality gap of ScenPredOpt is better than the heuristic for all cases in Tables 10
+and 11, making it a superior solution approach. However, the optimality gaps for two-stage
+problems in Tables 10 and 11 seem to be higher than those in the multi-stage problems in
+Tables 4 and 5. This is because of the lack of periods required for attention structure in NEDA
+to capture problem characteristics, which can likely be remedied by training the model using
+the solutions of two-stage problems. Also, the solution characteristics might be different for
+123
+
+2894
+Annals of Operations Research (2025) 355:2859–2899
+Fig. 4 The comparison of the change in the optimality gap and the improvement in time with varying tightness
+coefﬁcients η. The top two ﬁgures represent the 6 sets of SMCLSP instances presented in Table 1, and the
+bottom two ﬁgures represent the 6 sets of SMSMK instances presented in Table 4
+a two-stage problem than a multi-stage problem since, in a long-enough multi-stage problem,
+decisions tend to be cyclical. Nevertheless, ScenPredOpt outperforms the heuristic for solving
+two-stage problems in terms of solution time and quality. It can be used to achieve signiﬁcant
+solution time beneﬁts for large-scale problems when a trained multi-stage model is available.
+AppendixC Results on the tightness parameter
+In this section, we present the results for changing the tightness coefﬁcients η presented
+in Sect.4.2.2. Here, our objective is to test the stability and solution performance of the
+ScenPredOpt with varying tightness coefﬁcients η. Figure4 provides the results for SMCLSP
+and SMSMK containing η ∈{0.1, 0.2, . . . , 0.9}. Figure4a and b provide the optimality gap
+and time improvement for the 6 sets of SMCLSP instances presented in Table 1, respectively.
+Figure4c and d provide the optimality gap and the time improvement for the 6 sets of SMSMK
+instances presented in Table 4, respectively.
+The results highlight that ScenPredOpt provides highly stable solutions in various η val-
+ues. The prediction of tight constraints are only used within the ﬁrst loop in Algorithm 1
+within a feasibility checker to ﬁnd the ﬁrst feasible solution. Later in the algorithm, this
+information is used to generate an optimal solution. Since this former operation is much less
+computationally challenging compared to the latter, the variation η has a minimal impact on
+the time improvement. In addition, the optimality gap is stable across instances, since it is
+determined by the latter process of solving the problem to optimality with all constraints. As
+discussed in Sect.4.2.2, the value of η has a crucial impact on successful model training.
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2895
+Acknowledgements We gratefully acknowledge the support of the National Science Foundation CAREER
+Award, cofunded by the CBET / ENG Environmental Sustainability program, and the Division of Mathematical
+Sciences in MPS/NSF under Grant No. CBET-1554018. We would like to thank the anonymous referee and
+the guest editor for their helpful and constructive comments that have signiﬁcantly improved our paper’s
+quality and presentation of the results. Furthermore, we acknowledge the support of New Jersey Institute of
+Technology Academic & Research Computing (ARC )Systems for High Performance Computing resources.
+The authors also thank Dr. Selina Cai for her help in accessing ARC resources.
+Funding This study was funded by the National Science Foundation CAREER Award (grant number CBET-
+1554018).
+Declarations
+Conﬂict of interest Author DY declares that he has no Conﬂict of interest. Author EB declares that she has
+no Conﬂict of interest.
+Ethical approval This article does not contain any studies with human participants or animals performed by
+any of the authors.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Abbasi, B., Babaei, T., Hosseinifard, Z., Smith-Miles, K., & Dehghani, M. (2020). Predicting solutions of
+large-scale optimization problems via machine learning: A case study in blood supply chain management.
+Computers & Operations Research, 119, 104941.
+Absi, N., & van den Heuvel, W. (2019). Worst-case analysis of relax and ﬁx heuristics for lot-sizing problems.
+European Journal of Operational Research, 279(2), 449–458.
+Accorsi, L., Lodi, A., & Vigo, D. (2022). Guidelines for the computational testing of machine learning
+approaches to vehicle routing problems. Operations Research Letters, 50(2), 229–234.
+Alpaydin, E. (2020). Introduction to machine learning. Cambridge, MA: MIT Press.
+Angulo, G., Ahmed, S., & Dey, S. S. (2016). Improving the integer l-shaped method. INFORMS Journal on
+Computing, 28(3), 483–499.
+Bampis, E., Escofﬁer, B., & Teiller, A. (2022). Multistage knapsack. Journal of Computer and System Sciences,
+126, 106–118.
+Barany, I., Van Roy, T. J., & Wolsey, L. A. (1984). Strong formulations for multi-item capacitated lot sizing.
+Management Science, 30(10), 1255–1261.
+Barnhart, C., Belobaba, P., & Odoni, A. R. (2003). Applications of operations research in the air transport
+industry. Transportation Science, 37(4), 368–391.
+Bengio, Y., Frejinger, E., Lodi, A., Patel, R., & Sankaranarayanan, S. (2020). A learning-based algorithm to
+quickly compute good primal solutions for stochastic integer programs. In International Conference on
+Integration of Constraint Programming, Artiﬁcial Intelligence, and Operations Research, pp. 99–111.
+Cham, Switzerland: Springer.
+Bengio, Y., Lodi, A., & Prouvost, A. (2021). Machine learning for combinatorial optimization: a methodolog-
+ical tour d’horizon. European Journal of Operational Research, 290(2), 405–421.
+Benjaafar, S., Li, Y., & Daskin, M. (2012). Carbon footprint and the management of supply chains: Insights
+from simple models. IEEE Transactions on Automation Science and Engineering, 10(1), 99–116.
+Beraldi, P., Ghiani, G., Grieco, A., & Guerriero, E. (2006). Fix and relax heuristic for a stochastic lot-sizing
+problem. Computational Optimization and Applications, 33(2), 303–318.
+123
+
+2896
+Annals of Operations Research (2025) 355:2859–2899
+Bertsimas, D., & Demir, R. (2002). An approximate dynamic programming approach to multidimensional
+knapsack problems. Management Science, 48(4), 550–565.
+Bitran, G. R., & Yanasse, H. H. (1982). Computational complexity of the capacitated lot size problem. Man-
+agement Science, 28(10), 1174–1186.
+Brandimarte, P. (2006). Multi-item capacitated lot-sizing with demand uncertainty. International Journal of
+Production Research, 44(15), 2997–3022.
+Bushaj, S. & Büyüktahtakın, ˙I. E. (2024). A K-means supported reinforcement learning framework to multi-
+dimensional knapsack. Forthcoming in Journal of Global Optimization.
+Bushaj, S., Büyüktahtakın, ˙IE., & Haight, R. G. (2022). Risk-averse multi-stage stochastic optimization for
+surveillance and operations planning of a forest insect infestation. European Journal of Operational
+Research, 299(3), 1094–1110.
+Bushaj, S., Yin, X., Beqiri, A., Andrews, D., & Büyüktahtakın, I. E. (2023). A simulation-deep reinforcement
+learning (SiRL) approach for epidemic control optimization. Annals of Operations Research, 328(1),
+245–277.
+Büyüktahtakın, ˙IE. (2022). Stage-t scenario dominance for risk-averse multi-stage stochastic mixed-integer
+programs. Annals of Operations Research, 309(1), 1–35.
+Büyüktahtakın, ˙IE. (2023). Scenario-dominance to multi-stage stochastic lot-sizing and knapsack problems.
+Computers & Operations Research, 153, 106149.
+Büyüktahtakın, ˙IE., & Liu, N. (2016). Dynamic programming approximation algorithms for the capacitated
+lot-sizing problem. Journal of Global Optimization, 65(2), 231–259.
+Büyüktahtakın, ˙IE., Smith, J. C., & Hartman, J. C. (2018). Partial objective inequalities for the multi-item
+capacitated lot-sizing problem. Computers & Operations Research, 91, 132–144.
+Cacchiani, V., Hemmelmayr, V. C., & Tricoire, F. (2014). A set-covering based heuristic algorithm for the
+periodic vehicle routing problem. Discrete Applied Mathematics, 163, 53–64.
+Cacchiani, V., Iori, M., Locatelli, A., & Martello, S. (2022). Knapsack problems-an overview of recent
+advances. Part II: Multiple, multidimensional, and quadratic knapsack problems. Computers & Opera-
+tions Research, 143, 105693.
+Chen, C., Cai, W., Büyüktahtakın, ˙I. E., & Haight, R. G. (2023). A game-theoretic approach to incentivize
+landowners to mitigate an emerald ash borer outbreak. IISE Transactions, pp. 1–15.
+Chen, Y., & Hao, J.-K. (2014). A “reduce and solve” approach for the multiple-choice multidimensional
+knapsack problem. European Journal of Operational Research, 239(2), 313–322.
+Chen, Z.-L., Li, S., & Tirupati, D. (2002). A scenario-based stochastic programming approach for technology
+and capacity planning. Computers & Operations Research, 29(7), 781–806.
+Cohen, E., Cormode, G., Dufﬁeld, N., & Lund, C. (2016). On the tradeoff between stability and ﬁt. ACM
+Transactions on Algorithms, 13(1), 1–24.
+Crespo-Vazquez, J. L., Carrillo, C., Diaz-Dorado, E., Martinez-Lorenzo, J. A., & Noor-E-Alam, M. (2018).
+A machine learning based stochastic optimization framework for a wind and storage power plant partic-
+ipating in energy pool market. Applied Energy, 232, 341–357.
+Cygan, M., Je˙z, Ł, & Sgall, J. (2016). Online knapsack revisited. Theory of Computing Systems, 58(1), 153–
+190.
+Dai, H., Xue, Y., Syed, Z., Schuurmans, D., & Dai, B. (2021). Neural stochastic dual dynamic programming. In
+International Conference on Learning Representations. https://openreview.net/forum?id=aisKPsMM3fg
+Denizel, M., & Süral, H. (2006). On alternative mixed integer programming formulations and LP-based
+heuristics for lot-sizing with setup times. Journal of the Operational Research Society, 57(4), 389–399.
+Ding, J.-Y., Zhang, C., Shen, L., Li, S., Wang, B., Xu, Y., & Song, L. (2020). Accelerating primal solution
+ﬁndings for mixed integer programs based on solution prediction. In Proceedings of the AAAI Conference
+on Artiﬁcial Intelligence, vol. 34, pp. 1452–1459. Palo Alto, CA: Association for the Advancement of
+Artiﬁcial Intelligence.
+Ding, L., Ahmed, S., & Shapiro, A. (2019). A python package for multi-stage stochastic programming.
+Optimization Online, 1–41.
+Dumouchelle, J., Patel, R., Khalil, E. B., & Bodur, M. (2022). Neur2sp: Neural two-stage stochastic program-
+ming. arXiv preprint arXiv:2205.12006.
+Florian, M., Lenstra, J. K., & Rinnooy Kan, A. (1980). Deterministic production planning: Algorithms and
+complexity. Management Science, 26(7), 669–679.
+Frejinger, E. & Larsen, E. (2019). A language processing algorithm for predicting tactical solutions to an
+operational planning problem under uncertainty. arXiv preprint arXiv:1910.08216.
+Gaivoronski, A. A., Lisser, A., Lopez, R., & Xu, H. (2011). Knapsack problem with probability constraints.
+Journal of Global Optimization, 49(3), 397–413.
+Guan, Y., Ahmed, S., & Nemhauser, G. L. (2009). Cutting planes for multistage stochastic integer programs.
+Operations Research, 57(2), 287–298.
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2897
+Guastaroba, G., & Speranza, M. G. (2014). A heuristic for BILP problems: The single source capacitated
+facility location problem. European Journal of Operational Research, 238(2), 438–450.
+Guerriero, F., & Guido, R. (2011). Operational research in the management of the operating theatre: a survey.
+Health Care Management Science, 14(1), 89–114.
+Gul, S., Denton, B. T., & Fowler, J. W. (2015). A progressive hedging approach for surgery planning under
+uncertainty. INFORMS Journal on Computing, 27(4), 755–772.
+Gurobi Optimization, LLC (2022). Gurobi Optimizer Reference Manual, version 9.5. https://www.gurobi.com
+Haugen, K. K., Løkketangen, A., & Woodruff, D. L. (2001). Progressive hedging as a meta-heuristic applied
+to stochastic lot-sizing. European Journal of Operational Research, 132(1), 116–122.
+Helber, S., & Sahling, F. (2010). A ﬁx-and-optimize approach for the multi-level capacitated lot sizing problem.
+International Journal of Production Economics, 123(2), 247–256.
+Homem-de Mello, T., & Pagnoncelli, B. K. (2016). Risk aversion in multistage stochastic programming: A
+modeling and algorithmic perspective. European Journal of Operational Research, 249(1), 188–199.
+Huang, K., & Ahmed, S. (2009). The value of multistage stochastic programming in capacity planning under
+uncertainty. Operations Research, 57(4), 893–904.
+Huang, K., & Küçükyavuz, S. (2008). On stochastic lot-sizing problems with random lead times. Operations
+Research Letters, 36(3), 303–308.
+Huang, Z., Wang, K., Liu, F., Zhen, H.-L., Zhang, W., Yuan, M., Hao, J., Yu, Y., & Wang, J. (2022). Learning
+to select cuts for efﬁcient mixed-integer programming. Pattern Recognition, 123, 108353.
+Ishibuchi, H., Akedo, N., & Nojima, Y. (2014). Behavior of multiobjective evolutionary algorithms on many-
+objective knapsack problems. IEEE Transactions on Evolutionary Computation, 19(2), 264–283.
+Jans, R., & Degraeve, Z. (2008). Modeling industrial lot sizing problems: A review. International Journal of
+Production Research, 46(6), 1619–1643.
+Jiménez-Cordero, A., Morales, J. M., & Pineda, S. (2022). Warm-starting constraint generation for mixed-
+integer optimization: A machine learning approach. Knowledge-Based Systems, 253, 109570. https://
+doi.org/10.1016/j.knosys.2022.109570
+Kantas, A. B., Cobuloglu, H. I., & Büyüktahtakın, ˙IE. (2015). Multi-source capacitated lot-sizing for econom-
+ically viable and clean biofuel production. Journal of Cleaner Production, 94, 116–129.
+Kıbı¸s, E. Y., Büyüktahtakın, ˙IE., Haight, R. G., Akhundov, N., Knight, K., & Flower, C. E. (2021). A multistage
+stochastic programming approach to the optimal surveillance and control of the emerald ash borer in
+cities. INFORMS Journal on Computing, 33(2), 808–834.
+Kingma, D. P. & Ba, J. (2014). Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980.
+Kosuch, S., & Lisser, A. (2011). On two-stage stochastic knapsack problems. Discrete Applied Mathematics,
+159(16), 1827–1841.
+Kotary, J., Fioretto, F., & Van Hentenryck, P. (2021). Learning hard optimization problems: A data generation
+perspective. Advances in Neural Information Processing Systems, 34, 24981–24992.
+Lara, C. L., Siirola, J. D., & Grossmann, I. E. (2020). Electric power infrastructure planning under uncertainty:
+Stochastic dual dynamic integer programming (SDDiP) and parallelization scheme. Optimization and
+Engineering, 21(4), 1243–1281.
+Larsen, E., Frejinger, E., Gendron, B., & Lodi, A. (2022a). Fast continuous and integer l-shaped heuristics
+through supervised learning. arXiv preprint arXiv:2205.00897.
+Larsen, E., Lachapelle, S., Bengio, Y., Frejinger, E., Lacoste-Julien, S., & Lodi, A. (2022). Predicting tac-
+tical solutions to operational planning problems under imperfect information. INFORMS Journal on
+Computing, 34(1), 227–242.
+Liu, D., Fischetti, M., & Lodi, A. (2022). Learning to search in local branching. In Proceedings of the
+AAAI Conference on Artiﬁcial Intelligence, vol. 36, pp. 3796–3803. Palo Alto, CA: Association for the
+Advancement of Artiﬁcial Intelligence.
+Lulli, G., & Sen, S. (2004). A branch-and-price algorithm for multistage stochastic integer programming with
+application to stochastic batch-sizing problems. Management Science, 50(6), 786–796.
+Luong, M.-T., Pham, H., & Manning, C. D. (2015). Effective approaches to attention-based neural machine
+translation. arXiv preprint arXiv:1508.04025.
+Mnih, V., Kavukcuoglu, K., Silver, D., Graves, A., Antonoglou, I., Wierstra, D., & Riedmiller, M. (2013).
+Playing atari with deep reinforcement learning. arXiv preprint arXiv:1312.5602.
+Möller, A., Römisch, W., & Weber, K. (2008). Airline network revenue management by multistage stochastic
+programming. Computational Management Science, 5(4), 355–377.
+Nair, V., Bartunov, S., Gimeno, F., von Glehn, I., Lichocki, P., Lobov, I., O’Donoghue, B., Sonnerat, N.,
+Tjandraatmadja, C., Wang, P., Addanki, R., Hapuarachchi, T., Keck, T., Keeling, J., Kohli, P., Ktena, I.,
+Li, Y., Vinyals, O., & Zwols, Y. (2020). Solving mixed integer programs using neural networks. arXiv
+preprint arXiv:2012.13349.
+123
+
+2898
+Annals of Operations Research (2025) 355:2859–2899
+Paulus,A.,Rolínek,M.,Musil,V.,Amos,B.,andMartius,G.(2021).Comboptnet:Fittherightnp-hardproblem
+by learning integer programming constraints. In International Conference on Machine Learning, pp.
+8443–8453. Cambridge, MA: Proceedings of Machine Learning Research.
+Pochet, Y., & Wolsey, L. A. (2006). Production planning by mixed integer programming. New York, NY:
+Springer.
+Rockafellar, R. T., & Wets, R.J.-B. (1991). Scenarios and policy aggregation in optimization under uncertainty.
+Mathematics of Operations Research, 16(1), 119–147.
+Schmidt, G., & Wilhelm, W. E. (2000). Strategic, tactical and operational decisions in multi-national logistics
+networks: A review and discussion of modelling issues. International Journal of Production Research,
+38(7), 1501–1523.
+Shen, Y., Sun, Y., Eberhard, A., & Li, X. (2021). Learning primal heuristics for mixed integer programs. In
+2021 International Joint Conference on Neural Networks (IJCNN), pp. 1–8. Piscataway, NJ: Institute of
+Electrical and Electronics Engineers.
+Shen, Y., Sun, Y., Li, X., Eberhard, A., & Ernst, A. (2022). Enhancing column generation by a machine-
+learning-based pricing heuristic for graph coloring. In Proceedings of the AAAI Conference on Artiﬁcial
+Intelligence, vol. 36, pp. 9926–9934. Palo Alto, CA: Association for the Advancement of Artiﬁcial
+Intelligence.
+Singh, K. J., Philpott, A. B., & Wood, R. K. (2009). Dantzig-Wolfe decomposition for solving multistage
+stochastic capacity-planning problems. Operations Research, 57(5), 1271–1286.
+Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I., & Salakhutdinov, R. (2014). Dropout: A simple way to
+prevent neural networks from overﬁtting. The Journal of Machine Learning Research, 15(1), 1929–1958.
+Stahlberg, F. (2020). Neural machine translation: A review. Journal of Artiﬁcial Intelligence Research, 69,
+343–418.
+Tempelmeier, H. (2013). Stochastic lot sizing problems. Handbook of Stochastic Models and Analysis of
+Manufacturing System Operations (pp. 313–344). New York, NY: Springer.
+Toledo, C. F. M., da Silva Arantes, M., Hossomi, M. Y. B., França, P. M., & Akartunalı, K. (2015). A relax-
+and-ﬁx with ﬁx-and-optimize heuristic applied to multi-level lot-sizing problems. Journal of Heuristics,
+21(5), 687–717.
+Varnamkhasti, M. J. (2012). Overview of the algorithms for solving the multidimensional knapsack problems.
+Advanced Studies in Biology, 4(1), 37–47.
+Veliz, F. B., Watson, J.-P., Weintraub, A., Wets, R.J.-B., & Woodruff, D. L. (2015). Stochastic optimization
+models in forest planning: A progressive hedging solution approach. Annals of Operations Research,
+232(1), 259–274.
+Vespucci, M. T., Maggioni, F., Bertocchi, M. I., & Innorta, M. (2012). A stochastic model for the daily
+coordination of pumped storage hydro plants and wind power plants. Annals of Operations Research,
+193(1), 91–105.
+Watson, J.-P., & Woodruff, D. L. (2011). Progressive hedging innovations for a class of stochastic mixed-integer
+resource allocation problems. Computational Management Science, 8(4), 355–370.
+Wu, Y., Song, W., Cao, Z., & Zhang, J. (2021). Learning scenario representation for solving two-stage stochas-
+tic integer programs. In International Conference on Learning Representations. https://openreview.net/
+forum?id=06Wy2BtxXrz
+Yilmaz, D. & Büyüktahtakın, ˙I. E. (2023a). A deep reinforcement learning framework for solving two-stage
+stochastic programs. Optimization Letters, pp. 1–28.
+Yilmaz, D., & Büyüktahtakın, ˙IE. (2023). Learning optimal solutions via an LSTM-optimization framework.
+Operations Research Forum, 4(2), 48.
+Yilmaz, D., & Büyüktahtakın, ˙IE. (2024). An expandable machine learning-optimization framework to sequen-
+tial decision-making. European Journal of Operational Research, 314(1), 280–296.
+Yin, X., Bushaj, S., Yuan, Y., & Büyüktahtakın, ˙I. E. (2023a). Covid-19: Agent-based simulation-optimization
+to vaccine center location vaccine allocation problem. IISE Transactions, 1–16.
+Yin, X., & Büyüktahtakın, ˙IE. (2021). A multi-stage stochastic programming approach to epidemic resource
+allocation with equity considerations. Health Care Management Science, 24(3), 597–622.
+Yin, X., & Büyüktahtakın, ˙IE. (2022). Risk-averse multi-stage stochastic programming to optimizing vaccine
+allocation and treatment logistics for effective epidemic response. IISE Transactions on Healthcare
+Systems Engineering, 12(1), 52–74.
+Yin, X., Büyüktahtakın, ˙IE., & Patel, B. P. (2023). Covid-19: Data-driven optimal allocation of ventilator
+supply under uncertainty and risk. European Journal of Operational Research, 304(1), 255–275.
+Yu, X., & Shen, S. (2020). Multistage distributionally robust mixed-integer programming with decision-
+dependent moment-based ambiguity sets. Mathematical Programming, 196, 1025–64.
+Zakaria, A., Ismail, F. B., Lipu, M. H., & Hannan, M. A. (2020). Uncertainty models for stochastic optimization
+in renewable energy applications. Renewable Energy, 145, 1543–1571.
+123
+
+Annals of Operations Research (2025) 355:2859–2899
+2899
+Zha, D., Lai, K.-H., Zhou, K., & Hu, X. (2019). Experience replay optimization. arXiv preprint
+arXiv:1906.08387.
+Zheng, J., Wang, L., Wang, S., Liang, Y., & Pan, J. (2021). Solving two-stage stochastic route-planning problem
+in milliseconds via end-to-end deep learning. Complex & Intelligent Systems, 7(3), 1207–1222.
+Zou, J., Ahmed, S., & Sun, X. A. (2019). Stochastic dual dynamic integer programming. Mathematical
+Programming, 175(1), 461–502.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

@@ -1,0 +1,3209 @@
+TITLE: Integrated Conditional Estimation-Optimization
+JOURNAL: Operations_Research
+YEAR: 2025
+DOI: https://doi.org/10.1287/opre.2023.0427
+---
+
+Integrated Conditional Estimation-Optimization
+Meng Qi
+SC Johnson College of Business, Cornell University, Ithaca, NY, 14850,
+mq56@cornell.edu
+Paul Grigas
+Department of Industrial Engineering and Operations Research, UC Berkeley, Berkeley, CA, 94720,
+pgrigas@berkeley.edu
+Max Shen
+Faculty of Engineering & Faculty of Business and Economics, University of Hong Kong, China,
+maxshen@hku.hk
+Many real-world optimization problems involve uncertain parameters with probability distributions that can
+be estimated using contextual feature information. In contrast to the standard approach of first estimating
+the distribution of uncertain parameters and then optimizing the objective based on the estimation, we
+propose an integrated conditional estimation-optimization (ICEO) framework that estimates the underly-
+ing conditional distribution of the random parameter while considering the structure of the optimization
+problem. We directly model the relationship between the conditional distribution of the random parame-
+ter and the contextual features, and then estimate the probabilistic model with an objective that aligns
+with the downstream optimization problem. We show that our ICEO approach is asymptotically consis-
+tent under moderate regularity conditions and further provide finite performance guarantees in the form of
+generalization bounds. Computationally, performing estimation with the ICEO approach is a non-convex
+and often non-differentiable optimization problem. We propose a general methodology for approximating
+the potentially non-differentiable mapping from estimated conditional distribution to optimal decision by
+a differentiable function, which greatly improves the performance of gradient-based algorithms applied to
+the non-convex problem. We also provide a polynomial optimization solution approach in the semi-algebraic
+case. Numerical experiments are also conducted to show the empirical success of our approach in different
+situations including with limited data samples and model mismatches.
+Key words : contextual stochastic optimization; prescriptive analytics; statistical learning theory
+1.
+Introduction
+Two fundamental aspects of decision-making under uncertainty are estimation and optimization.
+Classically these two aspects are treated separately, with statistical and/or machine learning
+methodologies used to estimate the distributions of uncertain parameters based on data, resulting
+in a stochastic optimization problem to be solved for making a decision. In recent years, researchers
+and practitioners have increasingly recognized the significance of considering estimation and opti-
+mization in tandem (Bertsimas and Kallus 2020, Kao et al. 2009, Donti et al. 2017, Elmachtoub
+and Grigas 2022). Another salient feature of modern decision-making under uncertainty is the pres-
+1
+arXiv:2110.12351v4 [stat.ML] 2 Aug 2023
+
+2
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+ence of contextual information, usually in the form of features/covariates, that can be leveraged
+to improve the estimation of the uncertain parameters. For example, contextual information such
+as temporal information, the presence of promotions, and economic indicators can be leveraged to
+refine the estimation of uncertain demand for products. The refined demand distribution estimates
+would then be used for making inventory and supply chain decisions through optimization models.
+Contextual stochastic optimization (CSO) has recently emerged as a general paradigm describ-
+ing this situation, with applications in supply chain management, finance, transportation, energy
+systems, and many other areas.
+In this work, we consider the CSO problem in a data-driven setting where one has available
+historical data consisting of realizations of the uncertain parameters paired with contextual feature
+information. As mentioned, the classical method of solving CSO given data is a two-step procedure,
+where in the first step either a point prediction of the parameter or an estimation of its distribution
+is built based on data. (Although the phrases “prediction” and “estimation” are often synonymous
+or not clearly distinguished in the literature, herein we specifically let “prediction” denote point pre-
+dictions of the random parameter and let “estimation” refer to any methodology, either parametric
+or non-parametric, for estimating the conditional distribution of the random parameter given the
+context.) Modern machine learning techniques are often utilized in the first step to provide more
+granular results, and these models are usually fit based on statistical objectives such as measures
+of prediction error or likelihood. Then in the second step, given the prediction or estimation, an
+optimization problem is solved. A major drawback of these standard predict-then-optimize (PTO)
+and estimate-then-optimize (ETO) approaches is that they do not consider the decision error – the
+cost with respect to the downstream optimization problem due to an imperfect prediction – when
+fitting a statistical model.
+We propose an integrated conditional estimation-optimization (ICEO) approach that estimates
+the underlying conditional distribution of the random parameter based on minimizing the ultimate
+decision error. We propose a highly flexible framework that models the conditional distribution
+using a hypothesis class and applies ideas from statistical learning to do estimation. As compared
+to existing approaches, our approach uses a generic learning framework based on specifying a
+hypothesis class and applies to a broad class of convex contextual stochastic optimization problems
+with uncertainty in the objective. We study the statistical and computational properties of our
+approach. In particular, we prove asymptotic consistency in terms of risks, decisions and hypothe-
+ses. Asymptotic consistency is highly desired for data-driven methods because it guarantees that,
+as the amount of data increases, our solutions and estimated models converge to their optimums
+given full information of the true distribution of contextual features and uncertain parameters.
+We prove asymptotic consistency in terms of the ICEO risk, induced decisions, and the learned
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+3
+hypothesis. We also provide generalization bounds to quantify the out-of-sample performance when
+data is limited to a finite sample.
+In general, there are fundamental differences between the cases of linear and nonlinear objective
+functions in CSO problems and the two problem classes require completely different solution meth-
+ods. As pointed out in the prior literature (for example, Bertsimas and Kallus (2020), Elmachtoub
+and Grigas (2022), Sadana et al. (2023) and Qi and Shen (2022)), the linear objective assumption
+implies that point predictions are sufficient to address the CSO problem. However, in the general
+nonlinear case, one needs to utilize a distributional estimation of the conditional distribution. As
+such, ICEO seeks a distributional estimation that directly models the relationship between the
+conditional distribution of the random parameter and the contextual features and then estimates
+the probabilistic model with a training objective that aligns with the downstream optimization
+problem. Our methodological and corresponding theoretical contributions are entirely novel and
+significant.
+It is worthwhile to point out that, in the ICEO method, we adopt a strongly convex decision
+regularization function inside the optimization oracle in order to stabilize the decision and induce
+uniqueness. Due to the interplay between the downstream optimization oracle, decision regulariza-
+tion, and the model, the overall training objective is more complicated than typical prediction error
+losses and as such standard uniform convergence and consistency do not directly apply even with
+i.i.d. samples. Instead, such results can only be obtained after establishing the convergence and
+Lipschitzness of the regularized oracle. Similarly, finite sample bounds for ICEO are generalization
+bounds based on multi-variate Rademacher complexity. However, as ICEO adopts a more compli-
+cated training objective that incorporates the regularized oracle to take the downstream problem
+into account, ICEO deviates from standard learning procedures that use simple loss functions.
+Tackling this difficulty also relies on establishing a Lipschitz property of the regularized oracle,
+which further translates to the training objective.
+In terms of computation, the core training problem of the ICEO framework is non-convex and
+even non-differentiable in many cases. In fact, due to the presence of constraints in the downstream
+problem, it is often the case that the optimal decision oracle has a piece-wise constant shape, which
+leads to poor local minima that are very hard to escape when applying gradient-based methods.
+For these reasons, we propose two computational approaches: (i) a highly practical approach that
+involves approximating the regularized optimal solution oracle with a smooth function and then
+applying gradient algorithms, and (ii) a polynomial optimization approach when the downstream
+problem has a semi-algebraic objective and we approximate the optimal solution oracle with a
+polynomial function.
+Our key contributions are summarized as follows:
+
+4
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+1. We propose the ICEO framework, wherein we directly estimate the underlying conditional
+distribution of uncertain parameters given contextual information using a hypothesis class.
+In contrast to two-step ETO methods, we learn the conditional distribution in a way that
+integrates with the downstream optimization goal. ICEO offers more flexibility compared
+to most existing related approaches. To the best of our knowledge, among all integrated
+approaches for general classes of nonlinear CSO problems with convex objective functions,
+ICEO is the first that provides both asymptotic and finite sample performance guarantees.
+2. We prove the asymptotic consistency of the ICEO method when the model is specified cor-
+rectly (Theorem 1). More specifically, we show the consistency of ICEO risk, ICEO decisions,
+and ICEO hypothesis when the hypothesis class contains the correct conditional distribution
+function. To show asymptotic consistency, standard statistical learning approaches do not
+apply because of the presence of the regularized oracle. Tackling these difficulties requires
+establishing certain properties of the regularized oracle such as uniform convergence and uni-
+form Lipschitzness.
+3. To quantify the out-of-sample performance with finite samples, we provide generalization
+bounds for the ICEO method based on the multi-variate Rademacher complexity of the
+hypothesis class used to learn the conditional distribution (Theorem 3). Again, standard sta-
+tistical learning results do not directly apply since taking the downstream optimization into
+account leads to a more complicated loss function than the typical (e.g., MSE) losses. In partic-
+ular, our generalization bound requires first establishing the Lipschitz property of the regular-
+ized optimal decision oracle (Proposition 2).Furthermore, our generalization bound intuitively
+indicates that ICEO can be more flexible/expressive than policy optimization methods while
+still achieving a comparable sample (Rademacher) complexity.
+4. The ICEO training problem is non-convex and non-differentiable. Non-differentiability poses
+a serious concern when applying gradient-based algorithms, like (stochastic) gradient descent,
+to solve the ICEO training problem as the presence of constraints can lead to local minima
+that are hard to escape (visually illustrated in Figure 1). To address this issue, we approximate
+the oracle using differentiable function classes with a guaranteed approximation error (Propo-
+sition 3, Proposition 4). We then provide corresponding generalization bounds when training
+ICEO method using the approximated oracle (Theorem 4). In addition, for the case where
+the nominal optimization problem is semi-algebraic, we propose an exact solution algorithm
+(Proposition 5).
+The remainder of this paper is organized as follows. In Section 1.1, we review related methods in
+literature. The details of our proposed ICEO framework are introduced in Section 2. In Section 3,
+we provide performance guarantees in terms of asymptotic consistency and generalization bounds.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+5
+In Section 4, we discuss the main difficulties in solving the ICEO formulation and provide solution
+methods. Empirical performances of the ICEO method is demonstrated in Section 5. Moreover,
+Appendix A provides supplementary materials to support the asymptotic consistency result in
+Section 3.1. B presents supplementary lemmas and proofs for Sections 3.2 and 4. Appendix A.1.1
+presents conditions that ensure an “automatic crossover” behavior of the regularized oracle, which
+further supports the assumptions made in Section 3.1. Appendix C provides two detailed exam-
+ples of using polynomial functions to approximate the optimal solution mapping. When both the
+oracle approximation and objective functions are polynomial functions, the ICEO problem can be
+reformulated as a semi-algebraic problem thus can be solved efficiently. Appendix D demonstrates
+supplementary materials for Section 5. In Appendix E, we provide more intuition of the advantages
+of ICEO by comparing it to policy optimization approaches.
+1.1.
+Relevant Literature
+The fusion of prediction models based on data and the optimization problems has become more
+and more widespread in recent years. In the remainder of this section, we will discuss existing
+works related to this topic and contrast them with our proposed ICEO approach.
+The first stream of research focuses on providing a prescriptive solution by approximating the
+conditional distribution of the random parameter given a feature vector with the help of various
+machine learning tools. In one of the first works along these lines, Hannah et al. (2010) use non-
+parametric methods to estimate the density function conditioned on state variables to solve convex
+stochastic optimization problems. They consider weights on the empirical distribution based on
+kernels and the Dirichlet process. Bertsimas and Kallus (2020) also proposed prescriptive models
+that approximate the conditional distribution with a weighted empirical distribution of the uncer-
+tainty. The weights can be achieved based on multiple machine learning models, including k-nearest
+neighbors (KNN), kernel methods, tree-based methods, etc. Kallus and Mao (2020) consider using
+a (non-parametric) random forests estimator of the conditional distribution in a way that is trained
+with respect to the cost of the downstream optimization task, akin to the ICEO approach. A later
+work Bertsimas and McCord (2019) investigates these prescriptive methods in the multi-period
+problem setting. Bertsimas et al. (2019) follows the same idea and propose a tree-based algorithm
+that balances the optimality of the prescription and accuracy of the prediction. Kallus and Mao
+(2020) consider a random forest model for the prescriptive solution. In contrast to the standard
+way of splitting the feature space, the authors consider the down stream optimization quality while
+constructing the partitions. Different from Kallus and Mao (2020) the ICEO approach directly
+models the underlying conditional distribution using a hypothesis class H. Thus, while Kallus and
+Mao (2020) only provide asymptotic consistency results, we are able to prove both asymptotic
+consistency and generalization bounds for a wide variety of hypothesis classes.
+
+6
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Ho and Hanasusanto (2019) considers the regularized Nadaraya-Watson approach and establishes
+performance guarantees using moderate deviations theory. We refer to Qi and Shen (2022) for a
+tutorial on these methods.
+Another stream of related work investigates adjusting the loss function to meet the ultimate
+optimization goal while training the machine learning models to predict the random parameters.
+Ban and Rudin (2019) investigates the Newsvendor problem, which is inherently equivalent to
+a quantile prediction problem. The authors learn the feature-to-decision mapping from data by
+adopting a loss function that characterizes the newsvendor inventory cost and is equivalent to
+the quantile loss function. Elmachtoub and Grigas (2022) consider the case when the downstream
+optimization problem has a linear objective. The authors propose a “smart predict-then-optimize”
+(SPO) framework with a tractable convex surrogate loss function (SPO+) to integrate the ultimate
+optimization problem structure. They prove Fisher consistency of SPO+ and demonstrate its strong
+numerical performance on different problem classes. Balghiti et al. (2019) later provides a finite-
+sample performance guarantee of the SPO loss in the form of generalization bounds. Recently, Liu
+and Grigas (2021) have strengthened the consistency of SPO+ by providing risk guarantees and a
+calibration analysis in the polyhedral and strongly convex cases. Elmachtoub et al. (2020) propose
+a method to train decision trees using the SPO loss and demonstrate strong numerical performance
+and improved model complexity over standard decision tree methods (e.g., CART) that minimize
+prediction error.
+Other existing studies aim to learn the task-based end-to-end learning models with differentiable
+optimization layers. Donti et al. (2017) consider a general setting where the optimization stage
+involves a convex optimization problem and adopt the objective in the optimization stage as the loss
+function to achieve an end-to-end training for the machine learning models. The main issue in such
+end-to-end learning models is to address the non-differentiability of the optimal solution mapping
+(the mapping from a contextual feature vector to the optimal decision). Amos and Kolter (2017)
+introduce the differentiable optimization layers for the end-to-end training approaches and propose
+a method of approximating the gradient of the optimal solution mapping by the solution of a group
+of equations representing the KKT conditions. Agrawal et al. (2019) further provide a method to
+convert convex programs to the canonical forms that can be implemented at the optimization layer
+and implemented their grammar in CVXPY for ease of use. Wilder et al. (2019a) and Wilder et al.
+(2019b) further consider more difficult combinatorial problems. They propose end-to-end models
+that map from the graph structure to a feasible solution and train them with the quality of the
+solution. Wilder et al. (2019a) consider continuous relaxations of the discrete problem to propa-
+gate gradients through the optimization procedure. Mandi and Guns (2020) consider mixed integer
+linear programs and consider a homogeneous self-dual formulation of the LP and show that the
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+7
+gradients are related to an interior point step. Berthet et al. (2020) instead consider stochastically
+perturbed optimizers to evaluate the gradients required for back-propagation. Mandi et al. (2020),
+Ferber et al. (2020), Poganˇci´c et al. (2019) also discuss how to approximate the gradients when
+training end-to-end models for combinatorial problems. As our work focuses on convex optimiza-
+tion problems, we skip the details and refer to Kotary et al. (2021) for a detailed survey. Although
+demonstrated to be competitive in numerical experiments, these end-to-end learning models based
+on optimization layers and their extensions to combinatorial cases lack strong performance guar-
+antees in theory. Moreover, learning feature-to-decision mapping lacks flexibility in the way that
+it handles constraints. Indeed, constraints restrict the hypothesis class that can be used to learn
+the data-to-decision mapping. In contrast, our ICEO framework learns the conditional distribution
+and uses the optimal solution mapping to obtain the decision, which is more flexible in handling
+constraints.
+Other related works include Kao et al. (2009) which investigates the case of model mis-
+specification when features are not perfect. This work proposes a method of directed regression
+which combines the merits of regression and empirical optimization. Later Kao and Van Roy (2012)
+extended this setting to a directed time series regression. Ho-Nguyen and Kılın¸c-Karzan (2020),
+which investigates the relationship between the prediction part to the performance of the optimiza-
+tion part, mainly in the case of the least squares loss function. A recent work Poursoltani et al.
+(2023) investigates the coefficient of prescriptiveness which can be used to quantify the performance
+of different CSO approaches and how to directly optimize it. Bennouna and Van Parys (2021)
+took a different perspective on data-driven solutions and investigated the optimal formulation that
+guarantees a certain level of out-of-sample performance.
+There are also a number of decision-focused learning contributions that address practically
+impactful applications. Chung et al. (2022) investigate the problem of allocating limited supply in
+health supply chains and proposed a decision-aware learning method that uses the decision cost
+to inform training. Qi et al. (2020) focus on a multi-period inventory management problem with
+random demand and lead times, and provide a practical end-to-end learning framework empowered
+by deep learning models. The authors demonstrate the empirical success of this approach in prac-
+tice by conducting a field experiment in industry. Cristian et al. (2022) proposes a neural network
+architecture that approximately solves linear programs in an end-to-end way. The authors also ana-
+lyze applications of the proposed approach to a multi-warehouse inventory management problem
+with cross-fulfillment. Chehrazi and Weber (2010) consider the problem of optimal debt settlement
+and consider an approach that combines estimating the objective function and the optimization
+problem.
+
+8
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Another stream of work investigates the performance of the classic separated two-step PTO
+and ETO approach. Hu et al. (2022) demonstrate that, when the optimization problem has a
+linear objective and linear constraints, the two-step predict-then-optimize approach leads to faster
+convergence in terms of expected risk compared to the integrated policy optimization approach.
+Elmachtoub et al. (2023) take a stochastic dominance perspective and demonstrate that when
+the model class is well-specified, the predict-then-optimize approach outperforms the integrated
+approach in a strong sense. More broadly, there is a rapidly growing literature regarding data-driven
+methods for CSO problems. We have mainly included a discussion of work closely related to our
+paper and refer readers to Sadana et al. (2023) for a comprehensive survey of various approaches
+to address CSO as well the connection among previously stated streams of literature.
+There are also other studies that explore seemingly similar but different problem settings as
+CSO and ICEO. For example, the joint estimation-optimization (JEO) model (Jiang and Shanbhag
+(2013), Ahmadi and Shanbhag (2014), Jiang and Shanbhag (2016), Ho-Nguyen and Kılın¸c-Karzan
+(2019)) The major difference between CSO and JEO is that, in the JEO model, there is no contex-
+tual information considered predictors of uncertainty. Besides, several JEO models focus on solving
+an online convex optimization problem in the optimization stage, while we consider a stochastic
+optimization problem. We would also like to point out the differences between CSO and the oper-
+ational statistics method, in which the downstream optimization goal is considered in finding the
+optimal operational statistic (Liyanage and Shanthikumar (2005), Chu et al. (2008), Ramamurthy
+et al. (2012)). We include contextual information in our problem setting which is not considered in
+the classic operational statistics literature. Moreover, we aim to learn the underlying conditional
+distribution rather than finding the best statistic. We also consider constraints in the downstream
+optimization problem.
+Lastly, there are other works that explore data-driven solutions for stochastic optimization. For
+example, data-driven methods for robust optimization (Bertsimas et al. (2018a), Wang et al. (2023),
+Bertsimas et al. (2018b), Hong et al. (2021)) and distributionally robust optimization (DRO)
+(Delage and Ye (2010), Blanchet et al. (2019), Gao and Kleywegt (2023), Wiesemann et al. (2014),
+Van Parys et al. (2021)). These lines of research emphasize the robustness of data-driven solutions.
+Among the data-driven DRO literature, the stream of residual-based DRO is most relevant to
+our work (Kannan et al. (2020), Qi et al. (2022)). Residual-based DRO considers the conditional
+distribution based on residuals. A similar approach involving residual-SAA has been studied by
+Deng and Sen (2022), Liu et al. (2022), Kannan et al. (2022). Besides methodologies that solves
+the standard CSO, there are other works considering other settings different from the classical
+CSO problem, for example, the small-data large-scale regime Gupta and Rusmevichientong (2021),
+Gupta et al. (2022).
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+9
+2.
+Contextual Stochastic Optimization and the ICEO Approach
+In this section, we review the basic ingredients of contextual stochastic optimization problems,
+which is a fundamental model for applying machine learning in many operational contexts, and
+we formally describe our ICEO approach. We consider a convex CSO, which models a downstream
+decision-making task. The feasible region for the decision variable w ∈Rd, denoted by S ⊂Rd, is
+assumed to be known with certainty. We additionally assume that S is a convex and compact set.
+Although the feasible region of our optimization task is known with certainty, the objective function
+c(·,ξ) : S →R is stochastic and depends on a random parameter ξ. We assume that for all values
+of ξ, c(·,ξ) is a convex function of w. While the precise value of ξ is not known at the time when
+a decision must be made, we assume that the decision-maker observes an associated contextual
+feature vector x ∈X ⊆Rp (sometimes the components of x are referred to as covariates) that can
+be used to learn information about the objective function. Let D denote the joint distribution
+of x and ξ. Then, given an observed x ∈Rp, the decision maker’s goal is to solve the contextual
+stochastic optimization problem:
+min
+w∈S Eξ[c(w,ξ)|x],
+(1)
+where the expectation above is with respect to the conditional distribution of ξ given x.
+It is important to emphasize that the distribution D, and hence the conditional distribution of
+ξ given any x, is typically unavailable in practice. Instead, a data-driven approach to solving (1)
+is much more viable. Indeed, one often has a training dataset {(xi,ξi)}n
+i=1 consisting of historically
+observed pairs of feature vectors xi ∈X and associated parameter values ξi.
+In this work, in order to directly model the conditional distribution, we consider the case where
+the random parameter ξ has finite discrete support, i.e., ξ ∈Ξ := {˜z1, ˜z2,..., ˜zK}. Then, for any
+x ∈X, the conditional distribution of ξ given x is characterized by a probability vector p∗(x) ∈∆K,
+where ∆K := {p ∈RK : PK
+k=1 pk = 1,p ≥0} denotes the (K −1)-dimensional unit simplex. That is,
+p∗
+k(x), the k-th component of p∗(x), is defined by p∗
+k(x) = Pξ(ξ = ˜zk|x), for all k = 1,...,K. Using
+this notation as well as the shorthand notation ck(·) := c(·, ˜zk) for all k = 1,...,K, problem (1) can
+be equivalently written as
+min
+w∈S Eξ[c(w,ξ)|x] = min
+w∈S
+K
+X
+k=1
+p∗
+k(x)ck(w).
+(2)
+Note that there might be multiple optimal solutions and we use the notation W(p) to refer to the
+set of such optimal solutions, i.e., W(p) := arg minw∈S
+PK
+k=1 pkck(w).
+2.1.
+ICEO Approach
+Let us now describe the major ingredients of our ICEO approach, as well as the formulation of our
+ICEO training problem.
+
+10
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Hypothesis Class of Conditional Probability Estimators It is evident from the right side of (2)
+that learning the conditional distribution p∗(x) is the most critical part of our contextual stochastic
+optimization setting. We adopt standard ideas from learning theory to learn p∗(x), whereby we
+employ a compact hypothesis class H of conditional probability estimators. That is, H is a compact
+set (e.g., with respect to the uniform norm) of functions f : X →∆K. The hypothesis class H is
+the first major ingredient of our ICEO approach. Note that the constraint on the output of f ∈H,
+namely f(x) ∈∆K for all x ∈X, is not standard in most learning problems but is necessitated by our
+setting. Fortunately, this constraint can be accommodated in a number of ways. A straightforward
+approach is to consider the softmax operator soft : RK →RK defined by softk(v) =
+exp(vk)
+PK
+j=1 exp(vj)
+for v ∈RK. Then, given any hypothesis class ˜H of unconstrained functions ˜f : X →RK, we can
+define H as the composition class soft ◦˜H. Note that, due to the differentiability properties of the
+softmax operator, soft◦˜H naturally inherits differentiability properties from ˜H, which can be very
+useful from a computational perspective. For another example, consider H defined by a decision
+tree partitioning algorithm. Then, for any given x, f(x) can be constructed from the empirical
+distribution of ξ restricted to the subset of the partition of the training data for which x lies in.
+Finally, a third approach, which we expand upon in Section C.3, is to let H be a constrained linear
+hypothesis class whereby H = {f : f(x) = Bx ∈∆K for all x ∈X}. Depending on the structure of
+X, it may be possible to efficiently model the constraint Bx ∈∆K for all x ∈X, and we discuss
+specific examples in Section C.3. We would like to emphasize two points about our approach for
+estimating the conditional distribution using a hypothesis class H. First, by directly estimating
+the conditional probability our proposed method has more flexibility in handling constraints as
+compared to methods that learn a mapping π directly from features x to decisions w. In particular,
+compared to the policy learning approaches which learn a mapping from features to decisions
+requires that the output of the mapping π be feasible in the region S, which may severely constrain
+the feasible set of π. More detailed intuitions can be found in Appendix E. On the other hand, our
+approach of composing a user-specified hypothesis class H with the regularized optimal solution
+mapping wρ(·) allows for a very general selection of H.
+Regularized Optimization Oracle. As mentioned previously, we assume that the functions ck(·) =
+c(·, ˜zk), for all k = 1,...,K, are all convex functions of w on the convex and compact feasible region
+S. Furthermore, we presume that we can additionally work with a decision regularization function
+ϕ(·) : S →R, which is non-negative and strongly convex with respect to some norm ∥· ∥on Rd.
+Given any p ∈∆K and ρ > 0, define the regularized optimal solution mapping:
+wρ(p) :=arg min
+w∈S
+K
+X
+k=1
+pkck(w) + ρϕ(w).
+(3)
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+11
+Note that, due to the strong convexity of ϕ(·), wρ(p) is uniquely defined. Furthermore, we can
+show that wρ(·) is a continuous mapping as demonstrated in Lemma 1. These regularity properties
+are induced by the use of the regularization term ϕ(·), which is crucial for developing our ICEO
+methodology and for providing associated theoretical guarantees. We further assume that wρ(p)
+can be efficiently computed in practice for any p ∈∆K and ρ > 0. Possible examples include using
+a commercial solver or utilizing a specialized algorithm that depends on the structure of the ck(·)
+and ϕ(·) functions. Ideally, the function ϕ(·) should be chosen so that the complexity of computing
+wρ(p) is not greatly increased as compared to when ρ = 0. Note that our performance guarantees
+developed in Section 3 hold for any choice of ϕ(·) that is 1-strongly convex.
+ICEO Methodology. We are now ready to describe our ICEO methodology and corresponding
+training problem, whereby we consider an integrated approach that estimates a hypothesis f ∈H in
+consideration of the downstream optimization goal. We presume that we have collected a training
+dataset {(xi,ξi)}n
+i=1 consisting of historically observed pairs of feature vectors xi ∈X and associated
+parameter values ξi. We also presume that the decision maker uses the regularized optimal solution
+oracle wρ(·) defined in (3). We adopt the empirical risk minimization (ERM) principle with respect
+to the in-sample cost induced by the regularized oracle:
+min
+f∈H,w1,...,wn∈S
+1
+n
+n
+X
+i=1
+c(wi,ξi)
+(ICEO-ρ)
+s.t.
+wi = wρ(f(xi)),
+where ρ > 0 is a given value of the decision regularization parameter, which can be chosen with
+cross-validation for example. Let ˆf ∈H denote a computed optimal solution of (ICEO-ρ). Then, for
+any newly observed feature vector x ∈X, the decision maker implements the decision wρ( ˆf(x)) ∈S
+formed by composing wρ(·) with ˆf(·). We remark that one may consider a variant of ICEO-ρ that, in
+the objective function, additionally includes decision regularization terms ρϕ(wi) for each sample.
+Although these decision regularization terms appear more aligned with (3), and were included in
+an earlier version of this paper, they are in fact a purely optional component of our model and we
+choose to not include them here for simplicity. Indeed, our entire analysis also will carry through
+with or without the additional decision regularization terms. The only difference is that the rate
+of convergence in the finite-sample bound is slightly faster when these terms are excluded.
+Let us contrast the ICEO approach with the PTO and ETO approaches. In the PTO approach,
+a machine learning model ˆgPTO : X →Ξ is built, using the training data, to predict the parameter
+ξ based on the feature vector x. Then, given any new x ∈X, the decision maker implements
+a decision from the optimal solution set arg minw∈S c(w, ˆgPTO(x)). Note that, as pointed out in
+Section 1, because of the nonlinearity of the objective function, a point estimate for a prediction
+
+12
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+of ξ given x does not provide enough information about the conditional distribution to produce a
+reasonable solution of (1). Different from PTO, the ETO approach learns a model ˆfETO : X →∆K
+for estimating the conditional distribution of ξ given x. Then, given any new x ∈X, the decision
+maker implements a decision from the optimal solution set W( ˆfETO(x)). Thus, the ETO approach is
+more aligned with the ICEO approach. The main distinction is that the traditional ETO approach
+learns the model ˆfETO in a way that is completely oblivious to the downstream optimization
+task. For instance, given a hypothesis class H, the ETO approach might select the hypothesis by
+minimizing the empirical cross-entropy loss, defined for any f ∈H and any observed (x,ξ = ˜zk) by
+ℓce(f(x),ξ = ˜zk) := −log(fk(x)).
+Additional Notation. Due to the compactness of S, the cost function c(·,·) is bounded and we
+define ¯c := supw∈S,ξ∈Ξ |c(w,ξ)|. Because of the compactness of S, we can define diameters of S. We
+let diamj(S) := supu,v∈S |uj −vj| to denote the coordinate-wise diameter of the feasible region S.
+We further let diam(S) := Pd
+j=1 diamj(S) denote the summation of the coordinate-wise diameter
+of all coordinates. Given a norm ∥· ∥defined on Rd, the distance from a point w ∈Rd to a set
+W ⊆Rd is denoted by dist(w,W) := infu∈W ∥w −u∥. For a convex function h(·) : S →R, we let
+∂h(w) denote the set of subgradients of h(·) at w. Let ◦denote the composition of functions.
+For example, with f : X →∆K and w : ∆K →S, then w ◦f is the function from X to S with
+(w ◦f)(x) := w(f(x)) for all x ∈X. This function composition notation also extends naturally to
+function classes. For example, for a class H of functions f : X →∆K, we let w ◦H denote the
+class of functions {w ◦f : f ∈H}. For f,g ∈H, recall the sup-norm is defined as as ∥f −g∥∞:=
+supx∈X |f(x)−g(x)|. We denote the set of non-negative integers a N0 and let Nk
+0 denote the set of all
+k-dimensional vectors with each component is a non-negative integer. 1 denotes the K-dimensional
+vector with all coordinates taking the value of one. We let TV(P,Q) denote the total variation
+between two probability measures P and Q supported on the K −1-dimensional simplex ∆K.
+TV(P,Q) := P
+A∈B |P(A)−Q(A)| where B denote the class of Borel sets in ∆K. In Section 4.1, we
+will use an equivalent expression of TV(P,Q) = 1
+2 supf:∆→[−1,1](
+R
+∆K f(p)dP(p) −
+R
+∆K f(p)dQ(p)).
+2.2.
+Motivating Examples
+In this section, we present a few motivating examples for the ICEO framework, some of which will
+be revisited in our numerical experiments in Section 5.
+Example 1 (Multi-item Newsvendor). The multi-item Newsvendor problem aims to find
+the optimal replenishment quantities for d different products. We let ξ := (ξ1,...,ξd) denote the
+random demand of d products and let w ∈Rd denote the associated order quantities. The demand
+values ξ might be related to contextual information such as promotions, holiday seasons, brand
+information, etc. The objective of this problem is the total inventory cost including the holding
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+13
+costs hl and stockout costs bl, which characterize the over-stock and under-stock, respectively. The
+objective cost can be formulated as
+c(w,ξ) :=
+d
+X
+l=1
+hl(wl −ξl)+ + bl(ξl −wl)+,
+(4)
+where the function (·)+ is defined as max{·,0}. Moreover, we consider a budget capacity constraint
+C > 0 on the total order quantities and formulate the feasible set as
+S := {w :
+d
+X
+l=1
+wl ≤C,w ≥0}.
+Example 2 (Risk-Averse Portfolio Optimization). We consider the problem of finding
+an optimal risk-averse portfolio of d assets. We denote the random vector of asset returns by
+ξ ∈Rd, which may be associated with contextual information such as economic indicators, news
+headlines, etc. The decision maker aims to find the best allocation of assets w ∈Rd that optimizes
+a weighted combination of the expected return and variance of the portfolio. By introducing an
+auxiliary variable w0 ∈R, we formulate the objective as
+c(w,w0,ξ) := α
+ 
+d
+X
+l=1
+wlξl −w0
+!2
+−
+d
+X
+l=1
+wlξl,
+(5)
+where α > 0 is a trade-off parameter. Note that the expectation of the first term in (5) is
+αEξ
+h
+(Pd
+l=1 wlξl −w0)2i
+, which represents the variance of the investment return Var(Pd
+l=1 wlξl)
+when w0 is optimally selected as w0 = Eξ
+hPd
+l=1 wlξl
+i
+, while the second term is the return of the
+portfolio. Therefore, Eξ[c(w,w0,ξ)] trades off between minimizing the variance and maximizing the
+expected return of the portfolio. As is standard in the classical portfolio optimization problems,
+we constrain the portfolio decision in the simplex ∆d = {w ∈Rd : Pd
+l=1 wl = 1,w ≥0} and we have
+S := {(w,w0) : w ∈∆d,w0 ≥0,0 ≤w0 ≤¯Ξ},
+where ¯Ξ ≥0 is a known upper bound the maximum of the returns ∥ξ∥∞.
+Example 3 (Minimum Convex Cost Flow Problem). Many applications such as urban
+traffic systems and area transfers in communication networks can be formulated as a minimum
+convex cost flow problem (we refer to Chapter 14 of Ahuja et al. (1988) for more details). In the
+minimum convex cost flow problem, the decision-maker aims to find the flow that minimizes the
+associated cost on the edges. The cost is a convex function of flow and depends on a random
+parameter. Suppose we consider a directed graph with d edges and the random parameter ξ ∈Rd.
+In this problem, we consider the objective function
+c(w,ξ) =
+d
+X
+l=1
+gl(wl,ξl)
+
+14
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+where gl is a convex function of wl and gl can be different for different coordinates. Similar to the
+standard network flow problem, we let the matrix A denote the node-arc incidence matrix of the
+graph and restrict the flow on each edge in the region [l,u]. Therefore, we have the feasible region
+S = {w ∈Rd : Aw = 0,w ∈[l,u]d}.
+3.
+Performance Guarantees
+In this section, we demonstrate asymptotic consistency and finite-sample performance guarantees
+of the ICEO approach. Let us first introduce some additional notation. We state our results in
+terms of arbitrary policy mappings π : X →S, which represent any mapping from the feature space
+X to the set of feasible decisions S. Our main interest herein is the class of policies that combine
+the optimal solution mapping and hypothesis f, i.e., Π = wρ ◦H. This class of policies could include
+both hypotheses learned by the ICEO approach as well as by ETO approaches. In the remaining
+part of this work, we let f ∗: X →∆K denote the function that maps from x to the true conditional
+distribution p∗(x). We refer to f ∗as the true hypothesis. To quantify our performance guarantees,
+we define the following risk functions for any policy π:
+1. ˆRn(π): The empirical risk with respect to a given sample {(xi,ξi)}n
+i=1, i.e.,
+ˆRn(π) := 1
+n
+n
+X
+i=1
+c(π(xi),ξi).
+2. R(π): The expected risk with respect to the underlying joint distribution D of x and ξ, i.e.,
+R(π) := Ex,ξ [c(π(x),ξ)] = Ex
+" K
+X
+k=1
+p∗
+k(x)ck(π(x))
+#
+,
+where p∗
+k(x) = Pξ(ξ = ˜zk|x) for all k = 1,...,K.
+Note that ˆRn(·) is the objective function of (ICEO-ρ). We use the notation Dx to refer to the
+marginal distribution of the features x. We further define the optimal risk values for the class of
+policies wρ ◦H and w ◦H that we consider herein. Recall that, for all k, ck(·) is convex but in
+general not strongly convex. Therefore, there may exist multiple optimal solutions, as denoted by
+W(p)arg minw∈S
+PK
+k=1 pkck(w), for any input probability vector p ∈∆K. In this case, we assume
+that the oracle w(·) : ∆K →S as a function that arbitrarily outputs a value from the optimal
+solution set W(·), i.e., w(p) ∈W(p) for all p ∈∆K.
+1. J ∗: the optimal expected unregularized risk, i.e.,
+J ∗:= min
+f∈H Ex
+" K
+X
+k=1
+p∗
+k(x)ck(w(f(x)))
+#
+= min
+f∈H R(w ◦f).
+In Lemma 2 in the Appendix, we demonstrate that the value of the unregularized optimal
+risk J ∗does not depend on the particular choice of w(·) and that f ∗is always the minimizer
+that achieves J ∗.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+15
+2. J ∗
+ρ: the optimal expected regularized risk for any given regularization parameter ρ > 0, i.e.,
+J ∗
+ρ := min
+f∈H Ex
+" K
+X
+k=1
+p∗
+k(x)ck(wρ(f(x)))
+#
+= min
+f∈H R(wρ ◦f).
+and we let f ∗
+ρ denote an optimal hypothesis.
+3. ˆJ n
+ρ : the optimal empirical risk with any given sample Sn and a given regularization parameter
+ρ > 0, i.e.,
+ˆJ n
+ρ := min
+f∈H
+1
+n
+n
+X
+i=1
+c(wρ(f(xi)),ξi)) = min
+f∈H
+ˆRn(wρ ◦f),
+and we let ˆf n
+ρ denote an optimal hypothesis.
+3.1.
+Asymptotic Consistency
+We first demonstrate the asymptotic consistency of the ICEO approach. The consistency of ICEO
+is three-fold: the consistency of the ICEO risk, the consistency of the ICEO decisions, and the
+consistency of the ICEO hypothesis. The asymptotic consistency results build upon the convergence
+of the regularized oracle to the original optimization oracle, as stated in Proposition 1.
+Proposition 1 (Convergence of Regularized Oracle). Suppose wρ(·) is the regularized
+optimal solution mapping for any ρ > 0, as defined in (3). For any positive sequence {ρn} that
+satisfies limn→∞ρn = 0, and for any p ∈∆K, we have dist(wρn(p),W(p)) →0 as n →∞.
+To establish asymptotic consistency, we require the following assumptions concerning the hypoth-
+esis class H and the regularized oracle wρ(·). A standard sufficient (but not necessary) condition to
+ensure uniform convergence and thus asymptotic consistency in learning theory is for the hypothe-
+sis class to have a finite bracketing number (we refer to Vaart and Wellner (2023) for more details).
+We build upon this natural sufficient condition by introducing the multivariate bracketing number
+of the hypothesis class H. In other words, we present a modest extension of the standard definition
+of the bracketing number for real-valued functions to the multivariate case. Herein, we first define
+a multivariate bracket of H relative to any norm ∥· ∥on H.
+Definition 1 (Multivariate ϵ-bracket). Given two functions l : X →RK and u : X →RK,
+the bracket [l,u] is the set of all functions f ∈H with lk(x) ≤fk(x) ≤uk(x) for each coordinate
+k = 1,...,K and for all x ∈X. An ϵ-bracket is a bracket [l,u] with ∥l −u∥< ϵ.
+Then the multivariate bracketing number can be defined as follows.
+Definition 2 (Multivariate bracketing number). The multivariate bracketing number
+N[](ϵ,H,∥· ∥) is the minimum number N of ϵ-brackets [l1,u1],...,[lN,uN] that cover H, i.e., with
+the property that for all f ∈H there exists i ∈{1,...,N} such that f ∈[li,ui].
+
+16
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Establishing the asymptotic consistency of our proposed ICEO method requires that H be com-
+pact and that its multivariate bracketing number is finite. Note that the metric defined on f is the
+sup-norm, ∥f −g∥∞:= supx∈X |f(x) −g(x)|.
+Assumption 1. For the compact hypothesis class H, we assume the following properties:
+A. (Model specification.) The hypothesis class H includes the true hypothesis f ∗i.e., f ∗∈H.
+B. (Finite bracketing number of H.) The multivariate bracketing number, N[](ϵ,H,∥· ∥∞), as
+defined in Definition 2, is finite for any ϵ ∈(0,1).
+C. (Unique optimal hypotheses.) There does not exists a hypothesis f ̸= f ∗in H such that
+W(f(x)) ∩W(f ∗(x)) ̸= ∅, Dx-almost surely for all x ∈X. For ρ > 0 and for all f ′ ̸= f ∗
+ρ in H,
+there exists ϵ > 0 with Px(∥wρ(f ′(x)) −wρ(f ∗
+ρ(x))∥≥ϵ) > 0.
+Regularity conditions of the oracle are also needed to establish the asymptotic consistency of the
+ICEO method. To be more specific, we assume that the regularized oracle is uniformly Lipschitz,
+as presented in Assumptions 2.A-2.B. The third assumption 2.C is only needed for the consistency
+of decisions and hypotheses.
+Assumption 2 (Uniform Properties of the Regularized Oracle). For
+the
+regularized
+oracle, wρ(·) with ρ ∈(0,ρ0] for some ρ0 > 0, we assume the following properties:
+A. (Lipschitz in ρ.) For all p ∈∆K, ∥wρ1(p) −wρ2(p)∥≤Lρ|ρ1 −ρ2| for all ρ1,ρ2 ∈(0,ρ0].
+B. (Lipschitz in p.) For all ρ ∈(0,ρ0], ∥wρ(p) −wρ(p)∥≤Lw∥p1 −p2∥.
+C. (Unique optimal decisions.) For any ϵ > 0, there exists δ > 0, so that for all ρ ∈(0,ρ0] and
+f ∈H it holds that
+Px(∥wρ(f(x)) −wρ(f ∗
+ρ(x))∥≥ϵ) > 0 ⇒R(wρ ◦f) −R(wρ ◦f ∗
+ρ) ≥δ.
+To further justify these assumptions, in Appendix A, we study a reasonable sufficient condition
+to guarantee these assumptions of uniform Lipschitzness. Namely, we demonstrate that when the
+underlying contextual stochastic optimization problem (2) satisfies a linear growth condition away
+from the optimal solution set, then the regularized oracle satisfies an “automatic crossover” prop-
+erty. The automatic crossover property says that the regularized oracle automatically outputs a
+point from the unregularized optimal solution set W(p), whenever ρ is smaller than a certain
+“phase-transition” threshold. Whenever the automatic crossover property holds, the uniform Lip-
+schitz assumptions hold and thus imply uniform equicontinuity of the regularized oracle, which
+allows us to generalize the pointwise convergence of the oracle (Proposition 1) to uniform conver-
+gence.
+To guarantee the consistency of the ICEO method, we consider a sequence of regularization
+parameters ρn, depending on the sample size n, such that ρn converges to zero as n grows to
+infinity. Theorem 1 below demonstrates the three levels of consistency.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+17
+Theorem 1 (Asymptotic Consistency of ICEO). Suppose that the training data (xi,ξi) is
+an i.i.d. sequence from the distribution D and that the sequence of regularization parameters ρn ∈
+(0,ρ0] satisfies limn→∞ρn = 0. Then, under Assumptions 1.A - 1.B and Assumptions 2.A - 2.B,
+we have the following:
+(i) The optimal empirical regularized risk converges to the optimal expected risk, i.e., ˆJ n
+ρn →J ∗
+with probability 1.
+(ii) Additionally, with Assumptions 1.C and 2.C, Dx-almost surely for all x ∈X, the sequence
+of ICEO decisions wρn( ˆf n
+ρn(x)) converges to the true set of optimal decisions W(f ∗(x)), i.e.,
+dist(wρn( ˆf n
+ρn(x)),W(f ∗(x))) →0 with probability 1.
+(iii) Additionally, with Assumptions 1.C and 2.C, the sequence of ICEO hypotheses converges to
+the true hypothesis, i.e, ˆf n
+ρn →f ∗with probability 1.
+The proof of Theorem 1 can be found in Appendix A. The idea of the proof, particularly for part
+(i), is to separately establish the convergence of J ∗
+ρ to J ∗and the uniform convergence over ρ of
+ˆJ n
+ρ to J ∗
+ρ. The first technical challenge involved is demonstrating the convergence properties of the
+regularized optimal solution oracle wρ(·) to the optimal solution set W(·), even beyond the pointwise
+convergence provided in Proposition 1. These properties are needed for showing the convergence
+of both J ∗
+ρ to J ∗and ˆJ n
+ρ to J ∗
+ρ. Secondly, to establish the convergence of ˆJ n
+ρ to J ∗
+ρ uniformly over
+ρ as we collect more data, the convergence of the oracle is not enough. Indeed, we demonstrate
+finiteness of the bracketing number of the composition class F := {g : g = c ◦wρ ◦f for some ρ ∈
+(0,ρ0] and f ∈H} (Lemma 3).
+We would like to clarify the relationship between the asymptotic consistency stated in Theorem
+1 and the asymptotic optimality defined in Bertsimas and Kallus (2020). In Bertsimas and Kallus
+(2020), the authors define asymptotic optimality in terms of the decisions reaching the best objec-
+tive function performance possible. Because of the continuity of the cost function c, the convergence
+of ICEO decisions, as stated in (ii) of Theorem 1, implies the asymptotic optimality property of
+Bertsimas and Kallus (2020).
+3.2.
+Finite Sample Performance Guarantees
+We now provide finite sample performance guarantees of the ICEO solution ˆf n
+ρn in the form of
+generalization bounds based on Rademacher complexities. In particular, our overall strategy is as
+follows: (i) we demonstrate that, due to the presence of the strongly convex decision regularization
+function ϕ(·), the optimal solution mapping wρ(·) is Lipschitz, (ii) we use the result of Maurer (2016)
+to bound the Rademacher complexity with respect to the cost function of the ICEO framework
+by the multivariate Rademacher complexity of the underlying hypothesis class H. In addition,
+we slightly abuse the notation and let c(·) : S →RK denote a vector-valued mapping, where each
+
+18
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+component ck(w) denotes the cost c(w,ξ = ˜zk) for all scenarios k = 1,...,K, as defined earlier in
+Section 2.
+Before we investigate the Rademacher complexities, we first demonstrate the Lipschitz property
+of the regularized optimal solution mapping wρ(·) for any positive parameter ρ, based on the
+following assumption regarding the Lipschitz property of the cost function c(w) and the strong
+convexity constant of the decision regularization function ϕ(·).
+Assumption 3. The cost function c(·) and the decision regularization function ϕ(·) satisfy the
+following conditions:
+A. c(·) is Lc-Lipschitz with respect to the decision w ∈S, i.e., it holds that ∥c(w1) −c(w2)∥2 ≤
+Lc∥w1 −w2∥for all w1,w2 ∈S.
+B. The decision regularization function ϕ(·) is a 1-strongly convex function on the compact set
+S.
+Note that we use the ℓ2 norm as the norm on the space of outputs of the cost functions c(·), while
+the norm on the space of decisions w remains the generic norm ∥· ∥. The reason for focusing on
+the ℓ2 norm is that we can apply the elegant vector contraction inequality of Maurer (2016) when
+analyzing the Rademacher complexity. It is also worth mentioning that the Lipschitz condition
+in Assumption 3.A implies that the cost functions ck(·) are uniformly Lc-Lipschitz, i.e., ∥c(w1) −
+c(w2)∥∞≤Lc∥w1 −w2∥.
+Proposition 2 (Lipschitz Properties of wρ(·) and c(·)). Suppose Assumption 3 holds and
+note that RK
++ := {p ∈RK : pk ≥0,∀k = 1,...,K}. Then, for any ρ > 0, the optimal solution mapping
+wρ(·) is ( Lc
+ρ )-Lipschitz:
+∥wρ(p) −wρ(p′)∥≤Lc
+ρ ∥p −p′∥2,
+∀p,p′ ∈RK
++
+(6)
+Furthermore, c(wρ(·)) is ( L2
+c
+ρ )-Lipschitz:
+∥c(wρ(p)) −c(wρ(p′))∥∞≤∥c(wρ(p)) −c(wρ(p′))∥2 ≤L2
+c
+ρ ∥p −p′∥2,
+∀p,p′ ∈RK
++
+(7)
+The proof of this Proposition follows standard arguments of Nesterov’s smoothing technique (Nes-
+terov (2003)), and a related result with a similar proof style appears in Gupta and Kallus (2021).
+Detailed proof can be found in Appendix B.1.
+To establish the generalization bound for the ICEO risk, we rely on both regular single-variate
+and multi-variate Rademacher complexity. In the ICEO setting, given a class of policies Π, where
+π : X →S for all π ∈Π, we can apply generalization bounds that directly use the Rademacher
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+19
+complexity of the function class c ◦Π. Given a sample {(xi,ξi)}n
+i=1 the empirical Rademacher
+complexity ˆRn(c ◦Π) of the function class c ◦Π is defined by
+ˆRn(c ◦Π) := Eσ
+"
+2
+n sup
+g∈c◦Π
+n
+X
+i=1
+σig(xi,ξi)
+#
+= Eσ
+"
+2
+n sup
+π∈Π
+n
+X
+i=1
+σic(π(xi),ξi)
+#
+,
+where σi are independent random variables drawn from the Rademacher distribution, i.e. Pr(σi =
++1) = Pr(σi = −1) = 1
+2 for all i = 1,2,...,n. The expected Rademacher complexity Rn(c◦Π) is then
+defined as the expectation of ˆRn(c ◦Π) with respect to the i.i.d. sample {(xi,ξi)}n
+i=1 drawn from
+the distribution D:
+Rn(c ◦Π) = E(xi,ξi)∼D[ ˆRn(c ◦Π)].
+Next, we introduce the multivariate Rademacher complexity as a generalization of the regular
+Rademacher complexity to a class of vector-valued functions. In the ICEO context, we focus on
+the hypothesis class H which takes values in ∆K. Following Bertsimas and Kallus (2020), Maurer
+(2016) and Balghiti et al. (2019), the empirical multivariate Rademacher complexity ˆRn(H) is
+defined in our context as
+ˆRn(H) = Eσ
+"
+2
+n sup
+f∈H
+n
+X
+i=1
+K
+X
+k=1
+σikfk(xi)
+#
+,
+where σik are also independent random variables drawn from the Rademacher distribution for all
+i = 1,2,...,n and k = 1,...,K. Correspondingly, the expected multivariate Rademacher complexity
+Rn(H) is then defined as
+Rn(H) = Exi∼Dx[ ˆRn(H)],
+In the remainder of this section, we provide generalization bounds with respect to the expected
+single-variate and multi-variate Rademacher complexities. We note that similar results can be
+achieved with respect to the empirical versions of the Rademacher complexities. Our focus on the
+expected versions is justified since, for many hypothesis classes H, we can bound Rn(H) by a term
+that converges to 0 as the sample size n grows. For example, Balghiti et al. (2019) establish upper
+bounds of Rn(H) for regularized linear hypothesis classes with the rate of O( 1
+√n), where the O(·)
+notation hides dimension dependent constants that depend on the type of regularization used.
+Given a sample {(xi,ξi)}n
+i=1, we aim to provide a high-probability bound on the out-of-sample
+risk R(wρn ◦f), given the in-sample risks ˆRn(wρn ◦f) and ˆRn(wρn ◦f;ρn), that holds uniformly
+for any hypothesis f ∈H. As such, our generalization bound is constructed based on the classic
+generalization bound with Rademacher complexity due to Bartlett and Mendelson (2002), which
+we restate below as specialized to the ICEO setting. Recall that ¯c := supw∈S,ξ∈Ξ c(w,ξ).
+
+20
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Theorem 2 (Bartlett and Mendelson (2002)). Let Π be a family of functions mapping
+from X to S with bounded Rademacher complexity Rn(c◦Π). Then, for any δ ∈(0,1], with probabil-
+ity at least 1−δ over i.i.d. data {(xi,ξi)}n
+i=1 drawn from the distribution D, the following inequality
+holds for all π ∈Π:
+R(π) ≤ˆRn(π) + Rn(c ◦Π) + ¯c
+s
+log( 1
+δ)
+2n
+.
+The next step of our analysis is to apply the vector contraction inequality of Maurer (2016) to
+derive a generalization bound that depends directly on the multi-variate Rademacher complexity
+of the hypothesis class H.
+Theorem 3 (Generalization of ICEO). Suppose Assumption 3 holds and that the hypothesis
+class H has bounded multi-variate Rademacher complexity Rn(H). Then, for any δ ∈(0,1] and
+ρn > 0, with probability at least 1 −δ over i.i.d. data {(xi,ξi)}n
+i=1 drawn from the distribution D,
+the following inequalities hold for all f ∈H:
+R(wρn ◦f) ≤ˆRn(wρn ◦f) +
+√
+2L2
+c
+ρn
+Rn(H) + ¯c
+s
+log( 1
+δ)
+2n
+.
+(8)
+Note that the right-hand side of the inequality in Theorem 3 involves the non-regularized empirical
+risk, which may be evaluated for any f ∈H. This is also the objective function of (ICEO-ρ).
+As mentioned previously, one can often establish upper bounds on Rn(H) that converge to zero,
+for example at the rate O( 1
+√n). Therefore, Theorem 3 suggests that we should set the sequence
+of regularization parameters ρn so that Rn(H)/ρn converges to zero as well, in which case the
+remainder terms on the right-hand side of (8) converge to zero. We now state the proof of Theorem
+3. Proof of of Theorem 3 utilizes Proposition 2 and can be found in Appendix B.1
+Leveraging Theorem 3, we obtain the following corollary that provides an upper bound for the
+suboptimality gap, in terms of out-of-sample risk evaluation, for the ICEO minimizer ˆf n
+ρn relative
+to the out-of-sample risk of the optimal in-class hypothesis and the true hypothesis.
+Corollary 1. Suppose Assumption 3 holds and that the hypothesis class H has bounded multi-
+variate Rademacher complexity Rn(H). Let f ∗
+H ∈arg minf∈H R(w ◦f) denote an optimal in-class
+hypothesis. Then, for any δ ∈(0,1] and ρn > 0, with probability at least 1 −δ over i.i.d. data
+{(xi,ξi)}n
+i=1 drawn from the distribution D, the following inequality holds:
+R(wρn ◦ˆf n
+ρn) −R(wρn ◦f ∗
+H) ≤
+√
+2L2
+c
+ρn
+Rn(H) + 3¯c
+2
+s
+2log( 2
+δ)
+n
+.
+If, in addition, we have f ∗∈H, then we have
+R(wρn ◦ˆf n
+ρn) −R(wρn ◦f ∗) ≤
+√
+2L2
+c
+ρn
+Rn(H) + 3¯c
+2
+s
+2log( 2
+δ)
+n
+.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+21
+Remark 1. The generalization bound provided in Theorem 3 involves the Rademacher com-
+plexity Rn(H) of the hypothesis class H, which returns outputs in ∆K. It is noteworthy that, if H
+involves a softmax operator, i.e., H = soft ◦˜H for some hypothesis class ˜H outputting in RK, then
+it is possible to obtain an identical generalization bound involving the Rademacher complexity
+Rn( ˜H) of the hypothesis class ˜H. Indeed, since the softmax function soft is Lipschitz (Gao and
+Pavel (2017)) with constant 1, the Lipschitz bound (7) can be extended to a bound involving the
+outputs of ˜H with the same (L2
+c/ρ) constant. Alternatively and equivalently, the vector contraction
+inequality of Maurer (2016) can be extended to a Lipschitz mapping (such as the softmax func-
+tion) that has both multivariate input and output. This extended vector contraction inequality can
+be obtained by a straightforward extension of Lemma 7 and Theorem 3 of Maurer (2016) to the
+multivariate case.
+4.
+Computational Methods
+In this section, we discuss the computational difficulties of solving the ICEO formulation (ICEO-ρ)
+and present multiple approaches to address them.
+Non-convexity. First, we point out that the ICEO formulation, (ICEO-ρ), is not a convex
+optimization problem even in a very simple case where both the objective and constraints of the
+nominal optimization problem are linear and the decision regularization is quadratic, as stated in
+Example 4 in Appendix B.2. This example shows that, even in this simplest case, (ICEO-ρ-LP) is
+not a convex optimization problem. Besides non-convexity, a more serious issue from a practical
+standpoint is the potential of non-differentiability of optimal solution mapping.
+Non-differentiability.
+To solve the non-convex ICEO problem (ICEO-ρ), a default approach
+in machine learning is to use a gradient-based algorithm such as the basic stochastic gradient
+descent method. Indeed, in practice, gradient-based algorithms are often able to deliver high-quality
+solutions for machine learning problems, especially in high dimensions. Unfortunately, applying
+these basic gradient-based methods to solve the ICEO formulation poses an additional major dif-
+ficulty due to the non-differentiability of the optimal solution mapping wρ(·). Although wρ(·) is a
+continuous function, as guaranteed for example by Proposition 2, it is generally not differentiable.
+The non-differentiability leads to major difficulties in applying gradient-based methods while solv-
+ing ICEO-ρ. As reviewed in Section 1.1, existing studies that focused on directly learning the
+optimal solution mapping w(f ∗(x)) also encounter the same issue of non-differentiability. Wilder
+et al. (2019b) does not discuss much about this. Donti et al. (2017) use the output of an auto-
+matic gradient function calculated by back-propagation of a neural network. Agrawal et al. (2019)
+approximate the gradient by solving a group of linear equations based on KKT conditions. How-
+ever, all existing methods fail to demonstrate theoretical reliability or performance guarantees in
+approximating the gradient.
+
+22
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+The non-differentiability of the optimal solution mapping mainly arises from the constraints
+and the points of discontinuity occur where there is a “jump” in the optimal solution, e.g., in the
+polyhedral case as in Example 4. Therefore, a non-differentiable optimal solution map may also have
+regions where it is constant (or close to constant), resulting in the gradient of the ICEO objective
+being equal to zero. We demonstrate this poor behavior in Figure 1a, where we plot the second
+coordinate of the optimal solution mapping wρ(·) with respect to the first two coordinates of the
+input probability vector, for the multi-product newsvendor problem in Example 1, demonstrating
+the piece-wise constant shape. Such piece-wise constant shapes will greatly impede the performance
+of gradient-based methods, even if the gradient is easily calculated. This is because the gradient
+of the optimal solution mapping is zero in flat regions creating poor local minima that are very
+difficult to escape.
+(a) 3-D plot of the optimal oracle. It is clear that
+the landscape of the optimal solution mapping has
+cliffs and platforms.
+(b) 3-D plot of the approximated oracle constructed
+using polynomial functions. The piece-wise con-
+stant shape is smoothed out.
+Figure 1
+The landscape of the optimal and the approximated oracle.
+To address the issue of non-differentiability and its consequences leading to poor local optima
+and slow convergence, we develop a framework for approximating the mapping wρ(·) with a differ-
+entiable function ˜wρ(·), which allows us to smooth out the optimal solution mapping and enhance
+convergence to a good local optimum. Figure 1b is an example of smoothing out the piece-wise
+constant shape by constructing an approximate oracle using polynomial kernel regression. As noted
+before, gradient-based methods are often highly effective at delivering high quality solutions to non-
+convex machine learning problems in practice. Thus, in a practical sense, the non-differentiability of
+the optimal solution mapping is a much more serious concern than the non-convexity. Our general
+strategy of approximating the optimal solution mapping with a differentiable function, for which
+we expand upon and give examples in Section 4.1, greatly increases the practical viability of the
+ICEO approach.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+23
+4.1.
+Approximating Optimal Solution Mappings
+In this section, we propose a general methodology for approximating the potentially non-
+differentiable optimal solution mapping. In Appendix C, In we provide two examples of using
+polynomial functions to approximate the optimal solution mapping.
+As stated in the previous section, the major computational difficulty in solving the ICEO training
+problem (ICEO-ρ) in practice is the non-differentiability of the mapping wρ(·). To overcome this
+difficulty, for any given ρ, we approximate the function wρ(·) with a differentiable function ˜wρ(·) :
+∆K →S. Then instead of (ICEO-ρ), we solve the following problem:
+min
+f∈H
+1
+n
+n
+X
+i=1
+c(wi,ξi)
+(Approx-ICEO-ρ)
+s.t.
+wi = ˜wρ(f(xi))
+To construct such an approximation ˜wρ(·), we rely on the ability to evaluate the optimal solution
+mapping wρ(p) for any given p ∈∆K, as stated in Section 2. We can then generate a sequence
+of samples (pi,wρ(pi)) and build an approximation function ˜wρ(·) using any class of continuous
+functions with enough representation power, such as polynomial functions or neural networks.
+We consider two generic types of approximation schemes for building the mapping ˜wρ(·): (i)
+uniform approximations, and (ii) high-probability approximations. Uniform approximation schemes
+satisfy a uniform error bound, as formalized below in Assumption 4, and can be achieved by an
+interpolation method such as the Bernstein polynomial method as described in Section C.1. Note
+that, for each j = 1,...,K and p ∈∆K, we use the notation wρ,j(p) and ˜wρ,j(p) to refer to the jth
+coordinates of wρ(p) and ˜wρ(p), respectively.
+Assumption 4 (Uniform Error Bound). For each j = 1,...,K, there exists a constant
+Eunif
+j
+≥0 such that the approximate optimal solution mapping ˜wρ(·) : ∆K →S satisfies:
+|wρ,j(p) −˜wρ,j(p)| ≤Eunif
+j
+,
+∀p ∈∆K.
+The uniform error bound in Assumption 4 provides guarantees for the approximation error over all
+probability vectors from the simplex ∆K. There are two main drawbacks that apply to all known
+approaches for achieving a uniform error bound. First, achieving a tight uniform error bound
+requires exact or near-exact computations of the optimal solution mapping wρ(p) for all p ∈∆K. In
+practice, we may only have an approximate optimal solution mapping available. Second, the sample
+size required by a method that achieves Assumption 4, for example, an interpolations scheme,
+may be prohibitively large. For these reasons we are motivated to consider a high-probability error
+bound, which would hold for the more realistic approach of using a regression method, possibly
+with noise in the output of wρ(·), to fit the approximate optimal solution mapping. We consider
+
+24
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+a generic approach that uses a hypothesis class G for the approximate optimal solution mappings.
+Assumption 5 below formalizes our high-probability error bound, which holds for a wide range of
+regression methods including, for example, the polynomial kernel regression method considered in
+Section C.2. In Assumption 5, we work with a reference distribution Dp on ∆K that we use to
+generate samples {pi}m
+i=1 to feed into a regression method. In addition, for any f ∈H, we later use
+the notation Df(x) to refer to the distribution on ∆K induced by the marginal distribution Dx of
+x ∈X.
+Assumption 5 (High-probability Error Bound). Let G be a family of candidate approxi-
+mate optimal solution mappings whereby ˜wρ(·) : ∆K →S for all ˜wρ(·) ∈G. For each j = 1,...,K,
+there exists a function Eprob
+j
+(·,·;G) : N × [0,1) →[0,∞) such that, for any distribution Dp on ∆K
+and for any δ ∈(0,1], with probability at least 1 −δ over m independent samples drawn from Dp
+with empirical distribution ˆDm
+p , it holds for all ˜wρ(·) ∈G that:
+EDp[|wρ,j(p) −˜wρ,j(p)|] −E ˆ
+Dm
+p [|wρ,j(p) −˜wρ,j(p)|]
+ ≤Eprob
+j
+(m,δ;G).
+When using an approximate optimal solution mapping with either a uniform or a high-probability
+error bound guarantee, a natural question is: do the performance guarantees of the ICEO approach
+developed in Section 3 extend to problem (Approx-ICEO-ρ)? We now answer this question affir-
+matively by extending the generalization bounds of Theorem 3 to situations with approximate
+mappings satisfying either Assumption 4 or Assumption 5. We make an implicit assumption that,
+after solving problem (Approx-ICEO-ρ), the decision-maker uses the correct optimal solution map-
+ping wρ(·) to make decisions. Therefore, the left hand side of our bounds involve the true risk
+R(wρ ◦f) with the correct mapping while the right hand sides involve the empirical risk ˆRn( ˜wρ ◦f)
+with the approximation (and the reguarlized version thereof).
+Theorem 4. Suppose Assumption 3 holds and that the hypothesis class H has bounded multi-
+variate Rademacher complexity Rn(H). Then, for any δ ∈(0,1] and ρn > 0, we have the following:
+(i) If the approximate optimal solution mapping ˜wρ(·) satisfies the uniform error bound as stated
+in Assumption 4, then with probability at least 1 −δ over i.i.d. data {(xi,ξi)}n
+i=1 drawn from
+the distribution D, the following inequalities hold for all f ∈H:
+R(wρn ◦f) ≤ˆRn( ˜wρn ◦f) +
+√
+2L2
+c
+ρn
+Rn(H) + ¯c
+s
+log( 1
+δ)
+2n
++ Lc
+d
+X
+j=1
+Eunif
+j
+(9)
+(ii) If the approximate optimal solution mapping ˜wρ(·) comes from a family G satisfying the high
+probability error bound as stated in Assumption 5, then with probability at least 1 −δ over
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+25
+i.i.d. data {(xi,ξi)}n
+i=1 drawn from the distribution D and over m independent samples {pi}m
+i=1
+drawn from a reference distribution Dp on ∆K, the following inequalities hold for all f ∈H:
+R(wρn ◦f) ≤ˆRn( ˜wρn ◦f) + Lc
+d
+X
+j=1
+"
+1
+m
+m
+X
+i=1
+|wρn,j(pi) −˜wρn,j(pi)| + Eprob
+j
+(n,δ/2d;G) + Eprob
+j
+(m,δ/2d;G)
+#
++
+√
+2L2
+c
+ρn
+Rn(H) + diam(S)LcTV(Df(x),Dp) + ¯c
+s
+log( 1
+δ )
+2n
+(10)
+5.
+Numerical Experiments
+In this section, we demonstrate the numerical performance of our proposed ICEO framework using
+synthetic data. We first summarize the benchmark methods that we adopted for comparison:
+1. Sample average approximation (SAA). In this benchmark, the decision-maker simply ignores
+the contextual features and minimizes the average of cost functions using the empirical dis-
+tribution of the observations of the random parameter.
+2. The two-step estimate-then-optimize (ETO) method is based on cross-entropy loss (ETO-
+Entropy). In this benchmark, we estimate the hypothesis f ∈H using the cross-entropy loss
+function (a standard loss function for multi-class classification) instead of the downstream
+optimization goal.
+3. The prescriptive method (PRES) proposed by Bertsimas and Kallus (2020). We consider the
+KNN-based (PRES-KNN) and kernel-based (PRES-Kernel) variants.
+Moreover, we consider two different types of ICEO methods.
+1. Vanilla ICEO (ICEO). ICEO method that solves (ICEO-ρ).
+2. The ICEO method regularized by cross-entropy loss (ICEO-Entropy). This is the ICEO
+method incorporating an additional cross-entropy loss term as a regularization component in
+conjunction with the objective function described in (ICEO-ρ). Adding the cross-entropy term
+as a regularization component aligns with practical intuition provided by existing literature
+(Kao and Van Roy 2012, Elmachtoub and Grigas 2022).
+Data Generation Process. The synthetic data is generated in the following manner. The fea-
+tures xi ∈Rp are generated independently following the multi-variate Gaussian distribution xi ∼
+N(0,MIp) for some constant M > 0 and where Ip is an identity matrix. Then, given K scenar-
+ios Ξ = {˜z1,..., ˜zK}, the corresponding conditional probability vector is generated according to a
+randomly initialized neural network, denoted as f ∗
+NN, composed with the softmax function. The
+softmax function is implemented by adding a softmax layer as the output layer. Subsequently, ξi
+takes on the value of ˜zk with a probability of p∗
+k(x) = soft ◦f ∗
+NN for all k = 1,...,K.
+
+26
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Optimal Solution Mapping Approximation. The optimal oracle is approximated using neural
+networks in the experiment. We first generate a data set {(pi,wi)}m
+i=1 by uniformly sampling pi
+from the simplex ∆K and then generating wi := wρ(pi). Then we train a neural network with one
+hidden layer to approximate the oracle. The neural network is trained with respect to the mean
+absolute percentage error (MAPE) loss.
+ICEO Hypothesis Learning. In this experiment, we consider the hypothesis class H := soft ◦˜H
+where ˜H represents a neural network. If ˜H contains the true hypothesis f ∗
+NN, then H is well-specified.
+However, if ˜H only includes neural networks with fewer layers or hidden nodes, it indicates the
+case of model misspecification. For both cases of well-specification and misspecification, we employ
+the Adam optimization algorithm (Kingma and Ba (2014)) to solve (Approx-ICEO-ρ) and learn
+the hypothesis.
+5.1.
+Multi-item Newsvendor Problem
+We consider the multi-item newsvendor problem, as in Example 1, with synthetic data. We consider
+d = 2, which is the case where the newsvendor jointly decides the order quantities of two products
+with an overall budget of 50. The decision variable w ∈R2 and random demand ξ ∈R2 are both two-
+dimensional, corresponding to the order quantity and demand of the two products. The newsvendor
+aims to minimize the total inventory cost as formulated in (4), with unit overstock costs h1 and h2
+set to 1 and 1.3 and unit stockout cost b1 and b2 set to 9 and 8 for the two products, respectively.
+Results and Comparisons with Benchmarks. In this experiment, we vary the number of scenarios
+K ∈5,10,15. The realizations for each scenario, ˜z1,..., ˜zK, are generated randomly. Further details
+on the scenario generation process can be found in Appendix D. We set the regularization coefficient
+ρ = 0.01 and consider multiple training set sizes n ∈{100,300,500,700}. For every value of n,
+we run 25 simulations. We use a validation set to tune the hyper-parameters for PRES-KNN,
+PRES-Kernel, ETO-Entropy and the ICEO method. To evaluate out-of-sample performances of
+all these methods, we generate a test set including 1000 samples in each simulation. We evaluate
+performance using the newsvendor cost (4).
+Figure 2 illustrates the performance of the ICEO methods and the non-parametric benchmarks
+across different numbers of scenarios. Each sub-figure demonstrates that the ICEO-Entropy method
+consistently outperforms all benchmarks, regardless of the training set sizes and numbers of scenar-
+ios. Although the vanilla ICEO method sometimes falls short of the benchmarks except for SAA,
+incorporating the cross-entropy loss in ICEO leads to the superior performance of ICEO-Entropy,
+which outperforms all benchmarks, even the ETO entropy, in every scenario. A comparison between
+vanilla ICEO and ICEO-Entropy reveals that ICEO-Entropy outperforms the former. The possi-
+ble reason might be that incorporating the oracle in the ICEO objective induces a higher level of
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+27
+non-convexity and increases the likelihood of converging to a poor local minimum since the ICEO
+objective is non-convex in the predicted distribution. By adding a small component of cross-entropy
+loss, the gradient-based method suffers less from non-convexity while still being influenced by the
+ICEO objective. Despite this computational issue, the ICEO objective demonstrates the advan-
+tages of considering the ultimate optimization goal, as evident when comparing ICEO-Entropy with
+ETO-Entropy. Moreover, when compared with non-parametric prescriptive methods, the superior
+performances of the two ICEO methods and the ETO-Entropy method highlight the benefit of
+modeling the underlying conditional distribution.
+100
+300
+500
+700
+Training sample size
+200
+220
+240
+260
+280
+Newsvendor cost
+(a) K = 5
+100
+300
+500
+700
+Training sample size
+100
+125
+150
+175
+200
+Newsvendor cost
+(b) K = 10
+100
+300
+500
+700
+Training sample size
+250
+300
+350
+400
+Newsvendor cost
+(c) K = 15
+Figure 2
+Comparison of ICEO with benchmark methods for multi-item newsvendor problem.
+Results on Model Misspecification We then examine the performance of ICEO and benchmark
+methods in the case of model misspecification. When the model is properly specified, the data
+generation neural network f ∗
+NN consists of two hidden layers, whereas the hypothesis class H
+consists of linear models. Since the ICEO methods and ETO-Entropy are the only approaches
+that utilize this hypothesis class to model the underlying conditional distribution, we compare
+the performance of these three methods to study the effect of model misspecification. To evaluate
+their effectiveness, we utilize the newsvendor cost on a test set comprising 1000 samples in each
+simulation. Figure 3 illustrates the performance of vanilla ICEO and ICEO-Entropy in comparison
+to the two-step ETO-Entropy method. As we can see, under model misspecification, both ICEO
+methods consistently outperform the two-step ETO-Entropy approach. This finding demonstrates
+the advantage of considering the ultimate optimization goal under model misspecification while
+estimating the conditional distribution.
+
+28
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+100
+300
+500
+700
+Training sample size
+240
+250
+260
+270
+280
+290
+300
+Newsvendor cost
+ICEO
+ICEO-Entropy
+ETO-Entropy
+Figure 3
+Comparison between ICEO and ETO-Entropy under model misspecification on the multi-item
+newsvendor problem.
+5.2.
+Quadratic Cost Network Flow Problem
+In this part, we consider the minimum cost network flow problem. The problem formulation is as
+stated in Example 3, where gd(wd,ξd) = cd(wd −ξd)2. We consider a simple network demonstrated
+in Figure 4, where there are two source nodes 1 and 2, and two sink nodes, 3 and 4. The amount
+of flow that sources out of each of the source nodes 1 and 2 must be no less than a threshold equal
+to 10. Similarly, the amount of flow that goes into each of the sink nodes 3 and 4 must be at least
+10. We let w1,w2,w3,w4 denote the amount of flow on arcs (1,3),(1,4),(2,3),(2,4), respectively.
+Figure 4
+Network graph
+Results and Comparisons with Benchmarks. In this experiment, we consider K ∈{5,10,15}. The
+realizations of each scenario, ˜z1,..., ˜zK, are generated randomly. Again, more details regarding the
+scenario generation process can be found in Appendix D. Furthermore, the weights of each arc
+c1,c2,c3,c4 take the values of 1,3,2,2 respectively. The regularization coefficient ρ = 0.01. As in
+Section 5.1, we consider multiple training set sizes n ∈{100,300,500,700}, we run 25 simulations
+for each sample size, and the test set includes 1000 samples in each simulation. To tune the
+hyper-parameters for ICEO, ETO-Entropy, and the two prescriptive methods, PRES-KNN and
+PRES-Kernel, we use a validation set including 1000 samples.
+Figure 5 compare the test-set performance of the ICEO method and benchmarks across different
+numbers of scenarios and sample sizes. Each sub-figure demonstrates that either the vanilla ICEO
+method or the ICEO-Entropy method outperforms all benchmarks in this experiment. Compared
+to the best benchmark (PRES-KNN), there is a vague trend that the advantage of ICEO methods
+is more significant when the sample size is limited.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+29
+100
+300
+500
+700
+Training sample size
+20
+25
+30
+Network cost
+(a) K = 5
+100
+300
+500
+700
+Training sample size
+20
+25
+30
+Network cost
+(b) K= 10
+100
+300
+500
+700
+Training sample size
+20
+30
+40
+Network cost
+(c) K = 15
+Figure 5
+Comparison of ICEO with benchmark methods on the minimum cost network flow problem.
+Results on Model Misspecification. As in Section 5.1, we investigate the case of model misspec-
+ification. The model misspecification is again introduced by having the data generation neural
+network f ∗
+NN consist of two hidden layers, whereas the hypothesis class H consists of linear models.
+We only compare the two ICEO methods and ETO-Entropy because these are the only approaches
+that utilize this hypothesis class to model the underlying conditional distribution. Figure 3 illus-
+trates the performance of vanilla ICEO, ICEO-Entropy, and ETO-Entropy methods. It is shown
+that again, both vanilla ICEO and ICEO-Entropy consistently outperform ETO-Entropy. More-
+over, one may observe a possible trend that this advantage of ICEO methods is stronger when there
+are fewer training samples. This finding again verifies the advantage of considering the ultimate
+optimization goal while estimating the conditional distribution.
+100
+300
+500
+700
+Training sample size
+26
+28
+30
+32
+34
+36
+38
+Network cost
+ICEO
+ICEO-Entropy
+SAA
+ETO-Entropy
+Figure 6
+Comparison between ICEO and ETO-Entropy under model misspecification on the minimum cost
+network flow problem.
+6.
+Conclusion
+In this paper, we propose a new framework for estimating the underlying conditional distribution
+in contextual stochastic optimization. The proposed ICEO framework uses a flexible hypothesis
+
+30
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+class to learn by incorporating the downstream optimization goal and applies readily to the case
+where the random parameter is a discrete random variable and the nominal optimization problem is
+convex. We then prove that the ICEO method is asymptotically consistent and provide finite-sample
+analysis in the form of generalization bounds. Moreover, we investigate the non-differentiability of
+the regularized optimal solution oracle which often leads to computational difficulties in calculating
+the gradients and poor local minima that are hard to escape. We address this issue by approximating
+the regularized oracle using differentiable functions. We then provide approximation error bounds
+and the corresponding generalization bounds when using the approximated oracle. Among others,
+a natural direction for future research is to move further beyond the assumption of finite suport
+for the random parameter by considering modeling extensions and/or theory.
+Acknowledgments
+PG acknowledges the support of NSF AI Institute for Advances in Optimization Award 211253.
+References
+Agrawal A, Amos B, Barratt S, Boyd S, Diamond S, Kolter JZ (2019) Differentiable convex optimization
+layers. Advances in Neural Information Processing Systems, 9558–9570.
+Ahmadi H, Shanbhag UV (2014) Data-driven first-order methods for misspecified convex optimization prob-
+lems: Global convergence and rate estimates. 53rd IEEE Conference on Decision and Control, 4228–
+4233 (IEEE).
+Ahuja RK, Magnanti TL, Orlin JB (1988) Network flows (Cambridge, Mass.: Alfred P. Sloan School of
+Management, Massachusetts).
+Amos B, Kolter JZ (2017) Optnet: Differentiable optimization as a layer in neural networks. International
+Conference on Machine Learning, 136–145 (PMLR).
+Balghiti OE, Elmachtoub AN, Grigas P, Tewari A (2019) Generalization bounds in the predict-then-optimize
+framework. arXiv preprint arXiv:1905.11488 .
+Ban GY, Rudin C (2019) The big data newsvendor: Practical insights from machine learning. Operations
+Research 67(1):90–108.
+Bartlett PL, Mendelson S (2002) Rademacher and gaussian complexities: Risk bounds and structural results.
+Journal of Machine Learning Research 3(Nov):463–482.
+Bennouna M, Van Parys BP (2021) Learning and decision-making with data: Optimal formulations and
+phase transitions. arXiv preprint arXiv:2109.06911 .
+Berge C (1877) Topological spaces: Including a treatment of multi-valued functions, vector spaces and con-
+vexity (Oliver & Boyd).
+Berthet Q, Blondel M, Teboul O, Cuturi M, Vert JP, Bach F (2020) Learning with differentiable perturbed
+optimizers. arXiv preprint arXiv:2002.08676 .
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+31
+Bertsimas D, Dunn J, Mundru N (2019) Optimal prescriptive trees. INFORMS Journal on Optimization
+1(2):164–183.
+Bertsimas D, Gupta V, Kallus N (2018a) Data-driven robust optimization. Mathematical Programming
+167:235–292.
+Bertsimas D, Gupta V, Kallus N (2018b) Robust sample average approximation. Mathematical Programming
+171:217–282.
+Bertsimas D, Kallus N (2020) From predictive to prescriptive analytics. Management Science 66(3):1025–
+1044.
+Bertsimas D, McCord C (2019) From predictions to prescriptions in multistage optimization problems. arXiv
+preprint arXiv:1904.11637 .
+Blanchet J, Kang Y, Murthy K (2019) Robust wasserstein profile inference and applications to machine
+learning. Journal of Applied Probability 56(3):830–857.
+Chehrazi N, Weber TA (2010) Monotone approximation of decision problems. Operations Research 58(4-
+part-2):1158–1177.
+Chu LY, Shanthikumar JG, Shen ZJM (2008) Solving operational statistics via a bayesian analysis. Opera-
+tions Research Letters 36(1):110–116.
+Chung TH, Rostami V, Bastani H, Bastani O (2022) Decision-aware learning for optimizing health supply
+chains. arXiv preprint arXiv:2211.08507 .
+Cristian R, Harsha P, Perakis G, Quanz BL, Spantidakis I (2022) End-to-end learning via constraint-enforcing
+approximators for linear programs with applications to supply chains.
+De Klerk E, Den Hertog D, Elabwabi G (2008) On the complexity of optimization over the standard simplex.
+European journal of operational research 191(3):773–785.
+Delage E, Ye Y (2010) Distributionally robust optimization under moment uncertainty with application to
+data-driven problems. Operations research 58(3):595–612.
+Deng Y, Sen S (2022) Predictive stochastic programming. Computational Management Science 1–34.
+Donti P, Amos B, Kolter JZ (2017) Task-based end-to-end model learning in stochastic optimization.
+Advances in Neural Information Processing Systems, 5484–5494.
+Elmachtoub A, Liang JCN, McNellis R (2020) Decision trees for decision-making under the predict-then-
+optimize framework. International Conference on Machine Learning, 2858–2867 (PMLR).
+Elmachtoub AN, Grigas P (2022) Smart “predict, then optimize”. Management Science 68(1):9–26.
+Elmachtoub AN, Lam H, Zhang H, Zhao Y (2023) Estimate-then-optimize versus integrated-estimation-
+optimization: A stochastic dominance perspective. arXiv preprint arXiv:2304.06833 .
+Ferber A, Wilder B, Dilkina B, Tambe M (2020) Mipaal: Mixed integer program as a layer. Proceedings of
+the AAAI Conference on Artificial Intelligence, volume 34, 1504–1511.
+
+32
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Gao B, Pavel L (2017) On the properties of the softmax function with application in game theory and
+reinforcement learning. arXiv preprint arXiv:1704.00805 .
+Gao R, Kleywegt A (2023) Distributionally robust stochastic optimization with wasserstein distance. Math-
+ematics of Operations Research 48(2):603–655.
+Gupta V, Huang M, Rusmevichientong P (2022) Debiasing in-sample policy performance for small-data,
+large-scale optimization. Operations Research .
+Gupta V, Kallus N (2021) Data pooling in stochastic optimization. Management Science .
+Gupta V, Rusmevichientong P (2021) Small-data, large-scale linear optimization with uncertain objectives.
+Management Science 67(1):220–241.
+Hannah L, Powell W, Blei D (2010) Nonparametric density estimation for stochastic optimization with an
+observable state variable. Advances in Neural Information Processing Systems 23.
+Ho CP, Hanasusanto GA (2019) On data-driven prescriptive analytics with side information: A regularized
+nadaraya-watson approach. Technical report, Technical report, March.
+Ho-Nguyen N, Kılın¸c-Karzan F (2019) Exploiting problem structure in optimization under uncertainty via
+online convex optimization. Mathematical Programming 177(1):113–147.
+Ho-Nguyen N, Kılın¸c-Karzan F (2020) Risk guarantees for end-to-end prediction and optimization processes.
+arXiv preprint arXiv:2012.15046 .
+Hong LJ, Huang Z, Lam H (2021) Learning-based robust optimization: Procedures and statistical guarantees.
+Management Science 67(6):3447–3467.
+Hu Y, Kallus N, Mao X (2022) Fast rates for contextual linear optimization. Management Science 68(6):4236–
+4245.
+Jiang H, Shanbhag UV (2013) On the solution of stochastic optimization problems in imperfect information
+regimes. 2013 Winter Simulations Conference (WSC), 821–832 (IEEE).
+Jiang H, Shanbhag UV (2016) On the solution of stochastic optimization and variational problems in imper-
+fect information regimes. SIAM Journal on Optimization 26(4):2394–2429.
+Kallus N, Mao X (2020) Stochastic optimization forests. arXiv preprint arXiv:2008.07473 .
+Kannan R, Bayraksan G, Luedtke JR (2020) Residuals-based distributionally robust optimization with
+covariate information. arXiv preprint arXiv:2012.01088 .
+Kannan R, Bayraksan G, Luedtke JR (2022) Data-driven sample average approximation with covariate
+information. arXiv preprint arXiv:2207.13554 .
+Kao Yh, Roy B, Yan X (2009) Directed regression. Advances in Neural Information Processing Systems
+22:889–897.
+Kao YH, Van Roy B (2012) Directed time series regression for control. arXiv preprint arXiv:1206.6141 .
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+33
+Kingma DP, Ba J (2014) Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980 .
+Kotary J, Fioretto F, Van Hentenryck P, Wilder B (2021) End-to-end constrained optimization learning: A
+survey. arXiv preprint arXiv:2103.16378 .
+Lasserre JB (2015) An introduction to polynomial and semi-algebraic optimization, volume 52 (Cambridge
+University Press).
+Liu H, Grigas P (2021) Risk bounds and calibration for a smart predict-then-optimize method. arXiv preprint
+arXiv:2108.08887 .
+Liu J, Li G, Sen S (2022) Coupled learning enabled stochastic programming with endogenous uncertainty.
+Mathematics of Operations Research 47(2):1681–1705.
+Liyanage LH, Shanthikumar JG (2005) A practical inventory control policy using operational statistics.
+Operations Research Letters 33(4):341–348.
+Mandi J, Guns T (2020) Interior point solving for lp-based prediction+ optimisation. arXiv preprint
+arXiv:2010.13943 .
+Mandi J, Stuckey PJ, Guns T, et al. (2020) Smart predict-and-optimize for hard combinatorial optimization
+problems. Proceedings of the AAAI Conference on Artificial Intelligence, volume 34, 1603–1610.
+Maurer A (2016) A vector-contraction inequality for rademacher complexities. International Conference on
+Algorithmic Learning Theory, 3–17 (Springer).
+Nesterov Y (2003) Introductory lectures on convex optimization: A basic course, volume 87 (Springer Science
+& Business Media).
+Poganˇci´c MV, Paulus A, Musil V, Martius G, Rolinek M (2019) Differentiation of blackbox combinatorial
+solvers. International Conference on Learning Representations.
+Poursoltani M, Delage E, Georghiou A (2023) Robust data-driven prescriptiveness optimization. arXiv
+preprint arXiv:2306.05937 .
+Qi M, Cao Y, Shen ZJ (2022) Distributionally robust conditional quantile prediction with fixed design.
+Management Science 68(3):1639–1658.
+Qi M, Shen ZJ (2022) Integrating prediction/estimation and optimization with applications in operations
+management. Tutorials in Operations Research: Emerging and Impactful Topics in Operations, 36–58
+(INFORMS).
+Qi M, Shi Y, Qi Y, Ma C, Yuan R, Wu D, Shen ZJM (2020) A practical end-to-end inventory management
+model with deep learning. Available at SSRN 3737780 .
+Ramamurthy V, George Shanthikumar J, Shen ZJM (2012) Inventory policy with parametric demand: Oper-
+ational statistics, linear correction, and regression. Production and Operations Management 21(2):291–
+308.
+
+34
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Sadana U, Chenreddy A, Delage E, Forel A, Frejinger E, Vidal T (2023) A survey of contextual optimization
+methods for decision making under uncertainty. arXiv preprint arXiv:2306.10374 .
+Sen B (2018) A gentle introduction to empirical process theory and applications. Lecture Notes, Columbia
+University 11:28–29.
+Sundaram RK, et al. (1996) A first course in optimization theory (Cambridge university press).
+Vaart Avd, Wellner JA (2023) Empirical processes. Weak Convergence and Empirical Processes: With Appli-
+cations to Statistics, 127–384 (Springer).
+Van der Vaart AW (2000) Asymptotic statistics, volume 3 (Cambridge university press).
+Van Parys BP, Esfahani PM, Kuhn D (2021) From data to decisions: Distributionally robust optimization
+is optimal. Management Science 67(6):3387–3402.
+Wainwright MJ (2019) High-dimensional statistics: A non-asymptotic viewpoint, volume 48 (Cambridge
+University Press).
+Wang I, Becker C, Van Parys B, Stellato B (2023) Learning for robust optimization. arXiv preprint
+arXiv:2305.19225 .
+Wiesemann W, Kuhn D, Sim M (2014) Distributionally robust convex optimization. Operations research
+62(6):1358–1376.
+Wilder B, Dilkina B, Tambe M (2019a) Melding the data-decisions pipeline: Decision-focused learning for
+combinatorial optimization. Proceedings of the AAAI Conference on Artificial Intelligence, volume 33,
+1658–1665.
+Wilder B, Ewing E, Dilkina B, Tambe M (2019b) End to end learning and optimization on graphs. arXiv
+preprint arXiv:1905.13732 .
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+35
+Appendix A:
+Lemmas and Proofs for Section 3.1
+Lemma 1. For any ρ > 0, wρ(·) is a single-valued continuous function of p ∈∆K.
+Proof of Lemma 1
+From part 2 in Theorem 9.17 of Sundaram et al. (1996), the mapping wρ(p) : ∆k →S
+is a continuous function of p.
+□
+Lemma 2. Suppose that Assumptions 1.A and 1.C hold, and let w(·) : ∆K →S be an optimal solution
+mapping such that w(p) ∈W(p) for all p ∈∆K. Then, we have that: (i) f ∗is the unique minimizer of
+minf∈H R(w ◦f;0); (ii) the optimal expected unregularized risk is J ∗:= minf∈H R(w ◦f;0) = R(w ◦f ∗,0),
+and the value of J ∗is the same for all valid optimal solution mappings w(·).
+Proof of Lemma 2
+We first prove part (i). Suppose that there exists ¯f ̸= f ∗in H such that
+Ex
+" K
+X
+k=1
+p∗
+k(x)ck(w( ¯f(x)))
+#
+≤Ex
+" K
+X
+k=1
+p∗
+k(x)ck(w(f ∗(x)))
+#
+.
+Since w(f ∗(x)) ∈W(f ∗(x)) and f ∗(x) is the true hypothesis, i.e., f ∗
+k(x) = p∗
+k(x), we have
+K
+X
+k=1
+p∗
+k(x)ck(w( ¯f(x))) ≥
+K
+X
+k=1
+p∗
+k(x)ck(w(f ∗(x)))
+for all x ∈X. Combining the above two inequalities yields
+K
+X
+k=1
+p∗
+k(x)ck(w( ¯f(x))) =
+K
+X
+k=1
+p∗
+k(x)ck(w(f ∗(x))),
+almost surely for all x ∈X. Hence, w( ¯f(x)) ∈W(f ∗(x)) almost surely, which contradicts Assumption 1.C.
+Therefore, under Assumptions 1.A and 1.C, f ∗is the unique minimizer of minf∈H R(w ◦f;0).
+We now show (ii). Let w(·),u(·) : ∆K →S be two valid optimal solution mappings such that w(p) ∈W(p)
+and u(p) ∈W(p) for all p ∈∆K. Thus, w(f ∗(x)) ∈W(f ∗(x)) and u(f ∗(x)) ∈W(f ∗(x)) for all x, which yields
+PK
+k=1 p∗
+k(x)ck(w(f ∗(x))) = PK
+k=1 p∗
+k(x)ck(u(f ∗(x))) by the definition of W(·). Therefore, taking expectation
+with respect to x yields J ∗= R(w ◦f ∗,0) = R(u ◦f ∗,0).
+□
+Proof of Proposition 1
+Let p ∈∆K be given. We define the correspondence gp(ρ) by gp(ρ) := wρ(p) for
+ρ > 0 and gp(0) := W(p). Here, gp(·) is a function that maps a value of ρ ∈[0,∞) to a subset of S (which is just
+a single point wρ(p) when ρ > 0). Given the sequence {ρn > 0} that converges to zero, define a corresponding
+sequence wn where wn = wρ(p) ∈gp(ρn). If dist(wρn(p),W(p)) ̸→0 as n →∞, then there exists a constant
+ϵ > 0, such that for some subsequence wn(m) we have dist(wn(m),W(p)) > ϵ for all m. By the Weierstrass
+Theorem and the compactness of S, assume without loss of generality that wn(m) →¯w ∈S as m →∞. Due
+to the continuity of the objective function in (3) with respect to ρ, we apply the maximum theorem (Berge
+(1877)), which guarantees that gp(ρ) is upper hemicontinuous in ρ. Thus, since ρn(m) →0 as m →∞, we
+have that ¯w ∈gp(0) = W(p) according to the definition of upper hemicontinuity. This directly contradicts
+the claim that dist(wn(m),W(p)) > ϵ for all m.
+□
+Lemma 3. Consider the class of functions g : X × Ξ →R defined by F := {g : g = c ◦wρ ◦f for some ρ ∈
+(0,ρ0] and f ∈H}. If Assumptions 1.B and 2.A-2.B hold, then for any δ ∈(0,1), the 3δ-bracketing number
+N(3δ;F,∥· ∥∞), with respect to the sup-norm ∥· ∥∞, is finite.
+
+36
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Proof for Lemma 3
+Assumption 1.B guarantees that, for any δ ∈(0,1), we can find a
+δ
+2LcLw -bracket of H.
+That said, for each f ∈H, there exist an i ∈{1,...,N1} such that li
+k(x) ≤f i
+k(x) ≤ui
+k(x) for all k = 1,...,K
+and x ∈X and with ∥li −ui∥∞≤
+δ
+2LcLw .
+By the uniform Lipschitzness of wρ in ρ (Assumption 2.A), we have that for any ρ1, ρ2 and p, ∥wρ1(p) −
+wρ2(p)∥≤Lρ|ρ1 −ρ2|. Therefore, |c(wρ1(p),ξ)−c(wρ2(p),ξ)| ≤LcLρ|ρ1 −ρ2|. Then we consider T = ⌊ρ0LcLw
+2δ
+⌋
+and have a collection of points {ρ0,...,ρT+1}, where ρi :=
+δ
+LcLρ i, for i = 0,...,T, and ρT+1 := ρ0.
+Now we show that {[c◦wρi ◦lj −δ,
+c◦wρi ◦uj +δ]
+:
+∀i = 0,...,T +1,∀j = 1,...,N1} forms a 3δ-cover
+of F. We first show that for any ρ ∈(0,ρ0] and f ∈H, there exists i and j such that
+|c(wρ(f(x)),ξ) −c(wρi(uj(x)),ξ)|
+≤|c(wρ(f(x)),ξ) −c(wρi(f(x)),ξ)| + |c(wρi(f(x)),ξ) −c(wρi(uj(x)),ξ)|
+≤LcLρ|ρ −ρi| + Lc∥wρi(uj(x)) −wρi(f(x))∥
+≤δ
+2 + LcLw∥uj(x) −f(x)∥
+≤δ
+2 + δ
+2 = δ.
+The second inequality holds by the Lipschitz Assumptions 2.A and the the fact that the objective func-
+tion c(·,ξ) is Lc-Lipschitz for any ξ. Then the third inequality follows from Assumption 2.B. There-
+fore, c(wρ(f(x)),ξ) ≤c(wρi(uj(x)),ξ) + δ. The same reasoning leads to the fact that c(wρ(f(x)),ξ) ≥
+c(wρi(lj(x)),ξ) −δ.
+Note that for any x and ξ
+|(c(wρi(uj(x)),ξ) + δ) −(c(wρi(lj(x)),ξ) −δ)|
+≤2δ + |c(wρi(uj(x)) −c(wρi(lj(x)),ξ))|
+≤2δ + LcLw∥uj(x) −lj(x)∥.
+Therefore, ∥(c ◦wρi ◦uj + δ) −(c ◦wρi ◦lj)∥≤2δ + 0.5δ ≤3δ and we have fund a 3δ-bracket with a size of
+N1 × T + 1 < ∞.
+□
+A.1.
+Justifying Assumptions for Theorem 1
+In this subsection, we justify the validity of the uniform Lipschitzness of the regularized oracle (Assumptions
+2.A-2.B). To achieve that, we start by showing that the desired property can be guaranteed by a common
+“automatic crossover” phenomenon of regularized oracle wρ(·).
+Assumption 6 (Automatic Crossover of the Regularized Oracle). There exists a positive number
+ρc,ϕ, so that for all ρ ≤ρc,ϕ and all p ∈∆K, wρ(p) ∈W ∗(p). The universal constant ρc,ϕ only depends on the
+property of the objective function c(·,·) and the regularization ϕ(·).
+This assumption indicates that, if ρ is smaller than a threshold ρc,ϕ, the output of the regularized oracle is
+in the optimal solution set of the unregularized oracle.
+Combining the automatic crossover assumption and Proposition 2, we have a universal Lipschitz constant
+for any ρ ≥0.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+37
+Corollary 2. Suppose Assumption 6 holds, then for all ρ > 0, and any p1 and p2 from ∆K, ∥wρ(p1) −
+wρ(p2)∥≤
+Lc
+ρc,ϕ ∥p1 −p2∥2.
+Proof of Corollary 2
+Directly follows by combining Proposition 2 and Assumption 6.
+□
+The previous results further imply the uniform Lipschitzness with respect to the regularization parameter
+ρ for any p ∈∆K.
+Corollary 3. Suppose Assumption 6 holds, then for all p from ∆k, and any ρ1 and ρ2 from (0,ρ0],
+∥wρ1(p) −wρ2(p)∥≤Lc
+√
+K
+ρ2
+c,ϕ |ρ1 −ρ2|.
+Proof of Corollary 3
+For any p ∈∆K, and any ρ > 0, wρ(p) is also the unique minimizer of
+K
+X
+k=1
+pk
+ρ cK(w) + ϕ(w).
+For simplicity, we assume that ρ1 < ρ2. Then since ρ1 ≥ρc,ϕ, we apply Proposition 2, we have
+∥wρ1(p) −wρ2(p)∥≤Lc
+
+p
+ρ1
+−p
+ρ2
+
+2
+≤Lc∥p∥2
+
+1
+ρ1
+−1
+ρ2
+ ≤Lc
+√
+K
+ρ2
+c,ϕ
+|ρ1 −ρ2|.
+The first inequality holds by applying Proposition 2 and the last inequality follows from the the fact that
+∆K is compact and Assumption 6. Similarly, if ρ1 < ρc,ϕ ≤ρ2, the above analysis also applies because
+wρ1(p) = wρc,ϕ(p) for any p ∈∆K by Assumption 6 and that |ρ1 −ρ2| ≥|ρc,ϕ −ρ2|. In the last case where
+ρ1 < ρ2 ≤ρc,ϕ, then wρ1(p) = wρ2(p) = wρc,ϕ(p) for any p ∈∆K. Thus the desired result still trivially holds.
+□
+A.1.1.
+A Sufficient Condition for the Automatic Crossover Property
+In this part, we let
+h(w,p) := PK
+k=1 pkck(w) for simplicity. W ∗(p) := arg minw∈S h(w,p) and h∗(p) := minw∈S h(w,p). Then we
+demonstrate that the automatic crossover property is quite common, for example, it holds for any convex
+objective c(·,·) as long as it satisfies the following linear growth condition stated in Assumption 7.
+Assumption 7 (Linear Growth). There exists µ > 0 such that for any p ∈∆K and w ∈S, it holds that
+h(w,p) −h∗(p) ≥µdist(w,W ∗(p)).
+Note that, for example, any piecewise linear function satisfies the linear growth condition.
+Theorem 5. Suppose Assumption 7 holds. Then, for all ρ ∈(0,ρc,ϕ], the regularized oracle wρ(p) auto-
+matically crosses over (Assumption 6) with the unregularized solution set W ∗(p), i.e., wρ(p) ∈W ∗(p). The
+phase transitioning constant of the crossover is ρc,ϕ :=
+µ
+∇ϕ, where ∇ϕ := supw∈S ∥∇ϕ(w)∥∗< ∞.
+Proof of Theorem 5
+We let ¯wρ(p) := arg minw∈W ∗(p) ∥w −wρ(p)∥denote the projection of wρ(p) to the
+unregularized optimal solution set W ∗(p). For any p ∈∆K and any ρ ≥0, we have
+0 ≥[h(wρ(p),p) + ρϕ(wρ(p))] −[h( ¯wρ(p),p) + ρϕ( ¯wρ(p))]
+= [h(wρ(p),p) −h( ¯wρ(p),p)] + ρ[ϕ(wρ(p)) −ϕ( ¯wρ(p))]
+= [h(wρ(p),p) −h( ¯wρ(p),p)] + ρ[ϕ(wρ(p)) −ϕ( ¯wρ(p)) −∇ϕ( ¯wρ(p))T(wρ(p) −¯wρ(p))]
++ ρ∇ϕ( ¯wρ(p))T(wρ(p) −¯wρ(p))
+≥µ∥wρ(p) −¯wρ(p)∥+ ρ
+2∥wρ(p) −¯wρ(p)∥2 −ρ∥∇ϕ( ¯wρ(p))∥∗∥wρ(p) −¯wρ(p)∥
+≥∥wρ(p) −¯wρ(p)∥(µ + ρ
+2∥wρ(p) −¯wρ(p)∥−ρ∇ϕ).
+
+38
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+The first inequality follows from the optimality of wρ(p). The first term of the second inequality holds because
+of Assumption 7, and the second term in the second inequality holds due to the 1-strong convexity of ϕ. If
+ρ ≤
+µ
+∇ϕ := ρc,ϕ, then µ + ρ
+2∥wρ(p) −¯wρ(p)∥−ρ∇ϕ ≥0. Thus, ∥wρ(p) −¯wρ(p)∥has to be zero; otherwise, the
+right side is a positive number and we have a contradiction.
+□
+A.2.
+Proof of Theorem 1
+Proof of Theorem 1.
+We first show that limρ→0 J ∗
+ρ = J ∗. Recall that J ∗= R(w ◦f ∗) and J ∗
+ρ = R(wρ ◦f ∗
+ρ ).
+As defined at the beginning of Section 3, the function w(·) : ∆K →S arbitrarily selects a value from the
+optimal solution set given by W(·). Specifically, for any given p ∈∆K, w(p) outputs an arbitrary value from
+the set W(p) = arg minw∈S
+PK
+k=1 pkck(w).
+We first show that, for any sequence {ρn} that converges to zero and for any given x,
+K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗(x))) →
+K
+X
+k=1
+f ∗
+k(x)ck(w(f ∗(x))) point-wise as n →∞.
+Let ϵ > 0 be fixed. Note that ck(·) is Lipschitz and, therefore, uniformly continuous. Thus, there exists
+a δ > 0 such that, for any ¯wn, if ∥wρn(f ∗(x)) −¯wn∥< δ, then |ck(wρn(f ∗(x))) −ck( ¯wn)| < ϵ. By utilizing
+the convergence result provided by Proposition 1, there is a value of N such that for all n > N, it holds
+that dist(wρn(f ∗(x)),W(f ∗(x))) < δ. Then we let ¯wn := arg minw∈W(f∗(x)) ∥wρn(f ∗(x)) −w∥. It is important
+to note that for any ¯w1, ¯w2 ∈W(f ∗(x)), we have PK
+k=1 f ∗
+k(x)ck( ¯w1) = PK
+k=1 f ∗
+k(x)ck( ¯w2). Therefore, for all
+n > N, the following holds
+|
+K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗(x))) −
+K
+X
+k=1
+f ∗
+k(x)ck(w(f ∗(x)))| < ϵ,
+where again note that w(·) : ∆K →S arbitrarily selects a value from the optimal solution set. This shows
+that PK
+k=1 f ∗
+k(x)ck(wρn(f ∗(x))) converges to PK
+k=1 f ∗
+k(x)ck(w(f ∗(x))) point-wise as n →∞.
+Then, by the dominated convergence theorem we have that
+R(wρn ◦f ∗) := Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗(x)))
+#
+→R(w ◦f ∗) := Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(w(f ∗(x)))
+#
+as n →∞.
+(11)
+Note that
+R(wρn ◦f ∗) := Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗(x)))
+#
+≤Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗(x))) + ρnϕ(wρn(f ∗(x)))
+#
+≤Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗
+ρn(x))) + ρnϕ(wρn(f ∗
+ρn(x)))
+#
+≤Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗
+ρn(x))) + ρn ¯ϕ
+#
+= R(wρn ◦f ∗
+ρn) + ρn ¯ϕ
+≤Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(f ∗(x)))
+#
++ ρn ¯ϕ
+= R(wρn ◦f ∗) + ρn ¯ϕ.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+39
+The first inequality holds due to the presence of an additional non-negative regularization term. The
+second inequality arises from the definition of wρn(·). Specifically, wρn(f ∗(x)) is the minimizer of
+minw∈S
+PK
+k=1 f ∗
+k(x)ck(w) + ρnϕ(w) for any given x while wρn(f ∗
+ρn(x)) is not. The third inequality holds
+because the decision regularization is upper-bounded by ¯ϕ. Then the last inequality holds because f ∗
+ρn is the
+minimizer of minf∈H Ex
+PK
+k=1 f ∗
+k(x)ck(wρn(f(x))). Notice that the above chain of inequalities demonstrates
+that R(wρn ◦f ∗
+ρn) ∈[R(wρn ◦f ∗) −ρn ¯ϕ,R(wρn ◦f ∗) + ρn ¯ϕ]. Now let ϵ > 0 again be fixed. Since ρn →0, there
+exists N1 such that, for all n > N1, ρn <
+ϵ
+2¯ϕ and therefore |R(wρn ◦f ∗
+ρn) −R(wρn ◦f ∗)| ≤ϵ/2. At the same
+time, by (11), there exists N2 such that, for all n > N2, we have |R(wρn ◦f ∗) −R(w ◦f ∗)| < ϵ
+2. Therefore,
+considering N = max{N1,N2}, we have that for all n > N,
+|R(wρn ◦f ∗
+ρn) −R(w ◦f ∗)| ≤|R(wρn ◦f ∗
+ρn) −R(wρn ◦f ∗)| + |R(wρn ◦f ∗) −R(w ◦f ∗)|
+≤ϵ
+2 + ϵ
+2 = ϵ.
+Therefore, as ρn converges to zero, we have
+J ∗
+ρn := R(wρn ◦f ∗
+ρn) →R(w ◦f ∗) = J ∗.
+If Assumptions 1.B and 2.A-2.B hold, Lemma 3 shows that, the class of function F := {c◦wρ ◦f : X ×Ξ →
+R|ρ ∈(0,ρ0],f ∈H} has a finite bracketing number. Therefore, we apply Theorem 3.2 in Sen (2018)(see also
+Wainwright (2019) and Van der Vaart (2000)) and have
+ˆRn(wρ ◦f) →R(wρ ◦f) with probability 1,
+(12)
+uniformly for ρ ∈(0,ρ0] and f ∈H. Then by (12), we have
+| ˆJ n
+ρ −J ∗
+ρ| = max
+n
+ˆRn(wρ ◦ˆf n
+ρ ) −R(wρ ◦f ∗
+ρ ),R(wρ ◦f ∗
+ρ ) −ˆRn(wρ ◦ˆf n
+ρ )
+o
+≤max
+n
+ˆRn(wρ ◦f ∗
+ρ ) −R(wρ ◦f ∗
+ρ ),R(wρ ◦ˆf n
+ρ ) −ˆRn(wρ ◦ˆf n
+ρ )
+o
+≤max
+n
+| ˆRn(wρ ◦f ∗
+ρ ) −R(wρ ◦f ∗
+ρ )|,|R(wρ ◦ˆf n
+ρ ) −ˆRn(wρ ◦ˆf n
+ρ )|
+o
+,
+where the second inequality holds due to the fact that ˆRn(wρ ◦f ∗
+ρ ) ≥ˆRn(wρ ◦ˆf n
+ρ ) and that R(wρ ◦ˆf n
+ρ ) ≥
+R(wρ ◦f ∗
+ρ ), because ˆf n
+ρ minimizes ˆRn(wρ ◦f) and f ∗
+ρ minimizes R(wρ ◦f). By the uniform convergence of
+the empirical risk in ρ ∈(0,ρ0] and f ∈H, guaranteed by (12), for any positive ϵ > 0, there exists N such
+that for all n > N, supρ∈(0,ρ0] | ˆRn(wρ ◦f ∗
+ρ ) −R(wρ ◦f ∗
+ρ )| < ϵ and supρ∈(0,ρ0] |R(wρ ◦ˆf n
+ρ ) −ˆRn(wρ ◦ˆf n
+ρ )| < ϵ
+with probability 1. Thus, we conclude that supρ∈(0,ρ0] | ˆJ n
+ρ −J ∗
+ρ| →0 with probability 1 as n →∞. Therefore,
+since {ρn}∞
+n=1 satisfies ρn ∈(0,ρ0] and ρn →0 as n →∞, we have that
+| ˆJ n
+ρn −J ∗| ≤|J ∗
+ρn −J ∗| +
+sup
+ρ∈(0,ρ0]
+| ˆJ n
+ρ −J ∗
+ρ| →0 with probability 1, as n →∞.
+Now we prove (ii) and (iii) simultaneously. Note that
+dist(wρn( ˆf n
+ρn(x)),W(f ∗(x)) =
+inf
+u∈W(f∗(x))∥wρn( ˆf n
+ρn(x)) −wρn(f ∗
+ρn(x)) + wρn(f ∗
+ρn(x)) −u∥
+≤∥wρn( ˆf n
+ρn(x)) −wρn(f ∗
+ρn(x))∥+
+inf
+u∈W(f∗(x))∥wρn(f ∗
+ρn(x)) −u∥
+≤∥wρn( ˆf n
+ρn(x)) −wρn(f ∗
+ρn(x))∥+ dist(wρn(f ∗
+ρn(x)),W(f ∗(x))).
+(13)
+
+40
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+The first inequality follows from the triangle inequality. The second inequality holds by the definition of
+dist(·,·). In the remaining part of this proof, we separately establish the convergence in probability of the
+first and second terms above, both holding Dx-almost surely over x.
+Due to the compactness of S, with any sequence of ρn converging to zero, the sequence wρn(f ∗
+ρn(x))
+has accumulation points. Let wρn(m)(f ∗
+ρn(m)(x)) be any subsequence converging to an accumulation point
+¯w(x) ∈S. Note that we have
+J ∗= lim
+m→∞Ex
+" K
+X
+k=1
+f ∗
+k(x)ck(wρn(m)(f ∗
+ρn(m)(x)))
+#
+≥Ex
+" K
+X
+k=1
+f ∗
+k(x)ck( ¯w(x))
+#
+,
+where the equality follows from the convergence of J ∗
+ρ →J ∗when ρ →0, and the first inequality holds
+by Fatou’s lemma. Therefore, Dx almost surely for all x, ¯w(x) must lie in the set W(f ∗(x)). Then
+dist(wρn(m)(f ∗
+ρn(m)(x)),W(f ∗(x))) ≤∥wρn(m)(f ∗
+ρn(m)(x)) −¯w(x)∥= 0. The aforementioned reasoning holds for
+every converging subsequence n(m), then the original sequence dist(wρn(f ∗
+ρn(x)),W(f ∗(x))) also converges
+to zero Dx-almost surely for all x.
+Now we aim to demonstrate the convergence of ˆf n
+ρ to f ∗
+ρ for any fixed ρ ∈(0,ρ0]. Note that the first
+condition required by Theorem 5.7 in Van der Vaart (2000) is the uniform convergence in f, which is already
+established in (12). The second condition, which requires f ∗
+ρ to be a well-separated point given each ρ,
+is implied by Assumption 1.C combined with Assumption 2.C. Then we apply Theorem 5.7 in Van der
+Vaart (2000) and have that, for each ρ ∈(0,ρ0], ˆf n
+ρ convergences to f ∗
+ρ in probability as n →∞. Due to the
+continuity of wρ(·), we have ∥wρ( ˆf n
+ρ (x)) −wρ(f ∗
+ρ (x))∥converges to zero in probability for all x.
+Then we want to show the following claim: supρ∈(0,ρ0] ∥wρ(f ∗
+ρ (x)) −wρ( ˆf n
+ρ (x))∥converges to zero in prob-
+ability, Dx-almost surely for all x. By the uniform convergence of | ˆR(wρ ◦f) −R(wρ ◦f)| presented in (12),
+for any δ > 0, there exists N, such that for any n ≥N, supρ∈(0,ρ0] | ˆR(wρ ◦ˆf n
+ρ ) −R(wρ ◦ˆf n
+ρ )| < δ/2. If the
+desired claim is not true, there exists ϵ > 0 and a subsequence {m(n)} with Px(supρ∈(0,ρ0] ∥wρ(f ∗
+ρ (x)) −
+wρ( ˆf m(n)
+ρ
+(x))∥> ϵ) > 0 for all n = 1,...,∞. Then for each n, one may choose a ρ that achieves Px(∥wρ(f ∗
+ρ (x))−
+wρ( ˆf m(n)
+ρ
+(x))∥≥ϵ) > 0. Then by Assumption 2.C, there must exist a δ > 0 such that supρ∈(0,ρ0] |R(wρ ◦f ∗
+ρ )−
+R(wρ ◦ˆf m(n)
+ρ
+)| ≥δ. Then we notice that, for this subsequence {m(n)}, so that there exists a positive δ such
+that
+sup
+ρ∈(0,ρ0]
+| ˆJ m(n)
+ρ
+−J ∗
+ρ|
+=
+sup
+ρ∈(0,ρ0]
+| ˆR(wρ ◦ˆf m(n)
+ρ
+) −R(wρ ◦f ∗
+ρ )|
+≥
+sup
+ρ∈(0,ρ0]
+|R(wρ ◦ˆf m(n)
+ρ
+) −R(wρ ◦f ∗
+ρ )| −
+sup
+ρ∈(0,ρ0]
+| ˆR(wρ( ˆf m(n)
+ρ
+)) −R(wρ( ˆf m(n)
+ρ
+))|
+≥δ −δ/2 = δ/2 > 0.
+This contradicts the uniform convergence of
+ˆJ n
+ρ
+to J ∗
+ρ in probability. Therefore, for any decreasing
+sequence {ρn}∞
+n=1 with ρn > 0 and ρn →0, we have ∥wρn( ˆf n
+ρn(x)) −wρn(f ∗
+ρn(x))∥≤supρ∈(0,ρ0] ∥wρ( ˆf n
+ρ (x)) −
+wρ(f ∗
+ρ (x))∥→0 with probability 1 for Dx-almost surely. Then, returning to (13), we have
+dist(wρn( ˆf n
+ρn(x)),W(f ∗(x)) ≤∥wρn( ˆf n
+ρn(x)) −wρn(f ∗
+ρn(x))∥+ dist(wρn(f ∗
+ρn(x)),W(f ∗(x)))
+→0,
+Dx −almost surely,with probability 1.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+41
+Thus (ii) is proved.
+Finally, if we have an accumulation point of ˆf n
+ρn, denoted as ¯f, we have
+dist(wρn( ˆf n
+ρn(x)),W( ¯f(x))) ≤∥wρn( ˆf n
+ρn(x)) −wρn( ¯f(x))∥+ dist(wρn( ¯f(x)),W( ¯f(x)))
+≤Lw∥ˆf n
+ρn(x) −¯f(x)∥+ dist(wρn( ¯f(x)),W( ¯f(x)))
+→0,
+as n →∞for all x ∈X.
+Knowing
+that
+dist(wρn( ¯f(x)),W( ¯f(x)))
+→
+0
+holds
+by
+Proposition
+1.
+Then
+by
+(ii),
+dist(wρn( ˆf n
+ρn(x)),W(f ∗(x)) →0, Dx-almost surely with probability 1, as n →∞. Thus, for any accumulation
+point of wρn( ˆf n
+ρn(x)), denoted by ¯w, it holds that ¯w ∈W( ¯f(x)) for all x ∈X and that ¯w ∈W(f ∗(x))
+Dx-almost surely with probability 1. That is, W( ¯f(x)) ∩W(f ∗(x)) ̸= ∅, Dx-almost surely with probability
+1. Then if ¯f ̸= f ∗, it contradicts with Assumption 1.C. Thus with the uniqueness assumption, the true
+hypothesis f ∗can be recovered by ˆf n
+ρn.
+□
+
+42
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Appendix B:
+Supplementary Lemmas and Proofs for Sections 3.2 and 4
+B.1.
+Lemmas and Proofs for Section 3.2
+Proof of Proposition 2
+Let p,p′ ∈RK
++ be fixed. We let hρ(·,p) : S →R be defined by hρ(w,p) :=
+PK
+k=1 pkck(w) + ρϕ(w). Since ϕ(·) is a 1-strongly convex function, then hρ(·,p) is ρ-strongly convex and it
+holds for all w ∈S and g ∈∂whρ(w,p) that
+hρ(w′,p) −hρ(w,p) ≥gT(w′ −w) + ρ
+2∥w′ −w∥2
+∀w′ ∈S.
+(14)
+Since wρ(p) = arg minw∈S hρ(w,p), the first-order optimality condition implies there exists a subgradient
+g ∈∂h(wρ(p),p) such that gT(w′ −wρ(p)) ≥0 for all w′ ∈S. Applying this condition in (14) with w ←wρ(p)
+w′ ←wρ(p′) yields
+hρ(wρ(p′),p) −hρ(wρ(p),p) ≥ρ
+2∥wρ(p′) −wρ(p)∥2.
+Switching the role of p and p′ yields
+hρ(wρ(p),p′) −hρ(wρ(p′),p′) ≥ρ
+2∥wρ(p) −wρ(p′)∥2.
+Adding the above two inequalities together yields
+ρ∥wρ(p) −wρ(p′)∥2 ≤hρ(wρ(p),p′) −hρ(wρ(p′),p′) + hρ(wρ(p′),p) −hρ(wρ(p),p)
+= [hρ(wρ(p),p′) −hρ(wρ(p),p)] −[hρ(wρ(p′),p′) −hρ(wρ(p′),p)]
+=
+K
+X
+k=1
+(p′
+k −pk)ck(wρ(p)) −
+K
+X
+k=1
+(p′
+k −pk)ck(wρ(p′))
+=
+K
+X
+k=1
+(p′
+k −pk)(ck(wρ(p)) −ck(wρ(p′)))
+≤∥p −p′∥2∥c(wρ(p)) −c(wρ(p′))∥2
+≤Lc∥p −p′∥2∥wρ(p) −wρ(p′)∥,
+where the last inequality uses Assumption (3.A). Dividing by ∥wρ(p) −wρ(p′)∥leads to (6), and combining
+the resulting inequality again with (3.A) yields (7).
+□
+Proof of Theorem 3
+Due to Proposition 2, in particular, the Lipschitz property of c(·) in (7), we can
+apply the vector contraction inequality from Maurer (2016) which, stated in terms of empirical Rademacher
+complexities, yields
+ˆRn(c ◦wρn ◦H) ≤
+√
+2L2
+c
+ρn
+ˆRn(H).
+Taking expectations of both sides of the above inequality, with respect to i.i.d. data {(xi,ξi)}n
+i=1 drawn from
+the distribution D, yields
+Rn(c ◦wρn ◦H) ≤
+√
+2L2
+c
+ρn
+Rn(H).
+Then, a direct application of Theorem 2 yields the desired result.
+□
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+43
+Proof of Corollary 1
+According to Theorem 3, we have
+R(wρn ◦ˆf n
+ρn) ≤ˆRn(wρn ◦ˆf n
+ρn) +
+√
+2L2
+c
+ρn
+Rn(H) + ¯c
+s
+log( 2
+δ )
+2n
+with probability at least 1 −δ
+2. Then we apply Hoeffding’s inequality and have
+ˆRn(wρn ◦f ∗
+H) ≤R(wρn ◦f ∗
+H) + ¯c
+s
+2log( 2
+δ )
+n
+with probability at least 1 −δ
+2. Note that
+ˆRn(wρn ◦ˆf n
+ρn) ≤ˆRn(wρn ◦f ∗
+H),
+then we have
+R(wρn ◦ˆf n
+ρn) ≤R(wρn ◦f ∗
+H) +
+√
+2L2
+c
+ρn
+Rn(H) + 3¯c
+2
+s
+2log( 2
+δ )
+n
+with probability at least 1−δ
+2. If the hypothesis class H is well-specified, then f ∗
+H is f ∗by Lemma 2 and the
+same result holds for f ∗.
+□
+B.2.
+Proofs and Supplementary Results for Section 4
+Example 4 (Linear nominal optimization problem). Consider an example with a linear objective
+function in the optimization stage, i.e., cj(w) is a linear function cT
+j w for some cj ∈Rd for all j = 1,...,K.
+Suppose we use the decision regularization function ϕ(w) := 1
+2∥w∥2
+2. For any p ∈∆K, let ¯c(p) := PK
+j=1 pjcj.
+Then, note that
+wρ(p) = arg min
+w∈S
+
+¯c(p)Tw + ρ
+2∥w∥2
+2
+ 
+= arg min
+w∈S
+ ρ
+2∥(¯c(p)/ρ) −w∥2
+2
+ 
+= ΠS(¯c(p)/ρ),
+where ΠS(·) is the Euclidean projection operator onto S. Then, (ICEO-ρ) is the problem of minimizing a
+sum of linear functions composed with projection operators, which is generally non-convex. At best, when
+S is a polyhedron, i.e., S := {w ∈Rd : Aw ≤b} and when we adopt a linear hypothesis class H = {x 7→Bx ∈
+∆K : B ∈RK×p}, we can formulate (ICEO-ρ) as a bilinear quadratic optimization problem. Indeed, (ICEO-ρ)
+can be reformulated as
+min
+B,wi,λi
+1
+n
+n
+X
+i=1
+K
+X
+j=1
+1{ξi = ˜zj}(Bxi)jcT
+j wi
+(ICEO-ρ-LP)
+s.t.
+ρ
+2wT
+i wi +
+K
+X
+j=1
+(Bxi)jcT
+j wi + 1
+2(
+K
+X
+j=1
+(Bxi)jcj + ATλ)T(
+K
+X
+j=1
+(Bxi)jcj + ATλ))
++ λT
+i b ≤0,
+∀i = 1,...,n
+Awi ≤b,
+∀i = 1,...,n
+λi ≥0,
+∀i = 1,...,n
+Note that the dual function of the nominal quadratic optimization is
+−1
+2(
+K
+X
+j=1
+(BTxi)jcj + ATλ)T(
+K
+X
+j=1
+(BTxi)jcj + ATλ)) −λTb
+
+44
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+thus the dual problem becomes
+min
+λ≥0
+1
+2(
+K
+X
+j=1
+(BTxi)jcj + ATλ)T(
+K
+X
+j=1
+(BTxi)jcj + ATλ)) + λTb.
+The first two group of constraints in (ICEO-ρ-LP) is to guarantee that wi and λi are the optimal primal and
+dual solutions. The second and third group of constraints are for the primal and dual feasibility.
+□
+Proof of Proposition 4
+Considering the kernel function K(p,p′) = (c+pTp′)s with p ∈RK, we first general-
+ize the result of Example 13.19 from Wainwright (2019). When the input p and p′ are K-dimensional vectors,
+the empirical kernel matrix can have rank at most (s−1+K)!
+(s−1)!K! . Therefore, the left-hand side of Inequality (13.56)
+from Wainwright (2019) can be upper-bounded by δm
+q
+1
+m
+(s−1+K)!
+(s−1)!K! . Then we can apply Theorem 13.17 from
+Wainwright (2019) and set λm = 2δ2
+m to achieve inequality (4). Moreover, the empirical Rademacher com-
+plexity can be upper-bounded by ¯c
+q
+1
+m
+(s−1+K)!
+(s−1)!K! with some constant ¯c. Then if we have θm ≥¯c3b
+q
+1
+m
+(s−1+K)!
+(s−1)!K! ,
+we can apply Theorem 14.1 from Wainwright (2019) and therefore have the desired result inequality (4).
+□
+Proof of Corollary 4
+The proof follow from a slight modification of the proof of Theorem 4. We first
+consider
+1
+n
+n
+X
+i=1
+∥wρ(f(xi))) −˜wρ(f(xi))∥1 ≤Lc
+d
+X
+j=1
+( 1
+n
+n
+X
+i=1
+|wρ,j(f(xi)) −˜wρ,j(f(xi))|2)
+1
+2 .
+Then noted that
+EDf(x)[|wρ,j(p)) −˜wρ,j(p)|2] ≤EDp[|wρ,j(p)) −˜wρ,j(p)|2] + 2 ¯w2
+j TV(Df(x),Dp),
+because |wρ,j(p)) −˜wρ,j(p)|2 is bounded by ¯w2
+j for all p ∈∆K. Thus,
+EDf(x)[|wρ,j(p)) −˜wρ,j(p)|2]1/2 ≤EDp[|wρ,j(p)) −˜wρ,j(p)|2]1/2 + ¯wj
+q
+2TV(Df(x),Dp).
+Following the same reasoning of the proof in Theorem 4, the desired result follows.
+□
+Proof of Theorem 4
+By Theorem 3 (i), for any ρ, we have
+R(wρ ◦f) ≤ˆRn(wρ ◦f) +
+√
+2L2
+c
+ρ
+Rn(H) + ¯c
+s
+log( 1
+δ )
+2n
+.
+Noted that
+1
+n
+n
+X
+i=1
+|c(wρ(f(xi)),ξi) −c( ˜wρ(f(xi)),ξi)| ≤Lc
+1
+n
+n
+X
+i=1
+∥wρ(f(xi))) −˜wρ(f(xi))∥1
+= Lc
+d
+X
+j=1
+1
+n
+n
+X
+i=1
+|wρ,j(f(xi)) −˜wρ,j(f(xi))|
+(15)
+When the approximated oracle has a uniform error, we combine (15) and Assumption 4 to have
+1
+n
+n
+X
+i=1
+|c(wρ(f(xi)),ξi) −c( ˜wρ(f(xi)),ξi)| ≤Lc
+d
+X
+j=1
+Eunif
+j
+.
+(16)
+When the oracle is noised, we consider two different distributions Df(x) and Dp. We let Df(x) denote the
+distribution of f(x) given a hypothesis f and the distribution of x, Dx. Moreover, we let Dp denote the
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+45
+distribution used to generate training samples {(pi,wi)}m
+i=1 for oracle approximation. Then, we apply the
+error bound (5) with distribution Df(x) and Dp respectively and have
+1
+n
+n
+X
+i=1
+|wρ,j(f(xi)) −˜wρ,j(f(xi))| ≤EDf(x)[|wρ,j(p)) −˜wρ,j(p)|] + Eprob
+j
+(n,δ/2d;G),
+and
+EDp[|wρ,j(p)) −˜wρ,j(p)|] ≤1
+m
+m
+X
+i=1
+|wρ,j(pi)) −˜wρ,j(pi)| + Eprob
+j
+(m,δ/2d;G),
+each with probability at least 1 −
+δ
+2d. Considering the total variation between Df(x) and Dp, we have the
+following
+EDf(x)[|wρ,j(p)) −˜wρ,j(p)|] ≤EDp[|wρ,j(p)) −˜wρ,j(p)|] + diamj(S)TV(Df(x),Dp),
+where diamj(S) is the diameter of S in the j-th coordinate and TV denotes the total variation. This result
+holds because |wρ,j(·) −˜wρ,j(·)| is continuous and bounded by diamj(S). Thus,
+1
+n
+n
+X
+i=1
+∥wρ(f(xi))) −˜wρ(f(xi))∥1 ≤
+d
+X
+j=1
+"
+1
+m
+m
+X
+i=1
+|wρ,j(pi) −˜wρ,j(pi)| + Eprob
+j
+(n,δ/2d;G) + Eprob
+j
+(m/2d,δ;G)
+#
++ diamj(S)TV(Df(x),Dp),
+with probability at least 1 −δ. Therefore, we have
+(15) ≤Lc
+d
+X
+j=1
+"
+1
+m
+m
+X
+i=1
+|wi,j −˜wρ,j(pi)| + Eprob
+j
+(n,δ/2d;G) + Eprob
+j
+(m,δ/2d;G)
+#
++ diam(S)LcTV(Df(x),Dp),
+(17)
+with probability at least 1 −δ. Here we slightly abuse the notation and let diam(S) denote the summation
+of coordinate-wise diameter along all coordinates. Then (9) and (10) follow from combining (16) and (17)
+with Theorem 3.
+□
+
+46
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Appendix C:
+Approximating the Optimal Solution Oracle by Polynomials
+In this section, we provide two examples of using polynomial functions to approximate the optimal solution
+mapping: (i) interpolation using Bernstein polynominals, which satisfies a uniform error bound, and (ii)
+polynomial kernel regression, which satisfies a high-probability error bound.
+C.1.
+Bernstein Polynomials
+One example for approximating the optimal solution mapping is interpolation using Bernstein polynomials,
+for which we review the definition below.
+Definition 3 (Bernstein Approximation (De Klerk et al. (2008))). For a given function ω :
+∆K →R, the Bernstein approximation with order s, Bs(ω) : ∆K →R, is defined by:
+Bs(ω)(p) :=
+X
+α∈I(K,s)
+¯w
+α
+s
+ s!
+α!pα,
+∀p ∈∆K,
+where I(K,s) := {α ∈NK
+0 |PK
+i=1 αi = s}, α! := Πiαi!, and pα := pα1
+1 ···pαK
+K .
+□
+Using Bernstein polynomials, based on a result of De Klerk et al. (2008), we can achieve a uniform bound
+of the approximation error as described in Assumption 4.
+Proposition 3. For a given ρ > 0, suppose that we use the Bernstein approximation method (Definition
+3) applied separately to each coordinate function wρ,j(·) to construct an approximate optimal solution mapping
+˜wρ(·). Then, ˜wρ(·) satisfies the uniform error bound in Assumption 4 with Eunif
+j
+=
+ΩLc
+ρ√s ,where Ω> 0 is an
+absolute constant.
+Proof of Proposition 3
+This result directly follows from Theorem 3.2 in De Klerk et al. (2008) together
+with the Lipschitz property from Proposition 2.
+□
+Given the result in Proposition 3, we can immediately obtain a generalization bound for the Bernstein
+approximation method by applying item (i) of Theorem 4. While the Bernstein polynomial method provides
+a strong uniform error bound guarantee, there is a significant drawback in the number of samples required to
+obtain this bound. Indeed, to accomplish this approximation, it involves knowing function values of wρ,j(·)
+on the grid ∆K,s := {w ∈∆K : sw ∈NK
+0 } which has
+ K+s
+K
+
+many points in total. As such, the number of
+calculations of wρ(·) may be prohibitively large, which motivates the use of regression methods.
+C.2.
+Polynomial Kernel Regression
+In this section, we consider using the less computationally prohibitive regression methods that lead to high-
+probability bounds as in Assumption 5. As an exemplary case, we consider the polynomial kernel regression
+method. In this setting, we allow for the possibility of a “noised oracle” whereby the optimal solution mapping
+is not computed exactly. Specifically, the noised oracle outputs wρ(p) + σε instead of wρ(p), where ε is a
+d-dimensional standard Gaussian random vector and σ is a scalar that represents the standard deviation
+of the noise. The approximate oracle ˜wρ(·) is constructed on independent samples {(pi,wi)}m
+i=1 where pi is
+drawn from the reference distribution Dp and wi is computed from the noised oracle. That is, we assume
+that wi = wρ(pi) + σεi for {εi}m
+i=1 that are i.i.d. realizations of Gaussian random variables. These samples
+can be achieved by first generating {pi}m
+i=1 randomly from following any user-chosen distribution Dp over
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+47
+the simplex ∆K and then calculating {wi}m
+i=1 from a (possibly randomized) algorithm for approximating
+wρ(·). Note that we do assume that the noise is Gaussian, which may be a reasonable assumption for some
+algorithmic schemes for approximating wρ(·).
+The approximate optimal solution mapping is learned using polynomial kernels k(p,p′) = (c + pTp′)s,
+where s ∈N is the degree parameter. In the remaining part of this section, we let G denote a function class
+induced by a polynomial kernel of degree s and let ∥· ∥G denote any norm defined on G. Note that G is a
+convex, star-shaped function class Wainwright (2019). For the function class G and a given sample {pi}m
+i=1,
+let τj(G,{pi}m
+i=1,r) := infu∈G:∥u∥G≤r( 1
+m
+Pm
+i=1(u(pi) −wρ,j(pi))2)1/2 denote the fitting ability for wρ,j using
+the kernel function class G within a user-defined radius r. Given the function class G and a given sample
+{(pi,wi)}m
+i=1, the method of kernel ridge regression estimates the approximate optimal solution mapping
+˜wρ(·) by solving:
+min
+u∈G:∥u∥G≤r
+1
+m
+m
+X
+i=1
+(u(pi) −wi,j)2
+(18)
+The corresponding high-probability approximation error bound for learning the noised oracle using poly-
+nomial kernel ridge regression.
+Proposition 4. Let G denote a function class induced by a polynomial kernel of degree s, suppose that
+the noise of the output has standard deviation σ, and that we construct the approximate solution mapping
+˜wρ(·) using kernel ridge regression (18) with a user-defined radius r > 0. Then, there exist absolute constants
+¯c, ¯c′ such that for all δm ≥¯c0
+σ
+r
+(s−1+K)!
+(s−1)!K!
+1
+m, we have
+1
+m
+m
+X
+i=1
+( ˜wρ,j(pi) −wρ,j(pi))2 ≤¯c1(¯c′
+1τj(G,{pi}m
+i=1,r) + r2δ2
+m),
+with probability at least 1 −¯c2 exp(−¯c′
+2
+mr2
+σ2 δ2
+m) for each coordinate j = 1,...,K. Moreover, for any θm that
+satisfies θm ≥¯c3
+q
+1
+m
+(s−1+K)!
+(s−1)!K! , if it also holds that mθ2
+m ≥¯c0 log(4log( 1
+θm )), then
+
+Ep[( ˜wρ,j(p) −wρ,j(p))2]1/2 −
+ 
+1
+m
+m
+X
+i=1
+( ˜wρ,j(pi) −wρ,j(pi))2
+!1/2
+≤¯c3r2θm
+with probability at least 1 −¯c4 exp(−¯c′
+4
+mθ2
+m
+r2 ) for each coordinate j = 1,...,K.
+The main body of the proof is a generalization of the result in Example 13.19 of Wainwright (2019). We
+have the corresponding generalization bound in the following corollary.
+Corollary 4. Suppose Assumption 3 holds and that the hypothesis class H has bounded multi-variate
+Rademacher complexity Rn(H). Suppose further that we employ kernel ridge regression (18) using a function
+class G induced by a polynomial kernel of degree s under the same conditions as in Proposition 4. Then, for
+any δ ∈(0,1] and ρn > 0, the following inequalities hold for all f ∈H:
+R(wρn ◦f) ≤ˆRn( ˜wρn ◦f) + Lc
+d
+X
+j=1
+[¯c3r2(θm + θn) + τj(G,{pi}m
+i=1,r) + ¯c′
+1rδm]
++
+√
+2L2
+c
+ρn
+Rn(H) + Lc ¯wj
+q
+2TV(Df(x),Dp) + ¯c
+s
+log( 1
+δ )
+2n
+
+48
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+with probability at least 1−δ′ over i.i.d. data {(xi,ξi)}n
+i=1 drawn from the distribution D and over m indepen-
+dent samples {(pi,wi)}m
+i=1, where δ′ = δ + ¯c2 exp(−¯c′
+2
+mr2
+σ2 δ2
+m) + ¯c4(exp(−¯c′
+4
+mθ2
+m
+r2 ) + exp(−¯c′
+4
+nθ2
+n
+r2 )) and δm,θm,
+and θn are chosen to satisfy the conditions in Proposition 4.
+Finally, in Section C.3 we provide an alternative and exact computational approach in the semi-algebraic
+case when we use a polynomial function to approximate the optimal oracle.
+C.3.
+Computational Methods for the Semi-Algebraic Case
+In this section, we present an approach based on polynomial optimization in the case where the objective
+of the downstream optimization problem is semi-algebraic and we use a linear hypothesis class. In this case,
+when we additionally use a polynomial approximation ˜wρ(·), we can reformulate the approximate ICEO
+formulation (Approx-ICEO-ρ) as a polynomial optimization problem, which can be solved with a hierarchy
+of semi-definite optimizaiton problems. Specifically we assume that both c and ϕ are semi-algebraic functions
+and we consider the linear hypothesis class H = {f(x) : f(x) = Bx + b,(B,b) ∈B} where B(X) = {(B,b) ∈
+RK×p × RK : f(x) ∈∆K ∀x ∈X} ensures that the output of the hypothesis returns a feasible probability
+vector. In this section, we demonstrate an exact solution method for the semi-algebraic case by transforming
+the (Approx-ICEO-ρ) to a polynomial optimization program. Before we reach the reformulated problem, we
+first review the definitions of semi-algebraic sets and semi-algebraic functions.
+Definition 4 (Semi-algebraic Set (Lasserre (2015))). K ⊂Rn is a basic semi-algebraic set if
+K = {x ∈Rn : gj(x) ≥0,j = 1,...,m}
+for some polynomial functions (gj)m
+j=1, i.e., (gj)m
+j=1 ⊂R[x], where R[x] denotes the ring of real polynomials.
+Similarly, a semi-algebraic set is defined by not only a finite sequence of polynomial inequalities, but also
+equations, or finite union of these.
+Definition 5 (Semi-algebraic Function (Lasserre (2015)).). Let K be a semi-algebraic set of Rn.
+A function f : K →R is a semi-algebraic function if its graph Ψf := {(x,f(x)) : x ∈K} is a semi-algebraic
+set of Rn × R.
+Functions generated by finitely many of dyadic operations {+,×,÷,∨,∧} and monadic operations | · | and
+(·)1/q, q ∈N, on polynomials are semi-algebraic.
+Note that with the linear hypothesis class, we need an additional constraint Bx + b ∈∆K, to guarantee
+that the output f(x) is a valid probability vector for any x ∈X. We also assume that X is a polyhedron, i.e.
+X := {x ∈Rp : Ax ≥a} for some A ∈Rm×p and a ∈Rm. Then the problem Approx-ICEO-ρ becomes:
+min
+B,b
+1
+n
+n
+X
+i=1
+c(wi,ξi)
+(Poly-Approx-ICEO-ρn)
+s.t.
+wi = ˜wρ(Bxi + b)
+Bx + b ∈∆K,∀x ∈X = {x ∈Rp : Ax ≥a}
+Note that the approximated oracle ˜wρ(·) is constructed by polynomial kernels, so the first group of constraints
+are polynomial functions. Then we show that the second group of constraints can be reformulated to a group
+of linear constraints using the following proposition.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+49
+Proposition 5. Suppose X := {x ∈Rp : Ax ≥a} for some A ∈Rm×p and a ∈Rm, then the constraint
+Bx + b ∈∆K,∀x ∈X
+can be rewritten as the following group of constraints by introducing new decision variables yk ∈Rm,k =
+1,...,K, z,u ∈Rm
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+aTyk ≥−bk
+∀k = 1,...,K
+ATyk = Bk
+∀k = 1,...,K
+aTz ≥1 −1Tb
+ATz = BT1
+aTu ≥−1 + 1Tb
+ATu = −BT1
+yk,z,u ≥0
+∀k = 1,...,K
+Proof of Proposition 5:
+The condition of
+Bx + b ∈∆K
+can be represented by the following constraints:
+BT
+k x + bk ≥0,
+∀k = 1,...,K
+(19)
+1T(Bx + b) ≥1
+(20)
+1T(Bx + b) ≤1
+(21)
+(19) represents the non-negativity constraints, while (20) and (21) consist of the normalization constraint.
+We first rewrite the non-negativity constraint for a component k, for all x such that Ax ≥a as
+0 ≤min
+BT
+k x + bk
+s.t.
+Ax ≥a.
+Then consider the dual problem of the above linear programming and we have:
+−bk ≤max
+aTyk
+s.t.
+ATyk = Bk
+yk ≥0.
+which reduces to find a feasible solution of the following group of constraints
+
+
+
+
+
+aTyk ≥−bk
+ATyk = Bk
+yk ≥0.
+(22)
+Then we rewrite (20) for all x ∈X as
+1 ≤min
+1TBx + 1Tb
+s.t.
+Ax ≥a,
+
+50
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+similarly by considering the dual problem
+1 −1Tb ≤max
+aTz
+s.t.
+ATz = BT1
+z ≥0,
+which reduces to the following group of constraints
+
+
+
+
+
+aTz ≥1 −1Tb
+ATz = BT1
+z ≥0.
+(23)
+Finally, we consider the constraint (21)
+1 ≥max
+1TBx + 1Tb
+s.t.
+−Ax ≤−a
+by strong duality, it is equivalent to
+1 −1Tb ≥min
+−aTu
+s.t.
+−ATu = BT1
+u ≥0
+which reduces to
+
+
+
+
+
+aTu ≥−1 + 1Tb
+ATu = −BT1
+u ≥0.
+(24)
+Therefore, the condition Bx + b ∈∆K,∀x ∈X can be represented by combining (22), (23), and (24).
+□
+We have now shown that problem (Poly-Approx-ICEO-ρn) is a problem optimizing a basic semi-algebraic
+function on a basic semi-algebraic set which, by Proposition 11.10 of Lasserre (2015), can be reformulated
+as a polynomial optimization problem, which can be solved by solving a hierarchy of semi-definite problems.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+51
+Appendix D:
+Supplementary Materials for Section 5
+Demand generation (multi-product newsvendor). For
+K = {5,10,15},
+we
+generate
+scenarios
+{˜z1,..., ˜zK} randomly in the following manner. First, we randomly generate an aggregated demand vector
+in the dimension of K = 15, where each component follows a Normal distribution with a mean of 70 and a
+standard deviation of 15. Then, for each k, we split the aggregated demand between two products using the
+weights uk and 1 −uk, where uk follows a uniform distribution U[0,1]. We generated the scenarios once and
+used the demand scenarios listed in Table 1 for all numerical experiments in Section 5.1.
+Scenarios Product 1 Product 2
+1
+15.080
+76.154
+2
+47.238
+6.483
+3
+4.120
+56.635
+4
+21.646
+37.001
+5
+8.686
+66.519
+6
+8.989
+84.359
+7
+2.149
+23.506
+8
+7.857
+82.529
+9
+1.774
+77.951
+10
+57.281
+17.009
+11
+5.628
+108.726
+12
+40.191
+46.200
+13
+82.417
+5.146
+14
+19.817
+71.711
+15
+24.311
+42.974
+Table 1
+Randomly generated demand scenarios for multi-product newsvendor problem
+Demand generation (quadratic minimum cost network flow). For K = {5,10,15}, we generate sce-
+narios {˜z1,..., ˜zK} randomly in the following manner. First, we randomly generate an aggregated vector
+that its k-th element represents P4
+d=1 ˜zk,d. This is the sum of ξd over all edges. Each component of this
+aggregated vector follows a Normal distribution with a mean of 15 and a standard deviation of 5. Then, for
+each k, we split the aggregated demand across four edges using a weight vector randomly sampled from the
+K-th simplex ∆K following the Dirichlet distribution. We generated the scenarios once and used the demand
+scenarios listed in Table 2 for all numerical experiments in Section 5.2.
+
+52
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+Scenarios
+Edge 1
+Edge 2
+Edge 3
+Edge 4
+1
+1.411441
+16.519779
+0.548652
+3.598200
+2
+2.919887
+2.408818
+2.081370
+2.163493
+3
+0.123442
+8.085430
+0.276777
+3.432811
+4
+8.932937
+0.769055
+1.413136
+0.100291
+5
+4.889119
+2.813464
+1.819007
+7.213648
+6
+10.608435
+0.143297
+11.535804 0.494919
+7
+0.004825
+0.010799
+0.184079
+0.018554
+8
+0.493836
+11.108500
+3.756536
+6.436532
+9
+0.647171
+8.852180
+6.165669
+2.576713
+10
+5.981172
+1.493690
+7.191768
+1.763514
+11
+8.081012
+13.955062
+0.332960
+7.415544
+12
+3.645159
+6.734041
+6.581146
+3.503203
+13
+9.534242
+1.280481
+6.823592
+3.215876
+14
+4.553855
+5.306134
+2.320332
+9.995780
+15
+0.338866
+5.585264
+1.949093
+6.221872
+Table 2
+Randomly generated flow scenarios for quadratic cost network flow problem
+Appendix E:
+Comparison with Policy Optimization
+To illustrate the applicability of our performance guarantees, we briefly compare with performance guarantees
+of policy optimization methods. Policy optimization methods involve directly learning the policy function
+π : X →S, which is a mapping from the feature space to the set of feasible decisions S. This is achieved by
+estimating the policy function using a hypothesis π ∈P based on the collected training data set {(xi,ξi)}n
+i=1.
+That is, applying the ERM principle with policy optimization would lead to minimizing the empirical risk
+min
+π∈P
+ˆRn(π).
+One of the advantages of the policy optimization approach is that generalization bounds and finite sample
+guarantees are apparent from standard statistical learning theory. For example, in Theorem 13 of Bertsimas
+and Kallus (2020), a generalization bound is provided with two terms. The first term has a convergence rate
+of O(n−1
+2 ), while the second term involves the empirical Rademacher complexity of the policy class P.
+Both policy optimization and ICEO suffer from a bias introduced by using a hypothesis class, P and H,
+respectively. Indeed, a suitable hypothesis class should be computationally tractable and have a relatively
+small Rademacher complexity. For example, a linear class would satisfy both of these. Unfortunately, a
+hypothesis class that satisfies both of these requirements may introduce a bias due to model mis-specification.
+For policy optimization methods, there may not exist π∗∈P that is “close enough” to some function out-
+putting values in the set W(f ∗(x))). Similarly, for ICEO, there may not exist f ∗
+H ∈H that fullly characterizes
+the true underlying hypothesis f ∗. However, we want to point out that, in practice we generally expect the
+bias introduced by ICEO to be less than that of policy optimization. It is because ICEO methods model the
+conditional distribution while the latter model the conditional distribution. Noted that the optimal solution
+set W(·) may have a complicated structure and require an intricate modeling class P. ICEO does not need to
+include w(·) as part of the model and only needs to approximate f ∗(·) within H, whereas policy optimization
+necessitates the use of a flexible enough class P to appropriately model the mapping w(f ∗(·)). Thus ICEO
+can be advantageous, especially in situations where the optimization oracle w(·) is complex.
+
+Qi, Grigas, Shen: Integrated Conditional Estimation-Optimization
+53
+In light of the above discussion, let us solidify our intuition further by comparing the generalization bound
+of policy optimization with the result provided in Theorem 3. First, note that according to Proposition 1
+and Theorem 1, we may take ρn as any sequence approaching zero, for example, ρn =
+1
+log(n) suffices. Then
+according to the result of Corollary 1, the left-hand side quantifies the error between the out-of-sample risk
+induced by the policy wρn ◦ˆf n
+ρn relative to the policy wρn ◦f ∗
+H and converges to zero at rate of ˜O(n−1
+2 ). For
+comparison, policy optimization gives a similar bound of error between the out-of-sample risks induced by a
+learned policy ˆπn and the best policy π∗within the policy class P with the same convergence rate of O(n−1
+2 ).
+In both cases, the constant in the convergence bound will be controlled by the Rademacher complexity of
+the corresponding class, either H for ICEO or P for policy optimization. Both methods may introduce some
+bias, but as we have already argued, we expect it to be easier to achieve smaller bias with smaller complexity
+for ICEO. In the following, we use a special case (albeit, an extreme one) to illustrate how the flexibility of
+ICEO can lead to less bias and smaller Rademacher complexity (i.e., faster convergence of the finite-sample
+performance bound).
+Example 5. We consider a special case where X is the simplex ∆K, which means that the decision-maker
+has the ability to know the probability vector p directly through the contextual information. In this special
+case, ICEO has nothing to learn, therefore the hypothesis class should be selected as the singleton identity
+map H = {f : f(p) = p ∀p ∈∆K}. Then, the multi-variate Rademacher complexity Rn(H) = 0, and so the
+regularization coefficient ρ can be set to zero, i.e., ρn = 0 for all n. On the other hand, policy optimization,
+which by its presumption is not allowed to use knowledge of the oracle w(·), requires a larger hypothesis
+class P to successfully learn the oracle w(·) and so we generally expect Rn(P) > Rn(H) = 0.
+In addition, considering the fact that, in Corollary 1, the left-hand side quantifies the error between the
+out-of-sample risk induced by the policy wρn ◦ˆf n
+ρn relative to the policy wρn ◦f ∗
+H. One may notice that wρn ◦f ∗
+H
+is not the optimal policy w ◦f ∗
+H, which introduces bias by setting the decision regularization parameter ρ as
+a small positive value. However, as demonstrated in Proposition 1, wρn ◦f ∗
+H converges to the optimal policy
+w ◦f ∗
+H as ρn converges to zero when sample size grows large.
+On the other hand, an additional issue that may also limit the applicability of policy optimization is ensur-
+ing the feasibility of the output. Unlike in classical machine learning problems like regression or classification,
+it is difficult to ensure that the hypothesis class P even guarantees the feasibility of its outputs, whereby
+π(x) ∈S for all π ∈P and x ∈X. This issue does not vanish as sample sizes grow.
+Moreover, learning the conditional distribution f ∗(·) is arguably more interpretable than policy opti-
+mization, as the ICEO approach follows with the estimate-then-optimize structure, and may be easier to
+accomplish with “simpler” classes F since the constraints on the outputs are much simpler (we only need to
+ensure that f(x) ∈∆K).

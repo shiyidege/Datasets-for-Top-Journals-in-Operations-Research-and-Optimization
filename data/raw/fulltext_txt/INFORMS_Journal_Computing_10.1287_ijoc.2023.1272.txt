@@ -1,0 +1,2718 @@
+TITLE: Scalable Parallel Nonlinear Optimization with PyNumero and Parapint
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2023
+DOI: https://doi.org/10.1287/ijoc.2023.1272
+---
+
+Scalable Parallel Nonlinear Optimization with PyNumero
+and Parapint
+Jose S. Rodriguez1, Robert Parker2, Carl D. Laird2, Bethany Nicholson3,
+John D. Siirola3, and Michael Bynum3
+1 Davidson School of Chemical Engineering, Purdue University, West
+Lafayette, IN, 47907 , Email: santiagoropb@gmail.com
+2 Carnegie Mellon University, Department of Chemical Engineering,
+Pittsburgh, PA 15213 , Email: robbybparker@gmail.com,
+claird@andrew.cmu.edu
+3 Center for Computing Research, Sandia National Laboratories,
+Albuquerque NM 87185 , Email: blnicho@sandia.gov, jdsiiro@sandia.gov,
+mlbynum@sandia.gov
+September 22, 2021
+Abstract
+We describe PyNumero, an open-source, object-oriented programming framework
+in Python that supports rapid development of performant parallel algorithms for struc-
+tured nonlinear programming problems (NLP’s) using the Message Passing Interface
+(MPI). PyNumero provides three fundamental building blocks for developing NLP al-
+gorithms: a fast interface for calculating ﬁrst and second derivatives with the AMPL
+Solver Library (ASL), a number of interfaces to eﬃcient linear solvers, and block-
+structured vectors and matrices based on NumPy, SciPy, and MPI that support dis-
+tributed parallel storage and computation. PyNumero’s design enables eﬃcient, par-
+allel algorithm development using high-level Python syntax while keeping expensive
+numerical calculations in fast, compiled implementations based on languages like C
+and Fortran. To demonstrate the utility of PyNumero, we also present Parapint, a
+Python package built on PyNumero for parallel solution of dynamic optimization prob-
+lems. Parapint includes a parallel interior-point solver based on Schur-Complement
+decomposition. We illustrate the eﬀectiveness of PyNumero for developing parallel al-
+gorithms with both code examples and scalability analyses for parallel matrix-vector
+dot products, parallel solution of structured systems of linear equations using Schur-
+Complement decomposition, and the parallel solution of a 2-dimensional PDE optimal
+control problem. Our numerical results show nearly perfect scaling to over 1000 cores
+for large matrix-vector dot products and structured linear systems. Moreover, we ob-
+tain over 360 times speedup for the optimal control example.
+1
+SAND2021-11744J
+This paper describes objective technical results and analysis. Any subjective views or opinions that might be expressed in
+the paper do not necessarily represent the views of the U.S. Department of Energy or the United States Government.
+Sandia National Laboratories is a multimission laboratory managed and operated by National Technology & Engineering Solutions of Sandia, LLC, a wholly owned
+subsidiary of Honeywell International Inc., for the U.S. Department of Energy's National Nuclear Security Administration under contract DE-NA0003525.
+
+Contents
+1
+Introduction
+3
+2
+PyNumero Overview
+5
+2.1
+Block Vectors and Matrices . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+5
+2.2
+Performance of MPI-based block matrices and vectors . . . . . . . . . . . . .
+8
+2.3
+Linear Solver Interfaces
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+10
+2.4
+NLP Interfaces . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+11
+2.5
+An Equality-Constrained SQP Example . . . . . . . . . . . . . . . . . . . . .
+12
+3
+Parapint
+17
+3.1
+Parapint Composite NLPs . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+18
+3.2
+Schur-Complement Decomposition . . . . . . . . . . . . . . . . . . . . . . . .
+18
+3.3
+Interior-Point Algorithm . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+20
+3.4
+Parallel solution of dynamic optimization problems . . . . . . . . . . . . . . .
+20
+4
+Distribution
+22
+5
+Conclusions and Future Directions
+22
+6
+Acknowledgements
+24
+2
+
+1
+Introduction
+Recent needs for eﬃcient solution of large-scale, structured nonlinear optimization prob-
+lems have led to the development of tailored solution algorithms for exploiting problem
+structure. Special structure arises in many applications, including dynamic optimization,
+stochastic programming, infrastructure applications with natural network structure (e.g.,
+power transmission systems), parameter estimation, and many others. All of these appli-
+cations have characteristics that result in large-scale optimization problems. For example,
+dynamic optimization problems can become quite large due to discretization of time and
+space in diﬀerential equations. Adequate sampling of large uncertainty spaces can also result
+in large-scale stochastic programming problems with many scenarios.
+Although these applications often involve the solution of very large nonlinear programs
+(NLPs), many of the problems have an inherent structure that can be exploited using
+decomposition and even parallel solution algorithms.
+This paper discusses the packages
+PyNumero and Parapint, which are designed to support rapid development of performant
+parallel algorithms for structured NLP problems. To frame the discussion of these tools, we
+will focus on an example formulation addressed by algorithms within Parapint.
+Many of the optimization problems discussed above can be structurally partitioned as
+in Problem (1).
+min
+xs,d
+X
+s∈S
+fs(xs)
+(1a)
+s.t.
+cs(xs) = 0
+∀s ∈S
+(1b)
+xs ≤xs ≤xs
+∀s ∈S
+(1c)
+Psxs −P d
+s d = 0
+∀s ∈S
+(1d)
+Here, the set S denotes a set of partitions.
+These partitions could be formed by ﬁnite
+elements in dynamic optimization, scenarios in stochastic programming, or data sets in
+parameter estimation. The variables xs ∈RNs are only involved in the constraints associated
+with partition s (cs ∈RMs). However, there is often a set of coupling variables, d ∈RD,
+that link two or more of the partitions, enforced by Equation (1d). Here, Ps ∈RCs×Ns,
+P d
+s ∈RCs×D, and Cs is the number of coupling variables in partition s. For example, the
+coupling variables in two-stage stochastic programming are the ﬁrst stage variables, whereas
+the coupling variables in dynamic optimization are the diﬀerential variables at ﬁnite element
+boundaries.
+Many NLP algorithms have been developed to exploit the structure of Problem (1)
+(Gondzio and Grothey 2009, Chiang et al. 2014, Shin et al. 2020a). Nonlinear interior-
+point methods have been a popular choice with algorithms that exploit the structure in
+Problem (1) by parallelizing the solution of the KKT system at every iteration of the NLP
+algorithm. It is important to notice that the solution of the KKT system comprises the
+majority of the computational eﬀort of each iteration of interior-point algorithms.
+For
+this reason a signiﬁcant amount of research has focused on accelerating this step. Schur-
+Complement decomposition has been used for parallel solution of parameter estimation
+problems, stochastic programming problems, and dynamic optimization problems (Zavala
+et al. 2008, Kang et al. 2014, Petra et al. 2014, Word et al. 2014). Zavala et al. (2008)
+and Word et al. (2014) form the Schur-Complement explicitly using repeated backsolves
+with a single factorization of each diagonal block in the KKT system. Petra et al. (2014)
+3
+
+also forms the Schur-Complement explicitly, but with a custom factorization routine that
+produces the Schur-Complement as a by-product of the factorization of each of the diagonal
+blocks in the KKT system. On the other hand, Kang et al. (2014) avoids formation of
+the Schur-Complement entirely with a preconditioned conjugate gradient method. Other
+algorithms have been utilized for exploiting the structure of interior-point KKT systems,
+including Cyclic Reduction (Wan et al. 2019) and overlapping Schwarz (Shin et al. 2020a).
+Alternatives also include decomposition approaches that solve sequences of NLP subprob-
+lems to exploit the structure of Problem (1). For example, the alternating-direction method
+of multipliers (ADMM) and Progressive Hedging (PH) (Eckstein and Bertsekas 1992, Ro-
+driguez et al. 2018, Rockafellar and Wets 1991, Word et al. 2012) have both been used for
+structured NLPs. More recently, Rodriguez et al. (2020) proposed a hybrid approach with
+an ADMM-based preconditioner for iterative solution of structured KKT systems.
+Several of these algorithms have been implemented in existing software. OOPS (the
+Object-Oriented Parallel Solver) and PIPS-NLP are both parallel interior-point solvers writ-
+ten in C++ that utilize Schur-Complement decomposition for parallel solution of the KKT
+system (Gondzio and Grothey 2009, Chiang et al. 2014). MadNLP is a Julia package that
+contains a parallel interior-point solver and has been utilized with an iterative method which
+uses a Restrictive-Additive Schwarz (RAS) preconditioner (Shin et al. 2020b). The RAS
+method was tested using a multi-threaded implementation. ParNMPC is a Matlab-based
+package for parallel nonlinear model-predictive control and uses C and C++ code generation
+for parallelization with OpenMP (Deng and Ohtsuka 2019).
+While the above solvers all demonstrate impressive performance improvements over se-
+rial algorithms, developing new, distributed memory algorithms is a challenging and time-
+consuming task. The vast majority of both serial and parallel NLP solvers are implemented
+in low-level languages such as C, and they are diﬃcult to modify or extend. Signiﬁcant
+software engineering expertise is required to prototype even minor modiﬁcations to exist-
+ing solvers. This impedes the exploration, development, and testing of new ideas slowing
+research progress in this area.
+To address and mitigate these challenges, we present PyNumero, a Python package for
+numerical optimization that provides a high-level programming framework for rapidly devel-
+oping eﬃcient, parallel, and scalable solution algorithms for structured NLP’s. PyNumero
+has been designed with computational performance in mind and utilizes Python-C interfaces
+internally to ensure that expensive numeric calculations are all performed using compiled
+kernels. While computations performed directly in Python can be slow, eﬃcient algorithms
+can be developed in Python by utilizing interfaces to low-level languages for computationally
+intensive tasks, as demonstrated by NumPy, a widely used package for scientiﬁc computing
+(Virtanen et al. 2020a).
+PyNumero supports a variety of algorithmic building blocks that allow researchers to
+quickly explore new parallel algorithms. In particular, PyNumero provides an interface to
+the AMPL Solver Library (ASL) for automatic diﬀerentiation, interfaces to several linear
+solvers, and parallel implementations of block-structured matrices and vectors.
+Parallel
+linear algebra routines are based on the Message Passing Interface (MPI) and can be used
+on shared or distributed memory machines. The intent is to enable more practitioners and
+researchers in nonlinear optimization to write numerical algorithms and rapidly implement
+new ideas in a high-level language with little to no sacriﬁce in computational performance.
+Furthermore, PyNumero can be used alongside Pyomo to provide a uniﬁed Python platform
+for both modeling and solving optimization problems. This platform allows PyNumero to
+directly exploit Pyomo model structure and facilitates rapid implementation of structure-
+4
+
+exploiting optimization algorithms.
+We demonstrate the eﬀectiveness and computational performance of PyNumero with
+code examples and scalability analyses for parallel matrix-vector dot products and parallel
+solution of structured systems of linear equations using Schur-Complement decomposition.
+Our results show nearly perfect scaling to over 1000 cores. Moreover, we present Parap-
+int, a Python package built on top of PyNumero for parallel solution of both stochastic
+and dynamic optimization problems. We present numerical results for a 2-dimensional par-
+tial diﬀerential equation (PDE)-constrained optimal control problem with over 360 times
+speedup over a serial interior-point algorithm.
+The remainder of this paper is organized as follows. In Section 2, we present an overview
+of PyNumero, describing the MPI-based block-structured matrices and vectors, interfaces
+for linear solvers, and interactions with the NLP problem deﬁnition. This section closes
+with a short example implementation of an equality-constrained sequential quadratic pro-
+gramming (SQP) algorithm. In Section 3, we present the Parapint package, describe the
+Schur-complement decomposition implementation, and illustrate parallel performance on a
+2-D PDE optimal control case study. We provide distribution details for PyNumero and
+Parapint in Section 4. Finally, we summarize our results and provide conclusions and future
+research directions in Section 5.
+2
+PyNumero Overview
+As shown in Figure 1, PyNumero provides three fundamental components for developing
+parallel NLP algorithms. First, PyNumero implements block-based vector matrix classes
+with both serial and parallel distributed implementations. These classes conveniently facil-
+itate development of optimization algorithms and decomposition strategies for structured
+problems. Second, PyNumero provides interfaces to several linear solvers, including the HSL
+solvers MA27 and MA57, MUMPS, and any SciPy solver (Duﬀand Reid 1983, Amestoy
+et al. 2000, Virtanen et al. 2020b). These linear solvers form the core computational ker-
+nel for many nonlinear algorithms. Third, PyNumero provides a set of NLP interfaces for
+function and derivative evaluations. The current interfaces, including the Pyomo interface
+(PyomoNLP), perform all derivative calculations in C by calling the ASL (Gay 1997) from
+Python. As Figure 1 illustrates, PyNumero provides a high-level Python API but performs
+all computationally intensive operations via interfaces to eﬃcient, compiled kernels. In this
+section, we provide an overview of these components, illustrate the parallel performance of
+the block-based matrix and vector classes, and show how these building blocks can be used
+and integrated for NLP algorithm development. More detailed documentation can be found
+in the online documentation at https://pyomo.readthedocs.io/.
+2.1
+Block Vectors and Matrices
+Matrix-vector operations are fundamental for the development of any numerical algorithm.
+NumPy is a popular Python package that provides functionality to store and manipulate
+n-dimensional arrays of data, with most of the operations being performed in compiled code.
+The eﬃciency and ﬂexibility of NumPy has made the package an essential library for most
+of today’s scientiﬁc/mathematical Python-based software. SciPy is another popular Python
+package for scientiﬁc computing that builds on NumPy to provide a collection of common
+numerical routines (also compiled) and sparse matrix storage schemes. To exploit the ca-
+pabilities of the NumPy/SciPy ecosystem, PyNumero’s vector and matrix classes are built
+5
+
+SciPy
+Mumps
+HSL
+…
+External Calls
+(e.g., C++, TensorFlow) 
+AslNLP
+PyomoNLP
+NLP
+NLP Interfaces
+NumPy / SciPy
+Vectors and Matrices
+Linear Algebra
+Interfaces
+PyNumero
+Block Vector and 
+Matrix classes 
+(serial and parallel)
+Figure 1: PyNumero building blocks for algorithmic development
+on top of NumPy arrays and SciPy sparse matrices. PyNumero therefore beneﬁts from the
+fast compiled implementations within NumPy (e.g. vectorization and broadcasting), makes
+all subroutines in NumPy/SciPy available for implementing algorithms, and minimizes the
+burden on users to learn additional syntax besides what is oﬀered in NumPy/SciPy.
+PyNumero extends these implementations and provides classes for working with block-
+structured matrices and vectors. These classes facilitate optimization algorithm development
+and support distributed parallel storage, computation, and interrogation. In a KKT system
+for an equality-constrained NLP, for example, the KKT matrix is composed of the Hessian of
+the Lagrangian and the Jacobian of the constraints. Additionally, the KKT right-hand-side
+(rhs) is composed of the gradient of the Lagrangian and the residuals of the constraints.
+PyNumero supports construction of these composite matrices eﬃciently without copying the
+underlying numerical data. These implementations are designed to work seamlessly with
+NumPy arrays and SciPy sparse matrices.
+Figure 2 shows a class diagram for PyNumero’s BlockVector and MPIBlockVector, the
+serial and parallel implementations of block structured vectors, respectively. As the ﬁgure
+shows, both of these classes inherit from NumPy’s ndarray class, and their application
+programming interfaces (APIs) mirror that of NumPy’s ndarray. This allows algorithm
+developers to write intuitive code while still exploiting structure for parallel computing.
+Most parallel NLP algorithms work by exploiting problem structure. For example, cer-
+tain classes of problems, such as stochastic programming and dynamic optimization, impose
+certain structures on the KKT system. An example of the KKT system of a stochastic
+programming problem is presented in Figure 3 where the plotted points represent non-zero
+entries in the matrix. To this end, the PyNumero implementations of BlockVector and
+BlockMatrix support arbitrary hierarchical representations of numerical data for structured
+linear algebra operations. The MPIBlockVector and MPIBlockMatrix extend this function-
+ality to support parallel, distributed data structures where individual blocks of numerical
+data can be owned by diﬀerent processes. While the BlockVector and MPIBlockVector
+classes inherit from numpy.ndarray, they represent an ordered list of sub-vectors or blocks
+that are either additional BlockVector objects or NumPy ndarray objects. The leaves
+within these structures are all NumPy ndarray objects that support eﬃcient elementary
+6
+
+numpy.ndarray
+size: int
+shape: Tuple[int]
+all()
+any()
+min()
+max()
+compress()
+dot()
+add()
+pynumero.BlockVector
+size: int
+shape: Tuple[int]
+blocks: List[numpy.ndarray]
+all()
+any()
+min()
+max()
+compress()
+dot()
+add()
+set_block()
+get_block()
+pynumero.MPIBlockVector
+size: int
+shape: Tuple[int]
+blocks: List[numpy.ndarray]
+all()
+any()
+min()
+max()
+compress()
+dot()
+add()
+set_block()
+get_block()
+Figure 2: Class diagram for PyNumero’s block vectors. The list of attributes and methods
+is incomplete.
+linear algebra operations. This design allows us to utilize an API similar to that of NumPy,
+while supporting composition through block structures and also utilizing NumPy for eﬃcient
+computation. The BlockMatrix and MPIBlockMatrix are similarly structured, containing
+a set of sub-matrices (i.e., blocks) indexed by block row and column. Each of these blocks
+can either be additional BlockMatrix objects or SciPy sparse matrices. As with their vector
+counterparts, the leaves within these structures are SciPy objects that support eﬃcient com-
+putation. This design is important to represent parallel, distributed matrices with arbitrary
+block structures. In addition to the beneﬁts of distributed data ownership of the parallel
+versions, simply being able to represent and manipulate the KKT system using its block
+sub-matrices greatly simpliﬁes the implementation of both general optimization algorithms
+and tailored decomposition strategies.
+We now illustrate the use of block-based vector classes in PyNumero. Listing 1 demon-
+strates how to perform vector-vector addition with BlockVector and how NumPy arrays
+are utilized. Lines 5-11 create two instances of BlockVector: x and y, each with two blocks.
+Line 14 performs vector-vector addition with these two BlockVectors:
+z1 = x + y
+(2)
+Many standard operations and NumPy methods, in addition to vector-vector addition, are
+supported, and PyNumero provides the underlying block-based implementations.
+The MPIBlockVector automatically takes care of parallelization for all of the basic op-
+erations needed for algorithm development.
+The only major diﬀerence in the API is in
+construction. When constructing instances of MPIBlockVector, users must specify which
+blocks are owned by which processes (i.e., the MPI rank). Listing 2 demonstrates how to
+7
+
+0
+5
+10
+15
+20
+25
+30
+0
+5
+10
+15
+20
+25
+30
+Figure 3: KKT system of a stochastic programming problem
+perform vector-vector addition with MPIBlockVectors. On line 9, we create an instance of
+MPIBlockVector for x. The rank owner argument is a Python list of integers specifying
+the particular MPI process (identiﬁed by the rank) that owns each block index. In this
+example, block 0 is owned by the process with rank 2, block 1 is owned by the process
+with rank 0, and block 2 is owned by the process with rank 1. Line 10 creates a random
+vector of values and assigns it to the correct index for the current MPI rank. Note that each
+process only needs to create data and specify the blocks for which it is responsible. Lines
+12-13 perform a similar construction for y, and line 15 performs the vector-vector addition.
+Note that this addition operation occurs in parallel. Lines 16-17 show two more example
+operations with the MPIBlockVector objects. BlockMatrix and MPIBlockMatrix have a
+class diagram similar to that of BlockVector and MPIBlockVector with an API similar to
+that of SciPy sparse matrices.
+2.2
+Performance of MPI-based block matrices and vectors
+In this section, we discuss the performance of PyNumero’s parallel linear algebra routines.
+We present scalability results for a parallel matrix-vector dot product all the way up to
+1024 cores. The results in this section demonstrate that modern, high-level languages can
+be used for performant parallel algorithm development and that PyNumero provides a viable
+framework for this development.
+We perform a weak scaling analysis of PyNumero’s parallel matrix-vector dot product
+using a block-structured matrix with the number of block-columns equal to the number
+of cores used and the number of block-rows equal to the number of cores used plus one.
+Each diagonal block and each block in the last row contain non-zeros. All other blocks have
+no non-zeros. This is a similar structure to the Jacobian of the constraints for a dynamic
+8
+
+1
+from
+pyomo.contrib.pynumero.sparse
+import
+BlockVector
+2
+import
+numpy as np
+3
+4
+5
+x = BlockVector (2)
+6
+x.set_block (0, np.random.normal(size =3))
+7
+x.set_block (1, np.random.normal(size =3))
+8
+9
+y = BlockVector (2)
+10
+y.set_block (0, np.random.normal(size =3))
+11
+y.set_block (1, np.random.normal(size =3))
+12
+13
+# add x and y
+14
+z1 = x + y
+Listing 1: BlockVector Addition
+1
+from
+pyomo.contrib.pynumero.sparse. mpi_block_vector
+import
+MPIBlockVector
+2
+import
+numpy as np
+3
+from
+mpi4py
+import
+MPI
+4
+5
+comm = MPI.COMM_WORLD
+6
+rank = comm.Get_rank ()
+7
+8
+owners = [2, 0, 1]
+9
+x = MPIBlockVector (3, rank_owner =owners , mpi_comm=comm)
+10
+x.set_block(owners.index(rank), np.random.normal(size =3))
+11
+12
+y = MPIBlockVector (3, rank_owner =owners , mpi_comm=comm)
+13
+y.set_block(owners.index(rank), np.random.normal(size =3))
+14
+15
+z1 = x + y # add x and y
+16
+z2 = x.dot(y)
+# dot
+product
+17
+z3 = x.max ()
+# infinity
+norm
+Listing 2: MPIBlockVector Addition
+9
+
+8
+16
+32
+64
+128
+256
+512
+1024
+Number of Blocks/Processors
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+2.00
+Dot Product Time (8 cores as base)
+Figure 4: Weak scaling for PyNumero’s parallel matrix-vector dot product.
+optimization problem with the constraints and variables ordered for Schur-Complement
+decomposition (Word et al. 2014). Each nonzero block contains a square 100,000 by 100,000
+matrix with a sparsity of 0.1% (each nonzero block contained 10 million non-zeros). Figure
+4 shows the weak scaling results where the problem size is increased from 8 to 1024 blocks
+while the cores utilized are simultaneously increased from 8 to 1024. At 1024 cores, this
+represents a matrix with over 10 billion non-zeros. This is a challenging parallel problem to
+test scalability since the computational eﬀort required by each process is low and the overall
+performance on many cores is dominated by communication. The dot product performed
+with 1024 cores is 128 times larger than that performed with 8 cores. Nevertheless, this
+distributed matrix-vector product is performed in less than 0.3 seconds and takes only 1.4
+times longer than the smaller problem over 8 cores. Furthermore, if the work per processor
+was larger, we would expect improved scaling results (as illustrated in other examples later).
+As the ﬁgure shows, PyNumero’s parallel scalability is very good.
+2.3
+Linear Solver Interfaces
+Eﬃcient implementations of nonlinear optimization algorithms require fast and reliable lin-
+ear solvers. PyNumero provides access to several libraries for the solution of the sparse
+linear systems that arise in nonlinear programming. Because PyNumero stores matrices in
+10
+
+1
+from
+scipy.sparse
+import
+tril
+2
+from
+pyomo.contrib.pynumero.linalg.ma27
+import
+MA27Interface
+3
+4
+5
+A = get_coo_matrix ()
+6
+rhs = get_rhs ()
+7
+solver = MA27Interface ()
+8
+solver.set_cntl (1, 1e-6)
+# set the
+pivot
+tolerance
+9
+A_tril = tril(A)
+# extract
+lower
+triangular
+portion
+of A
+10
+status = solver. do_symbolic_factorization (dim=5,
+11
+irn=A_tril.row ,
+12
+icn=A_tril.col)
+13
+status = solver. do_numeric_factorization (dim=5,
+14
+irn=A_tril.row ,
+15
+icn=A_tril.col ,
+16
+entries=A_tril.data)
+17
+x = solver. do_backsolve (rhs)
+Listing 3: PyNumero interface to HSL’s MA27
+NumPy/SciPy objects, subroutines available in these packages can be used when writing
+algorithms in PyNumero. This includes the SciPy direct and iterative solvers as well as any
+other Python package based on NumPy such as PyTrilinos (Sala et al. 2008), Petsc4py (Dal-
+cin et al. 2011), Cysparse, Krypy, and PyMumps. PyNumero also provides interfaces for the
+HSL linear solvers MA27 and MA57 to solve sparse, symmetric linear systems. These latter
+solvers are important in interior-point algorithms as they also provide the inertia (number
+of positive and negative eigenvalues) of the factorized matrix.
+Listing 3 illustrates how to use PyNumero’s interface to MA27 to solve a symmetric
+linear system of equations.
+Line 2 imports the MA27Interface from PyNumero.
+Lines
+5–6 call functions to construct the matrix and right-hand-side.
+Lines 7–8 construct an
+instance of MA27Interface and set the pivot tolerance to 10−6. Line 9 extracts the lower
+triangular portion of the matrix (the matrix is symmetric). Lines 10–17 perform the symbolic
+factorization, numeric factorization, and back-solve. These methods enable the use of a
+single symbolic factorization for multiple matrices of the same nonzero structure or a single
+factorization for multiple back-solves. This example highlights the ease of using an eﬃcient
+linear solver through a Python interface.
+2.4
+NLP Interfaces
+When interfacing to the NLP model, PyNumero considers general nonlinear programming
+problems of the form:
+min
+f(x)
+gL ≤g(x) ≤gU
+(3)
+xL ≤x ≤xU
+where x ∈Rn are the primal variables with lower and upper bounds xL ∈Rn and xU ∈Rn
+respectively.
+The inequality constraints g : Rn →Rm are bounded by gL ∈Rm and
+gU ∈Rm. PyNumero also provides an interface with explicit distinction between the equality
+11
+
+(where gL = gU) and inequality constraints (where gL < gU) to facilitate the implementation
+of algorithms that require such distinction,
+min
+f(x)
+s.t.
+c(x) = 0
+(4)
+dL ≤d(x) ≤dU
+xL ≤x ≤xU
+The equality constraints are represented by c : Rn →Rmc and d : Rn →Rmd denotes the
+inequality constraints with bounds dL ∈Rmd and dU ∈Rmd and m = mc + md.
+Gradient-based optimization algorithms have been proven to be among the most eﬀective
+algorithms for solving nonlinear optimization problems. The development of fast automatic
+diﬀerentiation tools (Andersson 2013, Griewank et al. 1996, Fourer et al. 1993) enables
+eﬃcient computation of both ﬁrst- and second-order derivatives. PyNumero uses the AMPL
+Solver Library (ASL) to compute derivative information, and the Ctypes Python package
+to call the underlying ASL subroutines from Python.
+The Pynumero AslNLP class takes the problem deﬁnition in the form of an .nl ﬁle (Gay
+2005), maps this to the form of Equations (3) or (4), and provides an API for evaluating the
+model and its derivatives. The PyomoNLP class inherits from AslNLP, providing the same
+API for evaluating the model, while also giving access to the associated Pyomo components
+for the constraints and variables. These interfaces return derivative values from the ASL
+using NumPy arrays and SciPy sparse matrices (Harris et al. 2020, Virtanen et al. 2020a).
+This leverages the capabilities within the NumPy ecosystem to avoid marshalling of data
+between the C and Python environments and enables performant Python implementations
+of gradient-based nonlinear optimization algorithms. Listings 4 and 5 show a small example
+of how a PyomoNLP instance can be used for function and derivative evaluations.
+2.5
+An Equality-Constrained SQP Example
+In this section, we pull together material discussed earlier and implement a simple numerical
+optimization algorithm. This example illustrates the compactness, simplicity, and eﬃciency
+of PyNumero for developing optimization algorithms. Implemented in Python and com-
+plementing the algebraic modeling features of Pyomo, PyNumero’s design has focused on
+maximizing code readability while minimizing performance bottlenecks. In this section we
+demonstrate these features by presenting the implementation of a fundamental optimization
+algorithm.
+Consider Problem (5),
+min f(x)
+(5a)
+s.t. c(x) = 0
+(5b)
+with the Lagrangian deﬁned as
+L(x, λ) = f(x) + λT c(x)
+(6)
+Algorithm 1 presents the pseudo-code for an Equality-Constrained Sequential Quadratic
+Programming (SQP) algorithm for solving Problem (5). Code Listing 6 shows a PyNumero
+implementation of this algorithm.
+Lines 1-5 import the relevant modules, classes, and
+12
+
+1
+from
+pyomo.contrib.pynumero.interfaces .pyomo_nlp
+import
+PyomoNLP
+2
+import
+pyomo.environ
+as pyo
+3
+import
+numpy as np
+4
+5
+# define
+optimization
+model
+6
+m = pyo. ConcreteModel ()
+7
+m.x = pyo.Var([1, 2, 3], bounds =(0.0 ,
+None), initialize =3.0)
+8
+m.c = pyo.Constraint(expr=m.x[3]**2 + m.x[1] == 25)
+9
+m.d = pyo.Constraint(expr=m.x[2]**2 + m.x[1]
+<= 18.0)
+10
+m.o = pyo.Objective(expr=m.x[1]**4 - 3*m.x[1]*m.x[2]**3 + m.x[3]**2 - 8.0)
+11
+12
+# create
+NLP
+13
+nlp = PyomoNLP(m)
+14
+15
+# Set
+values of
+variables
+16
+nlp. set_primals (np.array ([4,
+-1, 3]))
+17
+18
+# accessing
+variable
+values
+19
+primals = nlp.get_primals ()
+20
+print("Values
+of
+primal
+variables :\n", primals)
+21
+duals = nlp.get_duals ()
+22
+print("Values
+of dual
+variables :\n", duals)
+23
+24
+# variable
+bounds
+25
+primals_lb = nlp.primals_lb ()
+26
+primals_ub = nlp.primals_ub ()
+27
+print("Variable
+lower
+bounds :\n", primals_lb )
+28
+print("Variable
+upper
+bounds :\n", primals_ub )
+29
+30
+# NLP
+function
+evaluations
+31
+f = nlp. evaluate_objective ()
+32
+print("Objective
+Function\n", f)
+33
+g = nlp. evaluate_constraints ()
+34
+print("Constraints\n", g)
+35
+c = nlp. evaluate_eq_constraints ()
+36
+print("Equality
+Constraints \n", c)
+37
+d = nlp. evaluate_ineq_constraints ()
+38
+print("Inequality
+Constraints\n", d)
+39
+40
+# NLP
+first
+and second -order
+derivatives
+41
+df = nlp. evaluate_grad_objective ()
+42
+print("Gradient
+of
+Objective
+Function :\n", df)
+43
+jac_g = nlp. evaluate_jacobian ()
+44
+print("Jacobian
+of
+Constraints :\n", jac_g)
+45
+jac_c = nlp. evaluate_jacobian_eq ()
+46
+print("Jacobian
+of
+Equality
+Constraints :\n", jac_c)
+47
+jac_d = nlp. evaluate_jacobian_ineq ()
+48
+print("Jacobian
+of
+Inequality
+Constraints :\n", jac_d)
+49
+hess_lag = nlp. evaluate_hessian_lag ()
+50
+print("Hessian
+of
+Lagrangian\n", hess_lag)
+Listing 4: Using PyomoNLP for function evaluations
+13
+
+1
+Values
+of
+primal
+variables:
+2
+[ 4.
+-1.
+3.]
+3
+Values
+of dual
+variables:
+4
+[0. 0.]
+5
+Variable
+lower
+bounds:
+6
+[0. 0. 0.]
+7
+Variable
+upper
+bounds:
+8
+[inf inf inf]
+9
+Objective
+Function
+10
+-502.0
+11
+Constraints
+12
+[ -21.
+19.]
+13
+Equality
+Constraints
+14
+[ -21.]
+15
+Inequality
+Constraints
+16
+[19.]
+17
+Gradient
+of
+Objective
+Function:
+18
+[ -432.
+-2.
+-84.]
+19
+Jacobian
+of
+Constraints:
+20
+(1, 0) 8.0
+21
+(0, 1)
+-2.0
+22
+(0, 2)
+1.0
+23
+(1, 2)
+1.0
+24
+Jacobian
+of
+Equality
+Constraints :
+25
+(0, 1)
+-2.0
+26
+(0, 2)
+1.0
+27
+Jacobian
+of
+Inequality
+Constraints :
+28
+(0, 0) 8.0
+29
+(0, 2)
+1.0
+30
+Hessian
+of
+Lagrangian
+31
+(0, 0)
+-216.0
+32
+(1, 1)
+2.0
+33
+(2, 0)
+-144.0
+34
+(2, 2)
+108.0
+35
+(0, 2)
+-144.0
+Listing 5: Output of Listing 4
+1. Initialize the algorithm
+Given initial guess for primals x0 and duals λ0; tolerance ϵ > 0
+Set the iteration index k ←0
+2. Check convergence
+if ||∇xL(xk, λk)||∞≤ϵ and ||c(xk)||∞≤ϵ then exit, solution found.
+3. Compute step direction
+∇2
+xL(xk, λk)
+∇xc(xk)T
+∇xc(xk)
+ ∆x
+∆λ
+
+=
+∇xL(xk, λk)
+c(xk)
+
+5. Update variables
+xk+1 = xk + ∆x
+λk+1 = λk + ∆λ
+6. Update iteration index
+Set the iteration index k ←k + 1
+Return to step 2
+Algorithm 1: An Equality-Constrained SQP Algorithm
+14
+
+1
+from
+pyomo.contrib.pynumero.interfaces .nlp
+import
+NLP
+2
+from
+pyomo.contrib.pynumero.sparse
+import
+BlockVector , BlockMatrix
+3
+from
+pyomo.contrib.pynumero.linalg.ma27
+import
+MA27Interface
+4
+import
+numpy as np
+5
+from
+scipy.sparse
+import
+tril
+6
+7
+8
+def sqp(nlp: NLP , max_iter =100 , tol =1e -8):
+9
+# setup
+KKT
+matrix
+10
+kkt = BlockMatrix (2, 2)
+11
+rhs = BlockVector (2)
+12
+13
+# create
+and
+initialize
+the
+iteration
+vector
+14
+z = BlockVector (2)
+15
+z.set_block (0, nlp. get_primals ())
+16
+z.set_block (1, nlp.get_duals ())
+17
+18
+# create
+the
+linear
+solver
+19
+linear_solver = MA27Interface ()
+20
+linear_solver .set_cntl (1, 1e -6) # pivot
+tolerance
+21
+22
+# main
+iteration
+loop
+23
+for
+_iter in range(max_iter):
+24
+nlp. set_primals (z.get_block (0))
+25
+nlp.set_duals(z.get_block (1))
+26
+27
+grad_lag = (nlp. evaluate_grad_objective () +
+28
+nlp. evaluate_jacobian_eq ().transpose () * z.get_block (1))
+29
+residuals = nlp. evaluate_eq_constraints ()
+30
+31
+if (np.abs(grad_lag).max ()
+<= tol and
+32
+np.abs(residuals).max ()
+<= tol):
+33
+break
+34
+35
+kkt.set_block (0, 0, nlp. evaluate_hessian_lag ())
+36
+kkt.set_block (1, 0, nlp. evaluate_jacobian_eq ())
+37
+kkt.set_block (0, 1, nlp. evaluate_jacobian_eq ().transpose ())
+38
+39
+rhs.set_block (0, grad_lag)
+40
+rhs.set_block (1, residuals)
+41
+42
+_kkt = tril(kkt.tocoo ())
+43
+linear_solver . do_symbolic_factorization (_kkt.shape [0], _kkt.row ,
+44
+_kkt.col)
+45
+linear_solver . do_numeric_factorization (_kkt.row , _kkt.col ,
+46
+_kkt.shape [0], _kkt.data)
+47
+delta = linear_solver . do_backsolve (-rhs.flatten ())
+48
+z += delta
+Listing 6: Example implementation of an equality-constrained SQP algorithm
+15
+
+1
+from
+pyomo.contrib.pynumero.interfaces .pyomo_nlp
+import
+PyomoNLP
+2
+3
+# Create a Pyomo
+model
+4
+m = build_burgers_model ()
+5
+6
+# Create a PyNumero
+PyomoNLP
+7
+nlp = PyomoNLP(m)
+8
+9
+# Solve
+the
+problem
+10
+sqp(nlp)
+Listing 7: Solving a Pyomo model with an example SQP implementation
+functions. The sqp function takes an instance of a NLP object as an argument along with
+optional termination criteria. On line 10, we deﬁne the KKT matrix as a BlockMatrix with 2
+block-rows and 2 block-columns (4 blocks total). On line 11, we deﬁne the KKT right-hand-
+side as a BlockVector with 2 blocks. Each block in a BlockMatrix can contain a SciPy
+sparse matrix or another BlockMatrix. Alternatively, a block can be empty, indicating
+that there are no non-zeros in that block.
+Each block in a BlockVector can contain a
+NumPy array or another BlockVector. Line 14 constructs a BlockVector for the iteration
+variables that includes the primal and dual variables. The loop for computing steps begins
+on line 23. On lines 24-25, we update the values of the primals and duals within the NLP
+object. On lines 27-33, we compute the gradient of the Lagrangian and the residuals of the
+constraints, check the norms for convergence, and terminate the algorithm if the tolerance
+has been satisﬁed. If not converged, we need to compute a step in the iteration variables.
+On lines 35-40, we build the KKT matrix and right-hand-side (rhs) with the Hessian of the
+Lagrangian, the Jacobian of the constraints, the gradient of the Lagrangian and the residuals
+of the constraints. On lines 42-47, we factorize and solve the KKT system. Finally, on line
+48, we update the primals and duals using the computed step.
+Code Listing 7 demonstrates the use of the sqp function in Code Listing 6 to solve a
+Pyomo model for a 2D PDE-constrained optimal control problem with Burgers’ Equation:
+min
+Z 1
+0
+Z 1
+0
+
+(y −ˆy)2 + αu2
+dxdt
+(7a)
+s.t.
+∂y
+∂t −v ∂2y
+∂x2 + ∂y
+∂xy = u
+(7b)
+y(x = 0) = 0
+(7c)
+y(x = 1) = 0
+(7d)
+u(x = 0) = 0
+(7e)
+u(x = 1) = 0
+(7f)
+y(0 < x < 1, t = 0) = ˆy
+(7g)
+u(0 < x < 1, t = 0) = 0
+(7h)
+ˆy =
+(
+1
+x <= 0.5
+0
+otherwise
+(7i)
+16
+
+The PDE-constrained optimal control problem is ﬁrst discretized spatially using central
+ﬁnite diﬀerence, followed by backward ﬁnite diﬀerence (Biegler 2010) using Pyomo.DAE
+(Nicholson et al. 2018). The resulting Pyomo model returned from build burgers model
+(not shown here, but available online at https://github.com/Parapint/parapint) has
+100,600 variables and 80,800 constraints. We construct a PyomoNLP instance on line 7 and
+pass it to the sqp function on line 10. On a 2.9 GHz Quad-Core Intel Core i7 MacBook
+Pro, Ipopt solves this problem in 1.27 seconds. The sqp function in Code Listing 6 solves
+the problem in 1.4 seconds, only 11% slower than Ipopt. This demonstrates that there is
+very little overhead introduced by writing the algorithm in Python.
+Because PyNumero provides fast automatic diﬀerentiation capabilities for Pyomo ex-
+pressions using ASL, and since all data is stored in NumPy arrays, users can write eﬃcient
+implementations like this SQP algorithm in very few lines of code using standard functions
+within the NumPy/SciPy ecosystem.
+3
+Parapint
+The primary goal of PyNumero is to facilitate research on decomposition algorithms for
+nonlinear optimization. Here we utilize the MPIBlockVector and MPIBlockMatrix classes
+described in Section 2.1 to develop a Schur-Complement based interior-point algorithm
+for parallel solution of structured NLPs. The algorithm is available in Parapint (https:
+//github.com/Parapint/parapint), an open-source Python package built on PyNumero.
+In this section, we present Parapint both as an example of how PyNumero can be utilized
+for parallel NLP algorithm development and as a framework for future research.
+As shown in Figure 5, Parapint builds on PyNumero in three ways. First, Parapint
+Composite 
+NLP
+Interfaces
+Model
+Optimization
+Algorithm
+Structure-aware
+Linear Solvers
+MPIBlockVector
+MPIBlockMatrix
+Model
+Model
+Model
+Model
+NLP
+Partition
+Structured Vectors, 
+Jacobian and Hessian
+Figure 5: Parapint design
+implements an interior-point algorithm for solution of NLP problems described by Problem
+(4). Second, Parapint extends the NLP interfaces described in Section 2.4 for stochastic
+programming problems and dynamic optimization problems. These interfaces expose struc-
+ture in the Jacobian and Hessian computations and support parallel evaluation of model
+functions and derivatives. We denote these specialized NLP interfaces as composite NLP
+17
+
+interfaces since they construct a large NLP from a number of smaller partitions. Third,
+Parapint implements linear solvers that can recognize the structure imposed by the com-
+posite interfaces and exploit this structure for parallel solution of the linear system in the
+step computation. The composite NLP interfaces and the Schur-Complement approach for
+solving structured linear systems are discussed in Sections 3.1 and 3.2, respectively, includ-
+ing a scalability analysis of Parapint’s Schur-Complement implementation. In Section 3.3,
+we brieﬂy describe Parapint’s interior-point algorithm. In Section 3.4, we show an example
+of how a dynamic optimization problem can be solved in parallel using Parapint, along with
+computational results.
+3.1
+Parapint Composite NLPs
+Parapint currently contains two types of composite NLP interfaces – one for stochastic
+programming problems and one for dynamic optimization problems. Consider again the
+structured problem (1). These interfaces capture the problem structure using a separate
+Pyomo model (and NLP) for each partition, while providing a composite API that com-
+bines these partitions into a single representation for the solver.
+The purpose of these
+interfaces is threefold.
+First, the composite NLP interfaces provide a convenient mech-
+anism for constructing and evaluating multiple Pyomo models in parallel (i.e., one for
+each partition).
+Second, the composite NLP interfaces automatically construct linking
+constraints for coupling variables between diﬀerent partitions (e.g., non-anticipative vari-
+ables or diﬀerential variables at ﬁnite element boundaries).
+Finally, they construct in-
+stances of MPIBlockVector and MPIBlockMatrix to hold function and derivative infor-
+mation appropriate for use with both the interior-point algorithm discussed in Section
+3.3 and the structured linear solvers discussed in Section 3.2.
+For example, Parapint’s
+MPIDynamicSchurComplementInteriorPointInterface class has a method,
+evaluate primal dual kkt matrix(), which returns a MPIBlockMatrix with a block-bordered-
+diagonal structure appropriate for Schur-Complement decomposition. An example using the
+composite NLP interface for dynamic optimization problems is presented in Section 3.4.
+3.2
+Schur-Complement Decomposition
+The dominant computational cost of the interior-point method reviewed in Section 3.3 is the
+solution of the KKT system. In the case of stochastic or dynamic optimization problems,
+the structure of the KKT system can be exploited for parallel solution. With the correct
+permutation of rows and columns, the KKT matrix for such problems can be rearranged
+into a block-bordered diagonal matrix (Gondzio and Grothey 2009, Chiang et al. 2014, Kang
+et al. 2014).
+
+
+K1
+B1
+K2
+B2
+K3
+B3
+...
+...
+KN
+BN
+BT
+1
+BT
+2
+BT
+3
+· · ·
+BT
+N
+Q
+
+
+·
+
+
+∆υ1
+∆υ2
+∆υ3
+...
+∆υN
+∆d
+
+
+=
+
+
+r1
+r2
+r3
+...
+rN
+rd
+
+
+,
+(8)
+Block-Gaussian elimination brings (8) to a block-upper triangular form allowing for de-
+composition. This decomposition is known as the Schur-complement decomposition and
+algorithm details are shown in Word et al. (2014).
+18
+
+8
+16
+32
+64
+128
+256
+512
+1024
+Number of Blocks/Processors
+0.00
+0.25
+0.50
+0.75
+1.00
+1.25
+1.50
+1.75
+2.00
+Schur-Complement Time (8 cores as base)
+Figure 6: Weak scaling for Schur-Complement decomposition.
+We implement this Schur-Complement decomposition algorithm in Parapint for parallel
+solution of structured linear systems of the form shown in Equation (8). We test the algo-
+rithm on a quadratic programming test problem similar to that used by Kang et al. (2014).
+The problem is based on least-squares parameter estimation and is presented below.
+min
+y,q,θ
+X
+l∈N
+||yl −y∗
+l ||2
+2
+(9)
+s.t.
+yl −Aql = 0
+∀l ∈N
+(10)
+Plql −P d
+l θ = 0
+∀l ∈N
+(11)
+Here, N is the set of blocks or partitions, y∗
+l are vectors of data, ql are the parameters
+being estimated, and θ are parameters common to all blocks. The relevant dimensions are:
+ql ∈R5,000, yl ∈R600,000, A ∈R600,000x5,000, θ ∈R10, Pl ∈R10x5,000, and P d
+l ∈R10x10.
+Weak scaling results are presented in Figure 6. As the ﬁgure shows, when the number of
+coupling variables is small, the algorithm scales nearly perfectly to over 1,000 cores. The
+largest problem solved has over 600,000,000 variables and constraints and is solved in under
+5 seconds. As shown by Kang et al. (2014), the parallel eﬃciency of the (explicit) Schur-
+Complement method degrades as the number of coupling variables increases due to the time
+19
+
+required to factorize a large, dense Schur-Complement. However, Figure 6 demonstrates that
+PyNumero and Parapint provide a viable framework for parallel NLP algorithm development
+and that the Python overhead is not signiﬁcant for large problems.
+3.3
+Interior-Point Algorithm
+In this section, we brieﬂy describe the interior-point algorithm included in Parapint. Para-
+pint’s interior-point algorithm is based largely on Ipopt (W¨achter and Biegler 2006), in-
+cluding full support for equality constraints, variable bounds, and general inequalities. The
+algorithm introduces slacks to transform inequality constraints to equality constraints and
+uses a log-barrier penalty for variable and slack bounds. The algorithm includes a fraction-
+to-the-boundary approach to ensure the log-barrier penalty is always well deﬁned and uses
+an inertia correction to ensure a descent direction.
+Parapint’s interior-point algorithm is designed to be independent of the problem struc-
+ture and the linear solver used for the KKT system as long as the linear solver is compatible
+with the structure presented. This enables the use of a single implementation for full-space
+solution of general NLPs, serial solution of structured problems (stochastic or dynamic), and
+parallel solution of structured problems (stochastic or dynamic). This design is enabled both
+by a well-deﬁned API for the interior-point NLP interface (BaseInteriorPointInterface)
+and by the interoperability between NumPy arrays, SciPy sparse matrices, and PyNumero
+block vectors and matrices.
+3.4
+Parallel solution of dynamic optimization problems
+In this section, we present computational results for the parallel solution of a 2-dimensional
+PDE-constrained optimal control problem using Parapint.
+The test problem is a small
+variant of Problem (7),
+min
+Z tf
+0
+Z 1
+0
+
+(y −ˆy)2 + αu2
+dxdt
+(12a)
+s.t.
+∂y
+∂t −v ∂2y
+∂x2 + ∂y
+∂xy = u
+(12b)
+y(x = 0) = 0
+(12c)
+y(x = 1) = 0
+(12d)
+u(x = 0) = 0
+(12e)
+u(x = 1) = 0
+(12f)
+y(0 < x < 1, t = 0) = ˆy
+(12g)
+u(0 < x < 1, t = 0) = 0
+(12h)
+ˆy =
+(
+⌊cos(2πt)⌉
+x <= 0.5
+0
+otherwise
+(12i)
+where ⌊w⌉rounds w to the nearest integer.
+We model the problem with Pyomo.DAE
+(Nicholson et al. 2018, Bynum et al. 2021) and discretize the problem with central ﬁnite
+diﬀerence with respect to x and backward ﬁnite diﬀerence with respect to t. We used 30
+20
+
+2
+4
+8
+16
+32
+64
+128
+256
+512 1024
+Time Horizon/# of Processes
+0
+2000
+4000
+6000
+8000
+Solution Time (s)
+Full Space, Serial, Linear Extrapolation
+Full Space, Serial, 2 TB Shared Memory
+Parallel Schur-Complement, Distributed Memory
+Figure 7: Scaling results for Parapint’s interior-point algorithm applied to Problem (12)
+.
+ﬁnite elements in x and 1600 ﬁnite elements per unit time.
+For scalability studies, the
+problem size was increased by increasing tf.
+Scaling results are presented in Figure 7. We solve Problem (12) with Parapint’s interior-
+point algorithm both in serial with a full-space method (no decomposition) and in parallel
+with Schur-Complement decomposition.
+In the full-space method, a single, large KKT
+system is solved with a sparse symmetric linear solver (MA27) at each iteration. The full-
+space method is performed on a 2-TB, shared memory machine with 40 2.8 GHz Intel
+Xeon CPU E7-8891 v3 cores (2 threads per core) while the Schur-Complement method is
+performed on a distributed memory machine with 64 GB and 8 2.6 GHz Intel Xeon CPU E5-
+2670 cores per node (2 threads per core). We utilize up to 8 processes per node. The x-axis
+shows the time horizon of the problem (tf), which is equal to the number of processes used
+for the Schur-Complement method, on a logarithmic scale. The y-axis shows the solution
+time. We are able to solve the full-space method up to tf=128. However, the full-space
+method scales very closely to linearly with tf, and we projected the full-space solution time
+to tf=1024 using linear extrapolation. As the ﬁgure shows, Parapint’s Schur-Complement
+based interior-point algorithm scales well to over 1024 cores, achieving a projected speedup
+factor of approximately 360 on 1024 cores.
+The largest problem solved with the Schur-Complement method has approximately
+250,000,000 variables and converges in under 30 seconds. The Schur-Complement for this
+21
+
+1
+import
+pyomo . e n v i r o n
+as
+pe
+2
+from
+pyomo
+import
+dae
+3
+import
+p a r a p i n t
+4
+import
+numpy
+as
+np
+5
+from
+mpi4py
+import
+MPI
+6
+import
+l o g g i n g
+7
+import
+a r g p a r s e
+8
+import
+math
+9
+from
+pyomo . common . timing
+import
+H i e r a r c h i c a l T i m e r
+10
+import
+csv
+11
+import
+p s u t i l
+12
+from
+pyomo . c o n t r i b . pynumero . s p a r s e . m p i
+b l o c k
+m a t r i x
+import
+MPIBlockMatrix
+13
+14
+15
+comm :
+MPI .Comm = MPI .COMM WORLD
+# MPI
+Communicator
+16
+rank
+= comm . Get rank ( )
+17
+s i z e
+= comm . G e t
+s i z e ( )
+# Number
+o f
+p r o c e s s e s
+18
+19
+l o g g e r
+=
+l o g g i n g . getLogger (
+n a m e
+)
+Listing 8: Import statements for Problem (12)
+problem is 59, 334 × 59, 334 with 3,439,690 non-zeros. In order to achieve good scalability,
+Parapint’s Schur-Complement linear solver exploits sparsity of the Schur-Complement ma-
+trix for eﬃcient communication and factorization. The script used to generate these results
+is presented in Listings 8 – 11. Listing 8 shows the required import statements along with
+a few statements setting up the MPI communicator and the logger. Listing 9 shows the
+function used to build a Pyomo model for Problem (12) given a time window. Listing 10
+shows how to setup the composite NLP interface used by the interior-point algorithm. Note
+that the build model for time block method returns the state variables at the start and
+end of the time window and the base class automatically introduces the coupling variables
+and sets up the linking constraints. Finally, Listing 11 shows how to solve the problem and
+record the results.
+4
+Distribution
+The PyNumero package can be obtained with Pyomo. All Python ﬁles are distributed under
+the Pyomo umbrella available at https://github.com/Pyomo. Instructions for compiling
+the extensions can be found at https://pyomo.readthedocs.io/en/stable/contributed_
+packages/pynumero/installation.html.
+Parapint can be installed with pip through PyPI (https://pypi.org/project/parapint/).
+5
+Conclusions and Future Directions
+We discussed the design and implementation of a Python package called PyNumero. The
+package extends the modeling capabilities of Pyomo providing building blocks for writing
+numerical algorithms for nonlinear optimization from Python.
+PyNumero combines the
+modeling features of Pyomo with eﬃcient libraries like ASL and NumPy/SciPy. With this
+combination, PyNumero performs all linear algebra operations in compiled code, and is
+designed to avoid marshalling of data between the C and Python environments, allowing for
+high-level development of algorithms without a signiﬁcant sacriﬁce in performance. These
+features are demonstrated with a variety of applications presented in the paper. Timing
+results together with code snippets are also included. Among these applications we have
+shown that an implementation of an equality-constrained SQP algorithm in PyNumero has
+comparable solution times with the state of the art solver Ipopt when solving a dynamic
+22
+
+1
+d e f
+b u i l d
+b u r g e r s
+m o d e l ( n f e
+x =50 ,
+n f e
+t =50 ,
+s t a r t
+t =0,
+e n d
+t =1,
+a d d
+i n i t
+c o n d i t i o n s=True ) :
+2
+dt
+=
+( e n d
+t
+−
+s t a r t
+t )
+/
+f l o a t ( n f e
+t )
+#
+f i n i t e
+element
+s i z e
+( time )
+3
+s t a r t
+x
+= 0
+4
+end x
+= 1
+5
+dx =
+( end x
+−
+s t a r t
+x )
+/
+f l o a t ( n f e
+x )
+#
+f i n i t e
+element
+s i z e
+( space )
+6
+7
+m =
+pe . Block ( c o n c r e t e=True )
+8
+m. omega =
+pe . Param ( i n i t i a l i z e =0.02)
+9
+m. v =
+pe . Param ( i n i t i a l i z e =0.01)
+10
+m. r
+=
+pe . Param ( i n i t i a l i z e =0)
+11
+m. x =
+dae . ContinuousSet ( bounds=( s t a r t
+x ,
+end x ) )
+12
+m. t
+=
+dae . ContinuousSet ( bounds=( s t a r t
+t ,
+e n d
+t ) )
+13
+m. y =
+pe . Var (m. x ,
+m. t )
+14
+m. dydt
+=
+dae . D e r i v a t i v e V a r (m. y ,
+wrt=m. t )
+15
+m. dydx =
+dae . D e r i v a t i v e V a r (m. y ,
+wrt=m. x )
+16
+m. dydx2 =
+dae . D e r i v a t i v e V a r (m. y ,
+wrt=(m. x ,
+m. x ) )
+17
+m. u =
+pe . Var (m. x ,
+m. t )
+18
+19
+d e f
+y
+i n i t
+r u l e (m,
+x ,
+t ) :
+#
+d e s i r e d
+s t a t e
+p r o f i l e
+20
+i f
+x <=
+0 . 5
+∗
+end x :
+21
+r e t u r n
+1
+∗
+round ( math . c o s (2∗math . p i ∗t ) )
+22
+r e t u r n
+0
+23
+m. y0 =
+pe . Param (m. x ,
+m. t ,
+d e f a u l t=
+y
+i n i t
+r u l e )
+24
+25
+d e f
+upper x bound (m,
+t ) :
+# boundary
+c o n d i t i o n s
+26
+r e t u r n
+m. y [ end x ,
+t ]
+== 0
+27
+m. upper x bound
+=
+pe . C o n s t r a i n t (m. t ,
+r u l e= upper x bound )
+28
+29
+d e f
+l o w e r
+x
+b o u n d (m,
+t ) :
+# boundary
+c o n d i t i o n s
+30
+r e t u r n
+m. y [ s t a r t
+x ,
+t ]
+== 0
+31
+m. lower x bound
+=
+pe . C o n s t r a i n t (m. t ,
+r u l e= l o w e r
+x
+b o u n d )
+32
+33
+d e f
+upper x ubound (m,
+t ) :
+# no
+c o n t r o l
+at
+bounary
+34
+r e t u r n
+m. u [ end x ,
+t ]
+== 0
+35
+m. upper x ubound
+=
+pe . C o n s t r a i n t (m. t ,
+r u l e= upper x ubound )
+36
+37
+d e f
+l o w e r x u b o u n d (m,
+t ) :
+# no
+c o n t r o l
+at
+boundary
+38
+r e t u r n
+m. u [ s t a r t
+x ,
+t ]
+== 0
+39
+m. lower x ubound
+=
+pe . C o n s t r a i n t (m. t ,
+r u l e= l o w e r x u b o u n d )
+40
+41
+d e f
+l o w e r
+t
+b o u n d (m,
+x ) :
+#
+i n i t i a l
+c o n d i t i o n s
+42
+i f
+x ==
+s t a r t
+x
+or
+x ==
+end x :
+43
+r e t u r n
+pe . C o n s t r a i n t . Skip
+44
+r e t u r n
+m. y [ x ,
+s t a r t
+t ]
+== m. y0 [ x ,
+s t a r t
+t ]
+45
+46
+d e f
+l o w e r
+t
+u b o u n d (m,
+x ) :
+#
+i n i t i a l
+c o n t r o l
+47
+i f
+x ==
+s t a r t
+x
+or
+x ==
+end x :
+48
+r e t u r n
+pe . C o n s t r a i n t . Skip
+49
+r e t u r n
+m. u [ x ,
+s t a r t
+t ]
+== 0
+50
+51
+i f
+a d d
+i n i t
+c o n d i t i o n s :
+52
+m. l o w e r
+t
+b o u n d
+=
+pe . C o n s t r a i n t (m. x ,
+r u l e= l o w e r
+t
+b o u n d )
+53
+m. l o w e r t u b o u n d
+=
+pe . C o n s t r a i n t (m. x ,
+r u l e= l o w e r
+t
+u b o u n d )
+54
+55
+d e f
+pde (m,
+x ,
+t ) :
+# The
+g o v e r n i n g
+PDE
+56
+i f
+t
+==
+s t a r t
+t
+or
+x ==
+end x
+or
+x ==
+s t a r t
+x :
+57
+e
+=
+pe . C o n s t r a i n t . Skip
+58
+e l s e :
+59
+e
+= m. dydt [ x ,
+t ]
+−m. v∗m. dydx2 [ x ,
+t ]
++ m. dydx [ x ,
+t ] ∗m. y [ x ,
+t ]
+== m. r
++ m. u [ x ,
+m. t .
+prev ( t ) ]
+60
+r e t u r n
+e
+61
+m. pde =
+pe . C o n s t r a i n t (m. x ,
+m. t ,
+r u l e= pde )
+62
+63
+d i s c
+=
+pe . TransformationFactory ( ’ dae . f i n i t e
+d i f f e r e n c e ’ )
+64
+d i s c . a p p l y
+t o (m,
+n f e=n f e
+t ,
+wrt=m. t ,
+scheme= ’BACKWARD’ )
+#
+d i s c r e t i z e
+space
+65
+d i s c . a p p l y
+t o (m,
+n f e=n f e x ,
+wrt=m. x ,
+scheme= ’CENTRAL ’ )
+#
+d i s c r e t i z e
+time
+66
+67
+d e f
+i n t X (m,
+x ,
+t ) :
+#
+O b j e c t i v e
+i n t e g r a l
+( space )
+68
+r e t u r n
+(m. y [ x ,
+t ]
+−m. y0 [ x ,
+t ] )
+∗∗
+2 + m. omega
+∗m. u [ x ,
+t ]
+∗∗
+2
+69
+m. intX
+=
+dae . I n t e g r a l (m. x ,
+m. t ,
+wrt=m. x ,
+r u l e= i n t X )
+70
+71
+d e f
+i n t T (m,
+t ) :
+#
+O b j e c t i v e
+i n t e g r a l
+( time )
+72
+r e t u r n
+m. intX [ t ]
+73
+m. intT
+=
+dae . I n t e g r a l (m. t ,
+wrt=m. t ,
+r u l e= i n t T )
+74
+75
+d e f
+o b j (m) :
+# minor
+c o r r e c t i o n
+to
+i n t e g r a l
+at
+block −b o u n d a r i e s
+76
+e
+=
+0 . 5
+∗m. intT
+77
+f o r
+x
+i n
+s o r t e d (m. x ) :
+78
+i f
+x
+!=
+s t a r t
+x
+and
+x
+!=
+end x :
+79
+e +=
+0 . 5
+∗
+0 . 5
+∗
+dx
+∗
+dt
+∗m. omega
+∗m. u [ x ,
+s t a r t
+t ]
+∗∗
+2
+80
+r e t u r n
+e
+81
+m. obj
+=
+pe . O b j e c t i v e ( r u l e= o b j )
+82
+83
+r e t u r n
+m
+Listing 9: A Pyomo model for Problem (12)
+23
+
+1
+c l a s s
+B u r g e r s I n t e r f a c e ( p a r a p i n t . i n t e r f a c e s . MPIDynamicSchurComplementInteriorPointInterface ) :
+2
+d e f
+i n i t
+( s e l f ,
+s t a r t
+t ,
+end t ,
+num time blocks ,
+n f e
+t ,
+n f e
+x ) :
+3
+s e l f . n f e
+x
+=
+n f e
+x
+4
+s e l f . dt
+=
+( e n d
+t
+−
+s t a r t
+t )
+/
+f l o a t ( n f e
+t )
+5
+super ( B u r g e r s I n t e r f a c e ,
+s e l f ) .
+i n i t
+( s t a r t
+t=s t a r t
+t ,
+e n d
+t=end t ,
+6
+num time blocks=num time blocks ,
+comm=comm)
+7
+8
+d e f
+b u i l d
+m o d e l
+f o r
+t i m e
+b l o c k ( s e l f ,
+ndx ,
+s t a r t
+t ,
+end t ,
+a d d
+i n i t
+c o n d i t i o n s ) :
+9
+n f e
+t
+= math . c e i l ( ( e n d
+t
+−
+s t a r t
+t )
+/
+s e l f . dt )
+10
+m =
+b u i l d
+b u r g e r s
+m o d e l ( n f e
+x=s e l f . n f e x ,
+n f e
+t=n f e
+t ,
+s t a r t
+t=s t a r t
+t ,
+e n d
+t=end t ,
+11
+a d d
+i n i t
+c o n d i t i o n s=a d d
+i n i t
+c o n d i t i o n s )
+12
+13
+r e t u r n
+(m,
+( [m. y [ x ,
+s t a r t
+t ]
+f o r
+x
+i n
+s o r t e d (m. x )
+i f
+x
+not
+i n
+{0 ,
+1 } ] ) ,
+14
+( [m. y [ x ,
+e n d
+t ]
+f o r
+x
+i n
+s o r t e d (m. x )
+i f
+x
+not
+i n
+{0 ,
+1 } ] ) )
+Listing 10: Setting up the composite NLP interface for Problem (12)
+optimization problem with 100K variables and 80K constraints. The overhead from the
+Python interface to ASL and HSL only increases the solution time by 11% for large-scale
+instances.
+PyNumero uses object-oriented principles comprehensively, applying them to algorithms
+and problem formulations that exploit block-structures via polymorphism and inheritance
+mechanisms. Since block-structured problems result from real-life optimization problems,
+we expect the design to promote research of decomposition algorithms. Of special interest
+are stochastic programming problems and dynamic optimization problems. Current devel-
+opments in Pyomo to model dynamics and uncertainty in optimization problems (Watson
+et al. 2012, Nicholson et al. 2018) can be combined with features oﬀered in PyNumero to
+prototype and explore new decomposition approaches.
+PyNumero’s parallel, block-based linear algebra tools make it possible to write eﬃcient
+and scalable parallel NLP algorithms in Python. As an example, we presented Parapint,
+a Python package built on PyNumero for parallel solution of stochastic and dynamic opti-
+mization problems. Parapint currently includes a Schur-Complement based interior-point
+algorithm, and computational results were presented illustrating excellent performance to
+at least 1024 cores.
+As part of future work we plan to include interfaces to diﬀerent automatic diﬀerentiation
+packages. Currently, PyNumero relies on ASL to compute ﬁrst and second derivatives. Eﬃ-
+cient packages available in Python like CasADi and PyAdolC would be excellent extensions
+to PyNumero. Additionally, Parapint will be extended to include additional methods for
+parallel solution of stochastic and dynamic optimization problems, including cyclic reduc-
+tion (Wan et al. 2019), overlapping Schwarz (Shin et al. 2020a), and implicit methods (Kang
+et al. 2014).
+6
+Acknowledgements
+The authors would like to thank V. Zavala and D. Ridzal for their valuable inputs.
+Sandia National Laboratories is a multimission laboratory managed and operated by
+National Technology and Engineering Solutions of Sandia, LLC., a wholly owned subsidiary
+of Honeywell International, Inc., for the U.S. Department of Energy’s National Nuclear
+Security Administration under contract DE-NA-0003525. This paper describes objective
+technical results and analysis. Any subjective views or opinions that might be expressed
+in the paper do not necessarily represent the views of the U.S. Department of Energy
+or the United States Government. This work was funded in part by the Institute for the
+Design of Advanced Energy Systems (IDAES) with funding from the Oﬃce of Fossil Energy,
+24
+
+1
+d e f
+s e t u p
+l o g g i n g ( a r g s ) :
+2
+i f
+rank ==
+1 :
+3
+l o g g i n g . b a s i c C o n f i g ( l e v e l=l o g g i n g . INFO)
+4
+5
+6
+c l a s s
+Args ( o b j e c t ) :
+7
+d e f
+i n i t
+( s e l f ) :
+8
+s e l f . n f e
+x
+=
+50
+# number
+o f
+f i n i t e
+e l e m e n t s
+i n
+space
+9
+s e l f . n f e
+t
+=
+200 # number
+o f
+f i n i t e
+e l e m e n t s
+i n
+time
+per
+u n i t
+time
+10
+s e l f . e n d
+t
+= 1
+# time
+h o r i z o n
+11
+s e l f . n b l o c k s
+= 4 # number
+o f
+b l o c k s
+f o r
+de c om p os i t io n
+12
+13
+d e f
+p a r s e a r g u m e n t s ( s e l f ) :
+14
+p a r s e r
+=
+a r g p a r s e . ArgumentParser ( )
+15
+p a r s e r . add argument ( ’−−n f e
+x ’ ,
+type=i n t ,
+r e q u i r e d=True ,
+h e lp= ’ number
+o f
+f i n i t e
+e l e m e n t s
+f o r
+x ’ )
+16
+p a r s e r . add argument ( ’−−e n d
+t ’ ,
+type=i n t ,
+r e q u i r e d=True ,
+h el p= ’ end
+time ’ )
+17
+p a r s e r . add argument ( ’−−n f e
+t
+p e r
+t ’ ,
+type=i n t ,
+r e q u i r e d=False ,
+d e f a u l t =100 ,
+h el p= ’ number
+o f
+f i n i t e
+e l e m e n t s
+f o r
+t
+per
+u n i t
+time ’ )
+18
+p a r s e r . add argument ( ’−−n b l o c k s ’ ,
+type=i n t ,
+r e q u i r e d=True ,
+he lp= ’ number
+o f
+time
+b l o c k s
+f o r
+schur
+complement ’ )
+19
+a r g s
+=
+p a r s e r . p a r s e
+a r g s ( )
+20
+s e l f . n f e
+x
+=
+a r g s . n f e
+x
+21
+s e l f . e n d
+t
+=
+a r g s . e n d
+t
+22
+s e l f . n f e
+t
+=
+a r g s . n f e
+t
+p e r
+t
+∗
+a r g s . e n d
+t
+23
+s e l f . n b l o c k s
+=
+a r g s . n b l o c k s
+24
+25
+26
+d e f
+main ( args ,
+s u b p r o b l e m
+s o l v e r
+c l a s s ,
+s u b p r o b l e m
+s o l v e r
+o p t i o n s ) :
+27
+#
+c o n s t r u c t
+the
+composite
+NLP
+i n t e r f a c e
+28
+i n t e r f a c e
+=
+B u r g e r s I n t e r f a c e ( s t a r t
+t =0,
+29
+e n d
+t=a r g s . end t ,
+30
+num time blocks=a r g s . nblocks ,
+31
+n f e
+t=a r g s . n f e
+t ,
+32
+n f e
+x=a r g s . n f e
+x )
+33
+#
+c o n s t r u c t
+the
+Schur−Complement
+l i n e a r
+s o l v e r
+34
+l i n e a r
+s o l v e r
+=
+p a r a p i n t . l i n a l g . MPISchurComplementLinearSolver (
+35
+s u b p r o b l e m
+s o l v e r s={ndx :
+s u b p r o b l e m
+s o l v e r
+c l a s s (∗∗s u b p r o b l e m
+s o l v e r
+o p t i o n s )
+f o r
+ndx
+i n
+range ( a r g s . n b l o c k s ) } ,
+36
+s c h u r
+c o m p l e m e n t
+s o l v e r=s u b p r o b l e m
+s o l v e r
+c l a s s (∗∗s u b p r o b l e m
+s o l v e r
+o p t i o n s ) )
+37
+#
+S p e c i f y
+o p t i o n s
+f o r
+the
+i n t e r i o r
+p o i n t
+a l g o r i t h m
+38
+o p t i o n s
+=
+p a r a p i n t . a l g o r i t h m s . IPOptions ( )
+39
+o p t i o n s . l i n a l g . s o l v e r
+=
+l i n e a r
+s o l v e r
+40
+#
+c o n s t r u c t
+a
+timer
+f o r
+r e p o r t i n g
+s t a t s
+on
+computational
+performance
+41
+timer
+=
+H i e r a r c h i c a l T i m e r ( )
+42
+comm . B a r r i e r ( )
+43
+#
+S o l v e
+the
+problem
+with
+the
+i n t e r i o r
+p o i n t
+a l g o r i t h m
+44
+s t a t u s
+=
+p a r a p i n t . a l g o r i t h m s . i p
+s o l v e ( i n t e r f a c e=i n t e r f a c e ,
+o p t i o n s=o p t i o n s ,
+timer=timer )
+45
+a s s e r t
+s t a t u s
+==
+p a r a p i n t . a l g o r i t h m s . I n t e r i o r P o i n t S t a t u s . optimal
+46
+#
+S t o r e
+the
+r e s u l t s
+i n
+a
+csv
+f i l e
+47
+n
+p r i m a l s
+=
+i n t e r f a c e . n
+p r i m a l s ( )
+48
+l o g g e r . i n f o ( ’ \n ’
++
+s t r ( timer ) )
+49
+i f
+rank ==
+1 :
+50
+f
+=
+open ( ’ b u r g e r s
+’
++
+s t r ( a r g s . e n d t )
++
+’
+’
++
+s t r ( a r g s . n f e
+x )
++
+’
+’
++
+s t r ( a r g s . n f e
+t )
++
+’
+’
++
+s t r ( s i z e )
++
+’ . csv ’ ,
+’w ’ )
+51
+f i e l d n a m e s
+=
+[ ’ e n d
+t ’ ,
+’ n f e
+x ’ ,
+’ n f e
+t ’ ,
+’ s i z e ’ ,
+’ n
+b l o c k s ’ ,
+’ n
+p r i m a l s ’ ,
+’ s c
+n n z ’ ,
+’
+sc dim ’ ,
+’ virt mem ’ ,
+’ c p u
+p e r c e n t ’ ]
+52
+t i m e r
+i d e n t i f i e r s
+=
+timer . g e t
+t i m e r s ( )
+53
+f i e l d n a m e s . extend ( t i m e r
+i d e n t i f i e r s )
+54
+w r i t e r
+=
+csv . w r i t e r ( f )
+55
+w r i t e r . writerow ( f i e l d n a m e s )
+56
+row =
+[ a r g s . end t ,
+a r g s . n f e x ,
+a r g s . n f e
+t ,
+s i z e ,
+a r g s . nblocks ,
+n p r i m a l s ,
+57
+l i n e a r
+s o l v e r . schur complement . data . s i z e ,
+58
+l i n e a r
+s o l v e r . schur complement . shape [ 0 ] ,
+59
+p s u t i l . virtual memory ( ) . percent ,
+p s u t i l . c p u
+p e r c e n t ( ) ]
+60
+row . extend ( timer . g e t
+t o t a l
+t i m e ( name )
+f o r
+name
+i n
+t i m e r
+i d e n t i f i e r s )
+61
+w r i t e r . writerow ( row )
+62
+f . c l o s e ( )
+63
+64
+65
+i f
+n a m e
+==
+’
+m a i n
+’ :
+66
+a r g s
+=
+Args ( )
+67
+a r g s . p a r s e a r g u m e n t s ( )
+68
+s e t u p
+l o g g i n g ( a r g s )
+69
+#
+c n t l [ 1 ]
+i s
+the
+MA27
+p i v o t
+t o l e r a n c e
+70
+main ( a r g s=args ,
+71
+s u b p r o b l e m
+s o l v e r
+c l a s s=p a r a p i n t . l i n a l g . I n t e r i o r P o i n t M A 2 7 I n t e r f a c e ,
+72
+s u b p r o b l e m
+s o l v e r
+o p t i o n s={ ’ c n t l
+o p t i o n s ’ :
+{ 1 :
+1e −6}})
+Listing 11: Solving Problem (12)
+25
+
+Cross-Cutting Research, U.S. Department of Energy. This work was also funded by Sandia
+National Laboratories Laboratory Directed Research and Development (LDRD) program.
+References
+Patrick R Amestoy, Iain S Duﬀ, Jean-Yves L’Excellent, and Jacko Koster.
+Mumps: a general
+purpose distributed memory sparse solver. In International Workshop on Applied Parallel
+Computing, pages 121–130. Springer, 2000.
+J. Andersson. A General-Purpose Software Framework for Dynamic Optimization. PhD thesis,
+Arenberg Doctoral School, KU Leuven, Department of Electrical Engineering (ESAT/SCD)
+and Optimization in Engineering Center, Kasteelpark Arenberg 10, 3001-Heverlee, Belgium,
+October 2013.
+L T. Biegler. Nonlinear Programming: Concepts, Algorithms, and Applications to Chemical Pro-
+cesses. SIAM, 2010.
+Michael L Bynum, Gabriel A Hackebeil, William E Hart, Carl D Laird, Bethany L Nicholson,
+John D Siirola, Jean-Paul Watson, and David L Woodruﬀ. Pyomo—Optimization Modeling
+in Python, volume 67. Springer Nature, 2021.
+Naiyuan Chiang, Cosmin G Petra, and Victor M Zavala. Structured nonconvex optimization of
+large-scale energy systems using PIPS-NLP. In Proc. of the 18th Power Systems Computation
+Conference (PSCC), Wroclaw, Poland, 2014.
+Lisandro D. Dalcin, Rodrigo R. Paz, Pablo A. Kler, and Alejandro Cosimo. Parallel distributed
+computing using Python. Advances in Water Resources, 34(9):1124–1139, September 2011.
+Haoyang Deng and Toshiyuki Ohtsuka. A parallel newton-type method for nonlinear model pre-
+dictive control. Automatica, 109:108560, 2019.
+Iain S Duﬀand John K Reid.
+The multifrontal solution of indeﬁnite sparse symmetric linear
+equations. ACM Transactions on Mathematical Software (TOMS), 9(3):302–325, 1983.
+Jonathan Eckstein and Dimitri P Bertsekas. On the Douglas-Rachford splitting method and the
+proximal point algorithm for maximal monotone operators. Mathematical Programming, 55
+(1-3):293–318, 1992.
+R. Fourer, D.M. Gay, and B.W. Kernighan. AMPL: A Modeling Language for Mathematical Pro-
+gramming. Scientiﬁc Press, 1993. ISBN 9780894262333. URL https://books.google.com/
+books?id=8vJQAAAAMAAJ.
+David M Gay. Hooking your solver to ampl. Technical report, Citeseer, 1997.
+David M Gay. Writing .nl ﬁles. Technical report, Sandia National Laboratories, 2005.
+J. Gondzio and A. Grothey. Exploiting structure in parallel implementation of interior point meth-
+ods for optimization. Computational Management Science, 6(2):135–160, May 2009.
+Andreas Griewank, David Juedes, and Jean Utke. Algorithm 755: ADOL-C: A package for the
+automatic diﬀerentiation of algorithms written in c/c++. ACM Trans. Math. Softw., 22(2):
+131–167, June 1996. ISSN 0098-3500.
+Charles R. Harris, K. Jarrod Millman, St´efan J. van der Walt, Ralf Gommers, Pauli Virtanen,
+David Cournapeau, Eric Wieser, Julian Taylor, Sebastian Berg, Nathaniel J. Smith, Robert
+Kern, Matti Picus, Stephan Hoyer, Marten H. van Kerkwijk, Matthew Brett, Allan Hal-
+dane, Jaime Fern´andez del R´ıo, Mark Wiebe, Pearu Peterson, Pierre G´erard-Marchant, Kevin
+Sheppard, Tyler Reddy, Warren Weckesser, Hameer Abbasi, Christoph Gohlke, and Travis E.
+Oliphant. Array programming with NumPy. Nature, 585(7825):357–362, September 2020.
+doi: 10.1038/s41586-020-2649-2. URL https://doi.org/10.1038/s41586-020-2649-2.
+Jia Kang, Yankai Cao, Daniel P. Word, and C. D. Laird. An interior-point method for eﬃcient so-
+lution of block-structured NLP problems using an implicit Schur-complement decomposition.
+Computers and Chemical Engineering, 71:563–573, 2014.
+26
+
+Bethany Nicholson, John D Siirola, Jean-Paul Watson, Victor M Zavala, and Lorenz T Biegler.
+pyomo.dae: a modeling and automatic discretization framework for optimization with dif-
+ferential and algebraic equations. Mathematical Programming Computation, 10(2):187–223,
+2018.
+Cosmin G. Petra, Olaf Schenk, Miles Lubin, and Klaus G¨aertner.
+An augmented incomplete
+factorization approach for computing the schur complement in stochastic optimization. SIAM
+Journal on Scientiﬁc Computing, 36(2):C139–C162, 2014.
+doi: 10.1137/130908737.
+URL
+https://doi.org/10.1137/130908737.
+R Tyrrell Rockafellar and Roger J-B Wets. Scenarios and policy aggregation in optimization under
+uncertainty. Mathematics of operations research, 16(1):119–147, 1991.
+Jose S Rodriguez, Bethany Nicholson, Carl Laird, and Victor M Zavala. Benchmarking ADMM in
+nonconvex NLPs. Computers & Chemical Engineering, 119:315–325, 2018.
+Jose S Rodriguez, Carl D Laird, and Victor M Zavala. Scalable preconditioning of block-structured
+linear algebra systems using ADMM. Computers & Chemical Engineering, 133:106478, 2020.
+M. Sala, W. Spotz, and M. Heroux. PyTrilinos: High-performance distributed-memory solvers for
+Python. ACM Transactions on Mathematical Software (TOMS), 34, March 2008.
+Sungho Shin, Mihai Anitescu, and Victor M Zavala. Overlapping schwarz decomposition for con-
+strained quadratic programs. In 2020 59th IEEE Conference on Decision and Control (CDC),
+pages 3004–3009. IEEE, 2020a.
+Sungho Shin, Carleton Coﬀrin, Kaarthik Sundar, and Victor M Zavala. Graph-based modeling and
+decomposition of energy infrastructures. arXiv preprint arXiv:2010.02404, 2020b.
+Pauli Virtanen, Ralf Gommers, Travis E. Oliphant, Matt Haberland, Tyler Reddy, David Cour-
+napeau, Evgeni Burovski, Pearu Peterson, Warren Weckesser, Jonathan Bright, St´efan J.
+van der Walt, Matthew Brett, Joshua Wilson, K. Jarrod Millman, Nikolay Mayorov, An-
+drew R. J. Nelson, Eric Jones, Robert Kern, Eric Larson, C J Carey, ˙Ilhan Polat, Yu Feng,
+Eric W. Moore, Jake VanderPlas, Denis Laxalde, Josef Perktold, Robert Cimrman, Ian Hen-
+riksen, E. A. Quintero, Charles R. Harris, Anne M. Archibald, Antˆonio H. Ribeiro, Fabian
+Pedregosa, Paul van Mulbregt, and SciPy 1.0 Contributors.
+SciPy 1.0: Fundamental Al-
+gorithms for Scientiﬁc Computing in Python.
+Nature Methods, 17:261–272, 2020a.
+doi:
+10.1038/s41592-019-0686-2.
+Pauli Virtanen, Ralf Gommers, Travis E Oliphant, Matt Haberland, Tyler Reddy, David Courna-
+peau, Evgeni Burovski, Pearu Peterson, Warren Weckesser, Jonathan Bright, et al. Scipy 1.0:
+fundamental algorithms for scientiﬁc computing in python. Nature methods, 17(3):261–272,
+2020b.
+Andreas W¨achter and Lorenz T Biegler. On the implementation of a primal-dual interior point ﬁlter
+line search algorithm for large-scale nonlinear programming. Mathematical Programming, 106:
+25–57, 2006.
+Wei Wan, John P Eason, Bethany Nicholson, and Lorenz T Biegler.
+Parallel cyclic reduction
+decomposition for dynamic optimization problems. Computers & Chemical Engineering, 120:
+54–69, 2019.
+Jean-Paul Watson, David L Woodruﬀ, and William E Hart. PySP: modeling and solving stochastic
+programs in Python. Mathematical Programming Computation, 4(2):109–149, 2012.
+Daniel P Word, Jean-Paul Watson, David L Woodruﬀ, and Carl D Laird. A progressive hedging
+approach for parameter estimation via stochastic nonlinear programming. In Computer Aided
+Chemical Engineering, volume 31, pages 1507–1511. Elsevier, 2012.
+Daniel P Word, Jia Kang, Johan Akesson, and Carl D Laird. Eﬃcient parallel solution of large-scale
+nonlinear dynamic optimization problems. Computational Optimization and Applications, 59
+(3):667–688, 2014.
+27
+
+Victor M Zavala, Carl D Laird, and Lorenz T Biegler. Interior-point decomposition approaches for
+parallel solution of large-scale nonlinear parameter estimation problems. Chemical Engineer-
+ing Science, 63(19):4834–4845, 2008.
+28

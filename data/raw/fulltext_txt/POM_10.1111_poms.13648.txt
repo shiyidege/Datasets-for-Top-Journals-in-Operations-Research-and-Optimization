@@ -1,0 +1,1476 @@
+TITLE: Operations (management) warp speed: Rapid deployment of hospital‐focused predictive/prescriptive analytics for the COVID‐19 pandemic
+JOURNAL: POM
+YEAR: 2021
+DOI: https://doi.org/10.1111/poms.13648
+---
+
+Accepted Article
+Operations (Management) Warp Speed: Rapid Deployment of
+Hospital-Focused Predictive/Prescriptive Analytics for the COVID-19
+Pandemic
+Pengyi Shi∗1, Jonathan E. Helm2, Christopher Chen2, JeﬀLim2, Rodney P. Parker2, Troy
+Tinsley3, and Jacob Cecil3
+1Krannert School of Management, Purdue University, West Lafayette, IN 47907 shi178@purdue.edu
+2Kelley School of Business, Indiana University, Bloomington, IN 47405
+{helmj, cch3, tenglim, rodp}@indiana.edu
+3Indiana University Health, Indianapolis, IN 46202 {ttinsley, jcecil2}@iuhealth.org
+December 13, 2021
+Abstract
+At the onset of the COVID-19 pandemic, hospitals were in dire need of data-driven analytics to provide support for
+critical, expensive, and complex decisions. Yet, the majority of analytics being developed were targeted at state- and
+national-level policy decisions, with little availability of actionable information to support tactical and operational de-
+cision making and execution at the hospital level. To ﬁll this gap, we developed a multi-method framework leveraging
+a parsimonious design philosophy that allows for rapid deployment of high-impact predictive and prescriptive analyt-
+ics in a time-sensitive, dynamic, data-limited environment, such as a novel pandemic. The product of this research
+is a workload prediction and decision support tool to provide mission-critical, actionable information for individual
+hospitals. Our framework forecasts time-varying patient workload and demand for critical resources by integrating
+disease progression models, tailored to data availability during diﬀerent stages of the pandemic, with a stochastic
+network model of patient movements among units within individual hospitals. Both components employ adaptive
+tuning to account for hospital-dependent, time-varying parameters that provide consistently accurate predictions by
+dynamically learning the impact of latent changes in system dynamics. Our decision support system is designed
+to be portable and easily implementable across hospital data systems for expeditious expansion and deployment.
+This work was contextually grounded in close collaboration with IU Health, the largest health system in Indiana,
+which has 18 hospitals serving over one million residents. Our initial prototype was implemented in April 2020 and
+has supported managerial decisions, from the operational to the strategic, across multiple functionalities at IU Health.
+Key Words: Queueing Network Workload Prediction, Synthetic Control, Epidemiological Forecasting, Hospital De-
+cision Support Implementation, Nurse Transshipment.
+History: Initially submitted on September 21, 2020; revised on February 28, 2021, May 27, 2021, July 20, 2021, and
+August 23, 2021; accepted by Martin Starr on October 22, 2021 after four revisions.
+∗Corresponding author
+_______________________________________________
+This is the author's manuscript of the article published in final edited form as:
+Shi, P., Helm, J. E., Chen, C., Lim, J., Parker, R. P., Tinsley, T., & Cecil, J. (2022). Operations (Management) warp speed: Rapid deployment of hospital-focused predictive/
+prescriptive analytics for the COVID-19 pandemic. Production and Operations Management. https://doi.org/10.1111/poms.13648
+
+Accepted Article
+1
+Introduction
+Pandemics place tremendous stress on hospital resources. According to the Oﬃce of the Inspector
+General (Grimm 2020), hospitals treating COVID-19 (hereafter, COVID) patients in outbreak
+zones reported severe shortages of specialized hospital beds, nurses, ventilators, PPE, and testing
+supplies, among others. Eﬀective pandemic response for hospitals relies heavily on the ability to
+determine (1) the amount of resources needed for COVID patients; (2) how to eﬀectively allocate
+those resources; and (3) how, when, and how much surge capacity to create. However, the analytics
+most widely developed and deployed during the COVID pandemic were designed primarily to
+support large-scale public health agendas. Early in the pandemic, multiple healthcare executives in
+the Indiana Pandemic Information Collaborative expressed concern that the explosion of analytics
+provided little valuable information to support their own operational planning. Widely publicized
+analytics platforms tended to focus on county- or state-level predictions of time-averaged (steady
+state) bed usage, which was insuﬃcient to support the day-to-day and week-to-week tactical and
+operational plans being executed by hospitals and hospital systems. This bridges this gap between
+predictive information and hospital-level execution. Through a close hospital-academia partnership,
+we developed a suite of analytics to support the rapidly innovated strategic, tactical, and operational
+actions deployed by hospitals to combat the COVID-19 pandemic.
+1.1
+Motivation: The Gap between Predictions and Operational Decisions
+Many hospitals faced challenges in identifying an analytics-driven solution that met their informa-
+tion and decision support needs. The explosion of analytics produced a myriad of widely varying
+predictions, making it diﬃcult to know which model to use.
+Further, widely publicized model
+models failed to provide suﬃcient detail for operational decision making at the hospital level.
+(a) Ensemblea prediction for Indiana
+aCOVID Forecast Hub: Univ. of Mass
+(b) Steady state parameters for CHIMEa model
+aCHIME: Univ. of Pennsylvania
+Figure 1: Publicly available COVID prediction models
+Figure 1a highlights the large variation and generally poor accuracy among popular, publicly avail-
+2
+
+Accepted Article
+able prediction models. Predictions for Indiana for February 1 ranged from 9,000 to 75,000 cases,
+with very few models predicting close to the actual 15,000 (grey line).
+Figure 1b presents the
+parameter set used by the well-known CHIME model. CHIME employs a widely used method
+for translating COVID disease-spread models into hospital resource requirements. This approach
+predicts COVID demand for hospital resources based on a simple proportional calculation from
+a prediction of conﬁrmed cases to produce a state-level (county-level at best) average prediction
+of hospital resource needs. To illustrate CHIME’s limitations, consider the Intensive Care Units
+(ICU) capacity calculation:
+ICU usage = daily conﬁrmed cases × fraction that need ICU × average time in ICU,
+(1)
+which is based on Little’s Law and is most appropriate for time-homogeneous, steady-state systems.
+During a pandemic, these assumptions of Little’s Law are violated.
+The drawbacks of policy-targeted models for operational decision making include: (1) failing to ac-
+count for current state and (transient) time-varying dynamics; (2) failing to capture detailed patient
+ﬂows in hospitals or distributional information needed for decision support; (3) requiring hospitals
+to input their own parameters with little guidance on how these inputs should be estimated; and
+(4) providing state level predictions that are of little help for individual hospitals.
+In contrast to extant models, rather than appending an operational component to a primarily
+disease-focused model, we develop a multi-stage approach that feeds a disease prediction into a
+detailed model of hospital operations. This approach required the development of new theory to
+overcome the unique challenges of forecasting in the highly dynamic pandemic environment.
+Challenges in Addressing the Gaps in COVID Modeling Approaches. While there is a
+substantial body of literature in patient ﬂow modeling and optimization, most of the research oper-
+ates under two fundamental assumptions: there is suﬃcient historical data to accurately estimate
+patient ﬂows; and patient ﬂow characteristics, such as length-of-stay distributions, are not chang-
+ing. In contrast, a pandemic environment has very limited data and exhibits major, time-varying
+disruptions of patient ﬂow primitives. We separate these challenges into four broad categories.
+(1) Limited and censored patient ﬂow data. At the beginning of the pandemic, March and April
+2020 for Indiana, many COVID patients at IU Health had not yet ﬁnished their hospital stay,
+leading to right-censoring of the length-of-stay, transitions between units, and mortality statistics.
+Most patients that were discharged from the hospital early on were those with milder conditions,
+which causes standard estimation methods to be signiﬁcantly biased (underestimated).
+(2) Noisy mapping of conﬁrmed cases to individual hospital admissions. A key feature missing from
+most COVID analytics models is an estimate of how the number of conﬁrmed cases in a region
+will translate into an admission at an IU Health hospital and what level of care will be required.
+The state model in Indiana suggested using market share as a proxy for determining this fraction;
+however, we found this to be a poor predictor of IU Health admissions. National estimates used
+3
+
+Accepted Article
+in most COVID models for the fraction patients requiring ICU versus Medical/Surgical (M/S)
+beds were also inaccurate for IU Health hospitals – the fraction even varied between hospitals. As
+the pandemic progressed, we also found that bed requirements changed over time with changing
+demographics of COVID hospitalizations and changes in admission and treatment protocols.
+(3) Evolving patient characteristics. Our data shows that COVID patient characteristics and treat-
+ment procedures vary by region of the state and by time. Contributing factors include more elderly
+patients being admitted in March to April, whereas younger patients constituted the majority of
+admissions after June, medical professionals becoming more familiar with COVID, and new treat-
+ment approaches to streamline the treatment and recovery process. As a result, admissions, unit
+assignment (e.g., assigning to M/S versus ICU), length-of-stay, and mortality rates were dynami-
+cally evolving. Interestingly, we even found that non-COVID patient characteristics changed during
+the pandemic, e.g., emergency department visits dropped signiﬁcantly.
+(4) Evolving disease transmission dynamics. At the onset of the pandemic, testing was extremely
+limited, and using conﬁrmed cases as the total number of cases led to signiﬁcant underestimation
+of actual cases. Further, disease transmission dynamics are driven by complex interactions between
+public policies (e.g., shelter in place, mask ordinance), human behavior (e.g., policy compliance,
+COVID fatigue), and re-opening of restaurants and schools, among other factors. These factors are
+not only diﬃcult to quantify, but are also highly speciﬁc to geographical region and culture. This
+may be a contributing factor to the poor performance of many of the national prediction models
+when applied to Indiana.
+1.2
+Integrated Framework and Implementation in IU Health
+Our integrated modeling framework was developed and implemented in close collaboration with the
+largest health system in the state of Indiana, IU Health; also referred to as IUH (e.g., in Figure 2).
+When we formed our initial collaboration, most hospitals were using a state-wide prediction tool
+that failed to provide consistently accurate predictions and actionable information. In response,
+we jointly developed a suite of analytics based on a data-driven framework designed to bridge the
+gap between higher-level public health predictions and hospital-level pandemic response. Figure 2
+illustrates the conceptual model of this framework.
+Figure 2: Overview of the integrated workload and planning framework and its functionality.
+Approach. Our multi-method approach combines a disease prediction model (Susceptible-Infectious-
+4
+
+Accepted Article
+Recovered) with a stochastic network model of patient ﬂow to predict hospital census in both M/S
+and ICU units. These two models are joined by a mapping of county-level COVID cases to hospi-
+talizations (workload) at each individual hospital. Novel adaptive tuning methods are employed to
+determine key parameters in the disease prediction and patient ﬂow models, as well as the mapping
+of the fraction of COVID cases arriving to a particular hospital.
+In creating our framework, we adopt a parsimonious philosophy to capture ﬁrst-order eﬀects with
+a minimally complex model that meets a high-priority hospital need. Two driving principles of this
+philosophy are: eliminate unnecessary model complexity, and deliver only actionable information
+for a need identiﬁed by the hospital. Parsimonious design facilitates ﬂexibility, adaptability, ease of
+implementation. These features facilitate rapid deployment of high-impact predictive and prescrip-
+tive analytics in a time-sensitive, dynamic, data-limited environment such as a pandemic.
+Our framework was implemented in mid-April 2020 as a web-based application on IU Health’s
+intranet that was dispatched to their ﬁve major service regions, including 18 hospitals serving
+over one million residents. The tool has the capability of forecasting nurse staﬃng requirements,
+ventilator usage, and PPE needs among other resource needs.
+The tab displayed in Figure 3
+shows forecasted demand for ICU and ventilator usage for potential future scenarios of COVID
+progression. All numbers in the paper are modiﬁed to protect sensitive data.
+Utilization
+Capacity
+Capacity
+Figure 3: Screenshot of one tab of the web-based application for resource forecasting
+The workload predictions and decision support from our tools have been used by the executives at
+IU Health and played a critical role in their preparedness for the multiple surges of COVID cases
+in Indiana. The choice of patient census in the M/S and ICU units as the primary output metric
+was the result of a joint design eﬀort between IU Health and the academic team; in the design
+phase, patient census was determined by IU Health leadership as the fundamental input to their
+critical operational decisions. Though the research and development was contextually grounded by
+IU Health’s domain knowledge, the product is easily portable to other hospitals and health systems,
+5
+
+Accepted Article
+as evidenced by interest and ongoing conversations with the Indiana Hospital Association as well
+as other hospital systems in Indiana.
+(a) ICU census
+(b) M/S census
+Figure 4: Comparison between our model, the state model, and the actual census from COVID
+patients in March. The last ﬁve days are used as testing data and the rest as training data. The
+actual census numbers on the y-axis are masked due to non-disclosure requirements. The black
+solid lines are forecasts from our integrated model; the grey lines are the low, medium, and high
+forecast scenarios for the state model.
+Performance. Prior to implementation, we were asked for a comparative study of our model versus
+the state model currently being used, shown for Indianapolis in Figure 4. The black solid lines are
+forecasts from our integrated model. The dark grey lines are the low, medium, and high forecast
+scenarios for the state model. The light grey bars represent the actual census. The Mean Absolute
+Percent Error (MAPE) for our model was 9.4% and 8.2% for ICU and M/S units. The state model
+had a MAPE more than four times larger (42.7% and 33.8%) and exhibited an increasingly negative
+bias, i.e., the MAPE for April was > 50%. The predicted census numbers shown here are from
+our integrated model that takes the disease forecast as an input and uses the patient ﬂow model to
+calculate the census. We implemented a multi-step calibration procedure with adaptive tuning in
+this integrated model; see details of the calibration in Section 3.5.
+1.3
+Contributions
+This research contributes to the literature by developing a parsimonious, adaptable, and easily
+implementable workload tool that is tailored to individual hospitals. Our tool integrates a epidemi-
+ology modeling, empirical methods, stochastic network theory, and transshipment optimization,
+and was implemented in collaboration with IU Health.
+• Disease prediction. To address severely limited data during the initial phase of the pan-
+demic, we developed an adaptive synthetic control (aSC) method using a weighted portfolio
+of comparable counties in the U.S. to predict disease progression in heterogeneous regions.
+As more data became available, we pivoted to a novel, adaptive Susceptible, Infected, and
+Recovered (SIR) compartmental model, enabling short, medium, and long term predictions
+6
+
+Accepted Article
+with consistently high accuracy. Through new adaptive learning methods, this SIR model
+explicitly accounts for unreported infections and partially observable changes in underlying
+transmission rates.
+• Workload prediction. Using a stochastic network model that explicitly incorporates time-
+varying dynamics, we translate county-level infection predictions into patient census and
+resource usage at individual hospitals, accounting for movements of COVID patients and
+non-COVID patients among diﬀerent units (ICU and M/S). We leverage an oﬀered-load
+approximation to provide distributional information on the workload process, deriving an
+appealing analytical form for the workload variance across the network based on prior results
+for single-station queues. These features bridge the gaps discussed in Section 1.1.
+The academic and practical contributions are as follows.
+Academic contribution. We develop a multi-method, multi-layer adaptive method to integrate
+the disease and workload models with an adaptively tuned mapping of infections to hospitaliza-
+tions. This diﬀerentiates our work from the patient ﬂow literature in the following ways: (1) we
+integrate fully developed workload and disease forecasting, (2) we learn model parameters rather
+than estimating them directly from incomplete or unrepresentative data-sources, and (3) we employ
+adaptive learning as new information becomes available.
+Practical contribution.
+These novel elements combine to create a model that: (1) is easily
+implemented and maintained; (2) produces consistently accurate predictions in environments with
+severely limited data and changing dynamics that are too complex to directly quantify; (3) can be
+customized to each individual hospital for actionable information; (4) integrates seamlessly with a
+suite of decision support optimizations; and (5) is easily portable to other hospitals.
+In the rest of the paper, we ﬁrst discuss the relevant literature in Section 2. We present the patient
+ﬂow model in Section 3 ahead of the disease prediction model because a hospital-speciﬁc workload
+model ﬁlled the largest gap between public health models and models that provided actionable
+information to individual hospitals. We then present the disease prediction model that feeds the
+arrival process of the hospital ﬂow model in Section 4. Finally, we illustrate applications, as well
+as extensions, of our model in Section 5, and we conclude in Section 6.
+2
+Literature Review
+The COVID pandemic triggered vast quantities of research within the scientiﬁc community. The
+most relevant are works involve disease progression and hospital workload prediction.
+2.1
+Disease Progression Prediction Models
+COVID spread models can be classiﬁed broadly as agent-based and compartmental models. Agent-
+based models describe a set of rules governing individual behavior and use simulation to examine
+global trends that emerge from individual movements and interactions with the environment. While
+agent-based models that build upon compartment models, like Cuevas (2020), Kerr et al. (2021),
+and Silva et al. (2020), oﬀer tremendous ﬂexibility, they require complex speciﬁcations and are
+7
+
+Accepted Article
+computationally intensive. In contrast, our parsimonious approach limits complexity and compu-
+tational burden by splitting our forecast into a simpler compartmental model for disease forecasting
+and a stochastic network model for modeling transient patient trajectories. Compartmental mod-
+els generally involve splitting the population into buckets of Susceptible, Infected, and Recovered
+categories (SIR) but may often be expanded to include other compartments. There are also stochas-
+tic compartmental models. References summarizing compartmental models for infectious diseases
+include Brauer and Castillo-Chavez (2012) and Diekmann et al. (2013).
+Most compartmental models for COVID modify the baseline SIR model by injecting more com-
+partments (e.g., Bertsimas et al. 2021), a time element (e.g., Chen et al. 2020b), and limited testing
+capacity (e.g., Chen et al. 2020a), among others. Mamon (2020) includes compartments for Suscep-
+tible, Exposed, Infectious, Hospitalized, Critical, Other-recovered, Released, and Dead. Bertsimas
+et al. (2021) develop DELPHI, a SEIR model extended to include varying states of patient recovery,
+detection, and quarantine. While expanding the number of compartments may be appealing, it
+requires tuning more model parameters with less data. What separates our work is that we use a
+multi-method approach to employ a tool set designed speciﬁcally to capture the dynamics of in-
+terest for each component of our forecast: adaptive disease spread models and stochastic queueing
+networks for patient ﬂow. These simpliﬁcations allow greater ﬂexibility to adapt each individual
+model to account for partially observable and scarce data with time-varying dynamics.
+In the severely limited data environment of the early pandemic, we apply the adaptive synthetic
+control (aSC) method (Chen 2020), which leverages data from counties elsewhere in the U.S. that
+have similar characteristics to the focal county to forecast the number of cases. The only other
+paper using the synthetic controls methodology of Abadie et al. (2010) in a COVID context is
+Malani et al. (2020), which examines the eﬀect of release from lockdowns. With limited data, we
+develop an adaptive SIR model with tunable parameters. Other papers using adaptive SIR models
+include Dos Santos et al. (2021), Shapiro et al. (2021), and Chen et al. (2020b). We extend these by
+coupling the SIR to a patient ﬂow model to capture the complexities of additional compartments
+(e.g. disease severity) while retaining the simplicity of single parameter tuning and simulation to
+generate prediction intervals to capture forecast uncertainty.
+2.2
+Hospital Workload Models
+A central element of our integrated model is the stochastic network model, which captures patient
+ﬂow among diﬀerent units in the hospital and predicts unit-level workload (patient census) in
+Section 3. In the context of workload modeling for COVID patients, several papers incorporate
+compartments on hospitalization in diﬀerent units into their disease progression model, e.g., Garrido
+et al. (2020), Hill et al. (2020), Veloz et al. (2020), Capistran et al. (2020). Bartz-Beielstein et al.
+(2020) develop a detailed discrete-event simulation model for patient ﬂow and provide resource
+requirement prediction under various worst-case and best-case scenarios. Compartment models
+produce average patient demand that is more suitable for systems in the steady state. These models
+often neglect the detailed patient ﬂow after admission that are key to capturing critical transient
+8
+
+Accepted Article
+dynamics, such as current hospital census, future discharges, and transfers to/from M/S to ICU,
+whereas higher-level models assume a single, static location for each patient. On the other hand,
+complicated event-based simulation models require many input parameters to be estimated, creating
+challenges in terms of computation time, parameter identiﬁcation, and data scarcity. These models
+can be too cumbersome when there is need for regular updating and rapid implementation.
+Structural queueing models for predicting COVID patient demand capture patient ﬂow but often
+lack the disease spread component. They are also challenged by parameter estimation, which is not a
+major concern in typical (non-pandemic) patient ﬂow settings. Kaplan (2020) uses a single-station,
+Erlang loss model to evaluate the ICU capacity needed at Yale New Haven Hospital. Bekker et al.
+(2021) consider a single-station inﬁnite server queue to predict patient census. They ﬁrst estimate
+the day-dependent discharge probability from data and then ﬁt a log-normal distribution for LOS.
+Zhang et al. (2020) consider unit transfers but assume deterministic length-of-stays. They do not
+consider possible time-varying changes in patient mix or LOS distributions either. Importantly,
+all these papers initially estimate the patient-ﬂow parameters from data that do not change over
+time in contrast to the adaptive procedure employed in our methodology. Section 1.1 discusses the
+importance of accounting for the rapidly changing data environment in estimating these parameters.
+The most relevant paper is Betcheva et al. (2020).
+The authors develop an integrated disease
+forecast and resource planning tool for the East of England region. The paper adopts a similar idea
+of using the mean-squared error to learn system parameters; however, the authors assume constant
+system parameters, which diﬀers from our adaptive procedure to estimate time-varying system
+parameters, which is critical to pandemic modeling and forecasting. It is also unclear from the
+paper how patient-ﬂow dynamics are modeled and whether the model can produce distributional
+workload information as we have done in Section 3.
+3
+Stochastic Network Model for Patient Flow
+Patient ﬂow in each hospital is modeled as a two-station stochastic queueing network, where the
+stations correspond to ICU units and Medical/Surgical (M/S) units in the hospital.
+Figure 5
+illustrates a model with COVID (denoted by c) and non-COVID (denoted by nc) patients. In
+our implementation, we further separate non-COVID patients into elective and emergency. In the
+ﬁgure, λ represents arrival rates, with λc(t) being either the predicted (Sec. 4) or observed conﬁrmed
+COVID cases in the county, depending on whether t is before or after the last observed data point.
+pc
+j for j ∈{MS, ICU} is the adaptively tuned fraction of county-level conﬁrmed cases that enter
+the target hospital through either the ICU or M/S units, respectively. pi
+j,j′ is the probability that a
+patient of type i ∈{c, nc} will transfer from unit j to j′ ∈{MS, ICU, H, D}, where H, D represent
+discharge to home or death. Each patient type has distinct ﬂow parameters.
+In Section 3.1, we describe the motivation behind the choice of the two-station network model.
+In Section 3.2, we list our assumptions on the arrival, transfer, and service-time processes.
+In
+Section 3.3, we specify the oﬀered-load approximation for the workload process. In Section 3.4,
+we present models for exogenous blocking.
+In Section 3.5, we introduce our adaptive learning
+9
+
+Accepted Article
+Figure 5: Queueing network model.
+procedure to estimate the ﬂow parameters for the workload process.
+3.1
+Two-station Network
+Patients arrive to either the ICU or M/S units of the hospital and stay for a random time before
+transferring to another unit or leaving the hospital. This model is suﬃciently ﬂexible to capture
+general networks with multiple stations and arbitrary transition structures. Details for general
+networks are provided in Appendix B.2. Next, we provide justiﬁcation for our choice to implement
+this simpler network structure at IU Health as part of our parsimonious design process.
+During the development process, limited data rendered the parameterization of a network model
+capturing a more detailed classiﬁcation of care units impractical / infeasible. Additionally, many of
+the major decisions made by IU Health during the pandemic, such as nurse staﬃng and bed capacity
+creation, were based on the “level of care” classiﬁcation, which divides the patient population into
+two categories based on severity of condition: critical and non-critical. These two categories require
+diﬀerent types of resources, whereas IU Health has signiﬁcant ﬂexibility to move resources within a
+level of care class. As an example, a critical care nurse can generally work in any of the critical care
+units, but an M/S nurse generally cannot work in critical care units. Early in the pandemic, IU
+Health took advantage of this ﬂexibility by pooling resources within each level of care to improve
+response to evolving and uncertain demand. Finally, this two-tier classiﬁcation facilitated rapid
+implementation of operational changes by avoiding the challenges of managing the diverse and
+complex organizational structures and operational procedures across individual units.
+While ICU and M/S generally align with critical and non-critical care, there are some subtleties.
+We combined ICU and Progressive Care Units (PCU), both of which provide critical care. Mixed-
+acuity units serve some critical care and some non-critical care patients. We include the critical
+care portion under the ICU category and the non-critical care portion within the M/S category.
+These classiﬁcations were proposed by IU Health based on their operational structure.
+3.2
+Arrival, Transfer, and Service Time Processes
+For exposition, we focus our presentation on COVID patients; the model architecture extends
+trivially to non-COVID patients. As such, we omit the superscript i ∈{c, nc} for patient types.
+Let λ(t) be the deterministic arrival rate function for the number of newly conﬁrmed COVID cases
+on day t.
+When instantiating the model on a given day, t′, λ(t) represents observed cases for
+previous days, t′ < t, and predicted cases for future days, t′ ≥t. New COVID patient arrivals
+10
+
+Accepted Article
+to unit j on day t are modeled by a random variable Λj(t) with mean λj(t) = λ(t)pj(t), where
+pj(t) represents the time-dependent fraction of conﬁrmed cases that arrive to unit j of a hospital.
+Arrivals need not follow a Poisson process; non-Poisson arrivals are addressed in Section 3.3.
+After admission to a unit, j, a patient remains in the unit for a random amount of time modeled by
+the random variable Sj ∼Geo(µj(t)), which follows a geometric distribution with time-dependent
+success probability µj(t). This structure permits the derivation of a closed-form expression for the
+workload mean and variance and plays an important role in our parsimonious design by facilitating
+adaptive tuning methods. Tuning this simpler LOS distribution produced better accuracy than
+attempting to estimate more complicated service-time distributions due to limited data and rapidly
+evolving patient LOS dynamics over the course of the pandemic.
+Upon discharge from unit j, a patient transitions to their next phase of care, j′ ∈{ICU, MS, H, D}
+(transfer to ICU, transfer to M/S, discharge to home, death) with probability pj,j′(t). For com-
+pactness, we deﬁne the set of tuning parameters for this network model as
+Θ(t) = {µj(t), pj(t), pj,j′(t)}.
+During the pandemic, regular tuning was required to capture the evolution of patient condition
+and care protocols, as well as incorporate the growing volume of new data about COVID-19. This
+tuning procedure is presented in Section 3.5.
+3.3
+An Oﬀered-load Approximation for Workload Distribution in a Network
+In this section, we develop an oﬀered-load approximation for the stochastic workload process
+{Xj(t), t = 0, 1, . . . } with parameters Θ(t), where Xj(t) represents the number of patients in unit
+j on day t. This oﬀered load model is readily extended to more general networks (Appendix B.2)
+and to capture demand for other critical hospital resources such as ventilators and staﬀ, both of
+which (and others) were included in the model implementation at IU Health.
+Let X1(t) and X2(t) denote the workloads in the ICU and M/S units respectively. We approx-
+imate (X1(t), X2(t)) with a multivariate normal distribution, N(x(t), v(t)), with mean x(t) =
+(x1(t), x2(t)) and the covariance matrix v(t). The mean for unit j, xj(t), is calculated from the
+ﬂuid approximation by solving the dynamic equation
+xj(t + 1)
+=
+xj(t)
+ 1 −µj(t)
+
++ λj(t) + pj′,j(t) · xj′(t)µj′(t),
+(2)
+where j′ = ICU for j = MS and j′ = MS for j = ICU.
+Here, xj(t)µj(t) corresponds to
+the expected number of patients leaving unit j on day t, which follows from the geometric LOS.
+Patients arrive to unit j from two sources: new patient arrivals, with mean λj(t), and transfers
+from unit j′ to unit j, with mean xj′(t)µj′(t)pj′,j(t), which is the expected discharges from unit j′
+multiplied by the probability that a patient discharge from unit j′ will transfer to unit j.
+To account for variability, we next approximate the hospital workload distribution.
+We begin
+by presenting a single station queueing model of hospital census. We then extend this classical
+model to the two-station network model implemented at IUH. This analysis reveals an appealing
+11
+
+Accepted Article
+structure for the network variance calculation, where the impact of the network transfer intensity
+(e.g., µj′(t)pj′,j(t)) appears as an isolated variance term, ˜v2,j, added to the formula for the single
+station variance, explicitly highlighting the impact of network transitions on workload variance.
+Heavy-traﬃc variance for a single-station.
+Following Whitt and Zhao (2017), we assume the
+distribution of the arrival process for a single-station Gt/GI/∞queue is approximately Gaussian
+any given t, by which we mean that the number of arrivals on interval [t, t + 1] is
+A(t, t + 1) ≈N(λ(t), c2
+aλ(t)),
+where c2
+a is the variability parameter for the index of dispersion of the arrival process (c2
+a = 1 in case
+of the Poisson arrival process). Assuming the system starts empty in the distant past, Theorem
+2.2 of Whitt and Zhao (2017) states that the workload X(t) follows a normal distribution with the
+same mean as the Mt/GI/∞queue with arrival rate {λ(t)}, but with variance given by
+v(t) =
+Z t
+0
+λ(t −s)V (s)ds,
+(3)
+where V (s) = ¯G(s)+(c2
+a −1) ¯G(s)2 and ¯G(s) is the complementary cumulative distribution function
+(CCDF) of the service time random variable. In our discrete-time model with geometric service
+times and time-dependent success probabilities, the CCDF of the service time for unit j is given
+by ¯Gj(s) = Qs
+d=1
+ 1 −µj(d)
+
+for s ≥1 and ¯Gj(0) = 1. Without transfers, the workload at unit j
+at time t + 1 can be calculated by excluding the last term from (2), with variance being
+vj(t + 1)
+=
+t
+X
+s=0
+λ(t −s)Vj(s),
+(4)
+where Vj(s) = ¯Gj(s)+(c2
+a −1) ¯Gj(s)2 and Vj(0) = c2
+aj is the variability of the arrival process.
+Network variance and covariance.
+We develop a recursive method for calculating the variance
+and covariance for the workload process at time t + 1. The workloads on day t + 1 follow:
+X1(t + 1)
+=
+V11(t) + A1(t, t + 1) + V21(t),
+(5)
+X2(t + 1)
+=
+V12(t) + A2(t, t + 1) + V22(t),
+(6)
+where Aj(t, t + 1) is the random variable for the arrivals in the interval [t, t + 1), with mean λj(t)
+and variance c2
+ajλ(t). Vjj(t) represents patients not discharged from unit j at time t, and Vj′,j(t)
+represents patients transferred to unit j from another unit j′, for j = 1, 2 and j′ = 2, 1. Finally,
+let Xj(t) −Vjj(t) −Vj,j′(t) represent patients discharged home or expired from unit j in [t, t + 1).
+Using these three compartments, not discharged, transferred, left the system, we can write
+Xj(t) = Vjj(t) + Vj,j′(t) + (Xj(t) −Vjj(t) −Vj,j′(t)).
+These compartments form a triplet,
+ Vjj(t), Vj,j′(t), Xj(t)−Vjj(t)−Vj,j′(t)
+
+, that follows a multino-
+mial random variable (r.v.) with the number of trials being the number of patients currently in the
+unit, Xj(t), and the probability vector being
+ 1−µj(t), pj,j′µj(t), (1−pj,j′)µj(t)
+
+. The expectations
+of the ﬁrst two compartments of the triplet are
+E[Vjj(t)|Xj(t)] = (1 −µj(t))Xj(t),
+E[Vj,j′(t)|Xj(t)] = pj,j′µj(t)Xj(t),
+12
+
+Accepted Article
+the variances are
+V ar[Vjj(t)|Xj(t)] = µj(t)(1 −µj(t))Xj(t), V ar[Vj,j′(t)|Xj(t)] = pj,j′µj(t)(1 −pj,j′µj(t))Xj(t),
+and the covariance between them is
+Cov[Vjj(t), Vj,j′(t)|Xj(t)] = −Xj(t)(1 −µj(t)) · pj,j′µj(t).
+Recursive variance calculation. Leveraging the above analysis, we now present our recursive
+approach to calculate the variance of Xj(t+1). We proceed by analyzing the variance and covariance
+of each component in (5) and (6) individually. Take (5) as an example. Let ˜v11 = V ar(V11(t)).
+The law of total variance implies that
+˜v11
+=
+E[V ar(V11(t)|X1(t), X2(t))] + V ar[E(V11(t)|X1(t), X2(t))]
+=
+E[X1(t)µ1(t)(1 −µ1(t))] + V ar[X1(t)(1 −µ1(t))]
+=
+x1(t)µ1(t)(1 −µ1(t)) + (1 −µ1(t))2v1(t),
+where v1(t) = V ar[X1(t)] is the variance of the workload at time t. Similarly, the variance of V21(t),
+denoted as ˜v21, is
+˜v21
+=
+E[V ar(V21(t)|X1(t), X2(t))] + V ar[E(V21(t)|X1(t), X2(t))]
+=
+E[X2(t)p21µ2(t)(1 −p21µ2(t))] + V ar[X2(t)p21µ2(t)]
+=
+x2(t)p21µ2(t)(1 −p21µ2(t)) + (p21µ2(t))2v2(t),
+where v2(t) = V ar[X2(t)].
+Let ˜cv12 be the covariance between Vjj and Vj′,j. The law of total covariance implies that
+˜cv12
+=
+Cov(V11(t), V21(t))
+=
+E[Cov(V11(t), V21(t)|X1(t), X2(t))]
+(7)
++ Cov[E(V11(t)|X1(t), X2(t)), E(V21(t)|X1(t), X2(t))],
+(8)
+where (8) equals
+Cov[X1(t)(1 −µ1(t)), X2(t)p21µ2(t)]
+=
+(1 −µ1(t))p21µ2(t) · cv(t),
+and cv(t) = Cov(X1(t), X2(t)).
+The ﬁrst term, (7), equals 0.
+To see this, conditioning on
+X1(t) = x1, V11(t) = Px1
+k=1 B1k is the sum of outcomes from x1 independent trials with (marginal)
+success probability (1 −µ1(t)). Similarly, conditioning on X2(t) = x2, V21(t) is the sum of out-
+comes from x2 independent trials.
+Given (x1, x2), all these trials are independent of one an-
+other since the trials are drawn from two diﬀerent pools of patients in the two units.
+Hence,
+Cov(V11(t), V21(t)|X1(t), X2(t)) = 0. Assuming the arrival random variable, A1(t, t + 1) is indepen-
+dent of V11 and V21, the variance is given by
+v1(t + 1)
+=
+V ar[X1(t + 1)] = ˜v11 + c2
+a1λ1(t) + ˜v21 + ˜cv12.
+(9)
+The variance for unit 2, v2(t + 1) = V ar[X2(t + 1)], can be calculated similarly.
+13
+
+Accepted Article
+The recursive calculations above require initial values for v1(0), v2(0). One method for initializing
+this recursion is to use the steady-state values of the workload variance from the single-station
+model by letting t →∞in (4).
+Covariance calculation.
+The covariance of the two queue lengths is given by
+cv(t + 1)
+=
+Cov
+ X1(t + 1), X2(t + 1)
+
+=
+−x1(t)(1 −µ1(t))p12µ1(t) −x2(t)(1 −µ2(t))p21µ2(t)
++
+
+(1 −µ1(t))(1 −µ2(t)) + p21µ2(t)p12µ1(t)
+
+cv(t)
++ (1 −µ1(t))p12µ1(t)v1(t) + (1 −µ2(t))p21µ2(t)v2(t).
+The details of the derivation are speciﬁed in Appendix B.2.
+Connection between the single-station and network variances.
+Equation (9) has an ele-
+gant structure that explicitly highlights the marginal impact of the network transition matrix on
+the workload variance through (i) the additional term, ˜v21, which can be interpreted as additional
+variance generated by transfers, and (ii) the covariance term, ˜cv12, that explicitly characterizes
+the correlation between the queue lengths in the two stations.
+We specify this connection in
+Appendix B.3 by writing the single station workload variance as a recursive function for direct
+comparison with the network variance calculation.
+Remark 1. The oﬀered-load approximation for the network model is for a given t, i.e., approxi-
+mating the distribution of (X1(t), X2(t)), not for the joint distribution across diﬀerent time points
+or for process-level approximation. When calculating the mean and variance for the workload at t,
+we leverage the recursive calculation that conditions on starting the approximation at some time
+s = 0, which does not account for the realization for s < t. This type of point approximation is
+suﬃcient for the workload prediction and associated decision making in this paper. Developing pro-
+cess approximation involves many-server heavy-traﬃc analysis such as the one in Whitt and Zhao
+(2017) and is beyond the scope of this paper.
+3.4
+Additional Model Features
+In this section, we discuss how to calculate the total workload by combining the workload generated
+by diﬀerent types of patients (e.g., COVID and non-COVID) that have diﬀerent ﬂow parameters
+and how to include exogenous blocking within our framework.
+Estimating workload for diﬀerent types of patients. The oﬀered-load approach introduced
+in Section 3.3 applies to any set of patient types. Due to the additivity of the oﬀered-load model,
+the full hospital workload, including an arbitrary number of patient types, can be decomposed into
+individual and independent oﬀered-load models for each type of patient, where each model has a
+unique set of ﬂow parameters. The ﬁnal workload can be obtained by adding the workloads from
+each individual oﬀered-load model (e.g., the models for diﬀerent types of patients).
+In this paper, we separate the workload for COVID and non-COVID patients, which allows us to
+14
+
+Accepted Article
+tailor the parameter estimation to these disparate patient classes. This is particularly important
+in a pandemic because ﬂow parameters for COVID patients change rapidly over time, whereas the
+parameters for non-COVID patients are more stable. For implementation, we further decompose the
+non-COVID patients into emergency versus elective admissions. This provides ﬂexibility to model
+elective admissions as a modiﬁable parameter, which allows hospital managers to explore the eﬀect
+of canceling/resuming elective surgeries. One could further decompose the workload calculation by
+medical specialty, though this was not implemented due to the need for model simplicity and rapid
+implementation.
+One practical feature of this decomposition approach is the ability to visualize the forecast at
+diﬀerent levels of granularity in terms of types of patients and types of resources. Leveraging this
+feature, we were able to create tools for management that can display either total ICU and M/S
+workloads or splice the prediction along patient types, groups of patient types, or even resources
+required (e.g., ventilators, nurse staﬀ) depending on the decisions to be made. For example, drilling
+down to focus solely on COVID patient workloads allows hospitals to plan for scarce resources that
+are commonly utilized by COVID patients but not as highly demanded by non-COVID patients.
+On the other hand, planning for total bed capacity or nurse staﬃng requires knowledge of the
+workload for all patients in ICU and M/S units. Our additive method also allows workloads to be
+displayed at diﬀerent levels of granularity for physical resources, e.g., individual hospital, a group
+of ﬂagship hospitals, all the hospitals within a given region, or all the hospitals in the system. Each
+of these perspectives is important for supporting diﬀerent types of health system decisions.
+Time-varying system with ﬁnite capacity.
+One drawback of the oﬀered-load approach is
+that the results are based on an inﬁnite-server queueing model, which assumes away blocking and
+waiting. This underlying assumption can be appropriate when the primary objective is to estimate
+the demand for diﬀerent services within the hospital. The data obtained from IU Health is also
+consistent with this demand-driven perspective. In the data, “unit” is determined by level of care
+(critical vs non-critical), which captures true demand for service within the hospital since the level
+of care is determined strictly by patient condition and not by other factors that can obfuscate the
+true demand such as physical location. Finally, the primary use cases for our model at IU Health
+are also consistent with our demand-centered model.
+Speciﬁcally, many of the decisions being
+supported involved redistributing ﬂexible resources that do not have hard capacity constraints and
+can be ﬂexed and moved to satisfy surges in demand (e.g., nurse staﬀand ventilators; see Section 5).
+Since the key concern during a pandemic is the ability to adjust capacity to match surge demand,
+the oﬀered load model is conceptually a good ﬁt for these types of decision processes.
+In contrast to more ﬂexible resources, hospital bed capacity represents a more restrictive constraint.
+Beds cannot be moved between locations; hence, bed capacity cannot be stretched as easily as mod-
+ifying nurse to patient ratios in response to demand surges. During standard hospital operations,
+blocking in hospitals occurs both for exogenous arrivals and internal bed assignments/transfers,
+the latter being diﬃcult to evaluate analytically. In contrast, during a pandemic, mass pooling of
+15
+
+Accepted Article
+resources and the ﬂexing of physical space in response to a surge in patients serves to minimize the
+otherwise common occurrence of internal bed-blocking. For example, M/S patients can use critical
+care beds, critical care patients can be ﬂexed to mixed acuity M/S units, and certain units can be
+repurposed to be more ﬂexible in the types of patients they can care for. In this environment, the
+primary blocking mechanism is the blocking of external arrivals to the hospital itself.
+Due to these simpliﬁed blocking dynamics, our oﬀered-load approach can be used to approximate
+exogenous arrival blocking probabilities and other congestion-related performance metrics.
+We
+begin by considering the entire hospital as a Gt/GI/n queue after pooling, with n being the total
+bed capacity and the service time being a mixture of the service time random variables for the
+diﬀerent types of patients. Following Green et al. (2007), we approximate the time-varying system
+by a stationary ﬁnite-server GI/GI/n queue at any given time t, with the arrival rate to the
+stationary queues being adjusted using the modiﬁed oﬀered-load (MOL) approach. That is, the
+“modiﬁed” arrival rate at time t follows
+λMOL(t) = E[X(t)]
+E[S] .
+Here, E[X(t)] is the expected workload on day t, which is calculated by adding all the workloads
+(COVID and non-COVID patients) from the oﬀered-load model in Section 3.3. E[S] is the expected
+service time averaged over all patient types. We analyze the corresponding stationary ﬁnite-server
+queue with arrival rate λMOL(t). If the service time is exponential or a mixture of exponentials, we
+can either use numerical methods or heavy-traﬃc approximations to analyze system performance
+measures. For example, for an M/M/n queue, when the number of beds is large (e.g., hundreds of
+beds) and the system runs in the many-server Halﬁn-Whitt regime, the blocking (delay) probability
+can be eﬃciently approximated by
+P(X(t) ≥n) ≈[1 + (βΦ(β)/φ(β))]−1,
+where Φ and φ are the cumulative distribution function and probability density function of the
+standard normal distribution, respectively, and β is the “square-root staﬃng” coeﬃcient such that
+n = E[X(t)] + β
+p
+E[X(t)]. Green et al. (2007) also provides formulas for blocking probabilities in
+other systems such as those with abandonment. In the context of discrete-time queues with geo-
+metric service times, Dai and Shi (2017) and Feng and Shi (2018) provide diﬀusion approximations
+that allow for eﬃcient calculation of various performance metrics such as the expected queue length
+and waiting time. We leave to future research the development of algorithms for approximating
+internal blocking within the hospital’s network of units, e.g., solving a multi-dimensional diﬀusion
+process to compute blocking and delay performance metrics in these systems.
+3.5
+Adaptive Learning for COVID Patient Flow Parameters with Data Scarcity
+To address challenges (1)-(3) in Section 1.1, we develop an automated learning procedure for tuning
+uncertain or censored patient-ﬂow parameters, Θ = {pc
+j, µc
+j, pc
+j,j′}, to achieve the best ﬁt with the
+16
+
+Accepted Article
+workload process for COVID patients. These parameters are learned from historical data (training
+data), and the accuracy is veriﬁed on testing data. Let Θ∗be the parameter set that minimizes the
+mean-square loss between the observed census and the predicted (mean) census from (2). Letting
+ˆxj(t) and xj(t)|Θ be the observed and predicted census in unit j on day t, respectively, Θ∗is
+calculated by
+Θ∗= arg min
+Θ
+T
+X
+t=1
+X
+j
+ ˆxj(t) −xj(t)|Θ
+2,
+(10)
+where T is the number of days included in the training data.
+Time-dependent parameters.
+We use non-parametric estimation to model Θ(t) as a piece-
+wise discrete function, partitioning training data into I time intervals deﬁned by the ordered set
+I = (t0, t1, . . . , tI), where Θ(t) = Θi for t ∈[ti, ti+1). We perform cross-validation using the training
+data to ﬁnd the best interval set, I, to avoid overﬁtting while allowing enough ﬂexibility to capture
+the underlying changes in the parameters over time.
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+Days
+0
+10
+20
+30
+40
+50
+60
+70
+80
+Number of patients
+predict COVID census in ICU
+actual COVID census in ICU
+(a) ICU census
+5
+10
+15
+20
+25
+30
+35
+40
+45
+50
+55
+Days
+0
+5
+10
+15
+20
+25
+30
+35
+40
+Number of patients
+predict COVID census in MS wards
+actual COVID census in MS wards
+(b) M/S census
+Figure 6: Patient census for the largest hospital in our partner healthcare network: March 12, 2020
+- May 6, 2020. In the plots, census data from the ﬁrst 41 days (left of the vertical dashed line)
+is used as the training data, and the remaining 14 days (right of the vertical dashed line) as the
+testing data.
+Adaptive learning procedure.
+During the pandemic, particularly in the early stage when data
+was scarce and system dynamics were changing rapidly, we re-parameterized Θ(t) on a weekly basis,
+using incremental daily data dumps automatically generated from IU Health’s census database and
+loaded as a ﬂat ﬁle onto a secure virtual machine behind IU Health’s ﬁrewall. The dataset used
+for training and testing is updated as new data become available. Parameters are estimated using
+all historical data up to the current time point. We elected to incorporate all the data rather than
+a rolling horizon because patient LOS was long relative to the data window. Using an expanding
+window prioritized stable estimates over change detection and yielded more conservative workload
+predictions. After each parameter update, we generated the workload prediction for the next 14
+days for operational use. We also generated longer-term census projections to support strategic
+decision making.
+Figure 6 shows one snapshot from this process comparing the observed and
+17
+
+Accepted Article
+predicted COVID inpatient census at one of IU Health’s hospitals from March 12 to May 6, 2020.
+For this instance, the training set included data up to April 22 (41 days).
+Using the learned
+parameters, we generated a prediction over the next 14 days (April 23 to May 6) – the right side of
+the vertical dashed line in Figure 6. Prediction accuracy is calculated as the MAPE over the testing
+set. This mid-April prediction can be compared with the ﬁrst set of predictions generated at the
+beginning of the pandemic in March (Figure 4) to observe the beneﬁts of adaptive learning. The
+tuned model is able to capture time-varying ﬂuctuations and adjust LOS and transfer estimates as
+more patients are discharged from the hospital. In Appendix B, we show another set of plots for
+the prediction generated using ﬂow parameters learned from data up to May 19 and tested on data
+from May 20 to June 2, 2020.
+Prediction performance.
+The MAPE for the ICU and M/S predictions from our integrated
+framework was 9.4% and 8.2% respectively, on the testing data for the Indianapolis region during
+the ﬁrst month of the pandemic (Figure 4). From April to early May (Figure 6), the MAPE is
+6.0% for ICU census and 10.6% for M/S census. The MAPE from our later monitoring/updating
+process never exceeded 20%.
+The predicted census numbers reported here come from the integrated model, which takes the
+disease forecast as an input and uses the calibrated patient ﬂow equations to calculate census. We
+implement a multi-step calibration procedure with adaptive tuning in this integrated model. First,
+we use the realized (actual) arrivals to hospitals to tune the length-of-stay and transfer parameters,
+i.e., µj(t)s and pj,j′(t)s. Second, we calibrate the disease forecast model using the adaptive tuning
+method speciﬁed in Section 4.2. Third, we connect the two components and tune the parameters
+that represent the fraction of COVID cases that arrive to an IU Health hospital, pj(t), with respect
+to the overall prediction performance for ICU and M/S census.
+Implications for implementation and sustained use.
+In the healthcare industry, analyt-
+ics tools that produce inconsistent quality of output over time can quickly lead to mistrust and
+abandonment. While the initial accuracy of our model was suﬃcient to merit undertaking an im-
+plementation, it is our model’s consistently accurate predictions, driven by adaptive learning, which
+has been key for its continued use in practice.
+To emphasize the importance of adaptive learning, we contrast our approach with the static, non-
+adaptive state model originally employed by hospitals at the outset of the pandemic. The state
+model performed reasonably well at IU Health until around March 19, 2020 (see Figure 4). How-
+ever, the pandemic evolved over time in three ways that contributed to inconsistencies in the state
+model prediction: (1) disease progression of COVID in Indiana ceased resembling the ﬂu-like spread
+that formed the basis of the state model; (2) as more IU Health speciﬁc data on COVID patients
+became available, it became clear that COVID ﬂow parameters at IU Health were not similar to
+national estimates upon which the state model was built; and (3) as the pandemic progressed,
+demographics of hospitalized patients along with admission and treatment protocols changed, sig-
+niﬁcantly impacting the patient-ﬂow parameters. Further, the lack of an adaptive component in
+18
+
+Accepted Article
+the state model appeared to have a compounding eﬀect over time causing the prediction error to
+grow steadily as the model began exhibiting clear prediction bias. The MAPE of the state mode
+was 42.7% (ICU) and 33.8% (M/S) in March and grew to >50% for both units during April. This
+is in stark contrast with our adaptive learning methods designed to address problems (1)-(3) in
+both the patient ﬂow and disease progression models (see Section 4.2.2) to maintain the consistent
+prediction accuracy highlighted above.
+Remark 2. Non-COVID patients’ arrival rates and ﬂows are generally more stable than COVID
+patients. Thus, we follow the existing patient-ﬂow literature to predict non-COVID workloads using
+admission, discharge, and transfer timestamps to estimate ﬂow parameters. We estimate parame-
+ters for emergency and elective patients separately using historical data from the same time period
+in the last two years, accounting for seasonality and day-of-week eﬀects. We model elective ad-
+missions as a modiﬁable parameter to allow IU Health to explore scenarios involving increasing or
+decreasing the volume of elective admissions.
+4
+Disease Prediction
+A critical component of modeling hospital resource needs during a pandemic lies in capturing ar-
+rivals of infected patients accurately. In contrast with retrospective epidemiological models that
+can be ﬁt with suﬃcient historical data, “real-time” disease prediction in response to a burgeoning
+pandemic requires methods that can eﬀectively utilize sparse and incomplete data. Further diﬀer-
+entiating from other disease forecasting research, our disease forecast acts as one crucial component
+in the framework for modeling workloads at speciﬁc hospitals. That is, prediction of the COVID
+cases provides the input λc(t) for the queueing network model presented in Section 3. As such,
+the metric by which we measure the value of the forecast model must diﬀer from models that are
+designed to forecast longer-term disease trends and/or impacts of public policy decisions. Speciﬁ-
+cally, our forecasting methods must be suﬃciently accurate at predicting the number of new cases
+on a daily/weekly scale in a small geographic region (county-level in our case).
+While there are many models capable of forecasting how a disease might spread in a population
+with limited historical data by leveraging measures such as mobility data, demographics, and
+policy levers, we found these models time consuming to design, diﬃcult to parameterize, and not
+as accurate in the short-term horizon targeted for operational-level decision making. While there
+are many use cases for these types of models, they are not a good ﬁt for our rapid deployment
+approach. Instead, we adopted a parsimonious design for quick turnaround and incorporated an
+adaptive learning component to handle sparse data and time-varying dynamics. In our approach,
+we utilize a blend of epidemiology and data-driven models to develop operational-level forecasts
+during the initial outbreak while allowing for longer-term updating. Long term forecasts of COVID
+progression allow for strategic planning and structural changes in healthcare systems. Short term
+forecasts support operational interventions that can be delivered immediately to improve response
+to surges in demand.
+To position the structure of our forecasting methods within a conceptual framework, we split the
+19
+
+Accepted Article
+phases of the pandemic into two regimes: (1) the restricted data, and (2) the limited data
+regimes. We make this distinction speciﬁcally because we develop diﬀerent models for each regime.
+The data regimes are deﬁned for a target geographical region; e.g., the region(s) that the target
+hospital serves. In the restricted regime, there is little to no data in the target region, such as
+when the pandemic ﬁrst presents in a region. We use Indiana in early March as an illustrative
+example. Indiana’s ﬁrst conﬁrmed case was detected on March 6, 2020. Over the next several
+weeks, COVID- initially spread slowly and testing was limited, providing scarce additional data
+points for estimating disease spread. For our purposes, we demarcate the boundary separating the
+restricted and limited data regimes by a threshold (lower-bound) on the number of conﬁrmed cases
+in the target region, above (below) which the number of data points is suﬃcient (insuﬃcient) to
+adequately parameterize a region-speciﬁc disease transmission model (e.g., SIR). When the ﬁrst
+infection presents in a region, the region enters the restricted data regime.
+In this regime, we
+employ our forecasting model that leverages patterns from similar regions that have more data
+points at the current time period. When the number of conﬁrmed cases surpasses the threshold
+and the region enters the limited data regime, we switch to our adaptive SIR model.
+Restricted data regime: adapted synthetic control. At the onset of the pandemic, data on
+disease characteristics was limited both because of the novelty as well as bottlenecks in the ﬂow
+of information. This limited the applicability of traditional epidemiology models, which depend
+upon calibrating parameters tailored to the particular disease and population of interest. In this
+timeframe, we implement the adapted synthetic control (aSC) methodology (Chen 2020) using
+counties with earlier outbreaks and similar characteristics to estimate how the disease may spread
+in the target region.
+Limited data regime: adaptive SIR. As more data became available, we transitioned to an
+adaptive SIR model based on calibrated disease characteristics. The SIR model has the capability
+of producing longer term forecasts base on structural models of disease transmission dynamics.
+The integrated learning component of our SIR model reacts to system changes detected from the
+data using statistical methods rather than trying to anticipate these changes from secondary data
+sources. This approach has the beneﬁt of being able to infer the true impact of mobility, policy,
+and human behavior changes (among others) rather than relying on assumptions about the eﬀect of
+these complex factors on disease spread. The drawback of this approach is a prediction lag between
+when a system change occurs and when it can be detected. For forecasting COVID cases, we found
+the prediction lag to be suﬃciently short to maintain good accuracy both in predicting cases by
+region and as an input to our operational workload model.
+4.1
+Short-term Adaptive Disease Transmission Model: Restricted Data Regime
+For short-term (24–48 hour) forecasts of the number of COVID cases, we adopt the aSC method-
+ology of Chen (2020). The method extends the comparative case study approach based on the
+Synthetic Controls methodology (SC) (Abadie et al. 2010, Xu 2017) to estimate the trajectory of
+COVID spread at the county level. Our aSC method implements a data-driven process for selecting
+20
+
+Accepted Article
+comparable counties across the U.S. from the subset of counties that had earlier outbreaks of COVID
+than the county of interest. The disease spread trajectory of the selected comparable counties is
+then used to generate a forecast. Our method has the advantages of i) explicitly accounting for
+observed heterogeneity and implicitly allowing for time-varying unobserved heterogeneity; ii) gen-
+erating forecasts at an actionable level for frontline managers; iii) being interpretable and subject
+to veriﬁcation; and iv) being extendable to forecasting relaxations of policy interventions.
+4.1.1
+Adapted Synthetic Control (aSC) Overview
+SC formulates a credible counterfactual to the treated unit by taking a weighted combination
+among the pool of untreated (non-focal) units that minimizes the diﬀerences between the treated
+and synthetic with respect to both the outcome variable and observed covariates during the pre-
+treatment period. This methodology was ﬁrst introduced in Abadie and Gardeazabal (2003) and
+formalized in Abadie et al. (2010). It is often implemented when there is no intuitive method for
+identifying a single suitable counterfactual within the pool or when simpler methodologies, such as
+averaging across all non-focal units, do not generate credible counterfactual paths from which to
+estimate the diﬀerence-in-diﬀerences eﬀect.
+aSC uses the pool of U.S. counties that reported COVID cases before a focal county in order to
+construct a synthetic county that is comparable to the focal county along observable dimensions,
+but exceeded the minimum case threshold at an earlier date. The threshold is chosen ex-ante to
+capture community spread of the disease as opposed disease being brought in by visitors. The
+focal and control counties are synchronized based on the respective dates of this threshold. The
+methodology minimizes the diﬀerence between the actual and synthetic county with regards to the
+number of COVID cases since the synchronizing event, as well as a vector of county characteristics
+that include population demographics, urban characteristics, and policy interventions, speciﬁcally
+the issuance of a shelter-in-place order.
+4.1.2
+Implementation and Results
+We generate synthetic controls for ﬁve hospital regions deﬁned by IU Health at the start of the
+pandemic. The hospital regions are composed of between one and twelve counties and represent
+the catchment areas of individual hospitals within the system. We aggregate county data to form
+the regions and implement aSC at the regional level. County demographics and characteristics
+are drawn from the Health Resources & Services Administration’s Area Health Resource Files1
+and include total population, population of males, median age, population that is 65 or older, the
+percentage in poverty, number of 16+ year-old workers that take public transportation, the number
+of 16+ workers, and population density per square mile. Additionally, we incorporate the institution
+of shelter-in-place orders. We set the minimum case threshold to 10 conﬁrmed cases.
+Across four of the ﬁve regions, our forecasts resulted in an average percentage error of 2.2% for
+forecasts up to 48 hours out. However, one region had an error of 72%. In that health region, aSC
+failed to ﬁnd a comparable synthetic counterpart as evidenced by the large error in the in-sample
+1https://data.hrsa.gov/data/download
+21
+
+Accepted Article
+ﬁt. This may be due to batch reporting of cases in this region that led to jumps of greater than 50%
+in a single day. Excluding this abnormal region, this method outperforms benchmarks using simple
+and exponential moving averages as well as regression approaches that account for heterogeneity
+and seasonality.
+4.2
+Longer-term adaptive disease transmission model: limited data regime
+While short-term forecasts are valuable for managing day-to-day operations, longer term forecasts
+allow for structural changes that can drive much larger eﬃciency gains.
+Changes that modify
+capacity, such as unit conversions, transshipment of equipment, and redeployment of medical per-
+sonnel require a longer range forecast (e.g., 1-2 weeks). Given the lack of long-term data due to
+the novelty of the pandemic, we leverage the epidemiology literature and adapt the SIR modeling
+framework in making forward forecasts.
+The SIR model separates the population into susceptible (S), infected (I), and recovered (R)
+compartments. Many COVID workload models further divide I into severity buckets; however,
+such mapping is unnecessary for us as our workload model (Section 3) already accounts for resource
+demand in a more detailed manner.
+While the number of individuals in each compartment is
+continuously evolving, we discretize it at a daily level. This is consistent not only with case data,
+which is updated daily, but also with operational decisions (e.g., workforce allocation) that are also
+most commonly made daily. Individuals move from S to I and then to R, where R captures both
+recoveries and death. Consistent with other models, we assume recovery removes the individual
+from the susceptible population.
+4.2.1
+Adaptive parameter selection
+After initial model selection, the next step involves selecting a set of parameters to include in our
+adaptive learning method. The choice of parameters is particularly important because (1) all the
+parameters are continuous, which can present computational challenges in the learning step, and (2)
+attempting to learn too many parameters may compound any identiﬁcation issues and cause poor
+prediction performance. Using a combination of intuition and experimentation, we selected two
+unknown parameters for adaptive learning: the reproductive number, R0, that determines the rate
+of disease transmission in a population and the testing fraction r that estimates what proportion
+of infected individuals are conﬁrmed by a COVID test.
+R0 was selected as a means of summarizing the myriad of complex factors that aﬀect disease
+transmission within a population. While there are a number of known external factors that inﬂuence
+disease transmission, such as public policy, mobility, and human behavior, our aim is to predict new
+cases, and thus we are agnostic to the cause of a change in disease transmission. For parsimonious
+model development, R0 provides an attractive alternative to modeling the complexities of human
+society by focusing on learning the equilibrium outcome of all the factors, summarized with a
+single learning primitive. As mentioned previously, the concession of this simpler model is that
+changes in the underlying disease dynamics will be captured with some lag. We compensate for
+this by developing an adaptive algorithm that estimates R0 as a piece-wise discrete function with
+22
+
+Accepted Article
+increasing weights on newer data to rapidly incorporate underlying changes.
+Additionally, we
+perturb the estimates in simulations to formulate conﬁdence intervals.
+This serves to support
+operational decision-making through point forecasts with quantiﬁable prediction error.
+4.2.2
+Algorithm Speciﬁcation
+At a high level, our algorithm calculates the mean percentage error of the predicted number of
+cases using the SIR model over a set of potential R0 values. We estimate a distribution for the
+underlying R0 for a time interval by taking a weighted mean and standard deviation across the set
+of R0 values, where the weights are the inverse of the prediction errors. We then sample from the
+estimated distribution and simulate disease progression for future dates to yield forecasted point
+estimates and conﬁdence intervals.
+The evolution of COVID transmission under the SIR model is deﬁned by the following set of
+ordinary diﬀerential equations:
+dS(t)
+dt
+=
+−βS(t)I(t)
+N
+(11)
+dI(t)
+dt
+=
+βS(t)I(t)
+N
+−γI(t)
+(12)
+dR(t)
+dt
+=
+γI(t),
+(13)
+where N = S(t) + I(t) + R(t) is the total population, and the parameters β and γ capture the
+transmission and recovery rates respectively. R0 is a function of these two parameters, i.e. R0 =
+β/γ. Next, we specify the adaptive algorithm to learn the R0 values from historical data and then
+present the forecasting algorithm to generate point estimates and conﬁdence intervals based on the
+learned R0 values.
+Adaptively learning R0.
+Let
+Y (t) = (S(t), I(t), R(t))
+be the state of the SIR model at time t. We consider a rolling time interval of length k-days that
+starts at each t ∈{t0, . . . , T} in our training data, where t0 is the ﬁrst day that the number of
+conﬁrmed cases exceeds some threshold (e.g., 100 cases) to allow for suﬃcient data to ﬁt the SIR
+model, and T is the last day in the training data. Denote I as the set of intervals contained in the
+training data. Within time interval i ∈I that consists of days {ti, . . . , ti + k}, we solve the system
+of equations (11)-(13) for a ﬁxed γ and for each R0 ∈[Rmin
+0
+, Rmax
+0
+]. We then set the R(i)
+0
+that gives
+the minimum relative mean squared error over interval i as the best-ﬁt R0 for this interval. Since
+each day t will be covered by k overlapping intervals (since we use the rolling intervals with 1 day
+increments), we take an average of the k best R0 values from the k intervals to determine the ﬁnal
+R0(t) for day t. We denote the set of these k intervals covering t as It. Algorithm 1 details this
+algorithm.
+The number of infected individuals is captured by I(t). Note that not all infected individuals are
+23
+
+Accepted Article
+tested and conﬁrmed due to limitations in testing capacity as well as false negative results, so I(t)
+is not the same as the number of reported (conﬁrmed) cases. To account for this, we map the
+number of infected individuals to the number of predicted reported cases using
+ˆλ(t) = r · ∆I(t),
+(14)
+where ∆I(t) = S(t −1) −S(t) is the change in the non-infected compartment, i.e., the number
+of newly infected individuals at t, and r is the testing fraction. The testing fraction is the joint
+probability of an individual receiving a test and testing positive when infected.
+Let ˆΛj = {ˆλj(ti), . . . , ˆλj(ti + k)} be the predicted cumulative conﬁrmed cases over interval i under
+reproductive number Rj
+0, and let Λ = {λ(ti), . . . , λ(ti + k)} be the reported observed cases. We
+deﬁne the relative mean squared error over the interval i for Rj
+0 as
+RMSEj
+i =
+ti+k
+X
+t=ti
+ ˆλj(t) −λ(t))
+λ(t)
+!2
+.
+(15)
+We elect to use the square of the relative errors rather than the absolute diﬀerence in order to
+emphasize limiting the variance of our estimates, which should improve the usefulness of the pre-
+dictions. We update the parameters and generate forecasts using Algorithm 1.
+Algorithm 1: Adaptive SIR algorithm
+Result: Fitted R0 for each day t ∈{t0, . . . , T}
+Deﬁne P0 = {R1
+0, . . . , RJ
+0 }, a set of R0’s from the range [Rmin
+0
+, Rmax
+0
+];
+Set initial condition Y (0);
+for segment i ∈I do
+for Rj
+0 ∈P0 do
+for t ∈{ti, . . . , ti + k} do
+Solve (11)-(13);
+Calculate ˆλ(t) from (14);
+end
+Calculate RMSEj
+i from (15);
+end
+Set R(i)
+0
+= arg minRj
+0 RMSEj
+i ;
+Update Y (ti+1) by solving (11)-(13) with R(i)
+0 ;
+end
+Output: R0(t) = 1
+k
+P
+i∈It R(i)
+0
+for each t ∈{t0, . . . , T}
+Forecasting new cases.
+We leverage the {R0(t) : t = 1, . . . , T} learned from Algorithm 1
+to forecast future disease progression for t ∈[T + 1, T + k]. There are diﬀerent alternatives to
+generating the point estimates. One method is to use ˆR0 = R0(T), i.e. the R0 from the most recent
+segment, to solve equations (11)-(13) to generate the predicted ˆλ(t) for t ∈[T + 1, T + k]. An
+alternative is to take an average of R0(t) for t ∈[T −ℓ, T] for some ℓdays to generate the predicted
+cases. In our implementation, we use the ﬁrst method for its simplicity and interpretability.
+To generate the conﬁdence intervals, we adopt a Monte-Carlo approach. We ﬁrst estimate the
+24
+
+Accepted Article
+sample standard deviation ˆσ in R0 based on the learned values {R0(t)}. Then we run M replications
+using Monte-Carlo simulation for future cases. In each replication, we draw a sample R0 from
+the N( ˆR0, ˆσ2) distribution.
+We then simulate COVID spread for the sampled R0 for the t ∈
+[T + 1, T + k]. Finally, we use the M simulated paths to generate conﬁdence intervals for the
+predicted new COVID cases.
+4.2.3
+Forecasting Performance
+We implement our SIR prediction algorithm using data from March through June on a 14-day
+rolling horizon (k = 14) with a ﬁxed γ of 0.1 (i.e. 10 day recovery) and a range of R0 ∈[0.5, 6.0]
+in increments of 0.05. The window size was chosen based on ranges from epidemiology studies on
+recovery days and other forecasts (Deasy et al. 2020, Fantazzini 2020). We ﬁxed γ according to the
+midpoint of CDC guidelines on post-symptom quarantine (Centers for Disease Control 2020) and
+selected a wide range of R0 that covers the minimum and maximum estimates found in literature.
+After some experimentation tuning both R0 and the testing fraction, r, we found that a ﬁxed
+testing fraction of 15% yielded stable and accurate performance, allowing us to further pare down
+our learning parameters to include only R0. Note that 15% implies that true infections are six
+times the number of reported infections, which falls within estimated ranges (typically 4-10 times),
+though the literature is sparse (McCulloh et al. 2020, Aizenman et al. 2021). We test our predictions
+across the same ﬁve hospital regions deﬁned by IU Health with updating; i.e., we update the SIR
+compartments as new data becomes available in the rolling horizon.
+Using the adaptive SIR model, we ﬁnd the R0 that minimizes our in-sample error (shown in
+Figures 7a and 7b), and we use it to generate our forecasts. When evaluating our predictions of
+total cases, we ﬁnd an out-of-sample MAPE of 3.5% on average with a range of 1.3% to 5.7%
+across the regions for all periods. Errors range from 0.4% when forecasting one day ahead to 9.0%
+when looking fourteen days out. The breakdown by region is shown in Figure 8, which suggests
+strong performance across all regions but with notable heterogeneity. By comparison, a static SIR
+model where R0 is ﬁxed at the value that minimizes the average error across all data before the ﬁrst
+adaptive segment has an average percentage error of 18.8% with a range of 2% to 38% looking one
+to fourteen days out. Examining speciﬁc time frames, the ﬁrst adaptive segment had an average
+forecast error of 8.2% while the static forecast error over the same period was 11.8%. The relative
+outperformance of adaptive SIR increases over the remaining segments.
+5
+Use Cases for the Workload Prediction Model
+The primary product of our multi-method framework is the prediction of the workload distribu-
+tion for target hospitals. To provide hospitals with additional information about critical resources
+needed for responding to the pandemic, we generate secondary outputs, including resource uti-
+lization, staﬃng requirements, ventilators, and personal protective equipment.
+These resource
+utilization predictions can be derived directly from the detailed patient demand prediction by esti-
+mating a resource usage parameter, αi
+j, for each type of patient (i) and location (j) either directly
+25
+
+Accepted Article
+(a) SIR forecast of cumulative cases:
+Indianapolis
+(b) SIR forecast of cumulative cases:
+Indianapolis Suburbs
+Figure 7: Prediction of census from our application.
+Figure 8: SIR forecast Mean Percentage Error by number of predicted days.
+from the data or using our adaptive tuning methods. As one example from our data (for one hos-
+pital during one period of time), 52% of ICU COVID patients (αc
+ICU = 0.52) and 2.5% of non-ICU
+COVID patients (αc
+MS = 0.25) required a ventilator. Hence, a point estimate of COVID ventilator
+needs could be calculated as xc
+v(t) = αc
+ICU · xc
+ICU(t) + αc
+MS · xc
+MS(t), where x(·) is the mean of the
+workload process X(·) as discussed in Section 3. The distributional estimate of ventilator usage
+would be the convolution of binomial random variables representing the number of patients of each
+type/unit pair requiring a ventilator. Let Xc
+v,j(t) ∼Bin
+
+Xc
+j(t), αc
+j
+
+be the random variable for
+the number of COVID patients requiring a ventilator in unit j ∈{ICU, MS} at time t. Then
+Xc
+v(t) = Xc
+v,ICU(t) + Xc
+v,MS(t). A similar calculation can be done for ventilators for non-COVID
+patients, for PPE, etc.
+These predictions have been used by IU Health to inform both tactical and operational decisions.
+To provide additional support for these decisions, we are able to build decision models on top of our
+prediction, which is facilitated by the parsimonious design. Examples include: timing and volume
+of advanced purchases of nasal canula, PPE, pharmaceuticals, additional diagnostic equipment,
+CPAP; proactive hiring of temporary agency nurses; optimized staﬀplanning; and ﬂexible resource
+re/allocation (the rightmost panel in Figure 2); among others. The resource utilization forecast
+has also been used to support what-if analysis for intervention strategies, surge capacity plans,
+26
+
+Accepted Article
+and logistics planning decisions among others. In this section, we provide details of the decision
+support systems developed for two main use cases that were requested by IU Health. These use
+cases demonstrate that our ﬁnal forecast model is capable of achieving the overarching goal of
+this research: to provide actionable information to support hospital decision making during a
+pandemic.
+5.1
+Leveraging Health System Scale for Resource Transshipment
+One of the innovations IU Health implemented during COVID was initiating a program to transfer
+nurses between between hospitals and even between regions, the expansion of which has become a
+strategic goal for 2021. Implementing such a signiﬁcant change necessitated data-driven support to
+justify both the direct cost and change management eﬀorts. We worked closely with IU Health’s
+nursing organization to provide this support by building a nurse transshipment model that delivers
+both tactical and operational plans. All design speciﬁcations were chosen or vetted by IU Health,
+considering feasibility of implementation and value to the organization, staﬀ, and patients. The
+complexity of the decision process and careful consideration given by IU Health leadership is re-
+ﬂected in the diverse output metrics present subsequently. Each of the metrics was used during
+the decision making process and taken together, the metrics reﬂect the diﬀerent perspectives of
+individual hospitals (source or destination), the overall hospital network, and the nurses.
+Structure of nurse transshipment program.
+The following features provide a high-level
+overview of the nurse transshipment program. We specify the model formulation in Appendix A.2.
+This optimization takes the (stochastic) workload forecast as an input to generate a two-week
+transshipment schedule one week in advance. The schedule represents a tentative relocation plan
+so nurses can have some advance warning if they may need to travel. Nurses receive additional pay
+plus a relocation bonus when asked to travel. Depending on the distance a nurse travels, there is
+a minimum number of days they must work at the alternate location, which we call secondment,
+to avoid an excessive (and possibly dangerous) commute in addition to a typical 12 hour shift.
+When the demand in each hospital/region is realized, IU Health has the option to either cancel a
+transshipment (call-back), or enact an additional “emergency” transshipment at a premium cost.
+Both practices are currently being used on a smaller scale within the Indianapolis region, so there
+is precedent for these types of actions. For comparison, in Appendix A.7 we describe a similar
+ventilator transshipment model. There are two key diﬀerences between these transshipment mod-
+els: (1) when a nurse is transferred, a transfer cost and a salary premium (for the duration of
+secondment) is paid, whereas only a transfer cost is incurred when a ventilator is borrowed; and (2)
+a nurse can be transferred only from her “home” location, whereas a ventilator can be borrowed
+from any location. In this sense, there is no expectation that the ventilators must be returned to
+their original location.
+Transshipment model products. Next, we present some products of the decision model that
+are used in support of IU Health’s data-driven transshipment program. Additional products are
+described in Appendix A.5. The results below are generated by solving the transshipment model
+27
+
+Accepted Article
+using our workload forecast for three diﬀerent scenarios that are based on diﬀerent demand patterns
+observed during the pandemic: unbalanced (e.g., March/April), ﬂat (e.g., May), and increasing
+(e.g., September). The actual numbers are modiﬁed to protect IU Health data, but the underlying
+results are similar in nature.
+The model inputs, secondment, additional pay, transfer bonuses,
+emergency premiums, understaﬃng costs, and capacities were provided by IU Health based on
+surveys soliciting nurse input combined with nurse management strategy sessions. The call-back
+penalty is set to 0.05 to avoid excessive ex-ante transshipments while also capturing the reality
+that it is desirable to keep a nurse in their “home” region. Two hundred stochastic scenarios are
+generated from the distributional workload prediction model. All input parameters are summarized
+in Appendix A.4.
+Figure 9: Percentage of transfers versus understaﬃng in the unbalanced and ﬂat census scenarios
+Tactical plan. To support IU Health’s tactical decision regarding how many transfers they are
+willing to accept for subsequent improvements in system-wide understaﬃng, we generate a Pareto
+curve showing percentage of transfers (number of transfer shifts divided by total shifts over the
+14-day horizon) versus the understaﬃng percentage (in terms of shifts required vs shifts worked)
+across all ﬁve regions; see Figure 9. These products allow IU Health to choose a particular point
+on the curve based on nursing management goals.
+This tactical selection implies a set of cost
+parameters that are subsequently used to generate daily operational decisions.
+Operational Plan. To frame the operational plan based on the chosen tactical plan, we begin
+with our “bird’s eye view” of the impact of the transshipment plan on the ﬁve regions in Figure 10
+for the unbalanced scenario. The dotted lines and solid lines are the utilization with and without
+transshipment respectively, plotted on the left y-axis. For reference, we also plot the expected
+census (over the 200 scenarios) below the utilization curves, scaled on the right y-axis.
+These
+ﬁgures provide an easily interpreted, informative visual for IU Health nursing management, who
+are intimately familiar with the staﬃng situations in each region.
+Even at a quick glance, it
+is clear that Regions 1 and 3 – Indianapolis and Indianapolis Suburbs – experience signiﬁcant
+capacity issues when no transshipments are executed (solid line), while Regions 2 and 4 – East
+Central (Muncie) and South Central (Bloomington) – have some spare capacity. Region 5 – West
+28
+
+Accepted Article
+Figure 10: System-wide impact of transshipment plan on regional staﬃng utilization.
+Left y-axis: Capacity utilization. Right y-axis: Region census
+Central (West Lafayette) – progresses from overloaded to underloaded back to overloaded. These
+unbalanced scenarios are not uncommon given that these ﬁve regions serve diﬀerent communities
+and span over 150 miles north to south and the entire width of the state. From this ﬁgure, the
+impact of transshipment is clear and provides a strong argument when lobbying for expansion of
+the transshipment plan, which has since been successfully accomplished. See Appendix A.5 for
+results in other scenarios.
+5.2
+Preparation for Subsequent Waves of the Pandemic
+Due to COVID, combined with the upcoming ﬂu season, IU Health planned to hire travel nurses to
+supplement their existing workforce. To identify the maximum number of nurses to cover system-
+wide need during the highest projected future surge, we designed a regional Newsvendor model
+(formulated in Appendix A.8), in line with our rapid deployment approach favoring the simplest
+valuable solution. The Newsvendor takes our forecast as demand and estimates the daily number
+of nurses needed over the next several months in each region. This model was integrated into IU
+Health’s staﬃng matrix to project gaps between available and desired staﬀduring diﬀerent points
+in the upcoming ﬂu/COVID season from September to February.
+As nasal canulas emerged as an eﬀective mechanism for treating COVID, a similar approach was
+requested to analyze the timing and volume of an advanced purchase of this equipment to meet
+anticipated need. This was also to avoid waiting and delayed shipments as COVID-relevant medical
+equipment was in high demand while, at the same time, supply chains had been disrupted causing
+signiﬁcant capacity and transportation issues.
+6
+Conclusion and Future Work
+In this work, we develop and implement a multi-method model that integrates disease progression
+and operational workload models in collaboration with the largest healthcare network in Indiana
+29
+
+Accepted Article
+for their COVID response and surge planning. We highlight our parsimonious design philosophy
+in which we trade oﬀmodel complexity for adaptability, computational eﬃciency, and speed of
+development, validation, and implementation. Our parsimonious approach allows us to address key
+challenges in pandemic modeling: severely limited data, partially observable outcomes of interest,
+and largely time-varying system dynamics that must be regularly re-learned.
+Via multiple layers of adaptive learning, our tools can adapt to rapidly evolving information during
+diﬀerent stages of a pandemic, providing a tailored, consistently accurate prediction for individual
+hospitals, with a MAPE of less than 10%, while the model used by the state of Indiana exhibited
+a MAPE of over 30% over the same time frame. Our workload prediction provides the basis for
+forecasting demand for resources and is detailed enough to support operational decision optimiza-
+tion at the hospital level, in contrast to other existing COVID forecasting models.
+Facilitated
+by the simplicity of our prediction model, we were subsequently able to build a suite of decision
+support optimization tools that have been used to support nurse hiring and nurse transshipment
+decisions.
+In our ongoing collaboration, we are working to provide workload census prediction on an hourly ba-
+sis for individual units in a hospital, which incorporates a personalized projection of time-dependent
+resource usage for patients currently in the hospital and predicted elective patient arrivals based
+on the surgical schedule for future days, among other details. This reﬁned census prediction will be
+used to support the nurse staﬃng plan at IU Health, including proactive hiring of contract nurses
+and allocation of ﬂoat nurses. According to IU Health, this directly impacts more than 400 nurses
+in their ﬂoat pool and indirectly impacts all 9,000 nurses in the system.
+References
+Abadie A, Diamond A, Hainmueller J (2010) Synthetic control methods for comparative case studies: Esti-
+mating the eﬀect of California’s tobacco control program. Journal of the American Statistical Associ-
+ation 105(490):493–505.
+Abadie A, Gardeazabal J (2003) The economic costs of conﬂict: A case study of the Basque Country.
+American Economic Review 93(1):113–132.
+Aizenman
+N,
+Carlsen
+A,
+Talbot
+R
+(2021)
+Why
+The
+Pandemic
+Is
+10
+Times
+Worse
+Than
+You
+Think.
+https://www.npr.org/sections/health-shots/2021/02/06/964527835/
+why-the-pandemic-is-10-times-worse-than-you-think, [Online; accessed 28-Feb-2021].
+Bartz-Beielstein T, Rehbach F, Mersmann O, Bartz E (2020) Hospital capacity planning using discrete event
+simulation under special consideration of the COVID-19 pandemic. arXiv:2012.07188 1–18.
+Bekker R, Koole G, et al. (2021) Modeling COVID-19 hospital admissions and occupancy in the netherlands.
+arXiv preprint arXiv:2102.11021 .
+Bertsimas D, Boussioux L, Cory-Wright R, Delarue A, Digalakis V, Jacquillat A, Kitane DL, Lukin G, Li
+M, Mingardi L, et al. (2021) From predictions to prescriptions: A data-driven response to COVID-19.
+Health Care Management Science 1–20.
+30
+
+Accepted Article
+Betcheva L, Erhun F, FeylessouﬁA, Gon¸calves P, Jiang H, Kattuman P, Pape T, Pari A, Scholtes S, Tyrrell
+C (2020) Rapid COVID-19 modeling support for regional health systems in england. Available at SSRN
+3695258 .
+Brauer F, Castillo-Chavez C (2012) Mathematical Models in Population Biology and Epidemiology (New
+York, NY: Spring).
+Capistran MA, Capella A, Christen JA (2020) Forecasting hospital demand during COVID-19 pandemic
+outbreaks. arXiv:2006.01873 1–30.
+Centers for Disease Control (2020) Options to reduce quarantine for contacts of persons with SARS-CoV-2 in-
+fection using symptom monitoring and diagnostic testing. URL https://www.cdc.gov/coronavirus/
+2019-ncov/more/scientific-brief-options-to-reduce-quarantine.
+Chen CJ (2020) Forecasting infection progression: Adapting synthetic controls to predicting COVID-19
+spread. Working Paper .
+Chen N, Hu M, Zhang C (2020a) Capacitated sir model with an application to COVID-19. Available at
+SSRN: https://ssrn.com/abstract=3692751 1–34.
+Chen YC, Lu PE, Chang CS (2020b) A time-dependent SIR model for COVID-19 with undetectable infected
+persons. IEEE Transactions On Network Science and Engineering 7(4):3279—-3294.
+Cuevas E (2020) An agent-based model to evaluate the COVID-19 transmission risks in facilities. Computers
+in Biology and Medicine 121:103827.
+Dai J, Shi P (2017) A two-time-scale approach to time-varying queues in hospital inpatient ﬂow management.
+Operations Research 65(2):514–536.
+Deasy J, Rocheteau E, Kohler K, Stubbs DJ, Barbiero P, Li`o P, Ercole A (2020) Forecasting ultra-early
+intensive care strain from COVID-19 in England. MedRxiv .
+Diekmann O, Heeserbeek H, Britton T (2013) Mathematical Tools for Understanding Infectious Disease
+Dynamics (Princeton, NJ: Princeton University Press).
+Dos Santos I, Almeida G, De Moura F, et al. (2021) Evolution of SARS-CoV-2 in the state of alagoas-brazil
+via an adaptive sir model. International Journal of Modern Physics C (IJMPC) 32(03):1–6.
+Fantazzini D (2020) Short-term forecasting of the COVID-19 pandemic using google trends data: Evidence
+from 158 countries. Applied Econometrics 59:33–54.
+Feng J, Shi P (2018) Steady-state diﬀusion approximations for discrete-time queue in hospital inpatient ﬂow
+management. Naval Research Logistics (NRL) 65(1):26–65.
+Garrido JM, Martinez-Rodriguez D, Rodriguez-Serrano F, Perez-Villares JM, Ferreiro-Marzal A, del Mar
+Jimenez-Quintana M, Grupo de Estudio COVID-19 Granada, Villanueva RJ (2020) Mathematical
+model optimized for prediction and health care planning for COVID-19. arXiv:2012.05804 1–23, URL
+http://dx.doi.org/10.1016/j.medin.2021.02.014.
+Green LV, Kolesar PJ, Whitt W (2007) Coping with time-varying demand when setting staﬃng requirements
+for a service system. Production and Operations Management 16(1):13–39.
+Grimm CA (2020) Hospital experiences responding to the COVID-19 pandemic: Results of a national pulse
+survey March 23–27, 2020. US Department of Health and Human Services OoIG, 1–41.
+Hill A, Levy M, Xie S, Sheen J, Shinnick J, Gheorghe A, Rehmann C (2020) Modeling COVID-19 spread vs
+healthcare capacity. URL https://alhill.shinyapps.io/COVID19seir/.
+Kaplan EH (2020) OM Forum — COVID-19 scratch models to support local decisions. Manufacturing &
+Service Operations Management 22(4):645–655.
+31
+
+Accepted Article
+Kerr CC, Stuart RM, Mistry D, Abeysuriya RG, Rosenfeld K, Hart GR, N´u˜nez RC, Cohen JA, Selvaraj P,
+Hagedorn B, et al. (2021) Covasim: an agent-based model of COVID-19 dynamics and interventions.
+PLOS Computational Biology 17(7):e1009149.
+Malani A, Soman S, Asher S, Novosad PM, Imbert C, Tandel V, Agarwal A, Alomar A, Sarker A, Shah
+D, Shen D, Gruber J, Sachdeva S, Kaiser D, Bettencourt L (2020) Adaptive control of COVID-19
+outbreaks in india: Local, gradual, and trigger-based exit paths from lockdown. NBER Working Paper
+No. w27532 1–30.
+Mamon GA (2020) Regional analysis of COVID-19 in france from ﬁt of hospital data with diﬀerent evolu-
+tionary models. arXiv:2005.06552 1–21.
+McCulloh I, Kiernan K, Kent T (2020) Inferring true COVID-19 infection rates from deaths. Frontiers in
+Big Data 3:37.
+Shapiro M, Karim F, Muscioni G, Augustine A (2021) Are we there yet? adaptive sir model for continuous
+estimation of COVID-19 infection rate and reproduction number in the united states. Journal of Medical
+Internet Research 23(4).
+Silva PC, Batista PV, Lima HS, Alves MA, Guimar˜aes FG, Silva RC (2020) COVID-ABS: An agent-based
+model of COVID-19 epidemic to simulate health and economic eﬀects of social distancing interventions.
+Chaos, Solitons & Fractals 139:110088.
+Veloz T, Maldonado P, Ropert S, Ravello C, Mora S, Barrios A, Villaseca T, Valdenegro C, Perez-Acle T
+(2020) On the interplay between mobility and hospitalization capacity during the COVID-19 pandemic:
+The SEIRHUD model. arXiv:2006.05357 1–14.
+Whitt W, Zhao J (2017) Many-server loss models with non-poisson time-varying arrivals. Naval Research
+Logistics 64(3):177–202.
+Xu Y (2017) Generalized synthetic control method: Causal inference with interactive ﬁxed eﬀects models.
+Political Analysis 25(1):57–76.
+Zhang T, McFarlane K, Vallon J, Yang L, Xie J, Blanchet J, Glynn P, Staudenmayer K, Schulman K,
+Scheinker D (2020) A model to estimate bed demand for COVID-19 related hospitalization. medRxiv .
+32

@@ -1,0 +1,1285 @@
+TITLE: A reinforcement learning approach to dynamic portfolio optimization
+JOURNAL: Annals_OR
+YEAR: 2025
+DOI: https://doi.org/10.1007/s10479-025-06649-x
+---
+
+Annals of Operations Research
+https://doi.org/10.1007/s10479-025-06649-x
+ORIGINAL RESEARCH
+A reinforcement learning approach to dynamic portfolio
+optimization
+Maximilian Gollart1 · Yarema Okhrin1
+Received: 19 May 2024 / Accepted: 5 May 2025
+© The Author(s) 2025
+Abstract
+This paper intends to bridge the gap between traditional and machine learning (ML) meth-
+ods for dynamic portfolio optimization. We consider an investor who maximizes his utility
+from terminal wealth by dynamically allocating between risky and risk-free assets over time.
+Departing from the Deep Deterministic Policy Gradient (DDPG) algorithm by Lillicrap et al.
+(2016), we build a model-free reinforcement learning (RL) approach that is capable of deriv-
+ing approximately optimal investment policies without any knowledge about the underlying
+market dynamics. It is agnostic to rebalancing frequency, allows for easy implementation
+of allocation constraints and requires low computational effort. For testing our algorithm
+we benchmark it against the theoretically optimal solution. Considering a realistic market
+model that is still theoretically feasible, enables us to show in detail the inherent connections
+between RL and dynamic portfolio optimization. Based on that we discuss the economic
+interpretability of this ML approach and the real-world applicability of such ML methods in
+general.
+Keywords Portfolio optimization · Reinforcement learning · Dynamic asset allocation ·
+Machine learning · DDPG
+1 Introduction
+The topic of portfolio selection is one of the oldest and still one of the most discussed
+research areas in ﬁnancial economics. One stream of research in this ﬁeld focuses on the
+case of an investor who maximizes expected utility from terminal wealth by dynamically
+allocating his wealth between risky assets and a risk-free asset each period until the end of
+his investment horizon. One-period optimization problems are often solvable analytically.
+Recent developments in stochastic control have also put forth analytic solutions for the more
+realistic case of an investor changing his asset allocation dynamically over time.
+To name some examples, Escobar-Anel et al. (2022) or Kraft (2005) propose a closed-
+form optimal allocation formula considering a two asset case with one risky asset. The former
+B Yarema Okhrin
+yarema.okhrin@wiwi.uni-augsburg.de
+Maximilian Gollart
+maximilian.gollart@tum.de
+1
+Chair of Statistics and Data Science, Faculty of Business and Economics, University of Augsburg,
+Augsburg, Germany
+123
+
+Annals of Operations Research
+assume a spot asset whose variance follows the GARCH(1,1) process from Heston and Nandi
+(2000) (HN-GARCH) while the latter’s risky asset is modeled by the Heston model from
+Heston (1993). The advantages of analytic traceability are twofold. On the one hand, they
+can help to gain a good conceptual understanding, for example by being able to determine
+parameter sensitivities unambiguously. On the other hand, very low computational effort is
+needed to calculate optimal allocations once all parameters are properly estimated. However,
+eventhoughthereisanongoingefforttogeneralizeexistingmodels,likeforexampleEscobar-
+Anel et al. (2021) who extend the solution from Escobar-Anel et al. (2022) to general afﬁne
+GARCH models, or approaches like in Davis and Lleo (2021), Sass et al. (2017), Sass et al.
+(2021) or Nagai (2023), who consider multiple risky assets and include features like expert
+opinions, stochastic drift or incomplete information, closed-form methods are inherently
+bound to their respective model setup. Furthermore, estimating model parameters robustly
+and reliably is often far from trivial in practice.
+To overcome these limitations, another stream of research focuses on the design of numer-
+ical approaches. Simulation-based methods are one popular choice in academic literature.
+Chen (2005) considers a multi-period multi-asset setting where the investor maximizes his
+utility under constraints. They assume a multivariate GARCH model and obtain an approxi-
+mate solution with a stochastic optimization procedure. Another seminal paper in this context
+is Brandt et al. (2005). They derive an approximate value function that determines the
+investors’ expected utility by a regression-based Monte Carlo (MC) approach. They generate
+simulated returns assuming an arbitrary stochastic process and obtain the expectations via a
+Longstaff and Schwartz (2001) inspired regression. In general, having a representation for
+the value function allows to obtain the optimal investment strategy. Their work was recently
+picked up by Zhu and Escobar-Anel (2022) and Zhu et al. (2022) who obtain a closed-form
+representation of the value function and estimate its parameters via a polynomial regression.
+The idea of approximating the functional relationship between variables is also widely
+spread in the ﬁeld of machine learning (ML). Neural networks (NNs) have been widely used
+as general function approximators as they do not require assumptions about the functional
+form and are able to approximate any bounded continuous function as show by Cybenko
+(1989). Zhu and Escobar-Anel (2021) apply this property to obtain a polynomial exponential
+value function via a NN that was trained on simulated return data.
+The ongoing rapid advances in the ﬁeld of ML beyond pure function approximation via
+NNsprovidemanynewapproachestosolvingproblemsthathavenotbeenfeasiblebefore.For
+example, Jiang et al. (2020) propose a method for predicting price trends by analysing images
+of asset price charts. Another popular area of application is to extend traditional, mostly linear
+asset pricing models by taking into account non-linear effects (e.g. Gu et al. (2018), Gu et al.
+(2019)). For the particular task of multi-period portfolio allocation, it is necessary to ﬁnd an
+optimal policy (i.e., investment strategy) that maximizes the future reward of an investor (i.e.,
+his utility from terminal wealth). A class of algorithms that was designed particularly for this
+kind of task is summarized under the term reinforcement learning (RL). A short introduction
+to the literature that is of particular relevance for this paper is given in Section 3.
+The potential advantages of RL for application in portfolio optimization are striking. First,
+an optimal policy can be learned directly from observable market variables. There is no need
+to rely on any assumptions or simpliﬁcations regarding market dynamics and risk estima-
+tion. Second, RL can take a large number of observable market variables into account when
+searching for an optimal policy. Due to these advantages and its successful application in
+many other ﬁelds, RL has been of interest for researchers in portfolio optimization for a long
+time with increasingly growing attention in recent years. Moody et al. (1998) and Moody
+and Saffell (2001) are early articles in which researchers applied RL for deriving optimal
+123
+
+Annals of Operations Research
+investment strategies for different performance metrics like terminal wealth, economic utility,
+Sharpe ratios etc. and benchmark their algorithm against a Q-learning approach in historic
+backtests for different asset classes. Building on Wang et al. (2020), Wang and Zhou (2020)
+and Jia and Zhou (2022) propose methodologies for optimizing mean-variance portfolios
+with one risky and one risk-free asset over time where the risky asset is assumed to follow
+a geometric Brownian motion (GBM). Aboussalah and Lee (2020) tackle a similar problem
+using real world data and incorporating market frictions like trading costs and short-selling
+constraints. Opposite to the papers above, Bayraktar and Kara (2023) chose a more theo-
+retical approach by proving certain bounds for the approximation error when discretizing
+general continuous-time stochastic control problems (like for example dynamic portfolio
+optimization problems) and solving them via Q-learning.
+While it might be tempting to tackle very complex investment settings due to the ﬂexibility
+of RL, this makes it hard to actually assess the obtained results. Most papers evaluate their
+strategy on a historical backtest and benchmark it against other solutions. However, strategies
+that are designed on the basis of backtests are usually not robust out-of-sample due to the
+highly stochastic and time-varying nature of ﬁnancial markets. Moreover, when doing so there
+is no notion of how optimal an obtained policy actually is. Even though considering complex
+optimization settings is important and some of the proposed algorithms have demonstrated
+a good performance in individual experiments, the trust in those results is mostly far from
+being enough to actually base investment decisions on them. First, one needs to build a solid
+foundation on how each aspect of RL behaves in a portfolio optimization setting. To make this
+stream of research truly valuable for application in the real world one needs to convincingly
+show that RL can work well in a realistic setting but one that still exhibits controllable
+complexity. Weissensteiner (2009) is one rare example where RL is applied to a classical
+dynamic portfolio optimization problem, namely the one introduced in Merton (1969). The
+investor maximizes an expected von Neumann-Morgenstern utility from terminal wealth by
+choosing from a discrete set of possible allocations in a binomial tree market. Q-learning
+is applied to learn the optimal policy and value function. Moreover, Jiang et al. (2022) use
+RL to better deal with estimation errors when deriving optimal Kelly strategies. Like other
+papers mentioned above, they apply the entropy-regularization RL framework proposed by
+Wang et al. (2020) in a market with one risky asset that follows a GBM. They even take
+a short detour, to analyze the algorithms performance when the stochastic volatility model
+from Heston (1993) is used as the data generating process. Both, Weissensteiner (2009) and
+Jiang et al. (2022) take advantage of the availability of a closed-form solution to assess the
+performance of their respective RL algorithm. For more resources regarding RL approaches
+for stochastic optimization with a focus on ﬁnancial mathematics applications we refer the
+reader to Jaimungal (2022).
+We intend to contribute to the discussion on how robust and reliable we can expect such
+kinds of algorithms to be. More speciﬁcally, this paper investigates the capabilities of RL in
+deriving optimal dynamic investment strategies by applying it to realistic but still analytically
+tractable market environments. We consider a discrete-time setting with a multi-dimensional
+continuous state and action space. A class of RL algorithms that has proven to work par-
+ticularly well in such environments are policy gradient (PG) methods. In particular, we use
+the deep deterministic policy gradient (DDPG) algorithm proposed by Lillicrap et al. (2016)
+as a starting point and show how it can be adopted to better cope with the speciﬁc chal-
+lenges arising in the context of dynamic portfolio optimization. To assess the performance
+of our algorithm we benchmark it against the theoretical optimal solution and show that the
+optimum solution can be approximated to a reasonable degree of accuracy with low com-
+putational effort. Further, the comparison to the analytic benchmark enables us to compare
+123
+
+Annals of Operations Research
+various elements of the optimization problem allowing us to transfer the economic intuition
+gained in the closed-form setting to RL. As an extension of the analytic benchmarking set-
+ting, our approach is agnostic to rebalancing frequency and allows for easy implementation
+of allocation constraints.
+The remainder of this paper is structured as follows. Section 2 formally introduces the
+problem setting. Section 3 gives an overview of the relevant developments in RL. In Section
+4 we develop a RL methodology for solving the portfolio optimization problem. Section 5
+shows numerical results while Section 6 elaborates on their robustness. Section 8 summarizes
+and concludes the paper.
+2 Problem formulation
+The problem of interest is to maximize the expected utility from terminal wealth, i.e., to ﬁnd
+a strategy π∗that solves the optimal control problem1
+0(v0, h1) = max
+{πt}T−1
+t=0
+E0 [U (VT )] ,
+V (0) = v0 > 0,
+(1)
+where U is a power utility function of the form U (v) = vη
+η , η < 0, Vt is the portfolio
+value at time t with v0 being the deterministic starting wealth and ht is the variance of the
+risky asset. We will work in the space U[0, T ] of admissible strategies π := {πt}t∈{0,1,...T },
+comprising of admissible actions πt from the set At satisfying the following conditions: πt
+is Ft-progressively measurable and self-ﬁnancing, wealth is non-negative in [0, T ] and the
+expectation in (1) is well-deﬁned. Further, the ﬁnancial market is deﬁned as follows. Let (,
+F, P) be a complete probability space with ﬁltration {Ft}t∈{0,1,...T }. All stochastic processes
+are deﬁned on this probability space.
+As many authors mentioned in Section 1, we consider a market with one risky and one
+risk-free asset. The proportion of wealth invested in the risky asset St at any time t is deﬁned
+as πt. The remaining proportion of wealth (1 −πt) goes into the risk-free cash account Bt.
+We further assume that the risky asset pays no dividends.
+Stochastic control problems in discrete time such as in equation (1) can be solved recur-
+sively. This approach relies on the so-called Bellman equation which expresses the value
+function t as a function of its successor t+1, ∀t = 0, . . . , T −1 and a terminal condition
+T . As per the Bellman principle (see e.g. (Seierstad, 2009) Theorem 1-13) optimizing each
+individual t recursively, i.e., t = T −1, T −2, . . . t, yields the optimal value/ Bellman
+function and the optimal policy π∗. 2
+In our setting, the recursive Bellman equation can be written as
+t (Vt, ht+1) = max
+πt∈At Et
+
+t+1 (T (Vt, ht+1, πt, zt))
+
+,
+(2)
+with T denoting the transition function from state st = (Vt, ht+1, t) ∈S and action πt ∈At
+to wealth Vt+1 depending on a random disturbance zt and an additional state variable ht+1
+1 The dependence of VT on the investment strategy is omitted from the notation.
+2 Note, the problem needs to satisfy some additional conditions for the Bellman principle to apply e.g. that
+the value function remains in the same class of functions after taking expectations and maximizing. To avoid
+unnecessary notation we refrain from formally specifying the problem in full with all necessary conditions as
+an analytic solution via the Bellman principle is out of the scope of this paper.
+123
+
+Annals of Operations Research
+as deﬁned in equation (5) below. It is given by the self-ﬁnancing wealth process and reads 3
+T (Vt, ht+1, πt, zt) = Vt
+
+πt
+St+1
+St
++ (1 −πt) Bt+1
+Bt
+
+.
+(3)
+Equation (2) and the corresponding policy π∗are the objects of interest in this paper. Only in
+special cases can they be formulated explicitly and solved in closed form. This also requires
+full knowledge of the underlying market dynamics. In the next sections, we demonstrate an
+approach for learning both the optimal value function and the optimal policy without any
+prior knowledge about the underlying stochastic processes.
+For testing our approach we work with the following dynamics. The log of the risky
+spot asset price Xt = log St is Ft-progressively measurable and follows the Heston-Nandi
+GARCH (1,1) (HN-GARCH) model,
+Xt = Xt−1 + r + λht +
+
+htzt,
+X(0) = x0 > 0,
+(4)
+ht = ω + βht−1 + α(zt−1 −θ
+
+ht−1)2,
+(5)
+where x0 is non-random, r is the continuously compounded single-period risk-free rate, zt
+is a standard normal disturbance and ht is the conditional variance of the log return of the
+asset between t −1 and t with β + αθ2 < 1 ensuring stationarity. The long-term average
+variance is given by
+¯h =
+α + ω
+1 −β −αθ2 .
+(6)
+The second asset is the risk-free bank account Bt bearing the continuously compounded
+interest rate r for the time interval from t to t + 1.
+Continuous-time models are often used to obtain analytic solutions due to their nice
+properties like no-arbitrage, completeness of the market or change of measure. Discrete-time
+econometric time series models on the other hand sacriﬁce some of that analytic traceability
+to focus more on an accurate reﬂection of statistical properties of real-world time series. The
+advantages of continuous-time models presumably play a larger role in derivatives pricing
+than in portfolio optimization. Especially, since RL does not depend on any assumptions on
+the data-generating process, the realistic description of market returns seems more important
+for our simulation use-case than formal parsimony. The fact that investors cannot trade in
+continuous time but only at discrete points in time also appears to make discrete time models
+the more natural choice for these kind of problems. Furthermore, Escobar-Anel et al. (2022)
+show that the stochastic variance and its correlation to the spot-asset returns can signiﬁcantly
+impact optimal investment decisions. Hence, we chose the HN-GARCH model outlined
+above as an interesting example for the data-generating process.
+In the following section we start deriving our methodology by ﬁrst summarizing previous
+RL approaches and discussing their applicability to the problem outlined above.
+3 Prior work on reinforcement learning
+In this section, we discuss prior approaches that use reinforcement learning methods for
+obtaining optimal policies. By doing so we will arrive at the DDPG algorithm as a suitable
+point of departure for constructing our own methodology which will then be speciﬁcally
+designed to tackle the problem at hand.
+3 For notational convenience we do not state the dependence of T on r and other model parameters explicitly.
+123
+
+Annals of Operations Research
+Reinforcement learning has predominantly been applied to playing Atari games at human-
+level performance (e.g. Mnih et al. (2015), Lillicrap et al. (2016)) and complex robotics tasks
+(e.g. Stafylopatis and Blekas (1998), van Rooijen et al. (2014), Kormushev et al. (2013)).
+Due to its success many researchers have afterwards tried to take advantage of its capabilities
+in other domains like logistics (e.g. Brammer et al. (2022), de Moor et al. (2022)) or even
+predicting the behavior of terrorist organizations (cf. Jaspersen and Montibeller (2020)). For
+a general overview on RL we refer the reader to Kiumarsi et al. (2018) and Chen (2021).
+Within the portfolio optimization setting outlined in Section 2, we are in a domain where an
+agent chooses from a continuous set of actions πt ∈R at discrete time steps t = 0, . . . , T −1
+with T < ∞, based on his observation of the current state of the environment. As a result
+of his action, he receives a reward which is governed by the transition function T. This is a
+Markov decision process and thus at the core of reinforcement learning methods.
+The dynamics of many of the environments from other applications are governed by
+mechanical physics equations which makes them largely deterministic. This means that each
+observed state of the environment has one corresponding action that is optimal. This is
+signiﬁcantly different from the portfolio optimization problem we are considering. Here we
+are dealing with a highly stochastic environment where the noise in each observation is
+higher than the information it provides. So even when observing different realized states of
+the environment due to stochastic noise, the same action might still be optimal if the signal in
+the data remains constant. This makes such a problem much harder to solve as the algorithm
+does not only need to derive a mapping between a state and an action but also to discriminate
+between the signal and the noise in the data in order to obtain reasonable results.
+Among the ﬁrst reinforcement learning methods that were successfully applied in a model-
+free fashion, i.e., without knowledge of the data-generating process to solve real-world
+problems, was the Q-learning algorithm by Watkins and Dayan (1992). Like other tabu-
+lar methods, Q-learning only works on discrete action spaces with decreasing performance
+for ﬁner action grids. Even though this is opposed to a portfolio allocation problem where the
+investor can allocate a continuous fraction to different assets, Q-learning has been applied
+for this kind of problem before. Weissensteiner (2009), for example, considers an investor
+who can choose from a discrete set of allocations. Obviously, this might result in suboptimal
+actions when the optimum lies between two discrete steps. Thus, the result of this approach
+depends on the appropriateness of the chosen grid points, which cannot be known a-priori
+per construction. Furthermore, Q-learning can only cope with low-dimensional state spaces
+as outlined for example in Chen (2021). However, in the context of portfolio optimization
+one might want to add multiple observable variables like multiple assets, their variance or
+other explanatory variables increasing the dimensionality of the environment’s state space.
+An improvement with respect to this was presented by Mnih et al. (2015) with their Deep
+Q Network (DQN) algorithm. It allows for tackling problems with high dimensional state
+spaces by using deep neural networks (DNNs) as function approximators for the value func-
+tion but it is still limited to low-dimensional discrete action spaces. Finally, the algorithm
+we choose to depart from is the DDPG algorithm by Lillicrap et al. (2016). It extends DQN
+to high-dimensional continuous action spaces. Another advantage of this algorithm is that
+it allows to impose action constraints in a straightforward manner, which is of utter impor-
+tance to portfolio optimization as investors usually have constraints on their investments in
+different assets. These might be due to regulatory requirements, views on certain assets or
+other idiosyncratic risk preferences. Moreover, DDPG uses DNNs as function approximators
+which are ﬂexible enough to model complex non-linear functions as the value function from
+equation (1). Having an explicit approximation of the value function (which is not the case
+123
+
+Annals of Operations Research
+for purely actor-based RL methods) also allows us to compare the learned solution better to
+the theoretical optimum as is the goal of this paper.
+To summarize, DDGP is a well suited algorithm for the problem at hand as it enables us
+to consider multi-dimensional and continuous state and action spaces with an easy way of
+imposing action constraints and while delivering a representation for the value function.
+4 Extention of DDPG for Portfolio Optimization
+4.1 Deep Deterministic Policy Gradient
+To better understand the possible limitations of the original DDPG algorithm for application
+in portfolio optimization we want to quickly remind the reader of how the algorithm works
+and summarize it in Algorithm 1.
+Algorithm 1 DDPG algorithm
+Randomly initialize critic network Q
+
+s, a | θ Q
+and actor network μ
+ 
+s | θμ
+with weights θ Q and θμ
+Initialize target networks Q′ and μ′ with weights θ Q′ ←θ Q, θμ′ ←θμ
+Initialize replay buffer R
+for epoch = 1, M do
+Initialize a random process N for action exploration
+Receive initial observation state s0
+for t = 0, T do
+Select action at = μ
+ 
+st | θμ
++ Nt according to the current policy
+and exploration noise
+Execute action at and observe reward rt and observe new state st+1
+Store transition
+ 
+st, at,rt, st+1
+
+in R
+Sample a random mini batch of N transitions
+ 
+si, ai,ri, si+1
+
+from R
+Set yi = ri + γ Q′ 
+si+1, μ′ 
+si+1 | θμ′
+| θ Q′
+Update critic by minimizing the loss:
+L = 1
+N
+
+i
+
+yi −Q
+
+si, ai | θ Q2
+Update the actor policy using the sampled policy gradient:
+∇θμ J ≈1
+N
+
+i ∇a Q
+
+s, a | θ Q
+|s=si ,a=μ(si) ∇θμμ
+ 
+s | θμ
+|si
+Update the target networks:
+θ Q′ ←τθ Q + (1 −τ) θ Q′
+θμ′ ←τθμ + (1 −τ) θμ′
+end for
+end for
+As with any reinforcement learning algorithm, DDPG models an agent that interacts with
+an environment. Generally speaking, an environment is a set of rules that deﬁne how actions
+at taken by the agent change the state of a certain set of variables from st to st+1. The idea is
+that by repeatedly interacting with the environment and observing its response or reward rt
+123
+
+Annals of Operations Research
+Table 1 Relation between portfolio optimization and reinforcement learning framework
+Portfolio Optimization Framework
+Reinforcement Learning Framework
+Variables
+πt (allocation)
+at (action)
+Vt, ht+1, t (wealth, variance, time)
+st (state tuple)
+Objects
+Vt
+ 
+Vt−1, ht, πt, zt
+
+(wealth process)
+T (st, at, zt) (transition function)
+π (investment strategy)
+μ
+ 
+st | θμ
+(actor network)
+t
+ 
+Vt, ht+1
+
+(value function)
+Q
+
+st, at | θ Q
+(critic network)
+U (VT ) (utility from terminal wealth)
+rT (reward)
+the agent can learn over time the best action for any given environment state. In the particular
+case of DDPG, the decision rule of the agent is modelled by a neural network. This actor
+network μ: s ∈S →R maps the current state of the environment to an action that tries to
+maximize the expected reward. The expected reward, in turn, is again modelled by a different
+neural network. This critic network Q : s ∈S × a ∈A →R maps the current state and
+action (possibly chosen by the actor network) to an expected reward.
+Conceptually, the workﬂow in Algorithm 1 goes as follows. At each time step t =
+0, . . . , T −1 the agent represented by the actor network selects an action according to
+the current state of the environment and observes a reward. Then the parameters of the critic
+network, i.e., the approximation of the expected value, are updated based on a sample of past
+actions and rewards. Finally, the parameters of the actor network are updated such that the
+chosen actions maximize the expected reward predicted by the critic network. After arriving
+at the terminal time step T , the environment state is reset and a new epoch starts. For more
+details on DDPG we refer the reader to Chen (2021) and Lillicrap et al. (2016).
+In the next section, we will link this general DDPG framework to the portfolio optimization
+setting from Section 2.
+4.2 DDPG for Portfolio Optimization
+In this section we ﬁrst motivate why reinforcement learning is conceptually well ﬁt for the
+application to dynamic portfolio optimization. Subsequently, we introduce modiﬁcations to
+the original DDPG algorithm, speciﬁcally designed to address the unique challenges and
+characteristics of these types of problems.
+4.2.1 Analogies between DDPG and Dynamic Portfolio Optimization
+Conceptually, there are two approaches to how one could tackle the task at hand. First, a
+ﬁnanceresearcherorpractitionerwouldprobablystartbylookingattheportfoliooptimization
+problem and then ﬁnd corresponding elements in the RL algorithm to use it for solving the
+optimization task. A person with a ML background on the other hand would probably start
+from the RL algorithm and view the portfolio optimization as an abstract task to solve. In
+order to bridge the gap between both disciplines, we ﬁrst aim at very clearly pointing out the
+analogy between RL and portfolio optimization.
+123
+
+Annals of Operations Research
+Table 1 shows the correspondence between the most important elements in our setting.
+The ﬁrst column lists the concrete elements from the portfolio optimization framework while
+the second column gives the analogue elements in general RL speech. In the upper part of the
+table we show some fundamental variables. The fraction invested into the risky asset at time t,
+i.e., πt, corresponds to the action at, while the current state of the market, i.e., (Vt, ht+1, t), is
+named the state tuple st. Note, that our approach is in principle able to incorporate an almost
+arbitrary number of state variables. When considering a volatility model like the HN-GARCH
+it is reasonable to consider volatility as an additional state variable. The lower part of the table
+lists the more complex objects that comprise of the fundamental variables above. The wealth
+process is a stochastic process that deﬁnes the dynamics of the portfolio value. For each
+single time step it implicitly deﬁnes the transition function that governs the dynamics of the
+environment. Analytical solutions can only be obtained for very speciﬁc conﬁgurations of this
+stochastic process while our approach is completely agnostic with regard to those dynamics.
+The investment strategy π is the policy or decision rule that tells the investor what fraction
+of his wealth to invest into the risky asset at each point in time conditioned on the current
+environment state. This decision rule is modelled by the actor networks μ: s ∈S →R that
+aim to map the current state to the action that maximizes the expected reward. The reward rt
+corresponds to the realized utility from terminal wealth after following a certain policy, i.e.,
+rt = 0 ∀t < T and rt = U (Vt) for t = T . Note that this setup permits to incorporate
+transaction costs or other costs by adjusting the reward accordingly. In this paper however, we
+refrain from doing so to maintain comparability with the theoretical solution. This facilitates
+the assessment of the algorithm’s proximity to the true optimum. Similar to the Q-learning
+case in Weissensteiner (2009), the critic networks Q : s ∈S × a ∈A →R map the current
+state and action to expected utility. They correspond to the value function (1) in the portfolio
+optimization setting without taking the maximum over all actions, yet.4 The goal here is to
+train the network parameters such that the networks approximate the optimal value function.
+4.2.2 Algorithm Modiﬁcations
+Now that we fully deﬁned in Section 2 the portfolio optimization problem we want to solve
+and clariﬁed in Section 4.2.1 what element in RL can be used to model each element in
+the portfolio optimization problem, we can now build the actual RL model for solving the
+optimization next.
+The biggest challenge in applying DDPG to portfolio optimization is the high degree of
+randomness in the obtained rewards and the relatively low differences in average rewards
+when selecting optimal vs. suboptimal allocations. This results in unstable critic losses L
+between multiple learning steps which in turn lead to unstable critic network parameters, actor
+parameters and ﬁnally actions. Hence, a convergence of the algorithm to optimal networks
+might be jeopardized. To tackle this issue we take multiple measures which are presented
+next. Our fully adopted methodology is summarized in Algorithm 2.
+By means of the formula for L in Algorithm 1 one can decompose the loss into differ-
+ent components and into two different sources of ﬂuctuation. The ﬁrst important source of
+ﬂuctuation is the distribution of the sample that is drawn from the replay buffer in each opti-
+mization step. If this distribution ﬂuctuates too much the outputs of the networks based on
+these samples ﬂuctuate too. The second source of the ﬂuctuation in the L is the change in
+4 Unlike for the value function t, the functional form of the Q network does not change with different t.
+Here, t is modelled as part of the environment state. Hence, we do not put the subindex t on Q. The same
+holds for the actor networks.
+123
+
+Annals of Operations Research
+Algorithm 2 DDPG for Portfolio Optimization
+Procedure:
+Randomly initialize critic network Q
+
+s, a | θ Q
+and actor network
+μ
+ 
+s | θμ
+with weights θ Q and θμ
+Initialize target networks Q′ and μ′ with weights θ Q′ ←θ Q, θμ′ ←θμ
+Initialize replay buffer R
+for epoch = 1, M do
+Initialize an OU process N with positive drift for action exploration
+Receive initial observation state s0
+for t = 0, T −1 do
+Select actions a+
+t
+= μ
+
+s+
+t
+| θμ + Nt
+
+, a−
+t
+= μ
+
+s−
+t
+| θμ + Nt
+
+according to the current policy and exploration noise
+Execute actions a+
+t , a−
+t and observe rewards r+
+t , r−
+t
+and
+new states s+
+t+1, s−
+t+1
+Store transitions
+
+s+
+t , a+
+t ,r+
+t , s+
+t+1
+
+and
+
+s−
+t , a−
+t ,r−
+t , s−
+t+1
+
+in R
+if 2×((epoch −1) × T + t) ≥N then
+Randomly sample a mini batch of N transition
+pairs
+ 
+si, ai,ri, si+1
+
+from R
+Set yi = ri + γ Q′ 
+si+1, μ′ 
+si+1 | θμ′
+| θ Q′
+Update critic by minimizing the loss:
+L = 1
+N
+
+i
+
+yi −Q
+
+si, ai | θ Q2
+Update the actor policy using the sampled policy gradient:
+∇θμ J ≈1
+N
+
+i ∇a Q
+
+s, a | θ Q
+|s=si ,a=μ(si) ∇θμμ
+ 
+s | θμ
+|si
+if every k’th step then
+Update the target networks:
+θ Q′ ←τθ Q + (1 −τ) θ Q′
+θμ′ ←τθμ + (1 −τ) θμ′
+end if
+end if
+end for
+end for
+Output: μ
+ 
+st | θμ
+=π∗, Q
+
+st, at | θ Q
+=t
+trainable network parameters θ. We ﬁrst focus on the efforts that can be made to overcome
+the issue of ﬂuctuating sample distributions. Afterwards we will tackle the ﬂuctuation in
+network parameters.
+Biased Noise Process. Lillicrap et al. (2016) use an Ornstein-Uhlenbeck (OU) process
+with zero drift for their action noise. This means that on average the action that is used for
+exploration corresponds to the currently learned action. In our portfolio optimization context,
+however, it is beneﬁcial to explore more in areas with a higher allocation to the risky asset.
+When looking at the transition function (3) one can see that the higher the allocation πt to
+the risky asset, the higher the variance of the wealth over the next time step which means
+that observed rewards, i.e., utilities from terminal wealth, ﬂuctuate more. Hence, one needs
+more observations to get stable estimates for those actions. Therefore we add a positive drift/
+bias to our OU action noise. Note that this can be done as DDPG is an off-policy algorithm
+which means that the action for exploration, i.e., for populating the replay buffer, can be
+123
+
+Annals of Operations Research
+Table 2 Replay Buffer
+Observation
+State (st)
+Action (at)
+Reward (rt)
+New State (st+1)
+Done Flag
+1
+s0
+a0
+0
+s+
+1
+False
+2
+s0
+a0
+0
+s−
+1
+False
+3
+s+
+1
+a+
+1
+0
+s+
+2
+False
+4
+s−
+1
+a−
+1
+0
+s−
+2
+False
+...
+...
+...
+...
+...
+...
+2T −1
+s+
+T −1
+a+
+T −1
+U
+
+V +
+T
+
+s+
+T
+True
+2T
+s−
+T −1
+a−
+T −1
+U
+
+V −
+T
+
+s−
+T
+True
+...
+...
+...
+...
+...
+...
+from a different policy than the policy that is actually learned. If adding the noise causes the
+resulting actions to be outside the speciﬁed action bounds the noise process is reset to zero.
+Efﬁcient Sampling from the Replay Buffer. In the original DDPG algorithm, the batch of N
+transition tuples (st, at,rt, st+1) is randomly sampled from the replay buffer to calculate the
+critic loss. The loss is calculated as the mean squared error (MSE). As in classical statistics,
+when estimating a statistic based on a sample we obtain an estimator with a certain variance
+(and possibly some bias). This means, when re-calculating the estimator with different sam-
+ples, one may obtain different results, depending on the distribution of the samples. For the
+MSE in particular, the results are ﬂuctuating vastly. This problem lies at the core of classical
+statistics and many procedures have been proposed to reduce the variance of estimators. For
+example, when pricing options via MC simulations a common method for reducing the vari-
+ance of the MC estimator is the antithetic variates approach (see e.g. Boyle (1977)). The basic
+idea is to simulate one random number z and calculate the statistic under consideration using
++z and −z respectively. Repeating this procedure multiple times yields a balanced sample of
+observations. Due to this balance, mean estimators, for example, exhibit considerably lower
+variance. This method is numerically cheap as double the amount of observations can be
+obtained without actually simulating more random numbers. Furthermore, the simplicity of
+this approach makes it very ﬂexible for applications in various problems. Now notice, for
+the critic loss we estimate the mean of the squared differences of two variables based on a
+certain sample which is exactly the domain of the antithetic variates method. We apply this
+by, at each t, observing the initial state st, taking an action at and observing two symmetric
+new states s+
+t+1 and s−
+t+1 which are determined by the transition function T in eq. (3) which in
+turn is obtained by simulating (4) and (5) with z+
+t+1 and z−
+t+1 respectively. These transitions
+are then stored in the replay buffer as shown in Table 2.
+Finally, when sampling from the replay buffer, both observations from one pair are picked
+together. When calculating the MSE we get for the transitions pairs with non-zero rewards,
+i.e., from T −1 to T ,
+L = 1
+K
+
+i∈I
+
+rT ,i + γ Q′ 
+sT +1,i+2, μ′ 
+sT +1,i+2 | θμ′
+| θ Q′
+−Q
+
+sT ,i, aT ,i | θ Q2
++
+
+rT ,i+1 + γ Q′ 
+sT +1,i+3, μ′ 
+si+3 | θμ′
+| θ Q′
+−Q
+
+sT ,i+1, aT ,i+1 | θ Q2
+123
+
+Annals of Operations Research
+= 1
+K
+
+i∈I
+
+rT ,i −Q
+
+sT ,i, aT ,i | θ Q2
++
+
+rT ,i+1 −Q
+
+sT ,i+1, aT ,i+1 | θ Q2
+= 1
+K
+
+i∈I
+⎡
+⎢⎢⎣
+
+U
+
+V +
+T ,i
+
+−Q
+
+s+
+T ,i, a+
+T ,i | θ Q2
+
+
+
+:=A+
++
+
+U
+
+V −
+T ,i+1
+
+−Q
+
+s−
+T ,i+1, a−
+T ,i+1 | θ Q2
+
+
+
+:=A−
+⎤
+⎥⎥⎦
+= 1
+K/2
+
+i∈I
+A+ + A−
+2
+,
+(7)
+where I = {2T −1, 4T −1, . . . , M −1} with M being the size of the replay buffer and
+K = |I| is the number of elements in the set of indexes I. This is exactly the deﬁnition of the
+antithetic variates approach. Note, we only observe non-zero rewards in time step T , these
+are the only learning steps where actual data is consumed. At any other learning step, we
+merely calculate the difference between the output from the target critic and the evaluation
+critic (even though based on different inputs). Hence, the learning steps where t = T are
+of utter importance. Also note that the algorithm only starts learning when the number of
+observations in the replay buffer is greater than the sample size. This initial population of
+the replay buffer where no learning takes place can also be achieved faster by simulating
+antithetic variance pairs providing a slight increase in efﬁciency.
+Size of Sampled Batch. Finally, as for any consistent estimator, the variance approaches
+zero as the sample size approaches the size of the whole population. In our context, this
+means that the MSE shows less ﬂuctuation when N →M. Of course, there is a trade-off
+between variance of the estimator and run time. The larger N the slower the optimization.
+Hence, choosing an appropriate sample size is important.
+In the following paragraphs we will discuss potential solutions for tackling the second
+source of the ﬂuctuation in L, i.e., the change in trainable network parameters θ. This change
+is a natural result of the learning process where all critic network parameters θ Q are updated
+in each step t by applying Adam (cf. Kingma and Ba (2014)).
+Network Parameter Updates. When setting learning rates for Q
+ 
+si, ai | θ Q
+or the update
+speed of the target networks to high, this of course causes large ﬂuctuations in L. Therefore,
+selecting appropriate learning rates is important. Furthermore, we choose to only update the
+parameters of the target network every few steps instead of every step. After minimizing
+the MSE against stable target values for a few periods one can update the target network
+parameters with a higher τ. This increases stability further while still not sacriﬁcing too
+much learning speed.
+In addition to the adjustments and parameterization of the DDPG algorithm above tackling
+the ﬂuctuation in critic loss, some more design choices are outlined next.
+Network Architecture. For the sake of simplicity, we choose a simple feed-forward archi-
+tecture for our networks. From the closed form solution in Theorem 1 in Escobar-Anel et
+al. (2022), it is clear that the optimal policy is a purely deterministic function of t. Hence
+we choose a simple network structure for the actor while sticking to the ﬂexible architecture
+for the critic networks as they must be able to approximate the complex highly non-linear
+value function. Both networks are depicted in Figure 1. The output layer of the actor network
+123
+
+Annals of Operations Research
+Fig. 1 Architecture of critic and actor networks
+depicted in Subﬁgure 1b gives the optimal action π∗
+t and uses a sigmoid activation function
+to bound actions to the closed interval [0, 1]. Note that one can scale the outputs from the
+network to any other interval before applying the action to the environment and before saving
+it to the replay buffer R. This way one can easily impose constraints on the portfolio weights.
+Data Preprocessing. If inputs of DNNs live on different scales, this can cause problems
+in learning (Lillicrap et al. (2016)). This is the case for out state variables, i.e., (Vt, ht+1, t).
+Hence, we transform wealth to log-wealth, annualize variance and scale t to the interval
+[0, 0.01].
+5 Experiments
+In this section, we conduct a simulation study similar to Weissensteiner (2009) and Jiang
+et al. (2022) to test our algorithm against a realistic set of market parameters. We note that
+there are multiple parameter sets for the HN-GARCH available in literature. Throughout this
+section, we consider parameter estimates of daily S&P 500 returns from Christoffersen et al.
+(2006) as a representative set of parameters for our market environment. To check whether the
+results obtained under these parameters are representative, we also performed some additional
+tests using different parameters. The parameters that impact the optimal allocation the most
+are the ones that inﬂuence the relative attractiveness of the risky compared to the risk-free
+asset the most. These are the risk premium λ, i.e., the additional expected return for each
+unit of variance risk, and the risk aversion parameter η, i.e., the additional expected return
+demanded by the investor in order to take one additional unit of risk. Therefore, in addition to
+the parameters from Christoffersen et al. (2006) we also conducted experiments on permuted
+sets of HN-GARCH parameters, especially of λ and η. Increasing λ and η simultaneously
+increases the concavity of the expected value function causing a larger difference in expected
+value between the optimal allocation and a suboptimal one. This simpliﬁes the function
+approximation via the critic networks. All in all, the learning algorithm’s performance is
+comparable across different HN-GARCH parameters and risk aversion levels (see Appendix
+A for additional results on different risk aversion levels). For the remaining parameters, we
+choose V0 = 1, r = 0.01/252, η = −8, T = 5 days and set the number of epochs to 10, 000.
+123
+
+Annals of Operations Research
+Note that we also constrain the allocation to the risky asset to be between 0% and 100%.
+In principle, this is not necessary to ﬁnd the optimal solution as in this case it is within this
+boundary. However, it is common practice in portfolio optimization tasks to put no-short-
+sales constraints on the asset weights. Furthermore, constraining the algorithm to a certain
+action region helps achieve faster convergence as exploration is only done within this limited
+action space. Hence, being able to easily implement constraints is practical from an economic
+as well as from a numeric point of view.
+Regarding the learning parameters, we used a batch size of N = 5000 transitions from the
+replay buffer, discount factor of γ = 0.99, Adam learning rates for actor and critic network
+of 0.02175 and 0.01 respectively. Furthermore, the target networks were updated every 10th
+learning step with update weight τ = 0.01. The OU action noise process used dt = 0.01 for
+discretization, mean-reversion level 0.01, mean-reversion speed 50, and standard deviation
+parameter 0.25. A discussion of the robustness of these learning parameters can be found in
+Section 6.
+In the experiment, we iterate over 10, 000 epochs with an investment horizon of ﬁve
+periods in each epoch. For this we simulate the returns of the risky asset with the HN-
+GARCH parameters above. At each time step we let the algorithm choose a fraction of
+wealth to invest into the risky asset. After the ﬁnal period, we observe the obtained wealth
+and its utility.
+The experiment was implemented in python using the Keras and TensorFlow library. It
+was run on a regular 2.6GHz 6-Core CPU with 64GB RAM and no parallel computing. The
+average run time for different conﬁgurations of learning rates and batch sizes is signiﬁcantly
+below one hour for 10,000 epochs. Compared to approaches like in Aboussalah and Lee
+(2020) who use a 40-Core machine with 368GB together with parallel computing on 20
+12GBGPUswithatimebudgetof10hours,ourapproachissubstantiallylesscomputationally
+expensive which makes it truly accessible for real-world application. For the parameterization
+above for example we observe a learning time of approximately 20 minutes for the 5×10, 000
+learning steps.5
+5.1 Learned Strategy
+Figure 2 shows the training progress of the learned action over the number of training steps.
+Each training step is equivalent of investing over one period. After T learning steps, i.e.,
+investment periods, the environment is resetted and a new investment cycle, i.e., epoch starts.
+The parameters of the actor network are initialized such that the resulting action is in the
+middle between both action bounds. Over the ﬁrst N/2 periods no learning takes place as the
+replay buffer does not yet contain enough transitions to sample a full batch of size N. Hence,
+the evaluation actor μ outputs the same actions that are used to populate the replay buffer
+after adding the action noise. Once sufﬁciently many transitions are in the replay buffer, the
+evaluation critic Q is updated by minimizing its loss L. L is the MSE between the target
+values yi and the output of the current evaluation critic. In the beginning, L can be quite
+small as μ′ outputs similar actions to those in the replay buffer ai and, being fed with similar
+action, both critic networks output similar values as those are also copies of each other.
+Recall, rewards are only received at the end of an investment cycle. Thus, most rewards ri
+are equal to zero. Moreover, the discount factor γ is close to one. Hence, these additional
+terms in the target values yi only have a small impact. Then, the actor network is updated
+via the gradient shown in Algorithm 2. After some time the outputs of the evaluation actor
+5 This number is an average over multiple runs with different random numbers.
+123
+
+Annals of Operations Research
+Fig. 2 Training process of learned action
+μ depart from the ones of the target actor μ′ whose parameters change more slowly. Thus,
+the distribution of actions in the replay buffer starts to change and the critic loss gets bigger
+causing the evaluation critic network to depart from the target critic. All these loose parts
+diverging from each other make the whole system quite unstable for some time. This causes
+the large and rapid changes in the learned action in the ﬁrst third of the learning process
+in Figure 2. Then after a while, the distribution of states and actions in the replay buffer
+becomes somewhat balanced, stabilizing all the metrics calculated over different sample
+batches before the algorithm eventually converges towards the optimal policy. The same
+analysis for different risk aversion levels can be found in Appendix A. Note, Escobar-Anel
+et al. (2022) show that, even when considering reinvestment opportunities at each point in
+time and stochastic variance, the optimal theoretical solution suggests an almost constant
+allocation here. This is because the level of the optimal fraction allocated to the risky asset
+depends on the (constant) distribution of the variance (given by the parameters of the HN-
+GARCH) but not on its actual realization.
+5.2 Learned Value Function
+In this subsection we investigate the ﬁt of the learned value function. For doing so we take
+advantage of the fact that we have access to a closed-form solution for the true value function
+and that we chose an actor critic approach that provides us with a representation of the learned
+value function. Figure 3 shows the learned and true value function for different stages of the
+learning process. Note that the value function depends on the states and the action. In our
+case, our state input is three-dimensional (time, wealth and variance) and the action input
+is one-dimensional. Hence, we can observe the ﬁt in four dimensions in total. The ﬁt in
+the action dimension is obviously important for ﬁnding optimal policies. Regarding the state
+dimensions, we know from Escobar-Anel et al. (2022) that the value function is most sensitive
+to changes in wealth direction. This is an intuitive result as the value function measures the
+expected value of terminal wealth. Therefore we chose to plot the value surface for ﬁxed
+values of ht and t. For this, we chose the long term average variance ¯h from equation (6) and
+123
+
+Annals of Operations Research
+t = 0, i.e., we observe the unconditional expectation. Subﬁgure 3a shows the value function
+after 100 epochs. Remember, no learning takes place until epoch 500. Hence, this subﬁgure
+shows the initial state of the critic network that estimates all terminal utilities to be equal to
+zero. Then after 1000 epochs, one can observe that the learned value function approaches
+the true one (Subﬁgure 3b). In particular at the starting wealth V0 = 1 the approximation
+improved dramatically. For larger and lower wealth the approximation is still further away
+from the true value. This seems reasonable as observing a certain value for the wealth gets
+less likely the further away from the expected wealth those values are and thus there are less
+of those observations in the replay buffer to learn from. In Subﬁgure 3c 2000 epochs have
+passed and it can be seen that the approximation ﬁrst attains better estimations for wealth
+larger than one. Here, the same argument applies as before. Wealth larger than one is more
+likely than wealth below one due to the positive drift in the wealth process. Eventually, after
+4000 epochs a reasonably good ﬁt of the true value function across different wealth and
+actions is attained as can be found in Subﬁgure 3d.
+To assess the ﬁt in more detail we plotted in Figure 4 the difference between the learned
+and true value function normalized by the absolute level of the true value function. One
+can see that for most regions the learned value function is slightly above the true one with
+decreasing goodness of ﬁt for higher wealths. van Hasselt (2010) reports that it is common
+for Q-Value function approximators to overestimate the action value. This is consistent with
+our results. However, the bias of our adopted DDPG algorithm is far smaller than for example
+the one of Q-learning in van Hasselt (2010).
+Figure 5 shows a slice of the value function at the optimal action. Even at this degree of
+detail, the critic network manages to recover the concavity of the true value function which
+is an important feature as this is what makes the investor risk averse. Of course, the ﬁt is
+far from perfect. Lillicrap et al. (2016) observe that even though their learned Q-Values are
+not precisely predictive for realized rewards for more complex deterministic environments,
+good policies can still be learned. This carries over to our setting with a highly stochastic
+environment.
+6 Robustness checks and parameter sensitivities
+In this section we present further analyses to test the robustness of the results presented in
+Section 5.
+Note that we set a random seed in order to make the results from Section 5 reproducible.
+Further, recall that our reinforcement learning algorithm is purely model-free and relies com-
+pletely on the information it observes. More speciﬁcally, the internal optimization routines
+are performed on samples of the replay buffer which is ﬁlled consecutively over time. This
+bears the potential that the algorithm converges to a local optimum in case the simulated
+observations suggest an underlying dynamic of the environment that is, by chance, very
+different from its actual behavior. This is a typical problem of stochastic optimization tech-
+niques and thus researchers often report average results over multiple runs within the same
+environment (cf. Lillicrap et al. (2016)).
+In Figure 6 we show the results for 32 randomly chosen random seeds in the range from
+1 to 10,000. All other learning parameters are as in Section 5. The graph shows quantiles of
+the learned actions over the course of learning. In order to obtain meaningful statistics while
+preserving the temporal structure of the learning process, we calculate the quantiles over all
+32 runs at each learning step. The ﬁrst thing to notice is that the median path of the learned
+123
+
+Annals of Operations Research
+Fig. 3 Comparison between analytic and learned Q-value surface for different stages of the learning process
+action converges toward the theoretical optimum. This corroborates the ﬁndings from Section
+5. Note that the path in Figure 2 (or any other of the 32 paths) does not exactly match any of
+the paths in Figure 6. Due to the fact that the quantiles are calculated individually for each
+learning step, each quantile path is a combination of the 32 actually learned paths. However,
+the median path resembles the one in Figure 2 which is an indication that the results presented
+in Section 5 are representative within this set of random seeds. In addition to reporting the
+average result, we also observe that at least 50% of all runs are still very close to the optimum.
+Nevertheless, there are also sporadic cases where the learned action is further away from the
+theoretical optimum. Like for any stochastic optimization routine, this is to be expected as
+extreme environment behaviors can be observed occasionally.
+123
+
+Annals of Operations Research
+Fig. 4 Difference between learned and true Q-value surface normalized by the absolute level of the true
+Q-value surface
+Fig. 5 Slice of the Q-Value function at the optimal action
+123
+
+Annals of Operations Research
+Fig. 6 Quantiles of learned action over 32 randomly chosen random seeds in the range of 1 to 10, 000
+Fig. 7 Quantiles of learned action over the 32 random seeds from Figure 6 using the original DDPG algorithm
+without the modiﬁcations from Section 4.2.2
+For a direct comparison to the original DDPG algorithm we included Figure 7. It presents
+the exact same analysis from Figure 6 without the modiﬁcations in Section 4.2.2. The param-
+eters for the DDPG algorithm like for example, batch size, network architecture etc. are kept
+as before. For most random seeds, the learned action diverges completely and gets stuck at
+the action bounds. Only very few scenarios show some learning behavior and are getting
+somewhat close to the actual optimum. This indicates that our adjustments to the original
+DDPG algorithm actually appear to be useful for the problem at hand.
+One of the advantages of DDPG is the relatively low number of tuning parameters. Even
+though our modiﬁcations result in a few more free parameters, the algorithm is quite insensi-
+tive to most of them. No excessive parameter tuning on the batch size, discount factor, update
+123
+
+Annals of Operations Research
+Fig. 8 Learned action for 24 different combinations of actor and critic learning rates. The dark line corresponds
+to the setting from Section 5. The medium dark lines correspond to the top 5 actions from the grid search.
+The actor learning rates are one of 0.0015, 0.00825, 0.015, 0.02175, the critic learning rates are one of 0.014,
+0.012, 0.01, 0.008, 0.006, 0.004
+frequency of the target networks or the parameters of the noise process was necessary to
+obtain the results presented thus far. Usually, learning rates are more vital for successfully
+training neural networks. To assess the robustness of our approach against changes in the
+learning rates of the Adam optimization we perform a grid search on those parameters next.
+As a ﬁrst step, we perform a random search to come up with a rough range of possible rea-
+sonable learning rates. With this, we narrow down the parameters to a grid of four equally
+spaced values between 0.0015 and 0.02175 for the actor networks and six equally spaced
+values between 0.014 and 0.004 for the critic networks resulting in 24 different parameter
+combinations. Again, all other parameters are unchanged. Figure 8 shows the results of this
+grid search. The dark path corresponds to the original experiment from Section 5. One can
+see that it is well within the set of paths giving another indication that these results are rep-
+resentative also within this set of learning rate combinations. The medium-dark paths show
+the ﬁve best results from the grid search. We observe that most of these exhibit even better
+convergence behavior than in the original experiment meaning that they end up closer to
+the theoretical optimum more quickly and ﬂuctuate less around it. On the other side of the
+spectrum, the light paths depict parameter conﬁgurations that are either further away from the
+optimum or ﬂuctuating more around it. Even though some convergence can still be observed
+for those parameter combinations this means those are less suitable for the problem at hand.
+Overall, the results are reasonably good for a considerable fraction of all tested learning rates.
+When choosing a suitable parameter set very good results can be achieved.
+Summingupthissection,wereportthatourapproachattainsgoodresultsforaconsiderable
+range of reasonable parameters and is quite stable against observations that deviate from the
+average environment behavior. This demonstrates, not only conceptually but also empirically,
+that reinforcement learning algorithms have the potential of producing reliable results within
+a portfolio optimization context.
+123
+
+Annals of Operations Research
+Fig. 9 Training process of learned action in Merton (1969) market with risk aversion parameter γ = −3.8)
+7 Application to diﬀerent market models
+To further validate the robustness of our algorithm, we extend the analysis by applying it to
+an alternative market model. While the previous sections focused on the HN-GARCH and
+its closed-form portfolio solution from Escobar-Anel et al. (2022), this section demonstrates
+the algorithm’s performance within the framework of the seminal portfolio optimization
+task put forth by Merton (1969). By repeating key aspects of the earlier analysis, we aim
+to evaluate the algorithm’s adaptability and effectiveness in capturing patterns in this new
+context, thereby conﬁrming its potential generalizability beyond the HN-GARCH model.
+For simulating the new data sample we use the following parameters in notation of Merton
+(1969): W0 = 1, T = 5 days, γ = −3.8, r = 0.01/252, σ = 0.2/
+√
+252, α ≈0.14/252 and
+we set the number of epochs to 10, 000. In this notation γ is the risk aversion parameter, r
+is the return on the risk-free asset discretized to one day and σ and α are the risky asset’s
+volatility and expected return discretized to one day respectively. We note that, as shown
+by Escobar-Anel et al. (2022), the optimization problem above is a special case of the more
+general problem covered in the previous section. However, as the algorithm is model free,
+it is still not clear a priori, if it can discover this similarity and the optimal allocation being
+feed a different set of observed variables generated from a different distribution.
+Analogous to Figure 2, Figure 9 shows the training process of the learned action in the
+Merton market alongside its theoretical optimum. As for the learning parameters we use the
+exact same set as in Section 5 to gain an better understanding of their generalizeability. We
+observe very similar results as for the HN-GARCH portfolio optimization task. After some
+exploration, the learned action converges towards the theoretically optimal solution. Similar
+behavior can be seed for differnt risk aversion parameters.
+123
+
+Annals of Operations Research
+These results suggest that, even without new parameter tuning, our algorithm can be
+applied to the problem of dynamic portfolio optimization across markets exhibiting different
+dynamics.
+8 Conclusion and further research
+This paper develops a model-free reinforcement learning approach for solving multi-period
+portfolio optimization problems.
+For our methodology, we ﬁrst discuss in detail the pros and cons of different RL methods
+and then depart from the DDPG algorithm by Lillicrap et al. (2016) and adapt it for applica-
+tion in portfolio optimization. We test the algorithm by applying it to a realistic market model
+that is still analytically traceable. We chose this setting to explicitly showcase the similarities
+between RL and its economically interpretable analogues from classical portfolio optimiza-
+tion. Further, we benchmark our solution to the theoretically optimal one and show that good
+approximations can be achieved. Finally, we conduct some robustness checks and show that
+the results are quite stable across different sets of hyper- and market parameters.
+Even though machine learning methods have produced promising results in the context
+of ﬁnance, there is still relatively little trust in such models among practitioners due to their
+opaqueness and lack of conceptual intuition why they are actually able to produce those
+results. By connecting well-understood traditional methods with our RL approach we aim at
+contributing to bridge this disconnection.
+Although there is much more to explore in this stream of research, our ﬁndings suggest that
+there might be a well-deserved place for new ML methods for deriving optimal investment
+strategies. An interesting extension to this paper could be to either design algorithms that
+produce more stable and reliable results or to further analyze our algorithms applicability
+to a wider range of market models. Once enough evidence is found that RL is reliably
+applicable to well-known settings, one could start moving away from controlled experimental
+environments and start exploring observed market prices and/or other observable variables
+for deriving optimal investment policies.
+Appendix A. Learned Action for Diﬀerent Risk Aversion Levels
+The following ﬁgures show the learned action over time for different risk aversion levels
+utilizing the exact same learning and model parameters as in Section 5. Note that, for com-
+parability, we utilize the same random seed and initial network parameters. Hence, similar
+course of the learned action can be observed over the ﬁrst part of the learning process. As
+described in Section 5.1, only after some time the distribution of observations in the replay
+buffer becomes representative and only then the algorithm begins to actually search for the
+optimal action speciﬁc to each risk aversion level.
+123
+
+Annals of Operations Research
+Fig. 10 Training process of learned action (η = −4.8)
+Fig. 11 Training process of learned action (η = −4.2)
+123
+
+Annals of Operations Research
+Fig. 12 Training process of learned action (η = −3.6)
+Funding Open Access funding enabled and organized by Projekt DEAL.
+Declarations
+Ethical approval this article does not contain any studies with human participants or animals performed by
+any of the authors.
+Conﬂict of interest All authors declare that they have no conﬂict of interest.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Aboussalah, A. M., & Lee, C. G. (2020). Continuous control with stacked deep dynamic recurrent reinforce-
+ment learning for portfolio optimization. Expert Systems with Applications, 140, 112–891.
+Bayraktar, E., & Kara, A. D. (2023). Approximate Q learning for controlled diffusion processes and its near
+optimality. SIAM Journal on Mathematics of Data Science, 5, 615–638.
+Boyle, P. P. (1977). Options: A Monte Carlo approach. Journal of Financial Economics, 4, 323–338.
+Brammer, J., Lutz, B., & Neumann, D. (2022). Permutation ﬂow shop scheduling with multiple lines and
+demand plans using reinforcement learning. European Journal of Operational Research, 299, 75–86.
+Brandt, M. W., Goyal, A., Santa-Clara, P., & Stroud, J. R. (2005). A simulation approach to dynamic portfolio
+choice with an application to learning about return predictability. Review of Financial Studies, 18, 831–
+873.
+Chen, L. (Ed.). (2021). Deep learning and practice with MindSpore. Springer Singapore, Singapore: Cognitive
+Intelligence and Robotics.
+123
+
+Annals of Operations Research
+Chen, Z. (2005). Multiperiod consumption and portfolio decisions under the multivariate GARCH model with
+transaction costs and CVaR-based risk control. OR Spectrum, 27, 603–632.
+Christoffersen, P., Heston, S., & Jacobs, K. (2006). Option valuation with conditional skewness. Journal of
+Econometrics, 131, 253–284.
+Cybenko, G. (1989). Approximation by superpositions of a sigmoidal function. Mathematics of Control,
+Signals, and Systems, 2, 303–314.
+Davis, M. H., & Lleo, S. (2021). Risk-sensitive benchmarked asset management with expert forecasts. Math-
+ematical Finance, 31, 1162–1189.
+Escobar-Anel, M., Gollart, M., & Zagst, R. (2022). Closed-form portfolio optimization under GARCH models.
+Operations Research Perspectives, 9, Article 100216.
+Escobar-Anel, M., Spies, B., & Zagst, R. (2021). Expected utility theory on general afﬁne GARCH models.
+Applied Mathematical Finance, 28, 477–507.
+Gu, S., Kelly, B.T., & Xiu, D., (2018). Empirical asset pricing via machine learning. Chicago Booth Research
+Paper No. 18-04, 31st Australasian Finance and Banking Conference 2018, Yale ICF Working Paper No.
+2018-09 .
+Gu, S., Kelly, B.T., & Xiu, D., (2019). Autoencoder asset pricing models. Yale ICF Working Paper No. 2019-04,
+Chicago Booth Research Paper No. 19-24 .
+Heston, S. L. (1993). A closed-form solution for options with stochastic volatility with applications to bond
+and currency options. Review of Financial Studies, 6, 327–343.
+Heston, S. L., & Nandi, S. (2000). A closed-form GARCH option valuation model. Review of Financial
+Studies, 13, 585–625.
+Jaimungal, S. (2022). Reinforcement learning and stochastic optimisation. Finance and Stochastics, 26, 103–
+129.
+Jaspersen, J. G., & Montibeller, G. (2020). On the learning patterns and adaptive behavior of terrorist organi-
+zations. European Journal of Operational Research, 282, 221–234.
+Jia, Y., & Zhou, X. Y. (2022). Policy gradient and actor-critic learning in continuous time and space: Theory
+and algorithms. Journal of Machine Learning Research, 23, 1–50.
+Jiang, J., Kelly, B.T., & Xiu, D., (2020). (Re-)imag(in)ing price trends. Chicago Booth Research Paper No.
+21-01 .
+Jiang, R., Saunders, D., & Weng, C. (2022). The reinforcement learning Kelly strategy. Quantitative Finance,
+22, 1445–1464.
+Kingma, D.P., Ba, J., (2014). Adam: A method for stochastic optimization, preprint submitted to
+arXiv1412.6980.
+Kiumarsi, B., Vamvoudakis, K. G., Modares, H., & Lewis, F. L. (2018). Optimal and autonomous control
+using reinforcement learning: A survey. IEEE transactions on neural networks and learning systems, 29,
+2042–2062.
+Kormushev, P., Calinon, S., & Caldwell, D. (2013). Reinforcement learning in robotics: Applications and
+real-world challenges. Robotics, 2, 122–148.
+Kraft, H. (2005). Optimal portfolios and Heston’s stochastic volatility model: an explicit solution for power
+utility. Quantitative Finance, 5, 303–313.
+Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., Wierstra, D. & (Eds.), (2016).
+Continuous control with deep reinforcement learning: 4th International Conference on Learning Repre-
+sentations, ICLR 2016, San Juan, Puerto Rico, May 2-4, 2016.
+Longstaff, F. A., & Schwartz, E. S. (2001). Valuing american options by simulation: A simple least-squares
+approach. Review of Financial Studies, 14, 113–147.
+Merton, R. C. (1969). Lifetime portfolio selection under uncertainty: The continuous-time case. The Review
+of Economics and Statistics, 51, 247.
+Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness, J., Bellemare, M. G., Graves, A., Riedmiller, M.,
+Fidjeland, A. K., Ostrovski, G., Petersen, S., Beattie, C., Sadik, A., Antonoglou, I., King, H., Kumaran,
+D., Wierstra, D., Legg, S., & Hassabis, D. (2015). Human-level control through deep reinforcement
+learning. Nature, 518, 529–533.
+Moody, J., & Saffell, M. (2001). Learning to trade via direct reinforcement. IEEE transactions on neural
+networks, 12, 875–889.
+Moody, J., Wu, L., Liao, Y., & Saffell, M. (1998). Performance functions and reinforcement learning for
+trading systems and portfolios. Journal of Forecasting, 17, 441–470.
+de Moor, B. J., Gijsbrechts, J., & Boute, R. N. (2022). Reward shaping to improve the performance of deep
+reinforcement learning in perishable inventory management. European Journal of Operational Research,
+301, 535–545.
+Nagai, H. (2023). Optimal consumption-investment under partial information in conditionally log-Gaussian
+models. Probability, Uncertainty and Quantitative Risk, 8, 95–120.
+123
+
+Annals of Operations Research
+Sass, J., Westphal, D., & Wunderlich, R. (2017). Expert opinions and logarithmic utility maximization for
+multivariate stock returns with Gaussian drift. International Journal of Theoretical and Applied Finance,
+20, 1750022.
+Sass, J., Westphal, D., & Wunderlich, R. (2021). Diffusion approximations for randomly arriving expert
+opinions in a ﬁnancial market with Gaussian drift. Journal of Applied Probability, 58, 197–216.
+Seierstad, A. (2009). Stochastic control in discrete and continuous time. US, Boston, MA: Springer.
+Stafylopatis, A., & Blekas, K. (1998). Autonomous vehicle navigation using evolutionary reinforcement
+learning. European Journal of Operational Research, 108, 306–318.
+van Hasselt, H. (2010). Double Q-learning. In J. Lafferty, C. Williams, J. Shawe-Taylor, R. Zemel, & A.
+Culotta (Eds.), Advances in Neural Information Processing Systems. Curran Associates Inc.
+van Rooijen, J. C., Grondman, I., & Babuška, R. (2014). Learning rate free reinforcement learning for real-time
+motion control using a value-gradient based policy. Mechatronics, 24, 966–974.
+Wang, H., Zariphopoulou, T., & Zhou, X. Y. (2020). Reinforcement learning in continuous time and space: A
+stochastic control approach. Journal of Machine Learning Research, 21, 1–34.
+Wang, H., & Zhou, X. Y. (2020). Continuous-time mean-variance portfolio selection: A reinforcement learning
+framework. Mathematical Finance, 30, 1273–1308.
+Watkins, C. J. C. H., & Dayan, P. (1992). Q-learning. Machine Learning, 8, 279–292.
+Weissensteiner, A. (2009). A Q-learning approach to derive optimal consumption and investment strategies.
+IEEE transactions on neural networks, 20, 1234–1243.
+Zhu, Y., & Escobar-Anel, M. (2021). A neural network Monte Carlo approximation for expected utility theory.
+Journal of Risk and Financial Management, 14, 322.
+Zhu, Y., & Escobar-Anel, M. (2022). Polynomial afﬁne approach to HARA utility maximization with applica-
+tions to Ornstein Uhlenbeck 4/2 models. Applied Mathematics and Computation, 418, Article 126836.
+Zhu, Y., Escobar-Anel, M., Davison, M., (2022). A polynomial-afﬁne approximation for dynamic portfolio
+choice. Computational Economics , 1–37.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

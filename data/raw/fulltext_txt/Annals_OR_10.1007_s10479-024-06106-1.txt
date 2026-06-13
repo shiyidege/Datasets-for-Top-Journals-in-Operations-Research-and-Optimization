@@ -1,0 +1,4162 @@
+TITLE: Approximate dynamic programming for liner shipping network design
+JOURNAL: Annals_OR
+YEAR: 2024
+DOI: https://doi.org/10.1007/s10479-024-06106-1
+---
+
+Annals of Operations Research
+https://doi.org/10.1007/s10479-024-06106-1
+ORIGINAL RESEARCH
+Approximate dynamic programming for liner shipping
+network design
+Sangmin Lee1,2
+· Trine Krogh Boomsma2 · Klaus Kähler Holst3
+Received: 29 November 2023 / Accepted: 5 June 2024
+© The Author(s) 2024
+Abstract
+The global containerised trade heavily relies on liner shipping services, facilitating the world-
+wide movement of large cargo volumes along ﬁxed routes and schedules. The proﬁtability
+of shipping companies hinges on how efﬁciently they design their shipping network; a com-
+plex optimization problem known as the liner shipping network design problem (LSNDP). In
+recent years, approximate dynamic programming (ADP), also known as reinforcement learn-
+ing, has emerged as a promising approach for large-scale optimisation. This paper introduces
+a novel Markov decision process for the LSNDP and investigates the potential of ADP. We
+show that ADP methods based on value iteration produce optimal solutions to small instances,
+but their scalability is hindered by high memory demands. An ADP method based on a deep
+neural network requires less memory and successfully obtains feasible solutions. The quality
+of solutions, however, declines for larger instances, possibly due to the discrete nature of
+high-dimensional state and action spaces.
+Keywords Liner shipping network design · Approximate dynamic programming · Deep
+reinforcement learning · Combinatorial optimisation
+Abbreviations
+LSNDP
+Liner Shipping Network Design Problem
+OR
+Operations Research
+ADP
+Approximate Dynamic Programming
+RL
+Reinforcement Learning
+MDP
+Markov Decision Process
+B Sangmin Lee
+sangmin.lee@maersk.com
+Trine Krogh Boomsma
+trine@math.ku.dk
+Klaus Kähler Holst
+klaus@holst.it
+1
+Data Science, Maersk, Esplanaden 50, 1263 Copenhagen K, Denmark
+2
+Department of Mathematical Sciences, University of Copenhagen, Universitetsparken 5, 2100
+Copenhagen Ø, Denmark
+3
+AI & Analytics, Novo Nordisk, Novo Alle 1, 2880 Bagsværd, Denmark
+123
+
+Annals of Operations Research
+MIP
+Mixed-Integer Programming
+DP
+Dynamic Programming
+COP
+Combinatorial Optimisation Problem
+TSP
+Travelling Salesman Problem
+IP
+Integer Programming
+FFE
+Forty Foot container Equivalent unit
+TC
+Time Charter
+DQN
+Deep Q-Network
+ReLU
+Rectiﬁed Linear Unit
+ADAM
+ADAptive Moment estimation
+1 Introduction
+Liner shipping transports containerised cargo along predeﬁned routes with ﬁxed itineraries.
+The term “liner” refers to ships that are operated on such routes, similar to passenger liners
+and public transportation such as bus and metro. This paper focuses on the liner shipping
+network design problem (LSNDP), aiming to optimise the shipping network by minimising
+operating costs and the transit time of cargo ﬂow from origin to destination ports.
+The LSNDP is a highly complex combinatorial optimisation problem, with a solution
+space that increases exponentially with the size of the network. In reality, the network can
+be very large. For example, Maersk, the world’s largest liner shipping company, transports
+more than a million containers monthly from more than 300 ports globally (Maersk, 2019).
+Traditional optimisation methods, such as mixed-integer programming, struggle to handle
+real-life instances and are unable to solve instances with more than a dozen ports (Christiansen
+et al., 2020). Even heuristic methods can only handle networks up to 197 ports (Krogsgaard
+et al., 2018). Consequently, in practice, the network design process is mostly driven by expert
+network designers, with only limited support from optimisation algorithms.
+With an evident need for decision support and large-scale optimisation, we investigate the
+potential of emerging methods known as approximate dynamic programming (ADP) (Pow-
+ell, 2011) or reinforcement learning (RL) (Sutton & Barto, 2018), drawing inspiration from
+various research domains, including machine learning (Sutton & Barto, 2018), control theory
+(Bertsekas, 2019) and operations research (Powell, 2011). Our motivation is the recent trend
+in the application of machine learning techniques to complex optimisation problems, as exem-
+pliﬁed by AlphaGo’s exceptional performance in the board game Go (Silver et al., 2016).
+Driven by the success, reinforcement learning methods has been applied to various combina-
+torial graph problems, including routing, scheduling and assignment problems (Vesselinova
+et al., 2020). Moreover, Khalil et al. (2017) develop a learning algorithm that generalises
+to new instances of NP-hard combinatorial graph problems, combining an RL algorithm
+with graph embedding techniques (Dai et al., 2016). As such, we build on experience with
+combinatorial optimization problems that have similar structure to the LSND.
+To facilitate the application of machine learning methods, the optimisation problem is
+often formulated as a sequential decision-making process, such as Markov decision process
+(MDP) (Puterman, 2014), and handled by an approximate version of dynamic programming
+(Mazyavkina et al., 2021). Indeed, ADP has shown promise in overcoming limitations of
+traditional OR methods by integrating machine learning techniques into the MDP framework.
+For instance, ADP is shown to outperform a commercial mixed-integer programming (MIP)
+solver in terms of both solution quality and running time for solving large-size maritime
+123
+
+Annals of Operations Research
+inventory routing problems (Papageorgiou et al., 2015). This paper makes a contribution in
+the string of efforts to adapt ADP and LR to liner shipping problems.
+An advantage of the dynamic programming framework over traditional mathematical
+programming methods is the sequential decision-making, decomposing the problem over
+time. This immediately allows for extensions to stochastic optimisation, in which decisions
+must adapt to uncertainty evolving over time, e.g., according to a Markov process. Like other
+exact methods, dynamic programming may not scale to larger networks, and approximation
+is necessary. However, in contrast to heuristic methods for optimisation, ADP methods, e.g.,
+value iteration, may have convergence guarantees, see Powell (2011).
+In this paper, we formulate the LSNDP as an MDP, deﬁning appropriate state and action
+spaces and cost and transition functions. We introduce a state-dependent action space that
+allows us to incorporate routing and ﬂow constraints. This also allows us to account for
+various other problem characteristics. For smaller instances of the problem, we employ value
+iteration algorithms, which maintain value estimates in a tabular format. For larger instances,
+however, we apply a deep reinforcement learning algorithm that generates estimates of the
+so-called state-action values using a neural network.
+We summarise the contributions of our work as follows:
+• We develop a novel MDP framework for the LSNDP that accounts for the most important
+characteristics of the problem, including co-optimisation of network design and com-
+modity routing, balancing of travel costs and travel times, a weekly service frequency,
+vessel capacity limits and transshipments of commodities. This framework facilitates the
+application of ADP.
+• We are the ﬁrst to adopt and compare a number of ADP variants to the LSNDP, including
+value iteration methods and a deep Q-network.
+• We examine the potential of the ADP methodology on a number of realistic test instances
+and demonstrate the ability to obtain optimal solutions for smaller instances and feasible
+solutions for larger instances.
+The remainder of this paper is organised as follows. First, Sect.2 reviews relevant work in
+the scientiﬁc literature. Section3 outlines the LSNDP and formulates the problem as an MDP,
+whereas Sect.4.1 and Sect.4.3 present ADP-based algorithms for solving the LSNDP. Sec-
+tion5 discusses the results of the numerical experiments. Finally, Sect.6 draws conclusions
+from this study and suggests potential directions for future research.
+2 Literature review
+The LSNDP has traditionally been addressed using OR methods, including MIP algo-
+rithms (Plum et al., 2014; Reinhardt & Pisinger, 2012; Wang & Meng, 2014), metaheuristic
+algorithms (Cheng & Wang, 2021; Liu et al., 2021) and/or heuristics, see also Christiansen et
+al. (2020). MIP algorithms guarantee optimality but struggle with scalability as evidenced by
+the sizes of the instances that have been solved. One type of heuristics selects shipping routes
+from a list of candidate services (Balakrishnan & Karsten, 2017; Meng & Wang, 2011a), but
+the identiﬁcation of this list becomes challenging as the problem size increases (Christiansen
+et al., 2020). Another heuristic approach constructs shipping service routes in a ﬁrst stage and
+optimises network ﬂows in a second stage (Agarwal & Ergun, 2008; Alvarez, 2009; Monemi
+& Gelareh, 2017; Thun et al., 2017), allowing for stage-wise decomposition. An alternative
+approach is to ﬁrst optimise the ﬂow, the so-called backbone ﬂow, and then design the service
+123
+
+Annals of Operations Research
+Table 1 Overview of selected papers in liner shipping network design literature
+Paper
+Transship- ment Service frequency Max size (ports) Optimality Solution method
+Features
+Agarwal and Ergun (2008)
+Yes
+Yes
+20
+No
+Greedy heuristic, column generation,
+two-phase Benders decomposition
+Alvarez (2009)
+Yes
+No
+120
+No
+Two-tier heuristic, tabu search, col-
+umn generation, branch and bound
+Meng and Wang (2011a)
+Yes
+Yes
+46
+Yes
+MILP
+Hub-and-Spoke,
+empty
+container
+repositioning, candidate services
+Reinhardt and Pisinger (2012)
+Yes
+No
+15
+Yes
+Branch-and-cut
+Route dependent capacities, butterﬂy
+routes
+Plum et al. (2014)
+No
+No
+25
+Yes
+MILP, branch-and-cut-and-price
+Single service
+Wang and Meng (2014)
+No
+Yes
+12
+Yes
+MLIP,
+Column-generation-based
+heuristic
+delivery deadlines
+Balakrishnan and Karsten (2017) Yes
+Yes
+45
+No
+LP-based heuristic
+Candidate services
+Monemi and Gelareh (2017)
+Yes
+Yes
+200
+No
+Benders decomposition, branch-and-
+cut
+empty container repositioning
+Thun et al. (2017)
+Yes
+Yes
+7
+Yes
+Branch-and-bound, column genera-
+tion
+Complex service structure
+Krogsgaard et al. (2018)
+Yes
+Yes
+202
+No
+Lagrange heuristic, variable neigh-
+bourhood search
+Koza et al. (2020)
+Yes
+Yes
+114
+No
+Column-generation-based
+meta-
+heuristic
+service scheduling
+Wang et al. (2021)
+No
+Yes
+15
+No
+Hybrid genetic algorithm
+shipper’s dual preference
+Liu et al. (2021)
+No
+Yes
+11
+–
+Genetic algorithm (GA)
+Bi-objective, carbon tax, liner alliance
+123
+
+Annals of Operations Research
+routes in a second stage (Krogsgaard et al., 2018). This heuristic provides solutions to an
+instance of 197 ports and 9,630 origin–destination pairs.
+Simulation-based methods for liner shipping optimisation have been explored in various
+studies (Di Francesco, Crainic, & Zuddas, 2009; Dong & Song, 2009; He, Huang, & Chang,
+2015). While these methods have been applied to problems in the liner shipping industry,
+such as container ﬂeet sizing and empty repositioning, container supply chain network and
+empty container repositioning, they have not been speciﬁcally applied to the LSNDP. Table 1
+presents an overview of selected papers addressing liner shipping network design problems,
+along with their focus on speciﬁc variants of LSNDP, such as transshipment costs, service
+frequency and other features. Moreover, the table speciﬁes the maximum instance size solved
+by each paper in terms of the number of ports and whether they achieve optimality.
+Another strand of literature applies dynamic programming (DP) (Puterman, 2014) to
+various optimisation problems in liner shipping by formulating them as sequential decision
+problems. Examples include service planning (Wang et al., 2021), ﬂeet deployment (Meng &
+Wang, 2011b), speed optimisation (Aydin et al., 2017) and ship refuelling (Zhen et al., 2017).
+As a new contribution to the scientiﬁc literature, we take a similar approach to simultaneously
+tackle the design of the liner shipping network and ﬂowing cargo demands.
+Advancements in DP have been made under the name of approximate dynamic pro-
+gramming by incorporating approximation techniques to enhance scalability (Powell, 2011).
+Applications of ADP include the stochastic time-staged integer multi-commodity ﬂow prob-
+lem (Topaloglu & Powell, 2006), large-size ﬂeet management problems (Simao et al., 2009;
+Simão et al., 2010), sequential network design and timing problems (Chow & Sayarshad,
+2016), and adaptive railway trafﬁc control (Ghasempour & Heydecker, 2020). As an example,
+the ﬂeet management problem contains an inﬁnite state space and 50,000 decisions variables.
+With a similar need for scaling, we likewise resort to approximation, in particular, of the DP
+value function.
+The success of ADP is not least due to the machine learning and artiﬁcial intelligence
+communities, in which ADP is also referred to as reinforcement learning (RL) (Sutton &
+Barto, 2018). RL has been integrated with neural networks (Goodfellow et al., 2016) to solve
+combinatorial optimisation problems (COPs) on graphs (Bello et al., 2016). Notably, RL
+has outperformed traditional heuristic methods like Google Optimization Tools’ local search
+(Perron et al., 2023) in solving the travelling salesman problem (TSP) for up to 100 nodes
+(Bello et al., 2016). RL has also been applied to complex graph-based COPs, including
+vehicle routing problems with time-varying locations and demands (Nazari et al., 2018).
+Extensions in this domain incorporate graph embedding techniques (Dai et al., 2016; Khalil
+et al., 2017), attention mechanisms (Kool et al., 2018; Veliˇckovi´c et al., 2017), and training
+algorithms such as Deep Q-network (Mnih et al., 2015), REINFORCE (Williams, 1992) and
+Asynchronous Advantage Actor-Critic (Mnih et al., 2016). To the best of our knowledge, this
+paper is the ﬁrst in the literature to adopt ADP to the LSNDP. For smaller instances of the
+combinatorial problem, we rely on value function iteration. For larger instances, however,
+we use a Deep Q-network for value function approximation.
+3 Problem description and formulation
+The LSNDP solves two interconnected problems: network design and multi-commodity ﬂow.
+The former problem deﬁnes a set of services that form a liner shipping network. Each service
+represents a scheduled journey of multiple vessels following a predetermined sailing route.
+123
+
+Annals of Operations Research
+This journey consists of a sequence of port calls, which are intermediate stops at ports for
+container handling and refuelling of vessels (Koza et al., 2020). The latter problem determines
+the optimal routing of commodities from their origin ports to their destination ports within
+the service network. Each commodity represents cargo shipped by sea.
+In this section, we present the LSNDP that jointly optimises the service network design
+and commodity routing by minimising the weighted sum of the network’s weekly operating
+expenses and the total transit time of all commodities. Operating expenses include vessel
+deployment costs, ﬁxed design costs for selecting service arcs and transshipment costs. By
+including total transit time in the minimisation criterion, the LSNDP prioritises the selection
+of the shortest path for shipping a commodity from its origin port to its destination port within
+the service network.
+Section 3.1 presents the underlying assumptions that form the basis for the rest of the paper.
+We largely adopt the same assumptions as Brouer et al. (2014). In Sect.3.2, we formulate the
+LSNDP as a Markov decision problem, using the dynamic programming terminology of Put-
+erman (2014) and Powell (2011), and refer to Table 2 for the notation. For the corresponding
+integer programming (IP) formulation of the LSNDP, we refer to Appendix A.
+3.1 Notation and assumptions
+We make the following assumptions regarding parameters, decisions and constraints of the
+problem. All parameters are deterministic.
+Let G = (P, E) be a directed graph consisting of a set of nodes P representing ports and
+a set of arcs E representing port-to-port connections. While the IP formulation is deﬁned on
+G, the Markov decision problem is deﬁned on a directed graph ¯G = (P, ¯E), where ¯E is the
+set of all arcs in E in addition to loops on all nodes in P, i.e., ¯E = E ∪{(i, i) ∈P × P}. The
+reason for including loops in the graph is further explained in Sect.3.2.
+The shipping network is deﬁned by a set of services R, with each service r representing
+a selected set of arcs forming a circuit along which a vessel sails. We assume a maximum
+limit on the number of services. The hub port ih
+r of service r serves as its predetermined
+starting and ending point. Services operate with a weekly frequency, requiring every port in a
+service to be visited once a week. In the sailing route of a service, no arcs can be duplicated.
+Duplicatedarcswithinaservicemaycomplicatevesselcoordinationandscheduling,resulting
+in inefﬁciencies and operational complexities, and thus, practitioners prefer to avoid this.
+Each service is associated with a predeﬁned vessel class with a given capacity. Furthermore,
+we assume that vessels always sail at their design speed, and have a ﬁxed berthing time,
+regardless of vessel classes and ports.
+Cargo is described by a set of commodities K, with each commodity k ∈K to be trans-
+portedfromitsoriginportok tothedestinationportdk.Thequantityofcommodityk isdenoted
+by qk. A commodity ﬂow does not split; each commodity is transported along a single path.
+In reality, cargo may be split in the event of contingencies. Nevertheless, for management
+reasons, practitioners prefer to transport cargo along a single route. However, commodities
+can be transshipped between services, incurring transshipment costs. Total commodity ﬂow
+on each service arc cannot exceed the capacity of the vessel.
+We denote by ti jr the total time spent by vessels deployed on service r for sailing along
+arc (i, j) and berthing at port j. This parameter is computed as follows:
+ti jr = li j/sds
+r + tber,
+123
+
+Annals of Operations Research
+Table 2 Notation for given sets and parameters
+Given sets
+P
+Set of ports
+E
+Set of arcs
+¯E
+Set of all arcs in E plus loops on all nodes in P
+R
+Set of services
+K
+Set of commodities
+Parameters
+ok
+Origin port of commodity k ∈K
+dk
+Destination port of commodity k ∈K
+qk
+Quantity of commodity k ∈K (in Forty Foot container Equivalent unit (FFE))
+ihr
+Hub port of service r ∈R
+vr
+Capacity of the vessel class deployed on service r ∈R (in FFE)
+tber
+Berthing time for vessels (in hours)
+ti jr
+Travel time for the vessel class deployed on service r ∈R to sail arc (i, j) ∈E plus
+Berthing time for the port call j ∈P (in hour)
+li j
+Distance from port i ∈P to port j ∈P (in nautical miles)
+sds
+r
+Design speed of the vessel class deployed on service r ∈R (in knots)
+ci jr
+Fixed cost for selecting arc (i, j) ∈E for service r ∈R (in USD)
+pb
+Bunker fuel price (in USD/ton)
+bds
+r
+Daily bunker consumption of the vessel class deployed on service r ∈R at
+Design speed sds
+v (in ton)
+bidl
+r
+Daily bunker consumption of vessel class v ∈V when idling at ports (in ton)
+cfp
+i
+Fixed port calling cost to gain access to port i ∈P (in USD)
+cvp
+i
+Variable port calling cost when entering port i ∈P (in USD/FFE)
+ctcr
+Weekly time charter (TC) rate of vessel class deployed on service r ∈R (in USD)
+ctr
+i
+Transshipment cost at port i ∈P (in USD/FFE)
+ω
+Weight of the total transit time of all commodities in the minimisation criterion
+where li j represents the distance from port i to port j, sds
+r
+denotes the design speed of the
+vessel class deployed on service r and tber represents the berthing time at ports. For loops,
+we let tiir = 0 for all i ∈P and r ∈R.
+The ﬁxed cost of selecting arc (i, j) for service r is denoted by ci jr. This cost consists
+of the bunker fuel expenses for sailing arc (i, j) and berthing at port j, and the ﬁxed and
+variable port-calling costs of port j. The ﬁxed cost is computed as follows:
+ci jr = pb ·
+
+li j/sds
+r
+
+·
+
+bds
+r /tber
++ bidl
+r
+
++ cfp
+j + cvp
+j · vr,
+where pb denotes a bunker fuel price; bds
+r and bidl
+r
+represent the daily bunker consumption
+of the vessel class deployed on service r when sailing at its design speed and when idling at
+a port, respectively; cfp
+j and cvp
+j denote the ﬁxed port calling cost of accessing port j and the
+variable port calling cost when entering port j, respectively; and vr represents the capacity
+of the vessel class deployed on service r. For loops, we let ciir = 0 for all i ∈P and r ∈R.
+123
+
+Annals of Operations Research
+Table 3 Additional notation for the MDP framework
+s, s′
+States
+s0
+Initial state
+S
+Set of all feasible states
+Str
+Set of terminal states
+Sdt
+Set of desired terminal states
+Sut
+Set of undesired terminal states
+λ
+Infeasibility penalty cost
+a, a′
+Action
+A
+Set of all possible actions
+A(s)
+Set of actions given state s ∈S \ Str
+f (s, a)
+Value of state-transition function, given state-action pair (s, a) ∈S \ Str × A(s)
+C(s, a)
+Value of cost function, given state-action pair (s, a) ∈S \ Str × A(s)
+C(s)
+Value of cost function, given terminal state s ∈Str
+π
+Policy
+π(s)
+Action taken in state s ∈S \ Str under policy π
+π∗
+Optimal policy
+π∗(s)
+Optimal action taken in state s ∈S \ Str under the optimal policy π∗
+Vπ(s)
+Value of state s ∈S under policy π
+V∗(s)
+Value of state s ∈S under the optimal policy π∗
+Qπ(s, a)
+Value of state-action pair (s, a) ∈S \ Str × A(s) Under policy π
+Q∗(s, a)
+Value of state-action pair (s, a) ∈S \ Str × A(s) Under the optimal policy π∗
+ir
+Location (port) of service r ∈R
+ui jr
+Used capacity of arc (i, j) ∈E for service r ∈R
+ur
+|E|-dimensional vector of {ui jr}(i, j)∈E for service r ∈R
+ik
+Location (port) of commodity k ∈K
+rk
+Service that carries commodity k ∈K
+τr
+Total travel time for sailing all arcs selected for service r ∈R
+twh
+Total hours in a week
+In addition to the ﬁxed costs, ctc
+r and ctr
+i denote the weekly time charter rate of the vessel
+class deployed on service r and the transshipment cost at port i, respectively. The parameter ω
+represents the weight assigned to the total transit time of all commodities in the minimisation.
+3.2 The Markov decision process
+We formulate a Markov decision process (MDP) for the LSNDP, deﬁned by the tuple M =
+(S, A, f , C), where S is a ﬁnite set of states s, A is a ﬁnite set of actions a; f : S × A →S
+is the state-transition function that determines the next state s′ when action a is taken in the
+current state s, and C : S × A →R is the cost function. See Table 3 for the additional
+notation for the MDP.
+123
+
+Annals of Operations Research
+A state variable is deﬁned as a (|R| + |E| · |R| + 2|K|)-dimensional vector s and given
+by:
+s =
+
+{ir}r∈R, {ur}r∈R, {ik}k∈K, {rk}k∈K
+
+.
+(1)
+The set of states S and its cardinality |S| satisfy:
+S ⊆P|R| ×
+
+r∈R
+{−1, 0, 1, . . . , vr}|E| × P|K| × ({−1} ∪R)|K|
+(2)
+|S| ≤|P||R| ·
+
+r∈R
+(vr + 2)|E| · |P||K| · (1 + |R|)|K|.
+(3)
+The ﬁrst two components of a state variable represent the current status of the services.
+The index ir indicates the location (port) of service r, and the |E|-dimensional vector ur =
+{ui jr}(i, j)∈E contains discrete elements ui jr representing the utilised capacity of service r
+for each arc. If arc (i, j) is not selected for service r, its used capacity ui jr is set to −1. Once
+arc (i, j) is selected for service r, we set ui jr = 0. For loops, the used capacity is always 0,
+i.e., uiir = 0 for all i ∈P, all r ∈R. The last two components of the state variable capture
+the current status of commodities. The index ik represents the location (port) of commodity
+k, while rk speciﬁes the service that carries commodity k. If commodity k is not carried by
+any services, we set rk = −1.
+We deﬁne the initial state s0 as follows:
+s0 = ({ih
+r }r∈R, {−1}r∈R, {ok}k∈K, {−1}k∈K),
+(4)
+where −1 = (−1, −1, . . . , −1) ∈Z|E|. This state indicates that all services and commodities
+are located at their hub ports and origin ports, respectively. Moreover, no arcs are selected
+and no commodities are carried by any service in this state.
+A state s is called a desired terminal state if all commodities are located at their destination
+ports and all services are located at their initial ports, i.e., ir = ih
+r for all r ∈R and ik = dk
+for all k ∈K. The set of desired terminal states is denoted by Sdt. On the other hand, an
+undesired terminal state refers to a state s that does not fulﬁl the conditions of a desired
+terminal state and for which a decision maker cannot make any decisions. We represent the
+set of undesired terminal states by Sut. The set of terminal states, denoted Str, is the union
+of these two sets, i.e., Str = Sdt ∪Sut.
+Based on a state s, the decision maker selects an action a from the state-dependent action
+space A(s). This action determines the choice of arcs for each service and speciﬁes which
+arcs and services are responsible for transporting the commodities. Note, however, that the
+decision maker does not choose an action in terminal states. The action a is deﬁned as a
+(|R| + 2|K|)-dimensional vector and given by:
+a =
+ 
+i′
+r
+
+r∈R ,
+
+i′
+k
+
+k∈K ,
+
+r′
+k
+
+k∈K
+
+(5)
+The action space A ⊆P|R| ×P|K| ×({−1}∪R)|K| and its cardinality |A| ≤|P||R| ·|P||K| ·
+(1 + |R|)|K|. The ﬁrst part of an action represents the end nodes of the arcs (ir, i′
+r) selected
+for services r ∈R. Similarly, the second part of the action corresponds to the end nodes of
+the arcs and services responsible for transporting the commodities, which implies that each
+commodity k is transported along the arc (ik, i′
+k) by the service r′
+k.
+Additionally, we introduce a null action, represented by a loop, for both services and
+commodities. This null action has no impact on the status of services and commodities but
+allows them to remain idle, thereby adding ﬂexibility to the MDP model.
+123
+
+Annals of Operations Research
+Given a state
+s = ({ir}r∈R, {ur}r∈R, {ik}k∈K, {rk}k∈K),
+an action
+a = (
+
+i′
+r
+
+r∈R ,
+
+i′
+k
+
+k∈K ,
+
+r′
+k
+
+k∈K)
+must satisfy the following constraints:
+(ir, i′
+r) ∈¯E, (ik, i′
+k) ∈¯E, r′
+k ∈{−1} ∪R,
+∀k ∈K, ∀r ∈R
+(6)
+i′
+r ̸= ir,
+if ir ̸= ih
+r ,
+∀r ∈R
+(7)
+uir,i′r,r = −1,
+if i′
+r ̸= ir,
+∀r ∈R
+(8)
+uik,i′
+k,r′
+k > −1,
+if i′
+k ̸= ik,
+∀k ∈K
+(9)
+r′
+k ̸= −1,
+if i′
+k ̸= ok,
+∀k ∈K
+(10)
+r′
+k = rk,
+if i′
+k = ik,
+∀k ∈K
+(11)
+i′
+k = ik,
+if ik = dk,
+∀k ∈K
+(12)
+uii′r +
+
+k∈K:
+(ik,i′
+k,r′
+k)=(i,i′,r)
+qk ≤vr,
+∀(i, i′) ∈E : ∃k ∈K : (ik, i′
+k) = (i, i′), ∀r ∈R
+(13)
+
+{i′
+r}r∈R, {i′
+k}k∈K
+
+̸=
+
+{ir}r∈R, {ik}k∈K
+
+(14)
+These constraints ensure that the assumptions of Sect.3.1 are satisﬁed. Constraints (7) indi-
+cates that the null action for a service is available only if the service is at its hub port. This
+enables the decision maker to conclude the service route design by not adding any new arcs.
+Constraints (8) guarantee that the sailing route of each service does not use duplicated arcs by
+enforcing the decision maker to select arcs for each service that have not previously been cho-
+sen. In contrast, constraints (9) ensure that the decision maker selects an arc for a commodity
+only if it has been previously chosen for a service. This guarantees that only selected arcs for
+services can be used to transport commodities. Constraints (10) makes sure that the index rk
+in state s is never −1 once commodity k has been transported by any services. Constraints
+(11) force a commodity to remain in the same service when the null action is chosen for
+that commodity. Constraints (12) enforce commodities to remain at their destination ports
+upon arrival. The chosen action must satisfy the capacity constraints. Thus, constraints (13)
+ensure that the total commodity ﬂow on each service arc does not surpass the capacity of the
+vessels deployed on that service. Here, (i, j,r) refers to an arc (i, j) associated with service
+r, i.e., choosing (i, j,r) means using service r to transport commodities along the arc (i, j).
+Constraint (14) excludes the action that selects null action for every service and commodity
+from the action space. This action is removed because it does not contribute to the learning
+process, which will be further discussed in the following sections.
+The state-transition function f : S × A →S determines the next state s′ when the
+decision maker selects an action a in the current state s, and is given as follows:
+f (s, a) = (
+
+i′
+r
+
+r∈R ,
+
+u′
+r
+
+r∈R ,
+
+i′
+k
+
+k∈K ,
+
+r′
+k
+
+k∈K),
+where
+u′
+r = {u′
+i jr}(i, j)∈E, u′
+i jr = ui jr + 1{(i, j)=(ir,i′r)} + 
+k∈K:(ik,i′
+k,r′
+k)=(i, j,r) qk.
+(15)
+Equation (15) describes how capacity is updated. The second term in (15) increments utilised
+capacity of arc (i, j,r) by one when the arc (i, j) is selected for service r, resulting in the
+123
+
+Annals of Operations Research
+capacity ui jr being set to 0. Recall that E does not include loops. The last term in (15)
+increases the capacity ui jr by the sum of the quantities of commodities shipped along the arc
+(i, j) by service r.
+The cost function C : S × A →R speciﬁes the cost of selecting an action a in a state s
+and is deﬁned as follows:
+C(s, a) =
+
+r∈R
+ciri′rr +
+
+r∈R
+ctc
+r
+ 
+ τ ′
+r
+twh
+
+−
+ τr
+twh
+
++
+
+k∈K
+1{rk̸=−1 and rk̸=r′
+k}qk · ctr
+i′
+k + ω
+
+k∈K
+tiki′
+kr′
+k,
+(16)
+where τr = 
+(i, j)∈E:ui jr≥0 ti jr, τ ′
+r = 
+(i, j)∈E:u′
+i jr≥0 ti jr. The ﬁrst term in (16) represents
+the sum of ﬁxed costs for selecting service arcs. The second term in (16) accounts for the
+weekly vessel deployment costs. Here, ⌈x⌉denotes the smallest integer greater than or equal
+to x ∈R and twh represents the number of hours in a week. The variables τr represent the
+total travel time for sailing all arcs selected for each service, i.e., {(i, j) ∈E ui jr ≥0}, by
+the vessel deployed for that service. Similarly, τ ′
+r denotes the same value but based on the
+updated used capacity u′
+r by the state-transition function f . This ensures that a sufﬁcient
+number of vessels are deployed for each service to maintain its weekly frequency. The third
+term in (16) sums the transshipment costs, which occur when commodity k is transshipped
+from one service rk ̸= −1 to another service r′
+k ̸= rk. The ﬁnal term in (16) is the sum
+of transit times for each commodity, represented by tiki′
+kr′
+k, which is scaled by the weight
+parameter ω.
+For terminal states, we deﬁne the cost function as follows:
+C(s) =
+
+0,
+if s ∈Sdt,
+λ,
+if s ∈Sut,
+where the parameter λ > 0 denotes a penalty for reaching undesired terminal states.
+Using the MDP formulation, the LSNDP is solved as follows. Let a policy π : S →A
+be a function that maps a state to an action. The decision maker selects an action a in state
+s based on such a policy π, leading to a new state s′ and incurring a cost C(s, a) according
+to the state-transition function f . This iterative process starts from the initial state s0 and
+continues until the decision maker reaches a desired or undesired terminal state. Note that
+any policy eventually reaches a terminal state due to the constraints (8) and (14) and the
+limited capacities of arcs (vessels). The objective of the LSNDP is to determine a policy π∗
+that minimises the sum of costs incurred throughout this process.
+In Fig.1, we visually illustrate how services and commodities are designed and trans-
+ported within the MDP framework and using the optimal policy. The given sets are
+P = {p0, p1, p2}, ¯E = {e0, e1, e2, e3, e4, e5, e6, e7, e8}, K = {k0, k1} and R = {r0},
+i.e., the network consists of 3 nodes (ports), 6 arcs and 3 loops on the nodes, two commodi-
+ties and a single service. Below each of the subﬁgures (a)-(d), we list the current state and the
+corresponding action space. The action chosen by the optimal policy is highlighted in bold
+and blue. Moreover, for each of the subﬁgures (a)-(d), we mark the current location (port)
+of the service by a star-shaped node. Given the current node, the action determines the next
+node, corresponding to selecting an arc. Consistent with the action space, dotted lines include
+the arcs that can be selected for the service, while solid lines indicate the arcs already selected
+for the service. The numbers marked on the arcs denote their used capacities. Dash-dotted
+lines indicate loops, with their capacities ﬁxed at zero. The dotted boxes labelled dk represent
+the origin and destination, respectively, of commodity k. The numbers indicated in the brown
+123
+
+Annals of Operations Research
+Fig. 1 Implementation of the optimal policy on a small instance of the LSNDP with two commodities and a
+single service. A star-shaped node marks the current node of the service. Dotted lines represent the arcs that
+can be selected for the service, while solid lines indicate the arcs already selected for the service. The numbers
+marked on the arcs denote their used capacities. Dash-dotted lines indicate loops, with their capacities ﬁxed
+at zero. The dotted boxes labelled dk represent the origin and destination, respectively, of commodity k. The
+numbers indicated in the brown boxes indicate the quantities and current nodes of the commodities
+boxes indicate the quantities and current locations of the commodities. When brown boxes
+coincide with origins and destinations, we show the former but not the latter.
+In the initial state s0 = [[p0], [−1, −1, −1, −1, −1, −1], [p2, p0], [−1, −1]] (Subﬁg-
+ure (a)), the current ports of the service r0 and the commodities k0, k1 are the star-shaped
+p0 and the origins p0, p2, respectively, no arcs have been selected by the service and no
+commodities are carried. The optimal policy selects the action [[p2], [p2, p0], [−1, −1]]
+from the action space, corresponding to the selection of the arc e1 = (p0, p2) for the ser-
+vice r0, with two commodities remaining in their respective origin ports. This results in the
+transition to state s1 = [[p2], [−1, 0, −1, −1, −1, −1], [p2, p0], [−1, −1]] (Subﬁgure (b)).
+The used capacity of arc e1 becomes zero as it is included in the service route and has not
+123
+
+Annals of Operations Research
+been used for transporting commodities. Subsequently, the optimal policy chooses the action
+[[p1], [p1, p2], [−1,r0]], which includes arc e5 = (p2, p1) in the service route of r0 and
+transports commodity k1 from port p0 to port p2 through arc e1 = (p0, p2) by service r0,
+increasing its capacity usage by the quantity of commodity k1. The system transitions to
+s2 (Subﬁgure (c)). Finally, the optimal action [[p0], [p1, p2], [r0,r0]] in state s2 selects arc
+e2 = (p1, p0) for service r0 and transports commodity k0 from port p2 to port p1 through
+arc e5 = (p2, p1) by service r0, completing the route design of service r0 and fulﬁlling all
+demands (Subﬁgure (d)).
+The optimal service route for r0 and commodity ﬂow for k0 and k1 are as follows:
+r0 : (p0, p2, p1, p0)
+(17)
+k0 : (p2, p1)
+(18)
+k1 : (p0, p2),
+(19)
+where (17) represents the sequence of port calls for service r0, and (18) and (19) present the
+paths for commodity k0 and k1, respectively.
+To ﬁnd the optimal policy, we follow the approach described in Puterman (2014). Let
+Vπ : S →R denote the value function that assigns a value to each state s under a given
+policy π. The value Vπ(s) represents the total costs (i.e., weighted sum of operating expenses
+and transit times) incurred when the decision maker follows policy π starting from state s
+until reaching a terminal state. Similarly, we deﬁne the state-action value function Qπ :
+S ×A →R, where Qπ(s, a) represents the cumulative costs when the decision maker starts
+from state s, takes action a, and follows policy π thereafter.
+Consider the following functional equations, which are also known as optimality or Bell-
+man equations (Bellman, 1958):
+Vπ(s) = min
+a∈A(s) {C (s, a) + Vπ ( f (s, a))} ,
+∀s ∈S \ Str
+Vπ(s) = C(s),
+∀s ∈Str.
+(20)
+The solution to (20) is called the optimal value function and is denoted by V∗. Using the
+optimal value function, the optimal policy, denoted π∗, can be obtained as (Puterman, 2014):
+π∗(s) = argmin
+a∈A(s)
+{C(s, a) + V∗( f (s, a))}
+∀s ∈S \ Str.
+(21)
+The optimality equations (20) can be reformulated using the optimal state-action value
+function Q∗, deﬁned as follows (Sutton & Barto, 2018):
+Q∗(s, a) = C (s, a) + V∗( f (s, a)) ∀a ∈A(s), ∀s ∈S \ Str
+(22)
+The optimal value function can then be expressed in terms of this optimal state-action value
+function by substituting (22) into (20):
+V∗(s) = min
+a∈A(s) Q∗(s, a),
+∀s ∈S \ Str.
+(23)
+By incorporating (23) into (22), we obtain an alternative form of the Bellman equations:
+Q∗(s, a) =
+⎧
+⎨
+⎩
+C (s, a) +
+min
+a′∈A(s′)Q∗(s′, a′) ∀a ∈A(s) : s′ /∈Str,
+C (s, a) + C
+
+s′
+,
+∀a ∈A(s) : s′ ∈Str,
+∀s ∈S \ Str
+s′ = f (s, a)
+(24)
+123
+
+Annals of Operations Research
+Using the optimal state-action value function Q∗, the optimal policy (21) can be expressed
+as:
+π∗(s) = argmin
+a∈A(s)
+Q∗(s, a) ∀s ∈S \ Str.
+Therefore, the LSNDP involves solving the optimality Eqs. (20) or (24).
+4 Approximate dynamic programming
+The following presents our ADP algorithms for solving LSNDP, including value iteration in
+Sect.4.1, our efﬁcient state-space exploration in Sect.4.2, and deep reinforcement learning
+in Sect.4.3.
+4.1 Value iteration methods
+The value iteration algorithm, introduced by Bellman (1957), is an iterative method for
+solving the optimality equations (20). Shown in Algorithm 4 in Appendix B, the algorithm
+starts with an initial value function estimate ˆv (line 2) and updates the estimate for each
+non-terminal state s ∈S \ Str (line 6) in each iteration until the convergence criterion is
+satisﬁed (line 8).
+The value iteration algorithm is known for its simplicity and convergence to the optimal
+value function (Puterman, 2014). However, it faces computational challenges when dealing
+with large state spaces. The identiﬁcation of every element s in the set of feasible states
+S and its corresponding action set A(s) becomes increasingly demanding in the LSNDP
+as the problem size grows, due to constraints (6)-(14). This identiﬁcation is necessary for
+both initialising (line 2) and updating the value estimate ˆv(s) (line 6). Moreover, updating
+the value estimate for each state in each iteration (line 6) can be computationally intensive,
+requiring O(|S \ Str| · |A(s)|) operations.
+To address these challenges, we explore on-line variants of value iteration. These variants
+update the value function estimate ˆv(s) while the decision maker interacts with the MDP
+system, selecting an action a, receiving the cost C(s, a) and transitioning to the next state s′.
+A comprehensive discussion of on-line value iteration methods can be found in Barto et al.
+(1995). In the remainder of this section, we present a speciﬁc on-line variant of value iteration
+for the LSNDP, as outlined in Algorithm 5 in Appendix C and its modiﬁcation, Algorithm
+1, and discuss how these algorithms tackle the problems with large state spaces.
+Algorithm 5 is based on the Real-Time Dynamic Programming (RTDP) algorithm, pro-
+posed by Barto et al. (1995), but adapted for the LSNDP to handle different types of terminal
+states. The algorithm employs the so-called lookup table that stores value estimates ˆv(s) in
+(s, ˆv(s)) pairs and does not require pre-identifying all states s and their corresponding action
+sets A(s) in the feasible state set S. Instead, as the decision maker interacts with the MDP
+system and identiﬁes a new feasible state s through the transition function f (line 5), the
+algorithm adds the new state to the lookup table with an initial value estimate of 0 (line 1).
+We refer to an iteration as a transition from one state to another and an episode as a
+sequence of transitions from the initial state to a terminal state. In each iteration, the decision
+maker selects a greedy action a in state s (line 5), incurs a cost C(s, a), transitions to the next
+state s′ (line 6), and updates the value estimate for the current state st, while leaving value
+estimates for other states unchanged (line 7). When a desired or undesired terminal state is
+123
+
+Annals of Operations Research
+reached, the episode ends and a new episode begins (line 10 and 16). This cycle repeats until
+a stopping criteria is satisﬁed. Provided that the value estimate ˆv(s) is updated inﬁnitely often
+for each state s ∈S, it converges to the optimal value function V∗(Barto et al., 1995).
+4.2 Efficient state-space exploration
+Commodities in optimal solutions naturally follow Hamiltonian paths from their origin to
+destination ports. Revisits to ports introduce redundant travel cycles, leading to longer transit
+times and a higher objective value. Leveraging this property, we efﬁciently explore the state
+space by avoiding the evaluation of non-Hamiltonian paths.
+To implement this approach, as outlined in Algorithm 1, we introduce a binary matrix B
+of dimension |P| × |K|, which is updated in each iteration. The entry in the i-th row and
+k-th column of the matrix B, denoted by Bi,k, indicates whether commodity k has visited
+port i from the beginning until the state s is reached, just before the action a is taken. In
+the beginning of each episode, we initialise B by setting Bok,k = 1 for each k ∈K, with
+the remaining elements set to 0 (line 2, 10 and 17). After taking action a, the binary matrix
+is updated by setting Bi′
+k,k = 1 for each k ∈K, while leaving the others unchanged (line
+13). Here, i′
+k represents the port visited by commodity k in the next iteration. To prevent
+repeated visits to a port, additional constraints (25) are introduced and imposed together with
+the existing constraints (6)-(14) to the actions space (line 5 and 14). That is,
+Bi′
+k,k = 0,
+if i′
+k ̸= ik
+∀k ∈K.
+(25)
+Algorithm 1 The ADP based-heuristic algorithm for the LSNDP
+1: Value initialisation: when a state s is newly added to the lookup table, its value estimate ˆv(s) is zero-
+initialised, i.e., ˆv(s) ←0.
+2: s ←s0, initialise B
+3: generate A(s, B) by constraints (6)-(14) and (25)
+4: repeat
+5:
+a ←argmina′∈A(s,B){C(s, a′) + ˆv( f (s, a′))}
+6:
+c ←C(s, a), s′ ←f (s, a)
+7:
+ˆv(s) ←c + ˆv(s′)
+8:
+s ←s′
+9:
+if s ∈Sdt then
+10:
+s ←s0, initialise B
+11:
+generate A(s, B) by constraints (6)-(14) and (25)
+12:
+else
+13:
+update B
+14:
+generate A(s, B) by constraints (6)-(14) and (25)
+15:
+if A(s, B) = ∅then
+16:
+ˆv(s) ←λ
+17:
+s ←s0, initialise B
+18:
+generate A(s, B) by constraints (6)-(14) and (25)
+19:
+end if
+20:
+end if
+21: until stopping criterion is satisﬁed
+123
+
+Annals of Operations Research
+4.3 Deep reinforcement learning
+The algorithms in Sect.4.1 have limitations: they can only evaluate the value of visited
+states, and their memory demands for storing all state values can be impractical for real-
+world, large-scale problems. An alternative approach is to approximate value functions using
+parameterised functional forms ˆv(s; θ), where θ ∈Rd is a parameter vector such that d ≪
+|S|. This approach computes the value estimates using the parameter vector, allowing for
+access to values for all states, and signiﬁcantly reduces memory requirement by storing only
+the parameter vector. The Deep Q-Network (DQN) algorithm, proposed by Mnih et al. (2015),
+is a state-of-the-art RL algorithm that utilises a deep neural network architecture for function
+approximation. Below, we outline the key principles of the DQN algorithm presented in
+Algorithm 2.
+The DQN algorithm approximates the optimal state-action value function Q∗using a
+standardneuralnetwork,alsoknownasafeedforwardneuralnetworkormultilayerperceptron
+(Goodfellow et al., 2016). A brief introduction to the neural network below is indebted to
+Boute et al. (2022), offering clear explanations tailored to the OR community.
+The feedforward neural network is composed of multiple layers, where each layer l ∈
+{1, 2, . . . , L} represents a mapping φ[l](·) : Rm[l] →Rn[l]. The mapping φ[l] is deﬁned by
+(26):
+φ[l](x) = g[l](W[l]⊤x + b[l]),
+(26)
+where m[l] and n[l] is the dimension of the input and output vector of the mapping φ[l],
+respectively, x ∈Rm[l] denotes arbitrary input vector of the mapping, W[l] ∈Rm[l] × Rn[l] is
+the weight matrix of the layer l, b[l] = (b[l]
+1 , . . . , b[l]
+n[l]) ∈Rn[l] is the bias vector of the layer l
+and g[l](·) : Rn[l] →Rn[l] is the activation function of the layer l. The activation function may
+be non-linear, enabling the network to represent complex functions, and it is often applied
+element-wise. For so-called hidden layers, l = 1, . . . , L −1, we use the rectiﬁed linear
+unit (ReLU) (Nair & Hinton, 2010), i.e., g[l](x) = max(x, 0), whereas for the output layer,
+g[L](x) = x.
+The feedforward network can be expressed by the composite function as follows:
+φ[L] ◦φ[L−1] ◦· · · ◦φ[1],
+where ◦denotes the function composition operator, that is, the output of each layer l is used
+as the input for the next layer l + 1. The parameter vector θ of a neural network is then
+composed of the weight matrix W[l] and the bias vector b[l] of each layer l ∈{1, 2, . . . , L},
+i.e., θ = {(W[l], b[l])}l∈{1,2,...,L}.
+In Fig.2, we visualise the feedforward neural network architecture, consisting of two
+hidden layers and one output layer. Each element of the input x = (s, a) is presented by a
+blue node. The grey arrows indicate the dependencies between nodes. The output of each
+hidden layer is denoted by h[l] = (h[l]
+1 , . . . , h[l]
+n[l]), l = 1, . . . , L −1. The elements of h[l]
+are represented by green nodes in the ﬁgure. Figure2 also illustrates the calculation of the
+ﬁrst element h[1]
+1 of h[1] and the last element h[2]
+n[2] of h[2] as an example. The red node in the
+ﬁgure represents the output of the neural network, which corresponds to the value estimate
+ˆq(s, a; θ) for the given the state-action pair (s, a). The computation of this value is also
+displayed in the ﬁgure.
+The DQN algorithm is outlined in Algorithm 2. In each iteration, the decision maker
+chooses an action a in state s using the epsilon-greedy policy (line 5). This policy balances
+123
+
+Annals of Operations Research
+Fig. 2 Feedforward neural network architecture that consists of two hidden layers and one output layer. Blue
+and green nodes represent the elements of the input vector and the elements of each hidden layer’s output,
+respectively. The grey arrows indicate the dependencies between nodes. The red node represents the output of
+the neural network
+Algorithm 2 The DQN algorithm
+1: Initialisation: initialise replay memory D and the network parameters θ
+Set θtar = θ
+2: s ←s0, initialise B
+3: generate A(s, B) by constraints (6)-(14) and (25)
+4: repeat
+5:
+a ←
+
+random action from A(s, B) with prob. ϵ
+argmina′∈A(s,B) ˆq(s, a′; θ)
+with prob. 1 −ϵ
+6:
+c ←C(s, a), s′ ←f (s, a)
+7:
+if s′ ∈Sdt then
+8:
+store tuple (s, a, c, s′) in D
+9:
+s ←s0, initialise B
+10:
+generate A(s, B) by constraints (6)-(14) and (25)
+11:
+else
+12:
+update B
+13:
+generate A(s′, B) by constraints (6)-(14) and (25)
+14:
+if A(s′, B) = ∅then
+15:
+store tuple (s, a, c, s′) in D
+16:
+s ←s0, initialise B
+17:
+generate A(s, B) by constraints (6)-(14) and (25)
+18:
+else
+19:
+store tuple (s, a, c, s′, B) in D
+20:
+s ←s′
+21:
+end if
+22:
+end if
+23:
+every Npol iterations, update θ using Algorithm 3
+24: until stopping criterion is satisﬁed
+123
+
+Annals of Operations Research
+exploration and exploitation by randomly choosing an action with probability ϵ and select-
+ing a greedy action with probability 1 −ϵ, where 0 ≤ϵ ≤1 determines the exploration
+rate, with higher values emphasising exploration and lower values emphasising exploitation.
+Overemphasising exploration may lead to sub-optimal actions, and exclusive exploitation
+may limit the search to a subset of the state space, resulting in inaccurate value estimates
+(Powell, 2011; Sutton & Barto, 2018).
+Algorithm 3 Minibatch update
+1: Sample random minibatch B of tuples (s, a, c, s′, B) from D
+2: for each tuple T in B do
+3:
+if s′ ∈Str then
+4:
+Set y =
+
+c
+if s′ ∈Sdt,
+c + λ otherwise
+5:
+else
+6:
+generate A(s′, B) by constraints (6)-(14) and (25)
+7:
+Set y = c +
+min
+a′∈A(s′,B)
+ˆq(s′, a′; θtar)
+8:
+end if
+9: end for
+10: Perform a gradient descent step on
+1
+|B|
+
+T ∈B H(y, ˆq(s, a; θ)) with respect to θ
+11: Every Npol · Ntar iterations, set θtar = θ
+While the decision maker interacts with the MDP system, the DQN algorithm iteratively
+updates the parameter vector θ of the network by the process presented in Algorithm 3 (line
+23). This update process involves minimising a loss function H : R × R →R, quantifying
+the discrepancy between the output of the approximating function and the target function for
+a given input. Ideally, the parameters should be adjusted by comparing the estimated values
+from the neural network ˆq(s, a; θ) and the target values from the optimal state-action value
+function Q∗(s, a). However, since the optimal state-action value function Q∗is unknown,
+the algorithm substitutes Q∗(s, a) by (27):
+c +
+min
+a′∈A(s′) ˆq(s′, a′, θ),
+(27)
+where c = C(s, a) and s′ = f (s, a). The idea of replacing Q∗(s, a) with (27) is introduced
+by Watkins (1989). In this study, we adopt the Huber loss function (Huber, 1964), which
+behaves like squared error function near the minimum and absolute error function as the
+error (discrepancy) increases. This characteristic makes it less sensitive to outliers compared
+to mean squared or squared error functions.
+When using a nonlinear approximation, such as a neural network, the algorithm may be
+prone to instability (Tsitsiklis & Van Roy, 1996). To overcome this, Mnih et al. (2015) propose
+two ideas. The ﬁrst idea is to employ a technique called experience replay (McClelland et al.,
+1995; O’Neill et al., 2010; Lin, 1992). This technique stores the decision maker’s experience
+tuple (s, a, c, s′) in the so-called replay memory D (line 8 and 15 of Algorithm 2) and
+samples a random subset B of these experiences, called a minibatch, from the replay memory
+for updating the network parameter θ (line 1 of Algorithm 3). If s′ is not a terminal state, the
+binary matrix B is added to the tuple (line 19 of Algorithm 2) as it is necessary for generating
+the action set A(s′, B) (line 6 of Algorithm 3). We denote by T the experience tuple referring
+to (s, a, c, s′) if s′ ∈Str and (s, a, c, s′, B) otherwise. The replay memory D is continuously
+updated and maintained throughout the training process without reinitialisation.
+123
+
+Annals of Operations Research
+The second idea for enhancing learning stability is using a separate target network when
+calculating the target value. We refer to the other network as the policy network. Both the
+policy and target networks share the same neural network architecture. However, the policy
+network parameter θ is updated every N pol iterations using Algorithm 3, while the target
+network parameter, denoted by θtar, is updated every N pol · N tar iterations by setting θtar = θ
+(line 11 of Algorithm 3). Here, N pol and N tar denote the policy network update frequency
+and the target network update frequency (measured in the number of the policy network
+parameter updates), respectively.
+By incorporating these two ideas, the parameter vector θ is updated in a way that minimises
+following function ˆL(θ) (line 10 of Algorithm 3):
+ˆL(θ) = 1
+|B|
+
+T ∈B
+H
+
+y, ˆq(s, a; θ)
+
+, where
+y =
+⎧
+⎪⎪⎨
+⎪⎪⎩
+c
+if s′ ∈Sdt,
+c + λ
+if s′ ∈Sut,
+c +
+min
+a′∈A(s′,B)ˆq(s′, a′; θtar) otherwise.
+To optimise ˆL(θ), we adopt ADAM (Adaptive moment estimation) optimiser, a gradient-
+based optimisation algorithms introduced by Kingma and Ba (2014).
+5 Computational results
+We implement the MDP framework and the algorithms in C++ and use Pybind11 for
+an operability interface with Python. The deep neural network is implemented through
+PyTorch C++ API. The computational experiments are performed on AMD EPYC 7452
+32-Core Processor. For benchmarking, we formulate the LSNDP as an integer linear pro-
+gram and use the Gurobi optimiser (Gurobi Optimization, 2023) to obtain the minimal
+costs and the optimal routes of services and commodities.
+Section 5.1 outlines the process of generating test instances for numerical experiments.
+In Sect.5.2, we examine the size of the state space and its growth. In Sect.5.3, we apply
+value iteration and assess the proposed state exploration strategy of Sect.4.2 by comparing
+the performance of Algorithm 5 and Algorithm 1. Section5.4 evaluates the performance of
+our deep reinforcement learning algorithm, Algorithm 2. To illustrate the co-optimisation
+of network design and commodity routing and the quality of solutions, Sect.5.5 analyses
+selected problem instances.
+5.1 Test instances
+TovalidatetheMDPmodelandevaluatetheperformanceofthealgorithms,weconductexper-
+iments using randomly generated instances from the publicly available LINER-LIB-2012
+benchmark suite (http://www.linerlib.org). For a detailed description of the benchmark suite,
+readers are referred to Brouer et al. (2014). We generate a subgraph G from the Mediter-
+ranean instance of the benchmark suite, which consists of 39 ports and 369 commodities, by
+randomly sampling ports, arcs and commodities. The process of generating a random sub-
+graph G is determined by the following parameters: the number of ports |P|, the minimum
+in-degree/out-degree δ(G) across all nodes in graph G, the number of commodities |K|, the
+123
+
+Annals of Operations Research
+Table 4 Comparison of state space sizes
+Instance
+|P|
+|E|
+δ(G)
+|K|
+|R|
+|S|
+|
+S|
+Decrease (%)
+s01
+3
+6
+2
+2
+1
+2.84×102
+1.15 ×102
+59.51
+s02
+3
+6
+2
+3
+1
+8.73×103
+3.22 ×102
+96.31
+s06
+3
+6
+2
+2
+2
+4.64×105
+6.40 ×103
+98.62
+s11
+4
+10
+2
+2
+1
+1.03×106
+1.74 ×103
+99.83
+s12
+4
+10
+2
+3
+1
+2.51×106
+5.97 ×103
+99.76
+s20
+4
+12
+3
+2
+1
+6.57×106
+8.29 ×103
+99.87
+s21
+4
+12
+3
+3
+1
+2.58×107
+3.21 ×104
+99.88
+maximum number of services |R|, the hub port of each service {ih
+r }r∈R and a random seed.
+We refer to Appendix D for details on the random instance generation.
+To simplify the experimental setup, we assume that all services deploy vessels from the
+same class and drop the subscript r from vr in the remainder of this paper. The value of
+v is set to be the larger value of two values: 160% of the largest commodity quantity and
+60% of the total demand, i.e. v = max{1.6 · maxk∈K qk, 0.6 · 
+k∈K qk}. This arc capacity
+accommodates any commodity, even though the ﬂow cannot split. Once the arc capacity is
+determined, we choose the most appropriate vessel class from the ﬂeet data. The ﬂeet data
+comprises six vessel classes with the following capacities: 450 FFE (Feeder_450), 800
+FFE (Feeder_800), 1200 FFE (Panamax_1200), 2400 FFE (Panamax_2400), 4200
+FFE (Post_panamax), 7500 FFE (Super_panamax). Hence, if the arc capacity v is 460
+FFE, we select vessel class Feeder_800. The bunker fuel price (pb) is set to 715 USD/ton,
+and the weight ω of the total transit time in the cost function is set to 300 to establish a
+balance between costs and time.
+5.2 The size of state space
+We start by investigating how much the state space S can be reduced by excluding states
+accessed via non-Hamiltonian commodity ﬂows. Table 4 compares the size of the state
+spaces for selected instances, generated using the same initial port and random seed. The
+original state space S includes all feasible states and the reduced state space, denoted by 
+S, is
+determined by eliminating states reachable through non-Hamiltonian commodity ﬂows. The
+‘decrease’ presents the reduction in size from the original state space S to the reduced state
+space 
+S as a percentage of the original quantity, i.e., 100 × (|S| −|
+S|)/|S|. The reduction is
+enormous; approximately 99% in most cases, except for the very small instances.
+Table 5 illustrates the size of reduced state spaces for more instances. We likewise include
+the maximum number of available actions over all feasible (s, B) pairs, i.e., maxs,B |A(s, B)|.
+Despite the reduction, the size of the reduced state grows rapidly. The number of available
+services, |R|, has a major impact on this size, with an increment of 1 in |R| leading to an
+increase of 1 + |E| in the dimension of the state space. For instance, a mere increment in
+|R| from instance s20 to s26 results in a 3.17 × 105 % increase in the size of 
+S, along with
+a 1.14 × 103% increase in maxs,B |A(s, B)|. Moreover, the sizes grow exponentially in the
+number of commodities, as illustrated by the instances s11-s18, where the increases in 
+S and
+maxs,B |A(s, B)| range from 300% to 600% and from 250% to 360%, respectively. Similarly,
+the number of arcs |E| also triggers rapid growth of 
+S, as indicated by instances s28 and s34,
+123
+
+Annals of Operations Research
+where 
+S increases by 2.50 ×104 %. This clearly illustrates the complexity of the problem and
+the challenge of scalability, in particular, the so-called curse of dimensionality in dynamic
+programming.
+5.3 The performance of value iteration methods
+We proceed to solve the instances of Table 4, using the on-line variants of value iteration,
+Algorithm 5 and Algorithm 1, i.e., including and excluding non-Hamiltonian commodity
+ﬂows, respectively. The penalty parameter for reaching undesirable terminal states λ is set
+to inﬁnity. We track the total costs incurred in each episode and terminate the algorithm if
+it solves to the optimality, comparing the total costs to the optimal value obtained from the
+Gurobi optimiser.
+Table 6 demonstrates the number of updates, visited states and episodes until each algo-
+rithm ﬁnds an optimal solution. For instance s21, Algorithm 5 ﬁnds an optimal solution by
+exploring only 5.8 ×10−6 % of the state space S. Moreover, we observe that Algorithm 1
+requires 20% to 97% fewer updates, 28% to 94% fewer total visits and 10% to 92% fewer total
+episodes compared to Algorithm 5, indicating that the optimal solution can be found more
+efﬁciently using the exploration strategy of Sect.4.2. For instance s21, Algorithm 1 ﬁnds an
+optimal solution by exploring as little as 3.3 ×10−6 % of the state space S. Despite being a
+heuristic approach, these ﬁndings emphasize the efﬁciency of Algorithm 1 in exploring the
+state space.
+The performance of Algorithm 1 is further assessed using instances of Table 7, that are
+generated using a random seed for each instance (indicated in parentheses) and the same
+initial port. Due to memory constraints, the training procedure is run for a maximum of
+1000s for each instance. The ‘optimality gap’ is computed as follows:
+optimality gap (%) =
+
+zbest −z∗
+z∗
+ × 100(%),
+where zbest and z∗denote the best total costs found during training and the minimal total
+costs, respectively. The ‘total identiﬁed’ indicates the number of states identiﬁed through the
+state-transition function f when solving Bellman equations to obtain greedy actions (line 5
+of Algorithm 1). This number corresponds to the number of states added to the lookup table.
+Note that the total number of states visited by the decision maker during training may be less
+than the total number of identiﬁed states, since the decision maker may not visit all identiﬁed
+states.
+The algorithm ﬁnds optimal solutions or feasible solutions close to the optimal solutions,
+with an optimality gap of less than 6.2% in most cases. However, for instances 4 to 6, which
+involve a higher number of commodities, the algorithm shows a wider optimality gap, ranging
+from 6.8% to 86.2%. This decline in performance may be attributed to the higher number of
+states and actions, as indicated by 1.9 to 3.9 times higher numbers of identiﬁed states. This
+observation reafﬁrms that the number of commodities signiﬁcantly inﬂuences the size of
+states and actions. For instances larger than those of Table 7, the application of the algorithm
+is no longer feasible due to the size of the state space and the required amount of memory
+to store the corresponding value estimates. These experiments show that value iteration can
+successfully solve small instances of the LSNDP to optimality or near optimality, but requires
+a substantial memory resource for larger instances.
+123
+
+Annals of Operations Research
+Table 5 Size of reduced state spaces 
+S
+Instance
+|P|
+|E|
+δ(G)
+|K|
+|R|
+|
+S|
+dim(S)
+max
+s,B |A(s, B)|
+dim(A)
+s01
+3
+6
+2
+2
+1
+1.15×102
+11
+1.20 ×101
+5
+s02
+3
+6
+2
+3
+1
+3.22×102
+13
+3.60 ×101
+7
+s03
+3
+6
+2
+4
+1
+5.65×102
+15
+6.30 ×101
+9
+s04
+3
+6
+2
+5
+1
+2.18×103
+17
+2.42 ×102
+11
+s05
+3
+6
+2
+6
+1
+7.44×103
+19
+7.28 ×102
+13
+s06
+3
+6
+2
+2
+2
+6.40×103
+18
+6.40 ×101
+6
+s07
+3
+6
+2
+3
+2
+3.11×104
+20
+1.92 ×102
+8
+s08
+3
+6
+2
+4
+2
+1.52×105
+22
+8.99 ×102
+10
+s09
+3
+6
+2
+5
+2
+7.37×105
+24
+3.20 ×103
+12
+s10
+3
+6
+2
+6
+2
+4.59×106
+26
+1.56 ×104
+14
+s11
+4
+10
+2
+2
+1
+1.74×103
+15
+2.70 ×101
+5
+s12
+4
+10
+2
+3
+1
+5.97×103
+17
+9.60 ×101
+7
+s13
+4
+10
+2
+4
+1
+2.64×104
+19
+2.88 ×102
+9
+s14
+4
+10
+2
+5
+1
+1.04×105
+21
+8.27 ×102
+11
+s15
+4
+10
+2
+6
+1
+5.23×105
+23
+2.59 ×103
+13
+s16
+4
+10
+2
+7
+1
+3.15×106
+25
+9.22 ×103
+15
+s17
+4
+10
+2
+8
+1
+1.68×107
+27
+3.11 ×104
+17
+s18
+4
+10
+2
+9
+1
+8.01×107
+29
+8.29 ×104
+19
+s19
+4
+10
+2
+2
+2
+1.17×106
+26
+3.15 ×102
+6
+s20
+4
+12
+3
+2
+1
+8.29×103
+17
+3.60 ×101
+5
+s21
+4
+12
+3
+3
+1
+3.21×104
+19
+1.28 ×102
+7
+s22
+4
+12
+3
+4
+1
+1.73×105
+21
+5.12 ×102
+9
+s23
+4
+12
+3
+5
+1
+1.09×106
+23
+1.54 ×103
+11
+s24
+4
+12
+3
+6
+1
+6.54×106
+25
+4.61 ×103
+13
+s25
+4
+12
+3
+7
+1
+4.60×107
+27
+1.84 ×104
+15
+s26
+4
+12
+3
+2
+2
+2.64×107
+30
+3.24 ×102
+6
+s27
+5
+12
+2
+2
+1
+5.83×103
+17
+5.00 ×101
+5
+s28
+5
+12
+2
+3
+1
+1.32×104
+19
+1.50 ×102
+7
+s29
+5
+12
+2
+4
+1
+5.22×104
+21
+6.00 ×102
+9
+s30
+5
+12
+2
+5
+1
+3.98×105
+23
+2.33 ×103
+11
+s31
+5
+12
+2
+6
+1
+4.55×106
+25
+1.28 ×104
+13
+s32
+5
+12
+2
+7
+1
+5.21×106
+27
+2.88 ×104
+15
+s33
+5
+18
+3
+2
+1
+5.83×105
+23
+1.00 ×102
+5
+s34
+5
+18
+3
+3
+1
+3.30×106
+25
+4.00 ×102
+7
+s35
+5
+18
+3
+4
+1
+2.54×107
+27
+1.20 ×103
+9
+123
+
+Annals of Operations Research
+Table 5 continued
+Instance
+|P|
+|E|
+δ(G)
+|K|
+|R|
+|
+S|
+dim(S)
+max
+s,B |A(s, B)|
+dim(A)
+s36
+5
+18
+3
+5
+1
+3.09×107
+29
+4.72 ×103
+11
+s37
+5
+20
+4
+2
+1
+2.74×106
+25
+1.00 ×102
+5
+s38
+5
+20
+4
+3
+1
+2.02×107
+27
+4.00 ×102
+7
+s39
+5
+20
+4
+4
+1
+≥3.74×107
+29
+≥1.32 ×103
+9
+The notation dim(S) and dim(A) represent the dimension of state space and action space, respectively
+Table 6 Comparison of Algorithm 5 and Algorithm 1
+Instance
+|S|
+Algorithm 5
+Algorithm 1
+Updates
+Total visits
+Total episodes
+Updates
+Total visits
+Total episodes
+s01
+2.84×102
+168
+95
+20
+134
+68
+18
+s02
+8.73×103
+497
+231
+26
+15
+13
+2
+s06
+4.64×105
+299
+289
+12
+75
+64
+10
+s11
+1.03×106
+824
+690
+30
+109
+79
+10
+s12
+2.51×106
+125
+106
+7
+71
+59
+6
+s20
+6.57×106
+4048
+3241
+163
+1567
+988
+136
+s21
+2.58×107
+163
+150
+8
+97
+84
+7
+5.4 The performance of deep reinforcement learning
+To handle larger instances, we use the DQN algorithm, Algorithm 2. The instances and results
+are presented in Table 8 and use the same initial port. A detailed list of hyperparameters for
+the DQN algorithm and their corresponding values are presented in Appendix E. The penalty
+parameter λ is set to half of the minimal total costs. The epsilon-greedy parameter ϵ decays
+linearly during training, as follows:
+ϵi −ϵi −ϵ f
+ϵde
+× number of updates on θ,
+where ϵi and ϵ f denote the initial and ﬁnal values of ϵ, respectively, and ϵde determines
+the rate of decay for ϵ. We train the DQN algorithm on each instance with 10 replications,
+terminating each replication after 5 × 104 updates of the parameter vector θ. During the
+training procedure, we track the total costs incurred in each episode.
+It should be stressed that Algorithm 2 successfully ﬁnds feasible solutions for all instances
+and replications. Table 8 shows that for the smaller instances, the performance of the DQN
+algorithm is fairly good, with optimality gaps ranging from 0.5% to 52.2%. For the larger
+instances 10 to 15, however, the algorithm’s performance declines, with optimality gaps
+ranging between 25.5% and 173.0% and average optimality gaps exceeding 60%.
+Figure3 illustrates the learning curve of the DQN algorithm throughout the training pro-
+cess for a selected replication of instances 10 and 13. While the algorithm effectively learns
+for instance 10, converging to a local optimum, it struggles to learn for instance 13, failing to
+consistently improve the quality of feasible solutions. This observation may be attributed to
+the discrete nature of the true state-action function Q∗, which assigns distinct values to each
+123
+
+Annals of Operations Research
+Table 7 Performance of Algorithm 1
+Instance (seed)
+|P|
+|E|
+δ(G)
+|K|
+|R|
+Updates
+Total visits
+Total episodes
+Optimality gap (%)
+Total identiﬁed
+1 (0)
+5
+18
+3
+7
+1
+6.97×105
+4.80×105
+2.35×104
+0.0
+1.38×107
+2 (1)
+5
+18
+3
+7
+1
+3.12×106
+2.04×106
+1.03×105
+2.9
+2.73×107
+3 (2)
+5
+18
+3
+7
+1
+9.94×105
+7.72×105
+3.38×104
+5.1
+5.25×107
+4 (0)
+5
+18
+3
+9
+1
+6.21×105
+4.30×105
+1.79×104
+10.9
+5.41×107
+5 (1)
+5
+18
+3
+9
+1
+1.08×106
+7.87×105
+3.13×104
+6.8
+6.77×107
+6 (2)
+5
+18
+3
+9
+1
+6.33×104
+5.54×104
+1.55×103
+86.2
+9.98×107
+7 (0)
+5
+20
+4
+7
+1
+7.86×105
+5.51×105
+2.64×104
+0.0
+2.05×107
+8 (1)
+5
+20
+4
+7
+1
+2.61×106
+1.78×106
+8.56×104
+6.1
+3.08×107
+9 (2)
+5
+20
+4
+7
+1
+6.90×105
+5.60×105
+2.29×104
+5.1
+5.58×107
+123
+
+Annals of Operations Research
+Table 8 Performance of Algorithm 2
+Instance (seed)
+|P|
+|E|
+δ(G)
+|K|
+|R|
+
+k∈K
+qk
+max
+k∈Kqk
+v
+Optimality gap (%)
+Min
+Avg
+Max
+Std
+1 (0)
+5
+18
+3
+7
+1
+327
+266
+425
+0.5
+9.7
+19.3
+4.9
+2 (1)
+5
+18
+3
+7
+1
+56
+20
+34
+2.6
+5.3
+6.9
+1.3
+3 (2)
+5
+18
+3
+7
+1
+116
+35
+70
+1.4
+3.9
+7.7
+1.9
+4 (0)
+5
+18
+3
+9
+1
+209
+86
+137
+12.5
+30.9
+44.9
+10.8
+5 (1)
+5
+18
+3
+9
+1
+155
+40
+93
+7.4
+19.0
+30.3
+8.5
+6 (2)
+5
+18
+3
+9
+1
+87
+28
+53
+19.1
+35.5
+45.8
+7.8
+7 (0)
+5
+20
+4
+7
+1
+327
+266
+425
+8.8
+24.9
+52.2
+13.9
+8 (1)
+5
+20
+4
+7
+1
+56
+20
+34
+4.4
+18.4
+34.2
+9.1
+9 (2)
+5
+20
+4
+7
+1
+116
+35
+70
+2.2
+6.3
+17.3
+4.4
+10 (0)
+9
+40
+4
+7
+1
+200
+104
+166
+25.5
+63.4
+94.6
+25.4
+11 (1)
+9
+48
+4
+7
+1
+169
+40
+102
+62.9
+85.2
+127.3
+23.2
+12 (2)
+9
+40
+4
+7
+1
+56
+28
+44
+33.6
+62.5
+81.8
+13.0
+13 (0)
+9
+40
+4
+9
+1
+285
+104
+171
+48.6
+80.5
+100.4
+14.0
+14 (1)
+9
+48
+4
+9
+1
+243
+105
+168
+113.5
+137.0
+164.8
+18.3
+15 (2)
+9
+40
+4
+9
+1
+174
+80
+128
+104.6
+148.6
+173.0
+17.9
+combination of elements in state and action. Indeed, these values do not necessarily vary
+continuously over (s, a). This inherent discreteness poses a challenge for the neural network,
+which is generally better suited for problems with continuous functions.
+In Appendix F, we brieﬂy address the sensitivity of performance with respect to important
+problem characteristics. To explore the impact of vessel capacities, we generate two scenarios
+with higher and lower vessel capacities, compared to the baseline value. In the high- and low-
+capacity cases, the vessel capacity v is adjusted to v = max{1.8·maxk∈K qk, 0.8·
+k∈K qk}
+and v = max{1.4 · maxk∈K qk, 0.4 · 
+k∈K qk}, respectively, see Table 12. With optimality
+gaps ranging from 0.3% to 154.5% and 183.7%, and average optimality gaps of 48.6% and
+50.7%, in the high- and low-capacity cases, respectively, the impact of vessel capacity is
+moderate. We further generate a scenario with two services, in contrast to the baseline of
+one, see Table 15. By comparing the largest instances, we likewise ﬁnd little impact on the
+gaps.
+5.5 Network design and commodity routing
+To illustrate the co-optimisation of network design and commodity routing, we ﬁrst analyse
+theoptimalsolutionstoinstances1to15,seeAlgorithm1,obtainedbythe Gurobioptimiser.
+The optimal solutions are clearly sensitive to the balance between costs and travel time
+in the minimisation criterion. Reducing the weight of total travel time by 50% results in
+optimal service routes with up to 21.4% fewer selected arcs, leading to signiﬁcant reduc-
+tions in deployment costs and ﬁxed design costs, i.e., up to 25% and 12.5%, respectively.
+Unfortunately, this is at the expense of an increase in total travel time of as much as up to
+57%. Vice versa, increasing the weight of total travel time by 50%, leads to optimal service
+routes with up to 16.7% more selected arcs, causing deployment costs and ﬁxed design costs
+123
+
+Annals of Operations Research
+Fig. 3 Learning curve of Algorithm 2 on instances 10 (top) and 13 (bottom)
+to increase by comparable amounts, i.e., up to 33.3% and 11.1%, respectively. In return,
+however, total travel time is only reduced by up to 20.7%. If the service frequency decreases
+by 50%, allowing for schedules that are only bi-weekly, the optimal service routes select up
+to 33.3% more arcs, while weekly deployment costs decrease by 33.3% to 50%. Increasing
+vessel capacity from the baseline to the high level generally reduces the number of selected
+arcs by up to 14.3%, demonstrating the potential of larger vessels. In instance 4, however,
+the number of arcs increases by 16.7%, resulting in a rise in ﬁxed design costs by 1.1%.
+Nonetheless, this reduces total travel time by 5.6%, leading to a decrease in objective value
+by 2.6%. Conversely, decreasing vessel capacity from the baseline to the low level results
+in an expected increase in selected arcs, i.e., up to 16.7%. When instance sizes are small,
+the number of services has minimal impact on service design. However, when allowing the
+number of services to increase from one to two for the instances in Table 15, the result is a
+123
+
+Annals of Operations Research
+Fig. 4 The optimal service routes for instance L18 in Table 15 (top) and a modiﬁed version with the number of
+services reduced to R = 1 (bottom). Services are distinguished by colors (sky blue and orange) and linestyles
+(solid and dashed). Hub ports are indicated by a ship icon
+notable decrease in objective value by up to 3.9%. In Fig.4, we illustrate the optimal service
+routes for instance L18 and a modiﬁed version with the number of services reduced to R = 1.
+Despite a slight increase in the total number of selected arcs from 12 to 13 when allowing
+for two services, the overall objective value diminishes by 0.98%, due to a 5.44% reduction
+in total transit time.
+We continue to assess the quality of the feasible solution obtained by deep reinforcement
+learning. Table 9 provides the percentage contributions of four cost components, i.e., vessel
+deployment costs (deploy), ﬁxed design costs for selecting service arcs (ﬁxed), transshipment
+costs and weighted total transit time (transit), to the minimal total costs and optimality gaps
+in each cost component. The ‘total’ refers to the average optimality gap in the best total
+costs across 10 replications. Table 10 presents detailed information on the service routes in
+the optimal and best solutions. The ‘Number of arcs–selected’ refers to the total number of
+arcs in the service route, while the ‘Number of arcs–used’ indicates the number of arcs used
+for transporting given commodities, i.e., these arcs appear in both the service route and the
+commodity routes. The ‘usage’ conveys the utilisation rate of the selected arcs in the service
+route, i.e.,
+number of arcs used to transport commodities
+number of arcs selected in the service route
+× 100.
+The values presented in the ‘DQN’ columns are averages across 10 replications. The ‘Hub
+port visits’ refers to the number of hub port visits in the service route.
+For the smaller instances 1 to 9, the number of arcs in the service route is close to that
+of the optimal solution, and so is the utilisation of the selected arcs in the service route
+for transporting commodities. The drop in performance for the larger instances 10 to 15 is
+attributed to the algorithm’s tendency to select an excessive number of arcs in the service
+route. In instances 10 to 15, the DQN algorithm includes 60% to 166% more arcs in the
+service route compared to the optimal solution. Moreover, the algorithm only uses 52.6%
+to 67.7% of the selected arcs in the service route for transporting commodities, whereas the
+optimal solution mostly utilises 75% of the chosen arcs in the service route. This implies that
+123
+
+Annals of Operations Research
+Table 9 Percentage contributions of three cost components to the minimal total costs and optimality gaps in
+each component of the best solutions found by Algorithm 2
+Proportion in the minimal total costs (%)
+Instance (seed)
+Optimality gap on cost (%)
+Deploy
+Fixed
+Transit
+Total
+Deploy
+Fixed
+Transit
+1 (0)
+16.2
+37.4
+46.4
+9.7
+23.3
+4.4
+11.6
+2 (1)
+17.3
+53.8
+28.9
+5.3
+0
+4.6
+11.0
+3 (2)
+24.0
+45.7
+30.4
+3.9
+0
+4.6
+6.8
+4 (0)
+15.4
+31.8
+52.9
+30.9
+56.7
+51.6
+10.8
+5 (1)
+17.5
+43.8
+38.7
+19.0
+5
+20.0
+33.7
+6 (2)
+17.6
+34.2
+48.2
+35.5
+27.8
+36.8
+38.9
+7 (0)
+16.2
+37.4
+46.4
+24.9
+40.0
+25.6
+19.9
+8 (1)
+13.5
+50.6
+35.9
+18.4
+50.0
+23.0
+16.8
+9 (2)
+24.0
+45.7
+30.4
+6.3
+2
+4.8
+13.7
+10 (0)
+17.2
+47.3
+35.5
+63.4
+80.0
+74.1
+41.3
+11 (1)
+15.2
+56.5
+28.3
+85.2
+105.0
+89.8
+65.4
+12 (2)
+19.1
+44.4
+36.5
+62.5
+73.3
+80.7
+34.9
+13 (0)
+18.1
+50.0
+31.9
+80.5
+98.3
+100.9
+39.6
+14 (1)
+16.5
+53.0
+30.5
+137.0
+145.0
+158.2
+95.8
+15 (2)
+16.4
+44.6
+39.0
+148.6
+210.0
+206.6
+56.6
+Table 10 Route details for the optimal solutions and the best solutions found by Algorithm 2
+Instance (seed)
+Number of arcs
+Hub port visits
+Selected
+Used
+Usage (%)
+opt
+DQN
+opt
+DQN
+opt
+DQN
+opt
+DQN
+1 (0)
+7
+6.6
+6
+5.2
+85.7
+79.8
+2
+1.7
+2 (1)
+7
+8.3
+6
+6.8
+85.7
+82.2
+1
+2.2
+3 (2)
+8
+9.3
+6
+6.2
+75
+66.9
+1
+1
+4 (0)
+6
+8.6
+6
+7.4
+100
+86.6
+1
+2.1
+5 (1)
+7
+7.4
+7
+7.2
+100
+97.6
+1
+2.2
+6 (2)
+8
+8.2
+7
+6.3
+87.5
+78.2
+1
+1.9
+7 (0)
+7
+7.7
+6
+6.2
+85.7
+81.2
+2
+1.9
+8 (1)
+6
+8.4
+5
+6.6
+83.3
+78.9
+1
+2.1
+9 (2)
+8
+8.4
+6
+5.8
+75
+70.0
+1
+1
+10 (0)
+12
+19.2
+10
+12.8
+83.3
+67.7
+4
+4
+11 (1)
+8
+15.1
+8
+8.6
+100
+58.1
+2
+2
+12 (2)
+11
+17.6
+8
+10.7
+72.7
+61.3
+1
+4
+13 (0)
+12
+21.9
+9
+11.5
+75
+52.6
+2
+4.3
+14 (1)
+14
+26.3
+11
+14.7
+78.6
+56.2
+3
+3
+15 (2)
+11
+29.3
+10
+15.5
+90.9
+53.2
+1
+3.8
+123
+
+Annals of Operations Research
+Fig. 5 The optimal service route (top) and the best service route found by Algorithm 2 (bottom) for instance
+13. Bold blue lines represent arcs used for transporting commodities, and thin red lines present arcs selected
+for services but remain unused for transporting commodities. The hub port is indicated by a ship icon
+the DQN algorithm overestimates the number of arcs in the service routes compared to the
+optimal solution, resulting in longer service routes, necessitating more vessels to maintain
+weekly frequency and incurring greater ﬁxed design costs for selecting arcs. We believe that
+this behaviour of the algorithm is an attempt to construct feasible solutions to the LSNDP by
+easily allowing for the commodity ﬂows.
+For all instances 1 to 15, the itinerary of the liner service determined by the DQN algorithm
+tends to visit the hub port more frequently compared to the optimal solution. In instance 13,
+the algorithm, on average, visits the hub port twice as frequently as the optimal solution. This
+means that the service route generated by the algorithm comprises multiple partial cyclic
+routes that originate from and return to the hub port. Recall that the decision maker can
+conclude the service route design only when the service is at its hub port (see Constraint (7)).
+During the sequential design of the service route, the DQN algorithm may arrive at the hub
+port prematurely, before successfully transporting all given commodities to their destination
+ports. Consequently, it cannot ﬁnalise the service design upon arrival at the hub port and must
+incorporate one or more partial cyclic route. This situation may lead to selecting numerous
+unnecessary arcs in an attempt to ensure these partial routes to be cyclic, as illustrated in
+Fig.5. Arcs used for transporting commodities are highlighted in bold blue lines, while arcs
+selected in the service route but left unused for transporting commodities are highlighted in
+thin red lines. The service route found by the algorithm has several cycles composed only of
+red arcs, whereas the optimal route does not have any such cycles.
+123
+
+Annals of Operations Research
+Compared to the baseline, sensitivity analysis reveals slightly less arcs in the service route
+with slightly higher utilisation in the high-capacity case and vice versa in the low-capacity
+case, see Tables 14 and 13 in Appendix F.
+6 Conclusion and future research
+In this study, we propose an MDP formulation for the LSNDP that accounts for the important
+characteristics of the problem, including balancing of travel costs and travel times, a weekly
+service frequency, vessel capacity limits and transshipments of commodities.
+We illustrate the co-optimisation of network design and commodity routing for a small
+problem instance. Sensitivity analysis reveals the importance of minimising travel times to
+avoid excessive lengths of service routes and the potential cost and travel time reductions
+from larger vessel capacities, bi-weekly service frequency, multiple services and feasibility
+of transshipment.
+The curse of dimensionality in dynamic programming is evidenced by the sizes of the state
+and action spaces increasing exponentially with the number of services and commodities.
+For instance, with 4 ports, 12 archs, 3 commodities and a single service, the number of states
+exceeds 25 million. For this reason, we explore the applicability of several ADP approaches
+to the MDP.
+The value iteration methods rely on a lookup table to approximate the true value function.
+To reduce the size of the state space, we propose an exploration strategy that can easily be
+incorporated into value iteration and excludes non-hamiltonian commodity ﬂows. Compu-
+tational results reveal that the reduction of the state space is enormous; above 95% for most
+instances. With this enhancement, our value iteration ﬁnds the optimal solution for instances
+of up to 4 ports, 12 archs and 3 commodities; in fact, exploring as little as a few millionth
+of the original state space. For instances of up to 5 ports, 20 archs and 7 commodities, the
+optimality gaps are less than 7%. In spite of the state space reduction, the value iteration
+methods demand substantial memory resources for storing the lookup table, rendering them
+unsuitable for solving larger instances.
+In contrast, the DQN method operates with a considerably smaller memory requirement,
+storing only a limited number of network parameters that determine the values of state-action
+pairs. This method successfully obtains feasible solutions for instances of up to 9 ports, 40
+archs and 9 commodities; however, with average optimality gaps exceeding 60%. Indeed,
+it struggles to improve the quality of feasible solutions. Our algorithm selects an excessive
+number of arcs in a service route. Also, a service route comprises multiple partial cyclic routes
+that originate from and return to the hub. The performance of the DQN may be attributed to
+the discrete nature of the true state-action function with high-dimensional state-action pairs.
+Furthermore, the methodology is usually used with soft constraints penalised in the cost
+function, and may not have been designed to handle hard constraints such as capacity limits
+and the requirement to return to the hub.
+To improve the methodology, we explore the impact of longer training times, further
+parameter tuning and more layers of the DQN, but could further investigate the explo-
+ration/exploitation trade-off to prevent the method from being absorbed in local optima.
+Exploring so-called policy gradient methods (Sutton et al., 1999), which learns a parame-
+terised policy, may likewise be relevant.
+Nevertheless, scalability to real-world problems will most likely remain challenging when
+the state space includes the occupied capacity for all arcs. It may be worth investigating alter-
+123
+
+Annals of Operations Research
+native MDP formulations. As opposed to the current position of services and commodities,
+the deﬁnition of states could be extended to include previous service and commodity trajec-
+tories, rendering the inclusion of occupied capacity in the state space unnecessary. A more
+scalable approximation to the LSNDP may relax the hard arc capacity constraints. This will
+signiﬁcantly reduce the size of the state space, and at the same time, decompose the LSNDP
+into sub-problems: service network design and commodity ﬂow. These sub-problems can be
+solved separately by the application of ADP methods and/or by traditional OR methods.
+A highly relevant extension of the LSNDP accounts for uncertainty, e.g., in weather con-
+ditions and thereby travel times. The ADP methodology immediately facilitates extensions
+to stochastic optimisation, in which routing decisions must adapt to the weather while travel-
+ling. The MDP allows for weather factors to follow a Markov process and the state space to
+include current weather factors, such that optimisation relies on the balancing of conditional
+expected future travel costs and travel time.
+Appendix A IP Formulation
+Based on the assumptions introduced in Sect.3.1 we formulate the liner shipping network
+design problem (LSNDP) as an integer linear programming problem:
+min
+
+r∈R
+ctc
+r mr +
+
+r∈R
+
+(i, j)∈E
+ci jr xi jr +
+
+k∈K
+
+r∈R
+
+i∈P
+ctr
+i qkzikr
++ ω
+
+k∈K
+
+r∈R
+
+(i, j)∈E
+yi jkrti jr
+(A1)
+
+r∈R
+
+j:(i, j)∈E
+yi jkr −
+
+r∈R
+
+j:( j,i)∈E
+y jikr =
+⎧
+⎪⎨
+⎪⎩
+1,
+if i = ok,
+−1, if i = dk,
+0,
+otherwise
+i ∈P, k ∈K
+(A2)
+
+k∈K
+qk yi jkr ≤vr xi jr
+(i, j) ∈E, r ∈R
+(A3)
+
+j:( j,i)∈E
+y jikr −
+
+j:(i, j)∈E
+yi jkr ≤zikr
+i ∈P \ dk, k ∈K, r ∈R
+(A4)
+
+j:(i, j)∈E
+xi jr −
+
+j:( j,i)∈E
+x jir = 0
+i ∈P, r ∈R
+(A5)
+
+(i, j)∈E
+ti jr xi jr ≤twh · mr
+r ∈R
+(A6)
+
+i∈S, j /∈S, (i, j)∈E
+xi jr ≥xef r + xghr −1
+(A7)
+(e, f ) ∈E, {e, f } ⊆S, (g, h) ∈E, {g, h} ⊈S, S ⊂P, 1 < |S| < |P| −1,r ∈R
+xi jr ≤γr
+(i, j) ∈E, r ∈R
+(A8)
+
+j:(ihr , j)∈E
+xihr jr ≥γr
+r ∈R
+(A9)
+xi jr ∈{0, 1}
+i, j ∈P, r ∈R
+(A10)
+yi jkr ∈{0, 1}
+i, j ∈P, k ∈K, r ∈R
+(A11)
+123
+
+Annals of Operations Research
+zikr ∈{0, 1}
+i ∈P, k ∈K, r ∈R
+(A12)
+mr ∈{0, 1, 2, . . . }
+r ∈R
+(A13)
+γr ∈{0, 1}
+r ∈R
+(A14)
+Decision variables used in the IP are: a binary variable xi jr equal to 1 if arc (i, j) ∈E is
+selected for service r ∈R, and 0 otherwise; a binary variable yi jkr taking the value of 1 if
+commodity k ∈K is transported by service r ∈R along arc (i, j) ∈E, 0 otherwise; a binary
+variable zikr with a value of 1 if commodity k ∈K is transshipped from service r ∈R to
+other service at port i ∈P, 0 otherwise; a non-negative integer variable mr representing the
+number of deployed vessels to maintain a weekly frequency in service r ∈R; and a binary
+variable γr equal to 1 if service r ∈R operates, 0 otherwise. The objective function (A1)
+minimises the weighted sum of the total operating expenses of the network and the total transit
+time of all commodities. The ﬁrst three terms represent vessel deployment cost, ﬁxed cost of
+selecting arcs and transshipment cost, respectively, and the last term accounts for the total
+amount of time spent shipping commodities from their origin ports to destination ports. The
+ﬂow conservation constraints for commodities are given in constraints (A2). For commodity
+k, the number of arcs into and out of a node should be the same (at most one), except at the
+origin and destination nodes. Constraints (A3) express that the total amount of ﬂow on arc
+(i, j) on service r cannot exceed the capacity of the vessel class uvr deployed on service r.
+Constraints (A4) account for the transshipment occurring when a commodity is shipped from
+one service to other services. Constraints (A5), (A6) and (A7) ensure that a service is cyclic,
+maintains the weekly frequency and avoids subtours, respectively. Constraints (A8) and (A9)
+ensure that service r visits its own hub port ih
+r if service r operates. The ﬁnal constraints
+(A10) - (A14) deﬁne domains of decision variables.
+Appendix B Value iteration algorithm
+Algorithm 4 Value iteration algorithm for the LSNDP
+1: Initialisation: generate A(s) by constraints (6)-(14) for all s ∈S
+2: ˆv(s) ←0 for all s ∈S \ Sut, ˆv(s) ←λ for all s ∈Sut
+3: ˆvold(s) ←ˆv(s) for all s ∈S
+4: Fix a tolerance parameter 
+ > 0
+5: repeat
+6:
+ˆv(s) ←
+min
+a∈A(s)
+
+C(s, a) + ˆvold( f (s, a))
+
+for all s ∈S \ Str
+7:
+ˆvold(s) ←ˆv(s) for all s ∈S \ Str
+8: until maxs∈S\Str |ˆvold(s) −ˆv(s)| < 
+123
+
+Annals of Operations Research
+Appendix C The ADP algorithm for the LSNDP
+Algorithm 5 The ADP Algorithm for the LSNDP
+1: Value initialisation: when a state s is newly added to the lookup table, its value estimate ˆv(s) is zero-
+initialised, i.e., ˆv(s) ←0.
+2: s ←s0
+3: generate A(s) by constraints (6)-(14)
+4: repeat
+5:
+a ←argmina′∈A(s){C(s, a′) + ˆv( f (s, a′))}
+▷choose a greedy action
+6:
+c ←C(s, a), s′ ←f (s, a)
+7:
+ˆv(s) ←c + ˆv(s′)
+▷update the estimate
+8:
+s ←s′
+9:
+if s ∈Sdt then
+10:
+s ←s0
+▷initialise the episode
+11:
+generate A(s) by constraints (6)-(14)
+12:
+else
+13:
+generate A(s) by constraints (6)-(14)
+14:
+if A(s) = ∅then
+▷check if s ∈Sut
+15:
+ˆv(s) ←λ
+16:
+s ←s0
+▷initialise the episode
+17:
+generate A(s) by constraints (6)-(14)
+18:
+end if
+19:
+end if
+20: until stopping criterion is satisﬁed
+Appendix D Random instance generation
+D.1 Ports
+Given hub ports for |R| services, we randomly choose (n −|R|) non-hub ports from the set
+of ports in the Mediterranean instance to generate the instance of size |P| = n.
+D.2 Arcs
+We deﬁne in-degree and out-degree of a node i ∈P in graph G = (P, E) as the number of
+incoming arcs (i, j) ∈E directed towards the node i and outgoing arcs ( j, i) ∈E originating
+from the node i, respectively. Let δ(G) denote the minimum in-degree/out-degree across all
+nodes in the graph G. For instance, δ(G) = 3 means every node i in graph G is connected
+by at least 3 incoming and 3 outgoing arcs. For each node (port) i in graph G, the top δ(G)
+shortest arcs with i as either the source node or the target node are added to the set of arcs
+E. Any duplicate arcs are removed from the set. The reason behind this is that it may not
+be practical to select an arc for services that directly connects a pair of ports (i, j) that are
+located too far each other when several critical ports are placed along that arc.
+D.3 Commodities
+We randomly select a pair of origin and destination ports (ok, dk) from all permutations of
+the set of ports P, and sample the quantity qk with replacement from the list of quantities in
+the cargo demand data (Table 11)
+123
+
+Annals of Operations Research
+Appendix E List of hyperparameters and their values
+Table 11 List of hyperparameters and their values
+Hyperparameter
+Instance
+Instance
+(Notation used in the article)
+1–9
+10–15
+Description
+First hidden layer size (n[1])
+32
+64
+Number of nodes in the ﬁrst hidden
+layer’s output
+Second hidden layer size (n[2])
+8
+16
+Number of nodes in the second
+hidden layer’s output
+Replay memory capacity
+105
+The replay memory D can hold this
+number of observed experience
+tuple T
+Minibatch size (|B|)
+32
+Number of training samples over
+which the iterative optimisation
+method’s update is computed
+Learning rate
+10−5
+The learning rate used by the
+iterative optimisation method
+Update frequency on θ (Npol)
+4
+With this frequency measured in the
+number of iterations, the policy
+network parameter vector θ is
+updated using Algorithm 3
+Update frequency on θtar(Ntar)
+1024
+With this frequency measured in the
+number of updates on θ, the target
+network parameter vector θtar is
+replaced with θ
+Gradient clipping threshold
+1
+A threshold to which the error
+derivative is clipped during
+backward propagation through the
+network
+Initial exploration (ϵi)
+0.95
+Initial value of ϵ in ϵ-greedy
+exploration
+Final exploration (ϵ f )
+0.05
+Final value of ϵ in ϵ-greedy
+exploration
+Decay rate (ϵde)
+25000
+The rate of decay of ϵ in ϵ-greedy
+exploration
+123
+
+Annals of Operations Research
+Appendix F Further results
+See Tables 12, 13, 14 and 15.
+Table 12 Performance of Algorithm 2 with higher and lower vessel capacities
+Instance (seed)
+|P|
+|E|
+δ(G)
+|K|
+|R|
+
+k∈K
+qk
+max
+k∈Kqk
+v
+Optimality gap (%)
+Min
+Avg
+Max
+Std
+H1 (0)
+5
+18
+3
+7
+1
+327
+266
+479
+1.4
+6.2
+26.9
+7.1
+H2 (1)
+5
+18
+3
+7
+1
+56
+20
+45
+3.3
+18.6
+26.8
+6.7
+H3 (2)
+5
+18
+3
+7
+1
+116
+35
+93
+1.2
+2.2
+3.6
+1.1
+H4 (0)
+5
+18
+3
+9
+1
+209
+86
+168
+21.7
+37.5
+52.9
+7.8
+H5 (1)
+5
+18
+3
+9
+1
+155
+40
+124
+8.3
+18.9
+31.4
+7.8
+H6 (2)
+5
+18
+3
+9
+1
+87
+28
+70
+22.9
+40.4
+50.0
+7.9
+H7 (0)
+5
+20
+4
+7
+1
+327
+266
+479
+0.3
+13.4
+33.1
+10.1
+H8 (1)
+5
+20
+4
+7
+1
+56
+20
+45
+4.0
+23.1
+41.7
+12.2
+H9 (2)
+5
+20
+4
+7
+1
+116
+35
+93
+1.2
+4.6
+9.5
+2.6
+H10 (0)
+9
+40
+4
+7
+1
+200
+104
+187
+32.9
+80.5
+109.0
+21.2
+H11 (1)
+9
+48
+4
+7
+1
+169
+40
+136
+43.3
+77.5
+106.6
+19.9
+H12 (2)
+9
+40
+4
+7
+1
+56
+28
+50
+36.2
+72.9
+98.7
+21.1
+H13 (0)
+9
+40
+4
+9
+1
+285
+104
+228
+57.1
+83.6
+104.7
+13.2
+H14 (1)
+9
+48
+4
+9
+1
+243
+105
+195
+92.8
+120.2
+154.5
+21.1
+H15 (2)
+9
+40
+4
+9
+1
+174
+80
+144
+97.9
+126.2
+147.8
+17.0
+L1 (0)
+5
+18
+3
+7
+1
+327
+266
+372
+5.5
+13.3
+40.5
+9.7
+L2 (1)
+5
+18
+3
+7
+1
+56
+20
+28
+4.0
+4.9
+8.2
+1.1
+L3 (2)
+5
+18
+3
+7
+1
+116
+35
+49
+0.3
+8.4
+23.4
+6.9
+L4 (0)
+5
+18
+3
+9
+1
+209
+86
+120
+18.7
+31.7
+45.4
+8.7
+L5 (1)
+5
+18
+3
+9
+1
+155
+40
+62
+0.8
+18.6
+36.9
+11.8
+L6 (2)
+5
+18
+3
+9
+1
+87
+28
+39
+13.8
+23.8
+34.6
+6.5
+L7 (0)
+5
+20
+4
+7
+1
+327
+266
+372
+7.8
+24.0
+44.0
+10.7
+L8 (1)
+5
+20
+4
+7
+1
+56
+20
+28
+10.7
+19.2
+27.9
+4.6
+L9 (2)
+5
+20
+4
+7
+1
+116
+35
+49
+3.3
+17.1
+29.7
+8.6
+L10 (0)
+9
+40
+4
+7
+1
+200
+104
+146
+46.0
+77.3
+96.0
+14.0
+L11 (1)
+9
+48
+4
+7
+1
+169
+40
+68
+60.2
+90.8
+123.9
+17.3
+L12 (2)
+9
+40
+4
+7
+1
+56
+28
+39
+66.7
+85.4
+109.0
+12.0
+L13 (0)
+9
+40
+4
+9
+1
+285
+104
+146
+33.5
+55.1
+67.4
+11.5
+L14 (1)
+9
+48
+4
+9
+1
+243
+105
+147
+106.5
+141.7
+183.7
+21.2
+L15 (2)
+9
+40
+4
+9
+1
+174
+80
+112
+101.6
+148.5
+178.6
+28.5
+123
+
+Annals of Operations Research
+Table 13 Percentage contributions of three cost components to the minimal total costs and optimality gaps in
+each component of the best solutions found by Algorithm 2
+Proportion in the minimal total costs (%)
+Instance (seed)
+Optimality gap on cost (%)
+Deploy
+Fixed
+Transit
+Total
+Deploy
+Fixed
+Transit
+H1 (0)
+22.7
+36.1
+41.2
+6.2
+0
+7.1
+10.9
+H2 (1)
+16.3
+45.0
+38.6
+18.6
+26.7
+23.3
+15.4
+H3 (2)
+21.5
+41.9
+36.6
+2.2
+0
+1.7
+7.8
+H4 (0)
+18.3
+36.8
+44.9
+37.5
+60.0
+54.0
+20.0
+H5 (1)
+13.4
+41.0
+45.5
+18.9
+12.5
+21.2
+39.4
+H6 (2)
+15.9
+33.5
+50.6
+40.4
+32.5
+41.1
+47.0
+H7 (0)
+22.6
+35.3
+42.1
+13.4
+6.7
+10.8
+19.8
+H8 (1)
+17.1
+46.0
+36.9
+23.1
+36.7
+30.2
+22.9
+H9 (2)
+21.0
+40.3
+38.7
+4.6
+0
+4.2
+16.6
+H10 (0)
+17.9
+50.2
+31.8
+80.5
+90.0
+91.3
+61.5
+H11 (1)
+15.9
+56.3
+27.8
+77.4
+87.5
+75.8
+75.4
+H12 (2)
+20.4
+49.9
+29.7
+72.9
+86
+94.8
+39.3
+H13 (0)
+19.3
+55.8
+24.9
+83.6
+98.3
+103.0
+44.3
+H14 (1)
+16.2
+55.0
+28.7
+120.2
+118.3
+127.2
+109.0
+H15 (2)
+20.3
+54.4
+25.4
+126.2
+180
+175.6
+46.6
+L1 (0)
+17.2
+34.2
+48.6
+13.3
+20.0
+11.6
+17.0
+L2 (1)
+16.5
+53.3
+30.2
+4.9
+0
+4.0
+9.4
+L3 (2)
+22.6
+45.1
+32.3
+8.4
+2
+7.1
+16.7
+L4 (0)
+17.5
+33.3
+49.2
+31.7
+50
+39.3
+22.0
+L5 (1)
+16.0
+46.2
+37.8
+18.6
+7.5
+26.6
+14.9
+L6 (2)
+17.0
+36.6
+46.3
+23.8
+8.9
+13.1
+41.5
+L7 (0)
+17.1
+33.7
+49.2
+24.0
+30.0
+16.3
+30.2
+L8 (1)
+17.4
+53.5
+29.2
+19.2
+53.3
+26.3
+9.7
+L9 (2)
+22.6
+45.9
+31.6
+17.1
+10
+18.0
+22.0
+L10 (0)
+18.9
+52.4
+28.7
+77.3
+95.0
+97.1
+42.8
+L11 (1)
+16.8
+57.1
+26.1
+90.8
+107.5
+95.4
+72.8
+L12 (2)
+21.5
+50.2
+28.3
+85.4
+108
+110.6
+43.1
+L13 (0)
+19.3
+54.3
+26.3
+55.1
+47.5
+57.3
+56.7
+L14 (1)
+17.2
+59.8
+23.0
+141.7
+150
+173.9
+81.9
+L15 (2)
+21.3
+55.6
+23.1
+148.5
+222
+213.0
+45.4
+123
+
+Annals of Operations Research
+Table 14 Route details for the optimal solutions and the best solutions found by Algorithm 2
+Instance(seed)
+Number of arcs
+Hub port visits
+Selected
+Used
+Usage (%)
+Opt
+DQN
+Opt
+DQN
+Opt
+DQN
+Opt
+DQN
+H1 (0)
+6
+6.6
+5
+5.3
+83.3
+81.4
+2
+1.8
+H2 (1)
+6
+7.1
+6
+5.9
+100
+84.5
+1
+2.2
+H3 (2)
+8
+7.5
+6
+5.4
+75
+72.0
+1
+1
+H4 (0)
+7
+9.3
+6
+6.7
+85.7
+72.0
+2
+2.3
+H5 (1)
+7
+7.2
+7
+6.5
+100
+91.9
+1
+2.3
+H6 (2)
+8
+7.4
+7
+6.2
+87.5
+84.3
+1
+2
+H7 (0)
+6
+6.7
+5
+5.6
+83.3
+84.3
+2
+1.8
+H8 (1)
+6
+7.5
+6
+6.3
+100
+85.9
+1
+2.4
+H9 (2)
+8
+7.3
+6
+5.3
+75
+73.3
+1
+1
+H10 (0)
+12
+20.3
+10
+13.8
+83.3
+68.8
+4
+4.1
+H11 (1)
+8
+14.8
+8
+9.7
+100
+66.1
+2
+2.1
+H12 (2)
+11
+19.3
+8
+10.3
+72.7
+54.2
+1
+3.6
+H13 (0)
+12
+21.4
+9
+11.4
+75
+53.2
+2
+4.1
+H14 (1)
+14
+24.2
+11
+14.7
+78.6
+60.8
+3
+3.8
+H15 (2)
+11
+27.2
+10
+15.1
+90.9
+56.0
+1
+3.5
+L1 (0)
+7
+6.5
+6
+5.7
+85.7
+88.5
+2
+1.7
+L2 (1)
+7
+8.1
+6
+6.7
+85.7
+83.2
+1
+2
+L3 (2)
+8
+9.3
+6
+6.6
+75
+71.0
+1
+1
+L4 (0)
+6
+8.5
+6
+7.1
+100
+84.5
+1
+2.1
+L5 (1)
+7
+8.6
+7
+8.3
+100
+96.8
+1
+3
+L6 (2)
+8
+8.4
+7
+7.4
+87.5
+88.6
+2
+2.3
+L7 (0)
+7
+7.4
+6
+6.1
+85.7
+84.1
+2
+1.8
+L8 (1)
+6
+9
+5
+6.5
+83.3
+72.2
+1
+2.6
+L9 (2)
+8
+10.2
+6
+6.4
+75
+63.3
+1
+1.1
+L10 (0)
+12
+21.6
+10
+13.3
+83.3
+61.8
+4
+4.3
+L11 (1)
+8
+16.5
+8
+10.5
+100
+64.2
+2
+2.3
+L12 (2)
+11
+21
+8
+12.9
+72.7
+61.9
+1
+4
+L13 (0)
+14
+21.7
+10
+12.4
+71.4
+57.6
+2
+3.9
+L14 (1)
+14
+28.9
+11
+16.7
+78.6
+57.7
+3
+4.3
+L15 (2)
+11
+30.5
+10
+15.3
+90.9
+50.7
+1
+3.8
+Table 15 Performance of Algorithm 2 with two services
+Instance (seed)
+|P|
+|E|
+δ(G)
+|K|
+|R|
+
+k∈K
+qk
+max
+k∈Kqk
+v
+Optimality gap (%)
+Min
+Avg
+Max
+Std
+L16
+7
+24
+3
+7
+2
+402
+173
+242
+22.5
+31.7
+45.0
+7.1
+L17
+9
+30
+3
+9
+2
+137
+57
+71
+26.0
+37.3
+44.3
+5.4
+L18
+9
+40
+4
+9
+2
+466
+231
+323
+86.1
+136.3
+183.4
+27.7
+123
+
+Annals of Operations Research
+Acknowledgements This research is partially funded by Innovation Fund Denmark (Grant Number [1044-
+00022B]).
+Funding Open access funding provided by Copenhagen University
+Declarations
+Conﬂict of interest All authors have no Conﬂict of interest.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Agarwal, R., & Ergun, Ö. (2008). Ship scheduling and network design for cargo routing in liner shipping.
+Transportation Science, 42(2), 175–196.
+Alvarez, J. F. (2009). Joint routing and deployment of a ﬂeet of container vessels. Maritime Economics &
+Logistics, 11, 186–208.
+Aydin, N., Lee, H., & Mansouri, S. A. (2017). Speed optimization and bunkering in liner shipping in the pres-
+ence of uncertain service times and time windows at ports. European Journal of Operational Research,
+259(1), 143–154.
+Balakrishnan, A., & Karsten, C. V. (2017). Container shipping service selection and cargo routing with trans-
+shipment limits. European Journal of Operational Research, 263(2), 652–663.
+Barto, A. G., Bradtke, S. J., & Singh, S. P. (1995). Learning to act using real-time dynamic programming.
+Artiﬁcial Intelligence, 72(1–2), 81–138.
+Bellman, R. (1957). A markovian decision process. Journal of Mathematics and Mechanics, 679–684.
+Bellman, R. (1958). Dynamic programming and stochastic control processes. Information and Control, 1(3),
+228–239.
+Bello, I., Pham, H., Le, Q. V., Norouzi, M., & Bengio, S. (2016). Neural combinatorial optimization with
+reinforcement learning. arXiv preprint arXiv:1611.09940
+Bertsekas, D. (2019). Reinforcement learning and optimal control. Athena Scientiﬁc.
+Boute, R. N., Gijsbrechts, J., Van Jaarsveld, W., & Vanvuchelen, N. (2022). Deep reinforcement learning for
+inventory control: A roadmap. European Journal of Operational Research, 298(2), 401–412.
+Brouer, B. D., Alvarez, J. F., Plum, C. E., Pisinger, D., & Sigurd, M. M. (2014). A base integer programming
+model and benchmark suite for liner-shipping network design. Transportation Science, 48(2), 281–312.
+Cheng, Q & Wang, C,Container liner shipping network design with shipperçös dual preference. Computers
+& Operations Research 128,105187.
+Chow, J. Y., & Sayarshad, H. R. (2016). Reference policies for non-myopic sequential network design and
+timing problems. Networks and Spatial Economics, 16, 1183–1209.
+Christiansen, M., Hellsten, E., Pisinger, D., Sacramento, D., & Vilhelmsen, C. (2020). Liner shipping network
+design. European Journal of Operational Research, 286(1), 1–20.
+Dai, H., Dai, B., & Song, L. (2016). Discriminative embeddings of latent variable models for structured data.
+In International conference on machine learning (pp. 2702–2711).
+Di Francesco, M., Crainic, T. G., & Zuddas, P., (2009). The effect of multi-scenario policies on empty container
+repositioning. Transportation Research Part E: Logistics and Transportation Review, 45(5), 758–770.
+Ghasempour, T., & Heydecker, B. (2020). Adaptive railway trafﬁc control using approximate dynamic pro-
+gramming. Transportation Research Part C: Emerging Technologies, 113, 91–107.
+Goodfellow, I., Bengio, Y., & Courville, A. (2016). Deep learning. MIT press.
+Gurobi Optimization, LLC (2023). Gurobi Optimizer Reference Manual. https://www.gurobi.com
+He, J., Huang, Y., & Chang, D., (2015). Simulation-based heuristic method for container supply chain network
+optimization. Advanced Engineering Informatics, 29(3), 339–354.
+123
+
+Annals of Operations Research
+Huber, P. J. (1964). Robust Estimation of a Location Parameter. The Annals of Mathematical Statistics, 35(1),
+73–101. https://doi.org/10.1214/aoms/1177703732
+Khalil, E., Dai, H., Zhang, Y., Dilkina, B., & Song, L. (2017). Learning combinatorial optimization algorithms
+over graphs. Advances in Neural Information Processing Systems, 30.
+Kingma, D. P., & Ba, J. (2014). Adam: A method for stochastic optimization. arXiv preprint arXiv:1412.6980
+Kool, W., Van Hoof, H., & Welling, M. (2018). Attention, learn to solve routing problems! arXiv preprint
+arXiv:1803.08475
+Koza, D. F., Desaulniers, G., & Ropke, S. (2020). Integrated liner shipping network design and scheduling.
+Transportation Science, 54(2), 512–533.
+Krogsgaard, A., Pisinger, D., & Thorsen, J. (2018). A ﬂow-ﬁrst route-next heuristic for liner shipping network
+design. Networks, 72(3), 358–381.
+Lin, L-J. (1992). Reinforcement learning for robots using neural networks. Carnegie Mellon University.
+Liu, Y., Xin, X., Yang, Z., Chen, K., & Li C (2021) Liner shipping network-transaction mechanism joint design
+model considering carbon tax and liner alliance. Ocean & Coastal Management, 212, 105817.
+Maersk (2019). Maersk line - from one route to a global network. https://www.maersk.com/news/articles/
+2019/02/21/maersk-line-from-one-route-to-a-global-network Accessed: 2023-07-22
+Mazyavkina, N., Sviridov, S., Ivanov, S., & Burnaev, E. (2021). Reinforcement learning for combinatorial
+optimization: A survey. Computers & Operations Research, 134, 105400.
+McClelland, J. L., McNaughton, B. L., & O’Reilly, R. C. (1995). Why there are complementary learning
+systems in the hippocampus and neocortex: Insights from the successes and failures of connectionist
+models of learning and memory. Psychological Review, 102(3), 419.
+Meng, Q., & Wang, S. (2011). Liner shipping service network design with empty container repositioning.
+Transportation Research Part E: Logistics and Transportation Review, 47(5), 695–708.
+Meng, Q., & Wang, T. (2011). A scenario-based dynamic programming model for multi-period liner ship ﬂeet
+planning. Transportation Research Part E: Logistics and Transportation Review, 47(4), 401–413.
+Mnih,V.,Badia,A.P.,Mirza,M.,Graves,A.,Lillicrap,T.,Harley,T.,&Kavukcuoglu,K.(2016).Asynchronous
+methods for deep reinforcement learning. In International conference on machine learning (pp. 1928–
+1937).
+Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A. A., Veness, J., Bellemare, M. G., et al. (2015). Human-level
+control through deep reinforcement learning. Nature, 518(7540), 529–533.
+Monemi, R. N., & Gelareh, S. (2017). Network design, ﬂeet deployment and empty repositioning in liner
+shipping. Transportation Research Part E: Logistics and Transportation Review, 108, 60–79.
+Nair, V., & Hinton, G.E. (2010). Rectiﬁed linear units improve restricted boltzmann machines. In Proceedings
+of the 27th international conference on machine learning (icml-10) (pp. 807–814).
+Nazari, M., Oroojlooy, A., Snyder, L., & Takác, M. (2018). Reinforcement learning for solving the vehicle
+routing problem. Advances in Neural Information Processing Systems, 31.
+O’Neill, J., Pleydell-Bouverie, B., Dupret, D., & Csicsvari, J. (2010). Play it again: Reactivation of waking
+experience and memory. Trends in Neurosciences, 33(5), 220–229.
+Papageorgiou, D. J., Cheon, M.-S., Nemhauser, G., & Sokol, J. (2015). Approximate dynamic programming
+for a class of long-horizon maritime inventory routing problems. Transportation Science, 49(4), 870–885.
+Perron, L., & Furnon, V. (2023). Or-tools. 9.6. https://developers.google.com/optimization/
+Plum, C. E., Pisinger, D., Salazar-González, J.-J., & Sigurd, M. M. (2014). Single liner shipping service design.
+Computers & Operations Research, 45, 1–6.
+Powell, W. B. (2011). Approximate dynamic programming: Solving the curses of dimensionality. Wiley.
+Puterman, M. L. (2014). Markov decision processes: Discrete stochastic dynamic programming. Wiley.
+Reinhardt, L. B., & Pisinger, D. (2012). A branch and cut algorithm for the container shipping network design
+problem. Flexible Services and Manufacturing Journal, 243, 349–374.
+Dong, J.-X., Song, D.-P., (2009). Container ﬂeet sizing and empty repositioning in liner shipping systems.
+Transportation Research Part E: Logistics and Transportation Review, 45(6), 860–877. systems. Trans-
+portation Research Part E: Logistics and Transportation Review, 45(6), 860-877.
+Silver, D., Huang, A., Maddison, C. J., Guez, A., Sifre, L., Van Den Driessche, G., et al. (2016). Mastering
+the game of go with deep neural networks and tree search. Nature, 529(7587), 484–489.
+Simao, H. P., Day, J., George, A. P., Gifford, T., Nienow, J., & Powell, W. B. (2009). An approximate dynamic
+programming algorithm for large-scale ﬂeet management: A case application. Transportation Science,
+43(2), 178–197.
+Simão, H. P., George, A., Powell, W. B., Gifford, T., Nienow, J., & Day, J. (2010). Approximate dynamic
+programming captures ﬂeet operations for schneider national. Interfaces, 40(5), 342–352.
+Sutton, R.S., & Barto, A.G. (2018). Reinforcement learning: An introduction. MIT press.
+Sutton, R. S., McAllester, D., Singh, S., & Mansour, Y. (1999). Policy gradient methods for reinforcement
+learning with function approximation. Advances in Neural Information Processing Systems, 12.
+123
+
+Annals of Operations Research
+Thun, K., Andersson, H., & Christiansen, M. (2017). Analyzing complex service structures in liner shipping
+network design. Flexible Services and Manufacturing Journal, 29, 535–552.
+Topaloglu, H., & Powell, W. B. (2006). Dynamic-programming approximations for stochastic time-staged
+integer multicommodity-ﬂow problems. INFORMS Journal on Computing, 18(1), 31–42.
+Tsitsiklis, J., & Van Roy, B. (1996). An analysis of temporal-difference learning with function approximation-
+technical. Rep. LIDS-P-2322. Lab. Inf. Decis. Syst. Massachusetts Inst. Technol. Tech. Rep
+Veliˇckovi´c, P., Cucurull, G., Casanova, A., Romero, A., Lio, P., & Bengio, Y. (2017). Graph attention networks.
+arXiv preprint arXiv:1710.10903
+Vesselinova, N., Steinert, R., Perez-Ramirez, D. F., & Boman, M. (2020). Learning combinatorial optimization
+on graphs: A survey with applications to networking. IEEE Access, 8, 120388–120416.
+Wang, S., & Meng, Q. (2014). Liner shipping network design with deadlines. Computers & Operations
+Research, 41, 140–149.
+Wang, S., Zhuge, D., Zhen, L., & Lee, C.-Y. (2021). Liner shipping service planning under sulfur emission
+regulations. Transportation Science, 55(2), 491–509.
+Watkins, C. J. C. H. (1989). Learning from delayed rewards. Cambridge United Kingdom: King’s College.
+Williams, R. J. (1992). Simple statistical gradient-following algorithms for connectionist reinforcement learn-
+ing. Machine Learning, 8, 229–256.
+Zhen, L., Wang, S., & Zhuge, D. (2017). Dynamic programming for optimal ship refueling decision. Trans-
+portation Research Part E: Logistics and Transportation Review, 100, 63–74.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

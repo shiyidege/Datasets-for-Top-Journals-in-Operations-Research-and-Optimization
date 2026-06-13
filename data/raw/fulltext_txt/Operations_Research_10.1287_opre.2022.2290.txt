@@ -1,0 +1,3610 @@
+TITLE: Seeding with Costly Network Information
+JOURNAL: Operations_Research
+YEAR: 2022
+DOI: https://doi.org/10.1287/opre.2022.2290
+---
+
+Appearing in Operations Research: https://doi.org/10.1287/opre.2022.2290
+Seeding with Costly Network Information
+Dean Eckles1, Hossein Esfandiari2, Elchanan Mossel3, M. Amin Rahimian4
+1Sloan School of Management, MIT
+2Google Research
+3Department of Mathematics, MIT
+4Department of Industrial Engineering, University of Pittsburgh
+eckles@mit.edu, esfandiari@google.com, elmos@mit.edu, rahimian@pitt.edu
+We study the task of selecting k nodes, in a social network of size n, to seed a diﬀusion with maximum
+expected spread size, under the independent cascade model with cascade probability p. Most of the previous
+work on this problem (known as inﬂuence maximization) focuses on eﬃcient algorithms to approximate
+the optimal seed set with provable guarantees given knowledge of the entire network; however, obtaining
+full knowledge of the network is often very costly in practice. Here we develop algorithms and guarantees
+for approximating the optimal seed set while bounding how much network information is collected. First,
+we study the achievable guarantees using a sublinear inﬂuence sample size. We provide an almost tight
+approximation algorithm with an additive ϵn loss and show that the squared dependence of sample size on
+k is asymptotically optimal when ϵ is small. We then propose a probing algorithm that queries edges from
+the graph and use them to ﬁnd a seed set with the same almost tight approximation guarantee. We also
+provide a matching (up to logarithmic factors) lower-bound on the required number of edges. This algorithm
+is implementable in ﬁeld surveys or in crawling online networks. Our probing takes p as an input which may
+not be known in advance, and we show how to down-sample the probed edges to match the best estimate of
+p if they are collected with a higher probability. Finally, we test our algorithms on an empirical network to
+quantify the tradeoﬀbetween the cost of obtaining more reﬁned network information and the beneﬁt of the
+added information for guiding improved seeding strategies.
+Key words : Inﬂuence maximization, submodular maximization, query oracle, viral marketing
+1. Introduction
+Decision-makers in marketing, public health, development, and other ﬁelds often have a limited
+budget for interventions, such that they can only target a small number of people for an intervention.
+Thus, in the presence of social or biological contagion, they strategize about where in a network to
+intervene — often where to seed a behavior (e.g., product adoption) by engaging in an intervention
+(e.g., giving a free product) (Banerjee et al. 2019, Domingos and Richardson 2001, Godes and
+Mayzlin 2009, Hinz et al. 2011, Kempe et al. 2003, Libai et al. 2013). The inﬂuence maximization
+problem is to choose a set of k seeds with maximum expected spread size, given a known network
+and model of diﬀusion (Domingos and Richardson 2001). Following the seminal work of Kempe
+et al. (2003) — who showed NP-hardness and eﬃcient approximation through submodular inﬂuence
+1
+arXiv:1905.04325v5 [cs.SI] 21 May 2022
+
+Eckles et al.: Seeding with Costly Network Information
+2
+maximization — a huge literature is devoted to developing fast algorithms that can be applied to
+massive scale social networks (e.g., Chen et al. 2009, Wang et al. 2012).
+In this work, we address the problem of inﬂuence maximization when the social network is
+unknown and so network information needs to be acquired through costly eﬀort. This has applica-
+tions in development economics — e.g., adoption of microﬁnance (Banerjee et al. 2013) and insurance
+(Cai et al. 2015); public health — e.g., adoption of water puriﬁcation methods and multivitamins
+(Kim et al. 2015), spreading information about immunization camps (Banerjee et al. 2019), prevent-
+ing misinformation about drug side eﬀects (Chami et al. 2017), increasing HIV awareness among
+homeless youth (Yadav et al. 2017), and adoption of contraception (Behrman et al. 2002); and educa-
+tion — e.g., reducing bullying and conﬂict among adolescents (Paluck et al. 2016). In these settings,
+data about network connections is often acquired through costly surveys. In practice, collecting the
+entire network connection (edge) data can be diﬃcult, costly, or even impossible. To reduce the cost
+of such surveys a few seeding strategies have been proposed to avoid collecting the entire network
+information by relying on stochastic ingredients, such as one-hop targeting, whereby one targets
+random network neighbors of random individuals (Chami et al. 2017, Chin et al. 2021, Kim et al.
+2015). Moreover, such methods have the advantage of scalability, since they can be implemented
+without mapping the entire network. This is also important in online social networks with billions
+of edges, where working with the entire contact lists might be impractical or limited by rate limits
+for third parties crawling these networks. Although the importance of inﬂuence maximization with
+partial network information has been noted and there are a few papers considering this problem
+(Mihara et al. 2015, 2017, Stein et al. 2017, Wilder et al. 2018), none of these previous works come
+with provable performance guarantees for general graphs.
+To limit access of seeding algorithms to network information, we use an edge query model and
+provide tight guarantees of what is achievable with a bounded number of queries. We organize our
+edge queries by sequentially probing the graph nodes: we probe each node by revealing its incident
+edges with independent cascade probability p, proceed to probe its revealed neighbors, and repeat.
+Our approximation algorithm uses the revealed network information to seed k nodes with guarantees
+that match hardness lower bounds (up to logarithms).
+We begin our analysis by a thought experiment (Section 2.1): assuming that network information
+is made available through “inﬂuence samples”, i.e., by seeding random nodes and observing their
+spread outcomes, how many inﬂuence samples do we need to collect? We show that to seed k nodes
+in a network of size n with tight approximation guarantees, it is necessary (up to logarithms) and
+suﬃcient to collect O(k2 log n) inﬂuence samples. In Section 3, we provide our main results by show-
+ing that the same approximation guarantees can be achieved using O(pn2 log4 n) edge queries (with
+a matching lower bound). Our probing mechanism for edge queries makes use of the independent
+
+Eckles et al.: Seeding with Costly Network Information
+3
+cascade probability p to sample edges; therefore, in subsection 3.5, we study what happens when
+the probe and seed cascade probabilities (denoted by p′ and p, respectively) are diﬀerent. We point
+out the hardness of giving general guarantees when p′ ̸= p and propose a post-processing solution to
+correct for this discrepancy as long as p′ > p, i.e., the edge data are collected with suﬃciently high
+probability. In Section 4, we use our bounded-query framework to resolve a trade-oﬀbetween the
+cost of acquiring network information and its beneﬁt in increasing expected spread size. We provide
+discussion and concluding remarks in Section 5. Detailed comparisons with related works are pro-
+vided in Appendix A. Detailed proofs are presented in Appendix B. In Appendix C, we discuss the
+extension of our results to other inﬂuence models including independent cascade on directed graphs
+(Appendix C.1) and the linear threshold model, for which we provide approximation guarantees
+using only O(nk2 log n) edge queries (Appendix C.2).
+1.1. Main contributions
+We consider the independent cascade (IC) model of social contagion that is fairly well-studied
+since its use by Kempe et al. (2003). In this model, network edges are “active” with probability p
+independently of each other and all nodes with active connections to other active nodes become
+active. Motivated by applications to product and technology adoption, we refer to active nodes as
+adopters. Starting from a set of initial adopters, the adoption propagates through the network and
+the process terminates after a ﬁnite number of steps. Following the independent cascade model,
+every adopter has a single chance to activate each of its neighbors independently with probability
+p. The k-inﬂuence maximization problem, or k-IM in short, refers to the choice of k initial adopters
+to maximize expected adoptions under this diﬀusion model. Let OPT be the optimum value for this
+problem. A µ-approximation algorithm outputs a set of k initial adopters to guarantee that the
+expected number of adoptions is at least µOPT. In this work, we assume a query oracle access to
+the network graph and study the k-IM problem with a limited number of queries.
+We begin with a hypothetical scenario assuming that we can pay a cost to seed a random node and
+learn the outcome of the spreading process (e.g., imagine distributing traceable coupons to random
+individuals and asking them to pass the coupons to their friends; or a social network marketing
+ﬁrm that measures its audience by seeding ads and promotional goods randomly). We only learn
+the identity of the ﬁnal adopters and do not use any information about the network edges through
+which the inﬂuence spreads. We collect several independent cascade outcomes by repeating this
+process and refer to them as “inﬂuence samples”. We use these inﬂuence samples to seed k nodes
+with optimality guarantees. We ﬁrst show that an additive loss (e.g., ϵn) is necessary, given o(n)
+inﬂuence samples (Theorem 1, Subsection 2.1):
+
+Eckles et al.: Seeding with Costly Network Information
+4
+Hardness of approximation with o(n) influence samples. Let µ > 0 be any constant.
+There is no µ-approximation algorithm for inﬂuence maximization using o(n) inﬂuence samples.
+Interestingly, we show that O(k2 log n) inﬂuence samples are enough to provide a k-IM solution with
+almost tight approximation guarantees. For example, if ﬁnding a single seed on a star (k = 1), with
+high probability all random samples are leaves of the star. However, based on the O(log n) spread
+outcomes our algorithm ﬁnds and seeds the center of the star. We also show that the quadratic
+order dependence on k is the best possible. The following is a formal summary of our results from
+Theorems 2 and 3 in Subsection 2.1:
+Approximation guarantees with bounded number of influence samples. For
+any
+arbitrary 0 < ϵ ≤1, there exists a polynomial-time algorithm for k-inﬂuence maximization that
+covers (1 −1/e)OPT −ϵn nodes in expectation using no more than Oϵ(k2 log n) inﬂuence samples.
+Moreover, there can be no approximation algorithms that provide µOPT −ϵn guarantees for k-IM
+using o(k2) inﬂuence samples for a ﬁxed 0 < µ < 1 and 0 < ϵ < µ/k.
+Notice that our bound on the number of inﬂuence samples depends logarithmically on n, therefore,
+when k is poly-logarithmic we only use poly-logarithmic number of inﬂuence samples which is
+exponentially lower than the best known bound of O(knlog n) for sample complexity of inﬂuence
+maximization on general graphs (Sadeh et al. 2020, Section 2). We point out that our order n
+improvement is only possible because we allow for an additive loss in our approximation guarantee.
+Detailed comparisons with this and other related works are presented in Appendix A.
+Our main contribution is to show that similar approximation guarantees are possible as we bound
+the total number of edge queries, i.e., queries of the form (v,i) that return the i-th neighbor of node
+v with arbitrarily ordered neighborhoods. We propose a probing procedure to sequentially reveal
+random neighborhoods of the nodes, resulting in a snowball-like sampling of the network edges.
+Notice that a single simulation of the independent cascade model over the entire network (without
+using our subsampling and stopping constraints) requires Ω(pn2) edge queries. In fact, we show that
+in the worst case one needs to query Ω(n2) edges to guarantee that the expected number of covered
+nodes is at least a constant fraction of the optimum (Theorem 4, Section 3):
+Hardness of approximation with o(n2) edge queries. Let µ be any constant. There is no
+µ-approximation algorithm for inﬂuence maximization using o(n2) edge queries.
+We avoid the above impossibility by allowing for an ϵn additive loss in our approximation guar-
+antee. Subsequently, one natural question that arises is to study the relation between the required
+number of queries and the cascade probability. In particular, is it possible to ﬁnd an approxi-
+mately optimal seed set using sub-quadratic number of queries when p is desirably small? We
+
+Eckles et al.: Seeding with Costly Network Information
+5
+resolve this question positively by showing that our probing scheme approximately preserves the
+greedy solution to the k-IM problem, achieving a (1 −1/e)OPT −ϵn guarantee using no more than
+Oϵ(pn2 log4 n+√kpn1.5 log5.5 n+knlog3.5 n) edge queries. We also provide a matching lower bound
+(up to logarithms) to show that the linear order dependence on p is tight. The following is a formal
+restatement of our results in Theorems 6 and 7 of Subsection 3.4.
+Approximation guarantees with bounded number of edge queries. For any arbitrary
+ϵ > 0, there exists a polynomial-time algorithm for inﬂuence maximization that covers (1 −
+1/e)OPT−ϵn nodes in expectation, using Oϵ(pn2 log4 n+√kpn1.5 log5.5 n+knlog3.5 n) queries, where
+OPT is the expected number of nodes covered by the optimum solution to k-IM. Moreover, there
+can be no approximation algorithms that provide µOPT −ϵn guarantees for k-IM using o(pn2) edge
+queries for a ﬁxed 0 < µ ≤1 and ϵ < µ2/18.
+To achieve this result, we apply some subsampling techniques with stopping constraints that
+enable us to approximately simulate Oϵ(k log n) independent cascades, starting from a random sam-
+ple of Oϵ(k log n) initial nodes and using only Oϵ(pn2 log4 n + √kpn1.5 log5.5 n + knlog3.5 n) edge
+queries. We specify the dependence of the Oϵ terms on ϵ when presenting our main results in Section
+3. Of note, our subsampling technique makes critical use of the independent cascade probability p
+when deciding how many edges to query in the neighborhood of each node. In practice, the true
+value of p is often subject to signiﬁcant uncertainty. We address the dependency of our edge queries
+on p with a hardness result in Section 3.5 and discuss how potential discrepancies may be corrected
+if p is unknown at data collection but measurable afterwards.
+The most closely related result that provides approximation guarantees for k-IM with limited
+queries to an unknown graph is due to Wilder et al. (2018), who propose an algorithm for input
+graphs that are drawn from a particular family of stochastic block models. Their algorithm, which
+is tailored to that speciﬁc random graph model, consists of taking a random sample of T nodes and
+exploring their extended neighborhoods in R steps of a random walk. The outcome of the random
+walks is used to estimate the block sizes of each of the T nodes, and this is achieved by revealing
+no more than TR ∈O(log6 n) nodes. The k nodes in the seed set are selected from the initial T
+samples, such that the k largest blocks are seeded uniformly at random. Unlike Wilder et al. (2018),
+we do not make any assumptions about inputs, so our results are applicable to general graphs.
+In the following subsection, we put our contributions in perspective by discussing related bodies
+of literature. Detailed discussions of methodologically relevant work are provided in Appendix A.
+Our main results in Section 3 are presented for undirected graphs. In Appendix C.1, we provide
+the extension of the edge query model to directed graphs and show that the same approximation
+guarantees and query bounds hold true when nodes are queried for their inﬂuencers (their incoming
+edges).
+
+Eckles et al.: Seeding with Costly Network Information
+6
+1.2. Related work
+Motivated by the diﬃculties of acquiring complete network data, we are interested in methods for
+targeting in networks without making explicit use of the full graph. Such methods have roots in
+multiple applied problems — vaccination (Cohen et al. 2003) and disease surveillance (Christakis
+and Fowler 2010) — in addition to seeding. One approach that has received substantial attention is
+a “one-hop” strategy [sometimes called “nomination” (Kim et al. 2015) or “acquaintance targeting”
+(Chami et al. 2017, Cohen et al. 2003)] that selects as seeds the neighbors of random nodes. This
+approach exploits a version of the friendship paradox that states: “the friend of a random individual
+is expected to have more friends than a random individual,” (Feld 1991, Lattanzi and Singer 2015).
+For example, Kim et al. (2015) report on the results of ﬁeld experiments that target individuals for
+delivery of public health interventions (spreading adoption of multivitamins and a water puriﬁca-
+tion method). For one product, they argue that one-hop targeting (whereby a random individual
+nominates a friend to be targeted) leads to increased adoption rates, compared with random or in-
+degree targeting. Some other empirical work has been less encouraging (Chin et al. 2021, cf. Kumar
+and Sudhir 2019). While there are results about how these short random walks aﬀect the degree
+distribution of selected nodes (Kumar et al. 2018), one-hop seeding currently lacks any theoretical
+guarantees under models of contagion. Furthermore, given the collection of data about the network
+neighborhoods of k nodes, it is natural to ask whether this data can be more eﬀectively used than
+just locally taking a random step, ignoring data collected from the other k −1 neighborhoods.
+To address the challenges of seeding when obtaining network information is costly, we oﬀer a
+framework for inﬂuence maximization using a bounded number of queries to the graph structure.
+In this framework, we investigate the expected spread size versus the increasing number of queries
+as we obtain more information about the network. In related work, Akbarpour et al. (2020) study
+the value of network information for seeding interventions. We provide a detailed comparison with
+this work in Section 4, after clarifying our modeling assumptions and results.
+In another related work, Manshadi et al. (2020) study a model of spread where individuals contact
+their neighbors independently at random, and each contact leads to an adoption with some ﬁxed
+probability. The contacts occur repeatedly; therefore, every cascade eventually spreads to the entire
+population. They characterize the time to reach a fraction of adopters as well as the contact cost
+(number of contacts made), in a random graph with a given degree distribution. They also propose
+optimal seeding strategies that only use the degree information. However, this model is not directly
+comparable to the inﬂuence maximization setup that we study. In our model, the realization of the
+inﬂuences is random and adoption spreads only through the realized edges. For us, the objective is
+to maximize the expected spread size and the incurred cost is in acquiring information about the
+inﬂuence structure (who inﬂuences whom).
+
+Eckles et al.: Seeding with Costly Network Information
+7
+Particularly relevant to our present study is recent work on inﬂuence maximization for unknown
+graphs (Mihara et al. 2015, 2017, Stein et al. 2017, Wilder et al. 2017a, 2018). Mihara et al. (2015) use
+a biased snowball sampling strategy to greedily probe and seed nodes with the highest degree; they
+later propose to improve their heuristic by including random jumps that avoid excessive local search
+in their snowball sampling strategy (Mihara et al. 2017). Stein et al. (2017) explore applications
+of common heuristics and known algorithms in scenarios where parts of the network is completely
+unobservable. Although simulations of inﬂuence spread on synthetic and real social networks provide
+some evidence, none of these results come with provable performance guarantees in general graphs.
+To the best of our knowledge, the only available guarantee for inﬂuence maximization with unknown
+graphs is due to Wilder et al. (2018). However, as discussed above (section 1.1), this algorithm and
+analysis is tailored to graphs generated from a particular family of stochastic block models (roughly
+speaking, they use the outcome of the queries to estimate the size of each block and choose nodes
+to seed the largest blocks). Such an analysis does not apply to general graphs and the techniques
+that we use to provide performance guarantees for general graphs are signiﬁcantly diﬀerent.
+We rely on sketching techniques to summarize inﬂuence functions using a bounded number of
+queries; in Subsection 3.3, we adopt high-level ideas from Bateni et al. (2018, 2017) for construction
+of our sketch (see Lemma 4). Cohen et al. (2014) also develop a sketch-based algorithm for inﬂuence
+maximization to bound the running time with approximation guarantees. In other related work,
+Borgs et al. (2014) give a quasi-linear time algorithm for inﬂuence maximization based on reversed
+inﬂuence samples that use O(k(n + m)log n) edge queries, where m is the size of the input edge
+set. Although these algorithms achieve fast (nearly best possible) inﬂuence maximization, they may
+query all edges multiple times on some inputs because they are not directly concerned with limiting
+query access to unknown graphs. In Appendix A, we give a detailed comparison with these and
+other relevant works that are based on (reverse) inﬂuence sampling.
+Our inﬂuence maximization guarantees also relate to the recent developments in stochastic sub-
+modular maximization (Karimi et al. 2017), as well as optimization from samples (Balkanski et al.
+2017a, 2016). The key diﬀerence is that in our algorithms we make explicit use of the combinatorial
+structure of the collected data. This is in contrast to the optimization from samples framework,
+where only the sampled values of the submodular function are observed. Consequently, we are able
+to provide guarantees for arbitrary inputs, and avoid some of the limitations of the optimization
+from samples (cf. Balkanski et al. 2017b). We provide more details about our relationship with this
+literature in Appendix A.
+Some prior work has addressed lack of perfect knowledge about the spreading process by learn-
+ing the inﬂuence model and potentially heterogeneous probabilities of spreading along each edge
+(Gomez-Rodriguez et al. 2012, Goyal et al. 2010). However, rather than attempting to learn the
+
+Eckles et al.: Seeding with Costly Network Information
+8
+model parameters from existing data, we are interested in data collection as an active, costly pro-
+cess that is performed to inform seeding interventions. To this end, we oﬀer a methodology that
+coordinates data collection and inﬂuence maximization by limiting queries to the social network
+graph. In other online learning and bandit-based approaches, the learner can select diﬀerent seed
+sets at each stage and receives feedback from seeding in previous stages (Wen et al. 2017, Wu et al.
+2019). This is also related to adaptive seeding, where the initial choice of seeds inﬂuences what
+becomes available for seeding in a followup stage (Feng et al. 2020, Horel and Singer 2015, Seeman
+and Singer 2013). The ability to seed nodes adaptively makes such setups incomparable to ours —
+and inapplicable when practical considerations demand commencing seeding simultaneously.
+2. Problem setup and preliminary results
+Consider a graph G = (V,E) with the set of nodes V, the set of edges E and a seed set S ⊆V.
+Starting from the seeded nodes in S, adoption spreads along the edges of E with independent
+cascade probability p according to the IC model in Section 1.1. Given S, for v ∈V, let φ(v,S) be
+the probability that v adopts when the nodes in S are seeded. The inﬂuence function, Γ, maps each
+seed set, S, to its value, Γ(S) = P
+v∈V φ(v,S), which is the expected number of nodes that adopt if
+the nodes in set S are seeded.
+Definition 1 (k-IM). Given graph G, the k-inﬂuence maximization (k-IM) problem is to choose
+a seed set S ⊂V with card(S) = k to maximize Γ(S). We use Λ = arg maxS,card (S)=k Γ(S) to denote
+any such solution and use OPT = Γ(Λ) to denote the optimal value.
+Definition 2 (Approximations). Given graph G, any Λα ⊂V, card(Λα) = k, satisfying Γ(Λα) ≥
+αOPT is an α-approximate solution to k-IM.
+An important result in inﬂuence maximization is that Γ is a non-negative, monotone, submod-
+ular set function (Kempe et al. 2003, 2005, 2015, Mossel and Roch 2010). Subsequently, it can be
+approximately maximized by sequentially selecting k seeds with the largest marginal gains, i.e., the
+greedy algorithm, which makes O(nk) oracle calls to Γ and achieves a 1 −(1 −1/k)k ≥(1 −1/e)
+approximation guarantee (Nemhauser et al. 1978). The greedy algorithm sets a gold standard for
+inﬂuence maximization that is NP-hard to improve upon — indeed, k-IM generalizes the maximum
+coverage problem and suﬀers its hardness of approximation beyond a 1 −(1 −1/k)k factor. Here,
+we achieve roughly the same guarantee without oracle access to Γ and using only a limited number
+of queries to the graph G. In our approach, rather than optimizing the inﬂuence function on the
+original graph, we do so on a subgraph that is properly sampled from the original graph. As its main
+property, we show that for the appropriate choice of α and ϵ, an α-approximate solution to k-IM
+
+Eckles et al.: Seeding with Costly Network Information
+9
+on this subgraph has an inﬂuence on the original graph that is lower-bounded by αOPT −ϵn. We
+can thus achieve similar worst-case guarantees using only partial information about the network.
+Accessing the input graph by performing edge queries is a common technique in sublinear time
+algorithms that inspect only a small portion of their input before providing an output (Alon et al.
+2000, 2009, Chazelle et al. 2005, Esfandiari and Mitzenmacher 2018, Indyk 1999). Formally, we
+assume that the input graphs are represented by an adjacency list deﬁned as a collection of lists,
+{(Nν,card(Nν)),ν ∈V}, where each list, Nν, consists of all the neighbors of node ν in some arbitrary
+(but ﬁxed) order, and is accompanied by its length. Our query oracle model is deﬁned such that
+given a vertex ν and an index 1 ≤i ≤card(Nν), the algorithm can query who is the i-th neighbor
+of ν (Gonen et al. 2011):
+Definition 3 (Edge Query). Given a vertex ν ∈V and an index i ∈{1,...,card(Nν)}, an edge
+query with parameters (ν,i) reveals the i-th neighbor of ν.
+We use edge queries as part of a probing mechanism, whereby a node is asked to reveal her
+neighbors each with probability p. Formally, probing node ν is deﬁned as follows:
+Definition 4 (Probing). Given a vertex ν ∈V, a probing with parameters (ν,p) performs a
+sequence of (ν,i) edge queries for every index i that remains after eliminating the elements of the
+index set {1,...,card(Nν)}, independently at random, with probability 1 −p.
+Of note, the total number of edge queries that are performed as a result of a (ν,p) probing is a
+binomial random variable with size parameter card(Nν) and success probability p. In addition to
+probing nodes and running edge queries, our algorithm also needs a subsample of initial nodes that
+are chosen at random without replacement from the node set. Given this initial sample, we repeatedly
+probe the extended neighborhoods of the initial sample using edge queries. In our analysis, we
+bound the total number of edge queries that our algorithm makes in order to achieve the desired
+approximation guarantees. We also provide a query complexity lower-bound to show that the probing
+algorithm is order optimal for achieving the desired approximation guarantees, with as few queries
+as possible.
+Although accessing the input graph locally by revealing the ordered neighborhoods of its nodes is
+a common query oracle model, our probing setup is also motivated by practical methods of network
+sampling such as snowball sampling, link-tracing, and respondent-driven sampling (RDS) that are
+popular in public health surveillance, social policy research, sociology, and survey design applications
+(Heckathorn and Cameron 2017). The principle utility of such methods is in constructing samples of
+hidden (hard to reach) populations (e.g., when estimating prevalence of HIV among drug injectors).
+In these situations, research begins with a convenience sample of initial subjects which is then
+
+Eckles et al.: Seeding with Costly Network Information
+10
+Figure 1
+Using f(n) ∈o(n) inﬂuence samples on a graph comprised of a clique of size g(n) =
+p
+n/f(n) and
+n −g(n) isolated nodes, one cannot achieve an approximation factor that is better than o(1).
+expanded by tracing their network links in waves, until the target sample size is attained (Heckathorn
+and Cameron 2017, Salganik and Heckathorn 2004, cf. Goel and Salganik 2010). Following our
+probing procedure, researchers can decide which links to trace in the neighborhood of a probed node,
+randomly by simulating independent biased coin ﬂips with head probability p. More broadly, our
+PROBE algorithm (Algorithm 2, Section 3) can be integrated with social network data collection
+software — e.g., the Trellis mobile platform (Lungeanu et al. 2021) used in Kim et al. (2015) and
+other studies — to generate survey sampling plans for researchers in the ﬁeld.
+2.1. Approximation guarantee with a bounded number of inﬂuence samples
+To demonstrate the challenges of seeding with partial network information, we present a thought
+experiment whereby one can pay a cost to learn the outcome of a spreading process when a single
+node is seeded. Imagine giving out coupons (or lottery tickets) to random individuals and observing
+their usage spread as a way of collecting network information. Formally, we deﬁne an “inﬂuence
+sample” as the outcome of seeding a random node:
+Definition 5 (Influence Sample). Each inﬂuence sample consists of all nodes that become
+active, after a single node is chosen uniformly at random (with replacement) and seeded.
+As a theoretical exercise, we ask how many inﬂuence samples we need to collect to be able to
+provide a k-IM approximate solution. We ﬁrst show that one cannot hope to provide a constant factor
+approximation guarantee, µOPT, for any µ > 0, using o(n) inﬂuence samples. Our hard example
+consists of a graph with a small clique and many isolated nodes (Figure 1). In such a structure,
+using o(n) inﬂuence samples one is unlikely to observe the small clique and cannot achieve better
+than an o(1) approximation factor. This example is similar to one in Wilder et al. (2018, Theorem
+1), but we improve their O(n1−ϵ) lower bound to o(n). The proof details are in Appendix B.1.
+Theorem 1. Let 0 < µ < 1 be any constant. There is no µ-approximation algorithm for inﬂuence
+maximization using o(n) inﬂuence samples.
+Knowing that a multiplicative approximation guarantee is impossible with o(n) inﬂuence samples,
+we next ask how many inﬂuence samples we need for providing a (1−1/e)OPT−ϵn guarantee with
+ﬁxed ϵ > 0. Algorithm 1 provides such a guarantee using kρ ∈Oϵ(k2 log(nk)) inﬂuence samples,
+
+Eckles et al.: Seeding with Costly Network Information
+11
+where ρ = ρn,k
+ϵ
+= ⌈(81k/ϵ3)log(6nk/ϵ)⌉is the number of inﬂuence samples we collect to choose one
+seed. The total number of inﬂuence samples that we use in Algorithm 1 is
+T n,k
+ϵ
+= kρn,k
+ϵ
+= k
+81k log(6nk/ϵ)
+ϵ3
+
+∈O
+k2 log n
+ϵ3
++ k2 log(1/ϵ)
+ϵ3
+
+·
+(1)
+Algorithm 1: INF-SAMPLE(ρ,k)
+Input: Inﬂuence sampling access to graph G, sample size ρ, and seed set size k
+Output: Λ⋆, approximate seed set of size k with value at least (1 −1/e)OPT −ϵn
+1 Initialize Λ⋆←∅.
+2 for i from 1 to k do
+3
+Collect ρ inﬂuence samples and call them Ai
+1, ..., Ai
+ρ.
+// Discard the influence samples that intersect with already chosen seeds (Λ⋆):
+4
+for j from 1 to ρ do
+5
+if Ai
+j ∩Λ⋆̸= ∅then
+6
+Ai
+j ←∅.
+7
+end
+8
+end
+// Choose the i-th seed based on the remaining influence samples:
+9
+for u ∈V \ Λ⋆do
+10
+for j from 1 to ρ do
+11
+Xi
+u,j ←1{u ∈Ai
+j}.
+12
+end
+13
+Xi
+u ←Pρ
+j=1 Xi
+u,j.
+14
+end
+15
+v⋆←arg maxu∈V\Λ⋆Xi
+u.
+16
+Λ⋆←Λ⋆∪{v⋆}.
+17 end
+18 return Λ⋆·
+The following theorem formalizes our guarantees for Algorithm 1. Its proof is in Appendix B.2.
+The main idea is that nodes that appear in many inﬂuence samples are good candidates for seeding
+since they are reached by many random nodes. For example, in Figure 2 the black node is the only
+node that appears in all inﬂuence samples and is the best candidate for seeding. To prevent overlap
+with the previously chosen seeds, at each step we discard those inﬂuence samples that contain any
+of the already chosen seeds (belonging to Λ⋆). The crux of the argument is in realizing that (n/ρ)Xi
+u
+is an unbiased estimator of the expected marginal gain from adding u to the seed set. By controlling
+
+Eckles et al.: Seeding with Costly Network Information
+12
+(A)
+(B)
+(C)
+Figure 2
+Three inﬂuence samples are depicted in (A) red, (B) orange, and (C) blue. In each inﬂuence sample,
+the random initial node is marked in the same color as the cascade. The node that appears most across
+diﬀerent samples is marked in black. The dotted segments are not observed in the samples.
+Figure 3
+Using o(k2) inﬂuence samples on a graph comprised of k stars of size n/k each, with cascade probability
+p = 1/k, one cannot achieve a µOPT −ϵn approximation guarantee for ϵ < µ/k.
+the deviation of Xi
+u from E[Xi
+u], we can approximate every step of the greedy algorithm by choosing
+u from V \ Λ⋆to maximize Xi
+u.
+Theorem 2. For any arbitrary 0 < ϵ ≤1, there exists a polynomial-time algorithm for inﬂuence
+maximization that covers (1 −1/e)OPT −ϵn nodes in expectation in O(k2 log(n/ϵ)/ϵ3) time, using
+no more than k ⌈81k log(6nk/ϵ)/ϵ3⌉∈O(k2 log(n/ϵ)/ϵ3) inﬂuence samples.
+We end this section by a lower bound on the required number of inﬂuence samples for achieving
+the (1 −1/e)OPT −ϵn approximation guarantee. In particular, we show that the k2 asymptotic
+rate for T n,k
+ϵ
+in (1) is optimal for ϵ < µ/k. Our hard example consists of a collection of k stars of
+size n/k each, with independent cascade probability p = 1/k; see Figure 3. The optimum achieves
+k(n/k2) = n/k expected spread size by seeding the centers of each of the k stars. In Appendix B.3,
+we show that any algorithm that uses o(k2) inﬂuence samples can at most discover a small expected
+fraction of the center nodes, and therefore, fails to guarantee a µOPT −ϵn expected spread size
+when ϵ < µ/k.
+Theorem 3. Fix 0 < µ < 1 and 0 < ϵ < µ/k. There can be no approximation algorithms that provide
+µOPT −ϵn guarantees for k-IM using o(k2) inﬂuence samples.
+
+Eckles et al.: Seeding with Costly Network Information
+13
+(A)
+(B)
+(C)
+Figure 4
+Three example cascades obtained through edge queries, depicted in (A) red, (B) orange, and (C) blue.
+All cascades start from the same random initial nodes which are marked in the same color as the
+cascades. The node that is marked in black scores as high as or higher than other nodes across the three
+cascades. The dotted sections consist of unsampled edges and nodes.
+While these results characterize the challenges of seeding with limited network information, inﬂu-
+ence samples are often not a practical query model in a number of settings of interest and do
+not readily extend to directed graphs (Appendix Appendix C.1). Thus, we turn to another, more
+widely-applicable query method.
+3. Approximation guarantees with bounded edge queries
+In this section, we present an algorithm to perform edge queries by probing the extended neighbor-
+hood of a random subsample of the network nodes (Algorithm 2: PROBE), as well as an algorithm
+to output an approximate seed set, given the outcome of the edge queries (Algorithm 3: SEED).
+The main idea of the PROBE algorithm is to simulate multiple independent cascades starting from
+a set of random initial nodes; by querying each node about its neighbors and repeating the same
+for the revealed neighbors, neighbors of neighbors, etc. The SEED algorithm takes in the output
+of the PROBE algorithm and chooses seeds that are connected to the most initial nodes along the
+queried edges. In Figure 4, we depict an example of three cascades that are obtained through edge
+queries. Consider the node that is marked in black. Its queried connected component has three
+initial nodes in 4(A), two initial nodes in 4(B), and one initial node in 4(C). The value of each
+connected component is the number of initial nodes in that component and adding them gives the
+total value of the marked node: 1 + 2 + 3 = 6. To prevent overlap with already chosen seeds, we set
+the value of a connected component to zero once one of its nodes is seeded. Using these valuations,
+the SEED algorithm approximates the greedy algorithm by sequentially adding the most valuable
+candidates to the seed set and updating the value of the connected components.
+Our analysis consists of a (1−1/e)OPT−ϵn lower bound on the expected spread size of the chosen
+seed set, as well as upper bounds on the total number of edges that are queried by the PROBE
+algorithm and the subsequent run-time of the SEED algorithm. Before digging any further into the
+
+Eckles et al.: Seeding with Costly Network Information
+14
+Figure 5
+To lower-bound the required number of edge queries, our hard example consists of 9/µ2 cliques, 3/µ of
+which are connected in a circle. An algorithm that makes o(n2) edge queries may detect the connected
+cliques with probability at most µ/3. The expected performance of any such algorithm is worse than a
+factor µ of the optimum.
+analytical details, let us provide a companion hardness result that parallels Theorem 1 for inﬂuence
+samples, showing that a multiplicative approximation guarantee is, in general, not achievable using
+a nontrivial number of edge queries (thus the additive loss in our lower bound). We provide a
+hard example containing (9/µ2)
+ nµ2/9
+2
+
+edges for which one cannot provide a µ-approximation while
+querying o(n2) edges. To this end, we consider an arbitrary algorithm that makes less than Cµn2
+edge queries, for some constant Cµ that is speciﬁed in Appendix B.4. Our hard example consists
+of a collection of 9/µ2 cliques of size nµ2/9 each. We choose 3/µ of these cliques at random and
+connect them as in Figure 5. With k = p = 1, an optimal algorithm will seed one of the nodes in
+the connected cliques and achieves (3/µ)(nµ2/9) = nµ/3 spread size. However, an algorithm that
+makes less than Cµn2 queries cannot detect the connected clique with probability more than µ/3. In
+Appendix B.4, we show that the expected spread size from seeding the output of any such algorithm
+is less than nµ2/3, i.e., less than a factor µ of the optimum.
+Theorem 4. Let 0 < µ ≤1 be any ﬁxed constant. There can be no µ-approximation algorithm for
+inﬂuence maximization using o(n2) edge queries.
+The hallmark of our analysis is in identifying an auxiliary submodular function, Γδ : 2V →R,
+to approximate our submodular function of interest Γ : 2V →R. The approximation is such that
+|Γδ(S) −Γ(S)| ≤ϵn for all seed sets S of size k, with high probability. Here ϵ is the quality of
+approximation and it depends on δ, which parameterizes the approximator (Γδ). Following the
+notation introduced in Deﬁnitions 1 and 2, we use Λδ and Λ to denote the maximizers of Γδ and Γ
+with constrained size k. The following Lemma (proved in Appendix B.5) is true for any set function
+Γ and its approximator Γδ. It allows us to bound the loss that is incurred from optimizing Γδ in
+place of Γ.
+
+Eckles et al.: Seeding with Costly Network Information
+15
+Lemma 1. Consider set functions Γδ and Γ that map subsets of V to R with their respective max-
+imum values, OPTδ and OPT, on subsets of size k. Assume that for all seed sets of size k, S,
+we have |Γδ(S) −Γ(S)| ≤ϵn. Let Λ′
+δ be any approximate maximizer of size k for Γδ, satisfying
+Γδ(Λ′
+δ) ≥αOPTδ −βn. Then Λ′
+δ also satisﬁes Γ(Λ′
+δ) ≥αOPT −(β + (α + 1)ϵ)n.
+We start with a random set of nρ = O(k log n) initial nodes and ﬁx them for the subsequent steps
+(Subsection 3.1). We then proceed to perform edge queries by probing their extended neighborhoods
+repeatedly (Subsection 3.2). In this way, we obtain T = O(k log n) cascades all starting from the
+same set of initial nodes (see Figure 4). In Subsection 3.3, we argue that one does not need to
+continue probing the extended neighborhood of an initial node if the size of its revealed connected
+component is large enough (Lemma 4). This is a key observation that allows us to upper-bound the
+total number of edge queries in Theorem 5. In Subsection 3.4, we propose the SEED algorithm to
+choose k seeds (approximately optimally), based on the outcome of the edge queries (the output of
+PROBE), and prove a (1 −1/e)OPT −ϵn approximation guarantee with bounds on the number of
+edge queries (Subsection 3.4.1; Theorem 5) and the run time (Subsection 3.4.2; Theorem 7).
+Recall from Section 2 and Deﬁnition 3 (edge queries) that each probing consists of independent
+random draws from the probed node’s ordered neighborhood. Even if a node is probed more than
+once across diﬀerent cascades, ﬁeld survey researchers who devise their sampling plans based on
+the PROBE algorithm would only need to trace each revealed link once (having identiﬁed the
+unique links beforehand by recording T random draws from an ordered set). After the ﬁeld survey is
+concluded, the data from all traced links can be collected to reconstruct the output of the PROBE
+algorithm based on the outcome of the random draws. In our analysis, we upper bound the total
+number of queries that the PROBE algorithm makes in all of the T cascades; therefore, the practical
+cost of tracing links during a ﬁeld survey would be lower when the same edges appear in multiple
+cascades (e.g., the incident edge to the black node in Figure 4B is queried again in Figure 4C). In
+other applications — e.g., for a web crawler that follows the PROBE algorithm to mine data from
+online social networks (Catanese et al. 2011), bounding the total number of queried edges is a direct
+concern not only for scalability, but also to control the data collection costs and time.
+3.1. Sampling the initial nodes
+Recall our goal is to choose a seed set that (approximately) maximizes the inﬂuence function Γ.
+In this subsection, we show that we can estimate the value of Γ by choosing a large enough set of
+nodes uniformly at random. To begin, ﬁx 0 < ρ < 1 and choose ⌈nρ⌉nodes uniformly at random.
+We call these the initial nodes and denote them by Vρ. Given Vρ, for any set S ⊂V we estimate the
+value of Γ(S) = P
+v∈V φ(v,S) by:
+Γρ (S) := 1
+ρ
+X
+v∈Vρ
+φ(v,S)·
+(2)
+
+Eckles et al.: Seeding with Costly Network Information
+16
+That is, we approximate the expected size of the cascade using the adoption probabilities of these
+initial nodes. To proceed, also deﬁne
+ρn,k
+ϵ,δ := (2 + ϵ)(kδ log n + log 2)
+2ϵ2n
+·
+In the next Lemma, we bound the diﬀerence between Γ and Γρ for ρ ≥ρn,k
+ϵ,δ . The proof is in
+Appendix B.6. In the proof, we use a standard concentration argument to control the deviation of
+Γρ(S) from Γ(S) for a ﬁxed S, and then a union bound to make the inequality true for any S.
+Lemma 2 (Bounding the sampling loss). Let ρn,k
+ϵ,δ ≤ρ ≤1. With probability at least 1−e−δ, for
+all seed sets S of size k we have |Γρ(S) −Γ(S)| ≤ϵn.
+3.2. Probing the extended neighborhoods of the initial nodes
+Note that our deﬁnition of Γρ in (2) is in terms of φ(v,S), which can only be computed given the
+knowledge of the entire graph. However, when access to graph information is restricted (network
+information is made available only through edge queries) we need to replace φ(v,S) by a proper
+estimate. To this end, we sample the graph edges through the probing procedure introduced in
+Section 2. Consider the ⌈nρ⌉initial nodes in Vρ. For each initial node, we probe its neighborhood,
+keeping the edges with probability p. We then proceed to probe the neighborhoods of the revealed
+nodes, etc. We never probe a node more than once, and each edge receives at most one chance of
+being sampled. The probing stops after a ﬁnite number of steps (bounded by n). We repeat this
+probing procedure T times and obtain T subsampled graphs that we denote by G(1)
+ρ ,...,G(T )
+ρ
+.
+We can now estimate φ(v,S) for v belonging to Vρ using the T subsampled graphs G(1)
+ρ ,...,G(T )
+ρ
+as follows. For i = 1,...,T, and v ∈Vρ, set Y (i)(v,S) = 1 if v has a path to S in G(i)
+ρ , otherwise set
+Y (i)(v,S) = 0. Our estimate of φ(v,S) for v ∈Vρ and S ⊂V is
+φ(T )(v,S) := 1
+T
+T
+X
+i=1
+Y (i)(v,S).
+(3)
+We can similarly construct an estimate for the inﬂuence function that we want to optimize:
+Γ(T )
+ρ (S) := 1
+ρ
+X
+v∈Vρ
+φ(T )(v,S)·
+(4)
+To proceed, deﬁne
+T n,k
+ϵ,δ :=
+3(δ + log 2)(k + 1)log n
+ϵ2
+
+·
+Our next result bounds the diﬀerence between Γ(T )
+ρ
+and Γρ for T ≥T n,k
+ϵ,δ . In the proof, we use
+concentration and union bound to ensure that φ(T )(v,S) remains close to φ(v,S) for all v ∈Vρ and
+S ⊂V. The proof details are in Appendix B.7.
+Lemma 3 (Bounding the probing loss). Let T ≥T n,k
+ϵ,δ . With probability at least 1 −e−δ, for all
+sets S of size k we have |Γ(T )
+ρ (S) −Γρ(S)| ≤ϵn.
+
+Eckles et al.: Seeding with Costly Network Information
+17
+3.3. Limiting the probed neighborhoods
+Here we consider a variation of the probing procedure described in the previous subsection whereby
+we stop probing when we hit a threshold τ of nodes in a connected component. Note that the
+probing may stop even before hitting τ nodes if no new edges are activated. Limiting the probed
+neighborhoods in this manner helps us bound the total number of edges that are used in our sketch
+(see Subsection 3.4.1 and Theorem 5). In fact, we show that it is safe to stop probing as soon as
+there are τ = τ n,k
+ϵ
+nodes in a connected component where τ n,k
+ϵ
+:= ⌈−(nlog ϵ)/(ϵk)⌉.
+Let us denote the T subsampled graphs obtained through limited probing by G(1)
+ρ,τ,...,G(T )
+ρ,τ . More-
+over, let Γ(T )
+ρ,τ be our estimate of the inﬂuence function that is constructed based on G(1)
+ρ,τ,...,G(T )
+ρ,τ
+in the exact same way as in (3) and (4). This new estimator is, itself, a submodular function since
+it can be expressed as a sum of coverage functions. Our following result ensures that by optimizing
+Γ(T )
+ρ,τ instead of Γ(T )
+ρ , we do not loose more than (1−ϵ) in our approximation factor. The proof follows
+a probabilistic argument similar to Bateni et al. (2017, Lemma 2.4). The crux of the argument is
+in constructing a random set whose expected value on Γ(T )
+ρ,τ is no less than 1 −ϵ of the optimum on
+Γ(T )
+ρ . We do so by starting from the optimum set on Γ(T )
+ρ
+and replacing ϵk of its nodes at random.
+Taking τ large enough allows us to argue that any node whose connections are aﬀected by limiting
+the probed neighborhoods should belong to a large component, of size τ = τ n,k
+ϵ
+, and such large com-
+ponents are likely to be covered by one of the ϵk random nodes. The complete proof is in Appendix
+B.8.
+Lemma 4 (Bounding the loss from limited probing). For 0 < ρ < 1 and 0 < ϵ ≤1, consider
+the limited probing procedure with the probing threshold set at τ = τ n,k
+ϵ
+. Then any α-approximate
+solution to k-IM for Γ(T )
+ρ,τ is an α(1 −ϵ)-approximate solution to k-IM for Γ(T )
+ρ .
+Algorithm 2 summarizes the limited probing procedure for performing edge queries on the input
+graph (G). The output is a sketch comprised of the T independent subsampled graphs (G(1)
+ρ,τ,...,G(T )
+ρ,τ )
+that fully determine the estimator Γ(T )
+ρ,τ .
+3.4. Inﬂuence maximization on the sampled graph
+Lemmas 2, 3, and 4 provide the following appropriate choices of the PROBE algorithm parameters
+ρ, T and τ:
+ρ = ρn,k
+ϵ,δ = (2 + ϵ)(δk log n + log 2)
+2ϵ2n
+∈O
+δk log n
+ϵ2n
+
+,
+T = T n,k
+ϵ,δ =
+3(δ + log 2)(k + 1)log n
+ϵ2
+
+∈O
+δk log n
+ϵ2
+
+,
+τ = τ n,k
+ϵ
+=
+−nlog ϵ
+ϵk
+
+·
+(5)
+
+Eckles et al.: Seeding with Costly Network Information
+18
+Algorithm 2: PROBE(ρ,T,τ,p)
+Input: Edge query access to graph G, cascade probability p and probing parameters ρ, T
+and τ
+Output: Subsampled graphs G(1)
+ρ,τ,...,G(T )
+ρ,τ and initial node set Vρ
+1 Choose ⌈nρ⌉nodes uniformly at random without replacement and call them Vρ.
+2 for i from 1 to T do
+3
+Initialize X ←∅, V(i)
+ρ,τ ←Vρ, E(i)
+ρ,τ ←∅and G(i)
+ρ,τ ←(V(i)
+ρ,τ,E(i)
+ρ,τ).
+// Construct G(i)
+ρ,τ by probing the unexplored nodes (V(i)
+ρ,τ \ X):
+4
+while V(i)
+ρ,τ \ X ̸= ∅do
+5
+Draw a node, ν, randomly from V(i)
+ρ,τ \ X add it to the explored nodes: X ←X ∪{ν}.
+6
+Draw a random integer according to Binomial(card(Nν),p) distribution and call it I.
+7
+Draw a random subset of size I from {1,...,card(Nν)} and call it I.
+8
+while size of the connected component of ν in G(i)
+ρ,τ is less than τ do
+9
+Draw an index, ι, randomly from I and remove it: I ←I \ {ι}.
+10
+Perform a (ν,ι) edge query to graph G to reveal the ι-th neighbor of ν and call it
+νι.
+11
+if νι ̸∈X then
+// Add the newly discovered node and edge to G(i)
+ρ,τ:
+12
+V(i)
+ρ,τ ←V(i)
+ρ,τ ∪{νι}
+13
+E(i)
+ρ,τ ←E(i)
+ρ,τ ∪{ν,νι}
+14
+end
+15
+end
+16
+end
+17
+G(i)
+ρ,τ ←(V(i)
+ρ,τ,E(i)
+ρ,τ).
+18 end
+19 return G(1)
+ρ,τ,...,G(T )
+ρ,τ and Vρ.
+The following lemma (proved in Appendix B.9) combines our results so far (Lemmas 1 to 4) to show
+that with ρ, T and τ set according to (5) any α-approximate solution, Λ⋆, to k-IM on Γ(T )
+ρ,τ satisﬁes
+Γ(Λ⋆) ≥α′OPT −ϵ′n for appropriate choices of α′ and ϵ′; thus providing an approximate solution
+to the original k-IM problem on Γ.
+Lemma 5 (Bounding the total approximation loss). Consider any 0 < ϵ,α < 1, and ﬁx ρ =
+ρn,k
+ϵ,δ , T = T n,k
+ϵ,δ and τ = τ n,k
+ϵ
+according to (5). Moreover, let α′ = α(1 −ϵ) and ϵ′ = 2(α(1 −ϵ) + 1)ϵ.
+With probability at least 1−2e−δ, any α-approximate solution to the k-IM problem on Γ(T )
+ρ,τ has value
+at least α′OPT −ϵ′n on the original problem.
+
+Eckles et al.: Seeding with Costly Network Information
+19
+In Subsection 3.4.1, we bound the total number of edges that are queried by PROBE(ρ,T,τ,p).
+The output of the PROBE algorithm is the set of T subsampled graphs (G(1)
+ρ,τ,...,G(T )
+ρ,τ ). From these
+T subsampled graphs, we construct the estimator, Γ(T )
+ρ,τ , and then use a submodular maximization
+algorithm to ﬁnd a (1 −1/e −ϵ)-approximate solution to k-IM on Γ(T )
+ρ,τ for any ϵ > 0. In Subsection
+3.4.2, we describe a fast implementation of submodular maximization on the sketch (the output of
+PROBE) that runs in Oϵ(pn2 log4 n + √kpn1.5 log5.5 n + knlog3.5 n) time.
+3.4.1. Bounding the total number of edge queries
+Our edge query upper bound includes
+the following terms:
+En,k
+ϵ,p := pτ n,k
+ϵ
+(τ n,k
+ϵ
+−1)/2 ∈O
+pn2 log2(1/ϵ)
+ϵ2k2
+
+,
+(6)
+Cn,k
+ϵ,δ := nρn,k
+ϵ,δ T n,k
+ϵ,δ
+
+1 + En,k
+ϵ,p +
+q
+δ(τ n,k
+ϵ
+log n + log T n,k
+ϵ,δ )En,k
+ϵ,p
+
+∈O
+δ2 log2(1/ϵ)
+ϵ6
+pn2 log2 n + δ3 log1.5(1/ϵ)
+ϵ5.5
+p
+kpn1.5 log2.5 n + δ2
+ϵ4 k2 log2 n
+
+.
+In Theorem 5, we bound the total number of edge queries, denoted by q, in terms of En,k
+ϵ,p and Cn,k
+ϵ,δ .
+Our proof in Appendix B.10 relies critically on how we limit the probed neighborhoods (Subsection
+3.3). Roughly speaking, the output of PROBE(ρ,T,τ,p) consists of at most nρT components of size
+no more than τ (barring the less than nρT edges that may connect them). Moreover, since each
+edge is revealed with probability p, the expected number of edges in each of these components is at
+most pτ(τ −1)/2. Subsequently, concentration allows us to give a high probability upper bound on
+the total number of edges that appear in the output of PROBE(ρ,T,τ,p). We can, similarly, also
+bound the total number of edges that are queried but discarded since they have been pointing to
+already probed nodes (see steps 10 and 11 of the PROBE algorithm).
+Theorem 5 (Bounding the edge queries). Consider any 0 < ϵ,α < 1, ﬁx ρ = ρn,k
+ϵ,δ , T = T n,k
+ϵ,δ
+and τ = τ n,k
+ϵ
+according to (5), and denote the total number of edge queries during a single run of
+PROBE(ρ,T,τ,p) by q. For n ≥√δ + log T with probability at least 1 −3e−δ, q can be bounded as
+follows:
+q ≤Qn,k
+ϵ,δ := 2Cn,k
+ϵ,δ +
+
+2 +
+√
+2
+
+T n,k
+ϵ,δ n
+q
+δ + log T n,k
+ϵ,δ
+∈O
+δ2 log2(1/ϵ)
+ϵ6
+pn2 log2 n + δ3 log1.5(1/ϵ)
+ϵ5.5
+p
+kpn1.5 log2.5 n + δ2
+ϵ4 k2 log2 n
++δ1.5 log0.5(1/ϵ)
+ϵ2
+k
+p
+log knlog n
+p
+log log n
+
+⊂Oϵ,δ
+
+pn2 log2 n +
+p
+kpn1.5 log2.5 n + knlog2 n
+
+.
+(7)
+
+Eckles et al.: Seeding with Costly Network Information
+20
+It is worth highlighting that to provide our main approximation guarantee in Theorem 7, we set
+δ = 2log n; see Appendix B.12. In Appendix B.11, we prove a matching (up to logarithmic factor)
+lower bound by giving a hard example where it is impossible to provide a µOPT −ϵn approximate
+guarantee using o(pn2) edge queries. We allow p to vary with n and prove the hard case for k = 1 and
+p ∈Ω(log n/n), whereby the ﬁrst term in (7) is dominant and we have Qn,k
+ϵ,δ ∈Oϵ,δ(pn2 log2 n); of note,
+replacing p ∈O(log n/n) in (7) yields Qn,k
+ϵ,δ ∈Oϵ,δ(knlog3 n). Our hard example builds on our previous
+construction in Figure 5, which is a variant of the so-called “caveman graph” where edges are rewired
+to link diﬀerent cliques. In Appendix B.11, we provide a construction consisting of 9/µ2 cliques, 3/µ
+of which are connected around a circle, by choosing −p−1 log(γµ/6) edges randomly from each clique
+and rewiring them to connect to the next clique on the circle, while preserving the node degrees.
+Here 0 < γ < µ/6 is a constant that is chosen arbitrarily and then ﬁxed. With k = 1, an optimal
+algorithm seeds one of the nodes in the 3/µ connected cliques and achieves an expected spread size of
+at least n(1−γ)µ/3. To show that no approximation algorithm can provide a µOPT−ϵn guarantee
+using o(pn2) edge queries, we consider an arbitrary algorithm that makes less than pCϵ
+µ,γn2 edge
+queries, where Cϵ
+µ,γ is a constant that is speciﬁed in Appendix B.11. The probability that such an
+algorithm detects the 3/µ connected cliques is at most µ/3 −3ϵ/µ. Hence, the expected spread size
+from seeding the output of such an algorithm cannot exceed n(1−γ)µ2/3−ϵn which is strictly less
+than µOPT −ϵn.
+Theorem 6. Let 0 < µ ≤1 be any constant. There can be no approximation algorithms that provide
+µOPT −ϵn guarantees for k-IM using o(pn2) edge queries when ϵ < µ2/18.
+Of note, the upper bound (µ2/18) on ϵ in Theorem 6 is necessary for limiting the probability
+of querying a rewired edge from the connected cliques. An upper bound of µ/3 −3ϵ/µ > 0 on this
+probability implies an overall µOPT −ϵn upper bound on the performance of any algorithm on
+this hard input. It seems unavoidable that this hardness should hold only for small ϵ relative to
+µ, however, the exact quadratic dependence on µ may be improvable with a signiﬁcantly diﬀerent
+construction.
+3.4.2. Bounding the total running time
+In this subsection, we provide a fast implementa-
+tion of our algorithm for inﬂuence maximization on the sampled graph. In fact, we can achieve a
+running time that is linear in the number of queried edges. First note that Γ(T )
+ρ,τ is, by deﬁnition, a
+coverage function, ergo a submodular function. Hence, we can use the randomized greedy algorithm
+of Mirzasoleiman et al. (2015) to provide a (1 −1/e −ϵ) approximation guarantee. We start with
+Λ⋆←∅and as in any greedy algorithm, we only use two types of operations:
+• We query the marginal increase of a node v on the current set Λ⋆, denoted by:
+∆(v|Λ⋆) := Γ(T )
+ρ,τ (Λ⋆∪{v}) −Γ(T )
+ρ,τ (Λ⋆).
+
+Eckles et al.: Seeding with Costly Network Information
+21
+• We choose a node v⋆with maximal marginal increase and add it to the seed set:
+Λ⋆←Λ⋆∪{v⋆}.
+The only diﬀerence is that the search for the node v⋆is restricted to a subset R of size (n/k)log(1/ϵ)
+that is drawn uniformly at random from V \ Λ⋆.
+Algorithm 3: SEED(ϵ,k)
+Input: Subsampled graphs G(1)
+ρ,τ,...,G(T )
+ρ,τ and initial node set Vρ
+Output: Λ⋆, (1 −1/e −ϵ)-approximate solution to k-IM for ΓT
+ρ,τ
+1 Initialize Λ⋆←∅.
+2 Find the connected components of G(1)
+ρ,τ,...,G(T )
+ρ,τ .
+3 Initialize the value of every connected component to be equal to the number of its nodes in
+Vρ.
+4 for i from 1 to k do
+// Selecting the i-th seed following a randomized greedy step:
+5
+Choose a subset R from V \ Λ⋆randomly with card(R) = (n/k)log(1/ϵ).
+6
+for v ∈R do
+7
+Set ∆(v|Λ⋆) equal to the sum of the values of the connected components containing v.
+8
+end
+9
+v⋆←arg maxv∈R ∆(v|Λ⋆).
+10
+Λ⋆←Λ⋆∪{v⋆}.
+11
+Update the values of the connected components containing v⋆to zero.
+12 end
+13 return Λ⋆.
+In Algorithm 3: SEED(ϵ,k), we provide eﬃcient implementations for the above operations. Our
+implementations are based on the structure of Γ(T )
+ρ,τ , as determined by the T subsampled graphs
+(G(1)
+ρ,τ,...,G(T )
+ρ,τ ). First using a graph search (e.g., DFS) we ﬁnd the connected components of each of
+the T subsampled graphs and count the number of initial nodes (belonging to Vρ) in each connected
+component. We refer to this count for each connected component as the “value” of that component.
+The main idea is that maximizing Γ(T )
+ρ,τ is equivalent to ﬁnding a seed set, Λ⋆, such that the total
+value of all connected components containing at least one seed in Λ⋆is maximized. If a connected
+component already contains (i.e., is covered by) some nodes in Λ⋆, then the marginal increase due
+to that component should be zero. This is achieved by setting the value of a component to zero
+after adding a seed from that component to Λ⋆— see step 11 of Algorithm 3.
+
+Eckles et al.: Seeding with Costly Network Information
+22
+In Algorithm 4 we run PROBE and SEED under the right parameter setting to achieve a (1 −
+1/e)OPT−ϵ′n approximation guarantee for inﬂuence maximization. Theorem 7 formalizes our guar-
+antees by combining our conclusions from Lemma 5 and Theorem 5, as well as the analysis of the
+performance of fast submodular maximization (randomized greedy) in Mirzasoleiman et al. (2015).
+The proof is in Appendix B.12.
+Algorithm 4: k-IM with a bounded number of edge queries
+Input: Edge query access to graph G on n nodes and an approximation loss ϵ′ > 0
+Output: An approximate k-IM solution, Λ⋆, satisfying Γ(Λ⋆) ≥(1 −1/e)OPT −ϵ′n
+// Setting the parameters (ϵ,δ,ρ,T,τ):
+1 ϵ ←ϵ′/7·
+2 δ ←2log n·
+3 ρ ←(2 + ϵ)(δk log n + log 2)/(2ϵ2n)·
+4 T ←⌈3(δ + log 2)(k + 1)log n/ϵ2⌉·
+5 τ ←⌈nlog(1/ϵ)/(ϵk)⌉·
+// Running PROBE followed by SEED:
+6 Run PROBE(ρ,T,τ,p) with edge query access to graph G to obtain G(1)
+ρ,τ,...,G(T )
+ρ,τ and Vρ.
+7 Run SEED(ϵ,k) with G(1)
+ρ,τ,...,G(T )
+ρ,τ and Vρ as inputs to obtain Λ⋆.
+8 return Λ⋆.
+Theorem 7. For any 0 < ϵ′ ≤1 and n ≥(30/ϵ′)2, there exists an algorithm for inﬂuence maxi-
+mization that covers (1−1/e)OPT−ϵ′n nodes in expectation with Oϵ′(pn2 log4 n+√kpn1.5 log5.5 n+
+knlog3.5 n) expected run time and using no more than Oϵ′(pn2 log4 n+√kpn1.5 log5.5 n+knlog3.5 n)
+edge queries in expectation; the dependence of the constant factors on ϵ′ is the same as (7) with
+ϵ = ϵ′/7.
+3.5. Discrepancy between the query and cascade probabilities
+So far we have assumed that the cascade probability (p) is known or otherwise available to perform
+PROBE(ρ,T,τ,p) in step 6 of Algorithm 4. While p can be measured beforehand, in practice,
+such measurements are subject to signiﬁcant uncertainty. Even when the network is fully observed,
+there can be uncertainty about p (Chen et al. 2016, He and Kempe 2016); however, here p plays a
+role in data collection, so it is important to consider whether other values of p can be entertained
+after data collection. Motivated by the possibility that p may be unknown and our best estimate
+of p can change after the fact (i.e., after data collection), let us assume that the edge data is
+
+Eckles et al.: Seeding with Costly Network Information
+23
+collected according to PROBE(ρ,T,τ,p′) where the “probe probability” (p′) is diﬀerent from the
+target cascade probability (p). Note that the setting of PROBE parameters (ρ, T and τ) in steps
+1 to 5 of Algorithm 4 is not dependent on p′. Let G′(1)
+ρ,τ, ..., G′(T )
+ρ,τ be the subsampled graphs output
+by PROBE(ρ,T,τ,p′). The following hardness result shows that when p is unknown, controlling the
+discrepancy between the query and seed cascade probabilities by a multiplicative ratio (i.e., requiring
+|max{p,p′}/min{p,p′}| < 1 + δ) is not enough for providing general µOPT −ϵn approximation
+guarantees:
+Theorem 8. Fix 0 < µ < 1 and 0 < δ < 1. Let p′ and p be the independent cascade probabili-
+ties for probing and seeding. There can be no approximation algorithms that provide µOPT −ϵn
+guarantees for k-IM when the querying and seeding cascade probability are diﬀerent, p ̸= p′, with
+max{p,p′}/min{p,p′} = 1 + δ, cδ = 1 + (δ −δ2)/2 and
+ϵ <
+8µ(δ −δ2)cδ
+41(2 −µ) + 16(δ −δ2)cδ
+.
+Stability and robustness of inﬂuence maximization are well-studied in light of uncertain cascade
+probabilities (Chen et al. 2016, He and Kempe 2016, 2018, Wilder et al. 2017b). Chen et al. (2016,
+Theorem 3) use phase transition behavior in Erdős-Rényi graphs to show that an O(1/n) additive
+perturbation is enough to reduce the robust ratio (deﬁned as the maximum over all seed sets of
+the minimum of approximation ratio of a seed set over the parameter range) to O(log n/n). In
+Appendix B.13, we use a similar construction to prove Theorem 8. Let us denote ˆp = max{p,p′}
+and ˇp = min{p,p′}. Our hard example consists of a clique, G1, of size 2ϵn/µ, and a second subgraph,
+G2, that is obtained from the realization of a random graph with edge probability (1 −δ/2)/(nϵ,µˇp)
+on the remaining nϵ,µ := (1 −2ϵ/µ)n nodes. We choose ˇp = Ω(log n/n) such that active edges on G1
+constitute a connected component of size of ϵn, with high probability as n →∞. However, when the
+cascade probability is ˇp, the active edges on G2 constitute a random graph with edge probability
+(1 −δ/2)/nϵ,µ so that the the largest connected component on G2 is with high probability O(log n).
+For k = 1, it is optimal to choose one of the 2ϵn/µ nodes in G1 as the seed when the cascade
+probability is ˇp. On the other hand, if the cascade probability is ˆp = (1 + δ)ˇp, then the active edges
+induce a random graph with edge probability cδ/nϵ,µ on G2 where cδ = 1 + (δ −δ2)/2 > 1. With
+high probability as n →∞, this random graph contains a giant connected component of size fδn,
+satisfying fδ = 1 −e−fδcδ > 1 −e−cδ > 2ϵn/µ. In Appendix B.13, we use common techniques from
+connectivity analysis of random graphs and the emergence of the giant connected component therein
+to bound the expected spread size from seeding a node in either of the two subgraphs (G1 and
+G2). Subsequently, we show that for ϵ suﬃciently small, any k-IM approximation algorithm that
+provides a µOPT −ϵn guarantee, should necessarily seed G1 when the cascade probability is ˇp and
+
+Eckles et al.: Seeding with Costly Network Information
+24
+G2 when the cascade probability is ˆp. Therefore, no such approximation algorithm exists when when
+the probe and cascade probabilities are diﬀerent, i.e., with ˆp ̸= ˇp = 1 + δ > 1.
+If p is known and the PROBE(ρ,T,τ,p′) data is collected such that p′ > p, then one can use a
+simple pruning procedure to correct for the diﬀerence between p′ and p by removing the edges of
+G′(1)
+ρ,τ, ..., G′(T )
+ρ,τ independently with probability 1 −p/p′. Given the output of PROBE(ρ,T,τ,p′),
+the algorithm in Appendix B.14 performs such a pruning and returns a corrected set G(1)
+ρ,τ,...,G(T )
+ρ,τ
+that exactly simulates the output of PROBE(ρ,T,τ,p). On the other hand, the dependent sampling
+process by which G′(1)
+ρ,τ, ..., G′(T )
+ρ,τ are generated prevents us from using a similar post-processing
+(e.g., by combining G′(1)
+ρ,τ, ..., G′(T )
+ρ,τ into union graphs) when p′ < p. The reason is that diﬀerent edges
+have diﬀerent probability of appearing in a subsampled graph (G′(i)
+ρ,τ), depending on their network
+location and realization of other edges in G′(i)
+ρ,τ — edges that are connected to more inﬂuential nodes
+or other queried edges are more likely to be queried. In practical applications of edge queries (e.g.,
+when running surveys to help diﬀuse health interventions), one can incentivize survey participants
+to reveal more edges and trace enough of them to ensure p′ > p, albeit at an increased cost.
+4. Costs and beneﬁts of network information
+We can study the value of network information by examining how the expected spread size changes
+as more queries are used to select the seeds; that is, we can vary T and ρ in our algorithms. In
+this section, simulations of spread sizes with increased queries on an empirical network indicate the
+existence of an inﬂection point, whereby the ﬁrst few queries improve the performance signiﬁcantly
+before hitting a notably diminished returns. When this is the case, we can extract the beneﬁts of
+the network information using just a few queries.
+In particular, we conduct simulations with the Pennsylvania State University (Penn State) Face-
+book social network, with 41,536 nodes, average degree 65.59, and a total of 1,362,220 edges. It is
+the largest network in a collection of Facebook social networks in 100 U.S. colleges and universities
+described by Traud et al. (2012). Note that although the social network is known by the platform in
+advance, the friends lists are not available to, e.g., the electronic commerce companies that operate
+on the Facebook platform and can be collected through costly eﬀort.
+Figure 6 shows the performance of Algorithms 2 and 3 (PROBE & SEED) on the Penn State
+Facebook social network. Running the PROBE algorithm with higher values of T leads to discovery
+of more nodes and edges from the social network. The vertical axes show the mean spread sizes from
+seeding the output of Algorithm 3 for each T using 50 random inputs. Recall that each input is a set
+of T probed samples G(1)
+ρ,τ,...,G(T )
+ρ,τ that is obtained through Algorithm 2. The output performance
+improves with increasing T, since with more nodes and edges revealed, the output seed set can be
+better optimized; nevertheless, there are diminishing returns to the increasing network information.
+
+Eckles et al.: Seeding with Costly Network Information
+25
+G
+G G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+20
+40
+60
+6
+9
+12
+15
+0
+10
+20
+30
+edges queried (mean %)
+T
+spread size (mean %)
+k
+G
+10
+4
+2
+(A) nρ = 10
+G
+G
+G
+G
+G
+G
+G G
+G
+G
+G
+G
+G
+G
+20
+40
+60
+6
+9
+12
+15
+0
+10
+20
+30
+edges queried (mean %)
+T
+spread size (mean %)
+k
+G
+10
+4
+2
+(B) nρ = 100
+Figure 6
+The mean spread sizes from seeding the output of Algorithm 3 applied to the Penn State Facebook
+social network as T is increased for (A) 10 and (B) 100 initial nodes. To estimate the inﬂuence of
+each output seed set, we average the spread sizes over 500 independent cascades with p = 0.01. To
+generate the T subsampled graphs (G(1)
+ρ,τ,...,G(T )
+ρ,τ ) that are input to the SEED algorithm, we run the
+PROBE algorithm starting from nρ initial nodes, randomly chosen, and vary T over a logarithmic scale:
+T ∈{0,1,2,3,4,5,7,8,10,13,16,20,24,30}. Note that the T = 0 case corresponds to random seeding
+(using no network information at all). For each T, we run the PROBE algorithm 50 times to generate
+50 random inputs for the SEED algorithm. The vertical axes in (A) and (B) show the mean spread sizes
+and 95% conﬁdence intervals that are computed over the 50 outputs of the SEED algorithm for each T.
+Their top axes show the average number of revealed edges that is computed over the 50 random inputs
+for each T. The complete-information, greedy baseline at each k is marked by a dashed line.
+Figure 6B shows that we can extract the beneﬁts of complete network information using just T = 30
+iterations: with enough information, the mean spread size from seeding the output of the algorithm
+saturates at the complete-information (deterministic) greedy algorithm output, and acquiring more
+network information does not improve the performance beyond that.
+It is worth noting that the random variations in the algorithm output — hence, the width of the
+conﬁdence intervals — also decreases with the increasing network information in the input. There
+are two sources of randomness in the SEED algorithm’s performance: T < ∞and ρ < 1. The output
+variance for large T remains non-vanishing in Figure 6A; however, increasing the number of initial
+nodes, i.e., the size of the sample set (card(Vρ) = nρ), from 10 nodes in Figure 6A to 100 nodes in
+Figure 6B allows us to remove the remnant randomness from the algorithm output at large T.
+Our algorithms and these simulation results add important nuance to recent discussions of the
+value of network information. Akbarpour et al. (2020) show that, for special classes of random graph
+inputs, seeding k+x nodes at random (using no information about the network) for some x ∈ω(1) is
+enough to outperform the optimum spread size with k nodes, as the network size increases (n →∞).
+
+Eckles et al.: Seeding with Costly Network Information
+26
+●
+●
+●
+●●●
+●●
+●
+●
+●
+●
+●
+●
+0
+2000
+4000
+0
+10
+20
+30
+T
+mean profit
+k
+●
+10
+4
+2
+(A) CS = 100, CT = 200
+●
+●
+●
+●
+●
+●
+●●
+●
+●
+●
+●
+●
+●
+2000
+3000
+4000
+5000
+0
+10
+20
+30
+T
+mean profit
+k
+●
+10
+4
+2
+(B) CS = 200, CT = 100
+Figure 7
+The mean proﬁt from seeding the output of Algorithm 3, given the cost of seeds (CS per seed), iterations
+cost (CT per iteration), and unit revenue per adopter. The vertical axis shows the mean proﬁts and
+conﬁdence intervals that are computed from 50 executions of the algorithms with increasing T and 100
+initial nodes. (7A) When CS = 100 and CT = 200, the maximum expected proﬁt is achieved at k = 10
+with no queries. (7B) Increasing the cost of seeds to CS = 200 and decreasing the cost of iterations to
+CT = 100 changes the optimal operating point to k = 2 seeds with T = 13 iterations.
+They conclude that the beneﬁts of acquiring network information to identify the optimal k seeds
+can be oﬀset by seeding a few more nodes at random (without using any network information). We
+complement the results of Akbarpour et al. (2020) in two ways. First, we measure how many queries
+are needed to yield the same expected spread sizes achievable using full knowledge of the network.
+Second, in our framework we can make the trade-oﬀbetween acquiring network information and
+using more seeds explicit by seeding more nodes and reducing the number of queries to keep the
+performance ﬁxed. If we assume a cost, CS, for each seeded node and another cost, CT, for running
+each PROBE iteration, and a unit revenue per each adoption, then there is a number of iterations
+that is expected proﬁt maximizing for a given number of seeds. In Figure 7, the maximum expected
+proﬁt for CS = 100 and CT = 200 is achieved with k = 10 and T = 0 iterations, i.e., randomly seeding
+with the largest seed set size considered (Figure 7A). However, increasing the cost of the seeds to
+CS = 200 and decreasing the cost of the iterations to CT = 100 reverses this result (Figure 7B), and
+the optimum operating point shifts to k = 2 and T = 13.
+5. Discussion and future directions
+We addressed the problem of choosing the k most inﬂuential nodes when the social network is
+unknown and accessing it is costly. We analyzed two ways of acquiring network information by
+observing inﬂuence spread of random nodes (inﬂuencing sampling) and by revealing the identity of
+
+Eckles et al.: Seeding with Costly Network Information
+27
+neighboring nodes in an adjacency list (edge queries). We provided polynomial-time algorithms with
+almost tight approximation guarantees using a bounded number of queries to the graph structure
+(Theorems 2 and 7). We also provided hardness results to show that multiplicative approximation
+guarantees are generally impossible (Theorems 1 and 4) and to lower-bound the query complexity
+and show tightness of our query bounds for providing approximation guarantees with an additive
+loss (Theorems 3 and 6). Finally, we showed the utility of our bounded-query framework for studying
+the trade-oﬀbetween the cost of acquiring more network information and the beneﬁt of increasing
+the spread size.
+The preceding results were for the independent cascade model over undirected graphs with a homo-
+geneous cascade probability. In Appendix C.1, we discuss the extension of our results to directed
+graphs. In Appendix C.2, we explain how our techniques can be applied to other commonly posited
+models of diﬀusion, and in particular, we prove the following extension for the linear threshold
+model (Kempe et al. 2015):
+Theorem 9. For any arbitrary 0 < ϵ ≤1, there exists a polynomial-time algorithm for inﬂuence
+maximization under the linear threshold model that covers (1 −1/e)OPT −ϵn nodes in expectation
+in O(nk2 log(n/ϵ)/ϵ3) time, using no more than nk⌈81k log(6nk/ϵ)/ϵ3⌉∈O(nk2 log(n/ϵ)/ϵ3) edge
+queries.
+Results that address problem of seeding with partial network information are nascent and we fore-
+see many directions for future research in this area. It is possible to provide tighter approximation
+guarantees or better query bounds if the input graph follows a known distribution, e.g., the stochas-
+tic block model (Wilder et al. 2018) or if individuals can directly report on who is inﬂuential by,
+e.g., recalling frequent origins of past cascades (Banerjee et al. 2019, Flodgren et al. 2011). Thus, an
+important venue for future work is to explore other ways of acquiring information about the graph
+structure. For example, one can draw inspiration from the graph sampling literature to devise new
+query methods (Leskovec and Faloutsos 2006) to obtain subsampled graphs that preserve enough
+network information to perform inﬂuence maximization satisfactorily. We are particularly interested
+in queries that measure the spread of inﬂuence subject to time constraints. This is especially relevant
+in practice when spending time on data collection is costly and decision-makers have preference for
+earlier rather than later adoptions (Libai et al. 2013) or prefer diﬀusions among certain subgroups
+more than others. We speculate that operational considerations such as unequal, time-critical adop-
+tions and privacy concerns in data collection open new venues for future methodological and applied
+works that build on the same foundation as ours.
+Broadly, our results highlight the importance of thinking through data collection in conjunction
+with planned interventions. Natural sampling methods can be re-designed to optimize for interven-
+tion outcomes (Algorithms 1 and 2). Beyond the co-design of sampling and targeting algorithms
+
+Eckles et al.: Seeding with Costly Network Information
+28
+presented here, it is important to plan the data collection eﬀorts with attention to their intervention
+contexts. For example, in the absence of reliable information about the spread, collecting network
+data without attention to diﬀusion parameters can lead to unsatisfactory outcomes (Theorem 8).
+Our lower bounds (Theorems 3 and 6) point to the implied cost of data collection, which in practice
+can pose a major bottleneck. Notwithstanding, explicit understanding of these costs helps practi-
+tioners in value of information analysis and in deciding on how to allocate their limited resources
+between data collection and increased intervention (Section 4). Future work can bring out other
+trade-oﬀs that are inherent in this co-design framework, e.g., by focusing on the privacy costs of
+data collection and its beneﬁts to various subgroups (measured in terms of the intervention out-
+comes). With the increasing prevalence of data-driven intervention designs and policy practices,
+understanding such trade-oﬀs has important implications for social welfare.
+Acknowledgments
+The authors gratefully acknowledge the research assistantship of Md Sanzeed Anwar through the support
+from the Institute for Data, Systems, and Society at MIT. The authors would like to thank the two anonymous
+reviewers and the associate editor whose close reading of the paper and thoughtful comments were instrumen-
+tal to the development of the paper through its revisions. Eckles acknowledges a grant from Amazon, which
+partially supported Rahimian while at MIT. Mossel is supported by ONR grant N00014-16-1-2227, NSF
+grant CCF-1665252 and ARO MURI grant W911NF-19-0217. Rahimian acknowledges computing hardware,
+software, and research consulting provided through the Pitt Center for Research Computing (Pitt CRC).
+The authors are listed in alphabetical order.
+
+Eckles et al.: Seeding with Costly Network Information
+29
+Appendix A: Additional related work
+Our INF-SAMPLE algorithm uses O(k2 log n) inﬂuence samples to seed k nodes approximately
+optimally (Theorem 2). Our (1−1/e)OPT−ϵn approximation guarantee for INF-SAMPLE matches
+the (1−1/e)OPT multiplicative factor that is tight for k-IM but suﬀers an ϵn additive loss. Theorem
+1 shows that the additive loss is impossible to avoid with a sub-linear sample size. Theorem 3 shows
+that even an ϵn additive guarantee is impossible if the number of samples is sub-quadratic in k,
+therefore, the quadratic order dependence of sample size on k is also hard to improve. In the PROBE
+algorithm, we organize our edge queries to approximately simulate T ∈O(k log n) independent
+cascades each starting from the same set of nρ ∈O(k log n) randomly sampled nodes. The nuanced
+implementation of PROBE allows us to construct these simulations using only a bounded number of
+edge queries, while still preserving enough information in its output to select k seeds approximately
+optimally by applying the SEED algorithm (Theorem 7).
+Since an earlier version of the present work (Eckles et al. 2019), sample complexity of inﬂuence
+maximization is treated thoroughly by Sadeh et al. (2020). Through a careful analysis, Sadeh et al.
+(2020) are able to upper-bound the variance of the number of adopters at a ﬁxed diﬀusion step
+in term of the expected number of adopters and the diﬀusion step. This variance upper bound
+allows them to eﬃciently control the estimation error of the spread sizes by relaxing the relative
+error requirements when seed sets produce small spreads. Subsequently, Sadeh et al. (2020) give a
+sample complexity bound of O(ktlog n) where t is the number of diﬀusion steps. This is the best
+known upper bound on the number of simulations required for achieving tight k-IM approximation
+guarantees but is still super-linear in the worst-case because the number of diﬀusion steps t can be
+of the order of the network size n. It is worth noting that the O(ktlog n) bound applies to i.i.d.
+simulations of the spread and is achieved using an adaptive sample size — their implementation
+of the approximate greedy algorithm uses O(k3tlog n) simulations, and they are not directly con-
+cerned with limiting access to the input graph. On a broader scope, reverse inﬂuence sampling, i.e.,
+collecting inﬂuence samples on the transposed graph with edge directions reversed — proposed by
+Borgs et al. (2014) — has been successfully applied in the design of k-IM algorithms with practical
+eﬃciency and near-optimal run time (Nguyen et al. 2016, Tang et al. 2015, 2014). For undirected
+graphs we can collect our inﬂuence samples on the original graph (as opposed to its transpose),
+and by allowing for an ϵn additive loss, we can achieve our (1 −1/e)OPT −ϵn guarantee on gen-
+eral graphs using O(k2 log n) inﬂuence samples; thus avoiding the linear dependence on n which is
+prohibitive when network information is limited and costly.
+More broadly, the inﬂuence sampling framework relates to recent advances in application of
+stochastic oracles for submodular maximization with imperfect information. Karimi et al. (2017)
+
+Eckles et al.: Seeding with Costly Network Information
+30
+consider a class of discrete optimization problems where the objective function is expressed as
+an expectation over submodular functions and can be estimated by sample averaging but is not
+explicitly available and cannot be used as a black box oracle for the greedy algorithm. Their approach
+is by lifting the objective function into the continuous domain using a concave upper-bound on its
+multilinear extension. The concave upper-bound is guaranteed to be no more than e/(e −1)-times
+the optimization objective and can be maximized eﬃciently through projected stochastic gradient
+ascent. The ﬁnally transfer the solution back to the discrete domain using a randomized rounding
+technique that preservers the quality of approximation in expectation. The fast convergence result
+of Karimi et al. (2017) applies to the total number of gradient steps required for maximizing the
+concave relaxation of the objective function and is given by T = ⌈B2ρ2/ϵ2⌉where ϵ is an additive
+loss in the approximation guarantee, ρ is a bound on the gradient norms, and B is a bound on
+the norm of the continuous optimization variable (Karimi et al. 2017, Theorem 2). In the case of
+k-IM on an n node network while subgradients can be estimated by BFS on inﬂuence samples, with
+ρ = √n and B =
+√
+k, we need a total of T = O(nk) stochastic gradient steps, thus suﬀering the same
+prohibitive linear dependence on n (Karimi et al. 2017, Lemma 4).
+Another related body of literature studies optimizing submodular functions based on input-output
+data pairs that are sampled from a distribution over feasible inputs (e.g., uniformly over all input sets
+of size k). In the k-IM setup, this learning-theoretic framework implies that the observed data consist
+of pairs of initial nodes and expected number of adopters for cascades initiated from those nodes.
+Balkanski et al. (2017b) show hardness of approximation for maximizing coverage functions under
+cardinality constraints (including k-IM) using polynomially many samples from any distribution,
+whereas for monotone submodular functions with bounded curvature more positive results can be
+achieved with polynomial sample size (Balkanski et al. 2016). Our inﬂuence sampling framework is
+principally diﬀerent from the learning-theoretic framework of optimization from samples because we
+cannot observe the exact value of the inﬂuence function but instead see a random realization of the
+adopters for each input. Moreover, each inﬂuence sample starts from a random initial node and our
+inputs are not constrained to be subsets of size k. Balkanski et al. (2017a) consider an adaptation
+of the optimization from samples framework to k-IM where each sample consists of the number of
+adopters in a random cascade. They oﬀer an algorithm to list nodes in the order of their decreasing
+expected marginal contributions to a random set, and then iteratively remove those whose marginal
+contribution signiﬁcantly overlaps with an earlier node on the list. Estimating marginal contributions
+in this framework requires polynomially many samples (Balkanski et al. 2017a, Lemma 15; the exact
+dependence on n is not clariﬁed but O(n) appears to suﬃce), while the performance guarantees are
+applicable only to stochastic block model random input graphs, (Balkanski et al. 2017a, Theorems
+6 and 12).
+
+Eckles et al.: Seeding with Costly Network Information
+31
+Appendix B: Proofs & other mathematical details
+B.1. Proof of Theorem 1: Hardness of approximation with inﬂuence samples
+Pick an arbitrary function f(n) ∈o(n), and let g(n) =
+p
+n/f(n). Note that g(n) ∈ω(1). Consider an
+algorithm Alg that uses f(n) inﬂuence samples. Whe show that Alg cannot be a µ-approximation.
+Our hard example consists of a clique of size g(n), chosen uniformly at random, and n−g(n) isolated
+nodes and we aim to seed one node (Figure 1). One can bound the probability that Alg queries a
+node from the clique by
+1 −
+
+1 −g(n)
+n
+f(n)
+= 1 −
+
+1 −g(n)
+n
+
+n
+g(n)2
+≤1 −
+
+1 −1
+e
+
+1
+g(n)
+.
+Moreover, since g(n) ∈ω(1) we have 1 −
+ 1 −1
+e
+
+1
+g(n) ∈o(1). If Alg does not see a node via inﬂuence
+samples, it seeds one of the nodes of the clique with probability at most
+g(n)
+n−f(n) ∈o(1). There-
+fore, the expected number of nodes covered by Alg is at most o(1)g(n) + 1, which means that the
+approximation factor of Alg is o(1)g(n)+1
+g(n)
+∈o(1) as claimed.
+B.2. Proof of Theorem 2: Approximation guarantees with bounded inﬂuence samples
+Recall our notation in the INF-SAMPLE algorithm. The output of the algorithm, Λ⋆, is a set of k
+nodes that are chosen, one by one, in k iterations. Let us use Λ⋆i to denote the ﬁrst selected i seeds.
+In the i-th iteration, we choose ρ initial nodes at random (with replacement) and collect inﬂuence
+samples. We use Ai
+j to denote the j-th inﬂuence sample collected during the i-th iteration. We reset
+Ai
+j to ∅if it contains any of the i −1 nodes selected in the previous iterations. We consider the
+pool of candidates, u ∈V \ Λ⋆i−1, and choose the i-th seed to be the one that appears in the most
+Ai
+j’s. To put this in mathematical notation, let Xi
+u,j = 1{u ∈Ai
+j} be the indicator that u belongs to
+Ai
+j, and set Xi
+u = Pρ
+j=1 Xi
+u,j to count the number of times that u appears in any of the subsets Ai
+1,
+..., Ai
+ρ. Subsequently, in step i, we choose v⋆= arg maxu∈V\Λ⋆i−1 Xi
+u and add it to Λ⋆.
+We analyze the iterations of Algorithm 1 and show that for ϵ′ = ϵ/3 and ρ = ρn,k
+ϵ
+=
+⌈3k log(2nk/ϵ′)/ϵ′3⌉, the output of INF-SAMPLE(ρ,k) satisﬁes the desired approximation guar-
+antee. Let us deﬁne random variable N i
+u to be the expected number of nodes that are covered by
+Λ⋆i−1 ∪{u} but not by Λ⋆i−1. Note the probability that Xi
+u,j = 1 is equal to N i
+u/n. Therefore, we
+have E[(n/ρ)Xi
+u] = E[N i
+u]. Moreover, notice that choosing ν⋆∈V \Λ⋆i−1 to maximize E[N i
+u] is equiv-
+alent to one step of the greedy algorithm. This is equivalent to choosing ν⋆∈V \Λ⋆i−1 to maximize
+E[Xi
+u], since E[(n/ρ)Xi
+u] = E[N i
+u].
+Next note that due to submodularity, the marginal values only decrease as we add more elements.
+Hence, if we stop at the i-th iteration satisfying E[N i
+u] < ϵ′n/k for all candidates u ∈V \ Λ⋆i−1,
+then in total we do not loose more than k(ϵn/k) = ϵn. For the sake of analysis, let us assume that
+the algorithm stops when E[N i
+u] < ϵ′n/k for all u, i.e., the algorithm stops if it selects k seeds or
+
+Eckles et al.: Seeding with Costly Network Information
+32
+E[N i
+u] < ϵ′n/k for all u, whichever comes ﬁrst. This allows us to lower-bound the expected spread size
+from seeding the output of Algorithm 1. In reality, any additional node that the algorithm selects
+will only improve the expected spread size of its output. Henceforth, without loss of generality, we
+assume that maxu E[N i
+u] ≥ϵ′n/k which means that we have E[Xi
+u] ≥ϵ′ρ/k.
+Recall that Xi
+u is the sum of i.i.d. binary random variables Xi
+u,j. Hence, by the Chernoﬀbound
+we have
+P
+
+|Xi
+u −E[Xi
+u]| ≥ϵ′E[Xi
+u]
+
+≤2exp
+
+−ϵ′2E[Xi
+u]
+3
+
+E[Xi
+u] ≥ϵ′ρ/k
+≤2exp
+
+−ϵ′3ρ
+3k
+
+ρ =
+81k log(6nk/ϵ)
+ϵ3
+
+=
+3k log(2nk/ϵ′)
+ϵ′3
+
+= ϵ′
+nk·
+Union bound over all u ∈V and 1 ≤i ≤k provides that with probability at least 1−ϵ′, (1−ϵ′)E[Xi
+u] ≤
+Xi
+u ≤(1+ϵ′)E[Xi
+u] for all u and i. This implies that the seed that our algorithm selects has marginal
+increase at least
+1−ϵ′
+1+ϵ′ ≥1 −2ϵ′ times that of the greedy algorithm. Such an algorithm is called
+(1−2ϵ′)-approximate greedy in Golovin and Krause (2011) and it is proven to return a (1−1/e−2ϵ′)-
+approximate solution Badanidiyuru and Vondrák (2014), Golovin and Krause (2011), Kumar et al.
+(2015). Therefore, we can bound the expected value of the output solution of INF-SAMPLE(ρ,k)
+as follows:
+E[Λ⋆] ≥(1 −ϵ′)[(1 −1/e −ϵ′)OPT −ϵ′n]
+≥(1 −ϵ′)[(1 −1/e)OPT −2ϵ′n]
+≥(1 −1/e)OPT −3ϵ′n = (1 −1/e)OPT −ϵn.
+B.3. Proof of Theorem 3: Lower-bounding the required number of inﬂuence samples
+Fix any 0 < µ < 1, 0 < ϵ < µ/k, and set β = 0.5(µ −kϵ −1 −2/k). Consider our hard example
+in Figure 3 with n > k2. Note that given the complete network information in this example, the
+optimum strategy is to seed the k centers of each of the k stars, which achieves OPT = k(n/k2) = n/k
+expected spread size. Let Alg be any algorithm that seeds optimally using less than βk2 inﬂuence
+samples. We will show that the expected spread size from seeding the output of Alg is strictly less
+than µOPT−ϵn. To upper-bound the expected spread size from seeding the output of Alg, consider
+a reduction from the following problem, which we call SEED-STAR:
+Problem 1 (SEED-STAR). The input graph is restricted to be a collection of k stars of size n/k
+each (as in Figure 3), and the algorithm observes a ﬁxed number of inﬂuence sample from the input
+graph. Furthermore, if an inﬂuence sample contains the center of a star subgraph, then the entire
+star subgraph is revealed to the algorithm. Given the inﬂuence samples and revealed star subgraphs,
+the SEED-STAR problem is to choose k seeds such that their expected spread size is maximal.
+
+Eckles et al.: Seeding with Costly Network Information
+33
+Let Alg′ be any optimal algorithm using less than βk2 inﬂuence samples for the SEED-STAR
+problem. Consider the outputs of Alg and Alg′ on the hard example in Figure 3. Because both Alg
+and Alg′ seed optimally given βk2 inﬂuence samples, and Alg′ has strictly more information than
+Alg, the expected spread size from seeding the output of Alg′ is at least as large as Alg; hence,
+it suﬃces to upper-bound the expected spread size from seeding the output of Alg′. Note that an
+optimal seed set of size k for Alg′ should include the centers of all the revealed stars. If less than k
+stars are revealed, then it is optimal for Alg′ to choose the remaining seeds randomly from among
+the sampled leaf nodes that do not belong to any of the revealed stars. Any such leaf node will
+contribute
+1 + 1
+k + 1
+k2
+n
+k −2
+
+< 1 + 1
+k + n
+k3 .
+Because there at most k such leaf nodes the total contribution of the leaf nodes to the expected
+spread size of the out of Alg′ is at most k + 1 + n/k2. Next we show that the probability of a new
+star being revealed to Alg′ as a result of an inﬂuence sample is always strictly less than 2/k. To see
+why, note that if the initial node of the inﬂuence sample belongs to a previously seen star then this
+probability is zero. Conditioned on the initial node belonging to a new star, then inﬂuence sample
+will reveal the star if it is its center node, which happens with probability k/n, or if it is a leaf
+node and its incident edge is activated, which happens with probability at most 1/k. Hence, the
+probability of a new start being revealed at any inﬂuence sample is upper-bounded by
+k
+n + 1
+k < 2
+k,
+where the last inequality is because of the assumption n > k2. Therefore, the expected number of
+stars that are revealed by βk2 inﬂuence samples is at most 2βk. Any such star contributes n/k2 to
+expected spread size of the output of Alg′. We can thus upper-bound the expected spread size from
+seeding the output of Alg′, as therefore Alg, as follows:
+(2βk) n
+k2 + k + 1 + n
+k2 < ((2β + 1)k + 2) n
+k2 = µOPT −ϵn,
+using n > k2 in the last inequality. The proof follows as with Alg being optimal, no algorithms can
+provide an approximation guarantee that exceeds µOPT−ϵn, using less than βk2 inﬂuence samples
+on this example.
+B.4. Proof of Theorem 4: Hardness of approximation with edge queries
+We present our hard example for k = 1 and p = 1. Moreover, for simplicity of presentations we
+assume that 3/µ, 1/µ2, and µ2n/9 are integers. Consider the following two graphs.
+• G: This graph consists of 9/µ2 cliques, each of size µ2n/9.
+
+Eckles et al.: Seeding with Costly Network Information
+34
+• G′:
+This graph is constructed from G via the following random process. We select
+3
+µ
+clusters uniformly at random. Then we select one edge from each selected cluster uni-
+formly at random. Let (v1,u1),(v2,u2),...(v3/µ,u3/µ) be the list of the selected edges. we
+remove (v1,u1),(v2,u2),...(v3/µ,u3/µ) and replace them by (u1,v2), (u2,v3), ..., (u3/µ−1,v3/µ),
+(u3/µ,v1). Note that this process connects all of the selected clusters while preserving the node
+degree (see Figure 5).
+Let Alg be an arbitrary (potentially randomized) algorithm for inﬂuence maximization that queries
+less than (µ3/27)
+ µ2n/9
+2
+
+edges. Note that with k = 1 an optimum seed on G′ spreads to OPT = µn/3
+nodes. Next we show that the expected spread size form seeding the output of Alg on G′ is less than
+µ2n/3, which means that Alg is not an µ-approximation algorithm. This implies that there is no
+µ-approximation algorithm that queries less than (µ3/27)
+ µ2n/9
+2
+
+∈Oµ(n2) edges as claimed.
+We use the result of Alg on G to analyze the run of Alg on G′. Note that due to symmetric
+construction of G we can assume that Alg seeds one of the nodes of G uniformly at random. Observe
+that the expected spread size of a random seed in G′ is
+
+1 −3/µ
+9/µ2
+ µ2n
+9
++ 3/µ
+9/µ2
+3
+µ
+µ2n
+9
+≤2µ2n
+9
+·
+Moreover, note that the run of Alg on G and G′ is the same unless Alg queries one of the positions
+(i.e., edges) that we change in G to construct G′. In what follows, we upper-bound the probability
+that Alg queries one of the changed positions in G by µ/3. This implies that Alg cannot be a
+µ-approximation because its expected spread size is strictly less than µOPT:
+
+1 −µ
+3
+ 2µ2n
+9
++ µ
+3
+3
+µ
+µ2n
+9
+< µ2n
+3
+= µOPT.
+To ﬁnish the proof, we need to bound the probability that Alg queries one of the changed positions
+in G. Let Ai be the (possibly random) number of edges that Alg queries from the i-th clique. Recall
+that by assumption, Alg queries less than (µ3/27)
+ µ2n/9
+2
+
+edges. Hence, with probability one (with
+respect to randomness of Alg), we have Ai < (µ3/27)
+ µ2n/9
+2
+
+. Therefore, the total probability (with
+respect to randomness of Alg and G′) that Alg queries a changed position in the i-th clique is
+upper-bounded by
+(µ3/27)
+ µ2n/9
+2
+
+ µ2n/9
+2
+
+= µ3
+27·
+By a union bound over all 9/µ2 cliques we can upper-bound the probability that Alg queries a
+changed position by (9/µ2)(µ3/27) = µ/3, as claimed. This completes the proof of the theorem.
+
+Eckles et al.: Seeding with Costly Network Information
+35
+B.5. Proof of Lemma 1: Combining additive and multiplicative approximation loss
+Starting with an approximate solution satisfying Γδ(Λ′
+δ) ≥αOPTδ −βn on the one hand, we have
+Γ(Λ′
+δ) + ϵn ≥Γδ(Λ′
+δ),
+(8)
+since |Γδ(Λ′
+δ) −Γ(Λ′
+δ)| ≤ϵn.
+On the other hand, consider Λδ and Λ, which are the optimum seed sets for Γδ and Γ, respectively.
+By assumption we have Γδ(Λ′
+δ) ≥αΓδ(Λδ) −βn, and since, by optimality of Λδ for Γδ, Γδ(Λδ) ≥
+Γδ(Λ), we get
+Γδ(Λ′
+δ) ≥αΓδ(Λ) −βn ≥αΓ(Λ) −(β + αϵ)n
+(9)
+where, in the last inequality, we have again invoked the |Γδ(Λ) −Γ(Λ)| ≤ϵn property. The proof is
+complete upon combining (8) and (9) to get that Γ(Λ′
+δ) ≥αΓ(Λ) −(β + (α + 1)ϵ)n.
+B.6. Proof of Lemma 2: Sub-sampling the node set
+Fix a seed set S and let
+(2 + ϵ)(δ′ + log 2)
+2nϵ2
+≤ρ ≤1.
+We use a Hoeﬀding-Bernstein bound to claim that with probability at least 1 −e−δ′ we have
+|Γρ(S) −Γ(S)| ≤ϵn.
+(10)
+Let Xv be the random variable that is zero if v is not in Vρ and φ(v,S) otherwise. Consider their
+summation and note that
+X
+v∈V
+Xv =
+X
+v∈Vρ
+φ(v,S) = ρΓρ (S).
+Hoeﬀding-Bernstein inequality (van der Vaart and Wellner 1996, Lemma 2.14.19) provides that
+P
+
+
+
+1
+nρ
+X
+v∈Vρ
+φ(v,S) −1
+nΓ(S)
+
+≥ϵ
+
+= P[|Γρ(S) −Γ(S)| ≥ϵn]
+≤2exp
+
+−
+2nρϵ2
+2σ2
+n + ϵ∆n
+
+,
+(11)
+where ∆n = maxv∈V φ(v,S) −minv∈V φ(v,S) ≤1 and
+σ2
+n = 1
+n
+X
+v∈V
+
+φ(v,S) −1
+nΓ(S)
+2
+= 1
+n
+X
+v∈V
+φ(v,S)2 −
+ 1
+nΓ(S)
+2
+≤1
+n
+X
+v∈V
+φ(v,S) −
+ 1
+nΓ(S)
+2
+= ℓ−ℓ2 ≤ℓ≤1.
+
+Eckles et al.: Seeding with Costly Network Information
+36
+In the last equality, we used the notation ℓ:= (1/n)P
+v∈V φ(v,S) = (1/n)Γ(S). The bound in (11)
+subsequently simpliﬁes
+P[|Γρ(S) −Γ(S)| ≥ϵn] ≤2exp
+
+−2nρϵ2
+2 + ϵ
+
+.
+Using nρ ≥(2 + ϵ)(δ′ + log 2)/2ϵ2, we get that for all δ′ > 0
+P[|Γρ(S) −Γ(S)| ≥ϵn] ≤2exp(−(δ′ + log 2)) = e−δ′.
+(12)
+To complete the proof we use a union bound to claim that (10) holds for all choices of the seed
+set S simultaneously. To claim a union bound over all
+ n
+k
+
+choices of the seed sets S, it suﬃces to
+choose δ′ = kδ log n in (12).
+B.7. Proof of Lemma 3: Probing the extended neighborhoods
+We
+begin
+by
+considering
+a
+ﬁxed
+S ⊂V.
+Recall
+Γ(T )
+ρ (S) = (1/ρ)P
+v∈Vρ φ(T )(v,S)
+and
+φ(T )(v,S) = (1/T)PT
+i=1 Y (i)(v,S) for v ∈Vρ. When v ∈Vρ is ﬁxed, the Bernoulli variables
+Y (1)(v,S),...,Y (T )(v,S) are independent and identically distributed with mean φ(v,S). By Chernoﬀ
+bound to φ(T )(v,S), we get that:
+P
+φ(T )(v,S) −φ(v,S)
+ > ϵ
+
+≤2exp(−ϵ2T/3), for any ﬁxed v ∈Vρ.
+Using T = T n,k
+ϵ,δ , by union bound over the choice of
+ n
+k
+
+seed sets S ⊂V, card(S) = k, and n nodes
+v ∈V, we obtain that:
+P
+φ(T )(v,S) −φ(v,S)
+ > ϵ, for all S and v
+
+≤2exp(−δ −log 2) = e−δ.
+The proof is complete upon considering the summation over v ∈Vρ:
+P
+Γ(T )
+ρ (S) −Γρ(S)
+ ≤ϵn, for all S
+
+=
+P
+
+
+
+X
+v∈Vρ
+φ(T )(v,S) −
+X
+v∈Vρ
+φ(v,S)
+
+≤ϵnρ, for all S
+
+≥
+P
+φ(T )(v,S) −φ(v,S)
+ ≤ϵ, for all S and v
+
+≥1 −e−δ.
+B.8. Proof of Lemma 4: Limiting the size of the probed neighborhoods
+Following the notation in Deﬁnition 1, let us use Λ(T )
+ρ
+and OPT(T )
+ρ
+to denote the maximizer of Γ(T )
+ρ
+and its maximal value subject to the size constraint: card(Λ(T )
+ρ ) = k. Similarly, let us denote the
+optimal solution to k-IM on Γ(T )
+ρ,τ and its value by Λ(T )
+ρ,τ and OPT(T )
+ρ,τ , respectively. Moreover, following
+Deﬁnition 2, let us use Λα,(T )
+ρ
+and Λα,(T )
+ρ,τ
+to denote the α-approximate solutions to k-IM on Γ(T )
+ρ
+and
+Γ(T )
+ρ,τ , respectively. Our goal is to show that for τ = τ n,k
+ϵ
+any Λα,(T )
+ρ,τ
+is also Λα(1−ϵ),(T )
+ρ
+.
+
+Eckles et al.: Seeding with Costly Network Information
+37
+It is useful to think of G(1)
+ρ,τ,...,G(T )
+ρ,τ as subgraphs of G(1)
+ρ ,...,G(T )
+ρ
+. An immediate consequence of
+this observation is that for any set of nodes S, we have Γ(T )
+ρ
+(S) ≥Γ(T )
+ρ,τ (S). We call the imaginary
+process whereby G(i)
+ρ,τ is obtained after removing some nodes and edges from G(i)
+ρ
+a τ-cutting, and
+subsequently, we refer to G(i)
+ρ,τ and G(i)
+ρ
+as the cut and uncut copies, respectively. Finally, it is also
+useful to deﬁne φ(T )
+τ
+(v,S) in the exact same way as (3) but using the τ-cut copies G(1)
+ρ,τ,...,G(T )
+ρ,τ .
+The proof follows (Bateni et al. 2017, Lemma 2.4) closely. In particular, we ﬁrst note that it
+suﬃces to show the existence of a set L, card(L) = k satisfying Γ(T )
+ρ,τ (L) ≥(1 −ϵ)OPT(T )
+ρ . Because if
+there exists such a set L, then for any α-approximate solution Λα,(T )
+ρ,τ
+we can write (recall Γ(T )
+ρ
+(S) ≥
+Γ(T )
+ρ,τ (S) for all S):
+Γ(T )
+ρ
+ Λα,(T )
+ρ,τ
+
+≥Γ(T )
+ρ,τ
+ Λα,(T )
+ρ,τ
+
+≥αΓ(T )
+ρ,τ
+ Λ(T )
+ρ,τ
+
+≥αΓ(T )
+ρ,τ (L) ≥(1 −ϵ)αOPT(T )
+ρ ,
+implying that Λα,(T )
+ρ,τ
+is also Λα(1−ϵ),(T )
+ρ
+. To show the existence of such a set L we use a probabilistic
+argument by constructing a random set L, satisfying E
+
+Γ(T )
+ρ,τ (L)
+ 
+≥(1 −ϵ)OPT(T )
+ρ . The set L is
+constructed is as follows: Starting from Λ(T )
+ρ , remove ϵk of its nodes randomly, and replace them with
+ϵk nodes chosen uniformly at random from V. To see why E
+
+Γ(T )
+ρ,τ (L)
+ 
+≥(1 −ϵ)OPT(T )
+ρ , consider
+OPT(T )
+ρ
+= 1
+ρ
+X
+v∈Vρ
+φ(T )  v,Λ(T )
+ρ
+
+, and E
+
+Γ(T )
+ρ,τ (L)
+ 
+=
+X
+v∈Vρ
+E
+
+φ(T )
+τ
+(v,L)
+ 
+.
+The inequality, E
+
+Γ(T )
+ρ,τ (L)
+ 
+≥(1 −ϵ)OPT(T )
+ρ , would follow if for any node v ∈V we have,
+E
+
+φ(T )
+τ
+(v,L)
+ 
+≥(1 −ϵ)φ(T )(v,Λ(T )
+ρ ) + ϵ ≥φ(T )(v,Λ(T )
+ρ ).
+It only remains to verify the truth of the former inequality, E
+
+φ(T )
+τ
+(v,L)
+ 
+≥(1−ϵ)φ(T )(v,Λ(T )
+ρ )+ϵ.
+First note that E
+
+φ(T )
+τ
+(v,L)
+ 
+represents the probability of node v being connected to one of the
+nodes in the random set L averaged over the T subsampled graphs (G(1)
+ρ,τ,...,G(T )
+ρ,τ ). Consider each
+of the T copies in our uncut sketch, G(1)
+ρ ,...,G(T )
+ρ
+, and the connections between node v and the
+optimal set Λ(T )
+ρ
+in these uncut copies. If these connections remain unchanged in the τ-cut copies
+G(1)
+ρ,τ,...,G(T )
+ρ,τ , then with probability at least (1 −ϵ) they remain unchanged after ϵk nodes in Λ(T )
+ρ
+are randomly replaced. If, however, any of these connections are aﬀected by the τ-cutting, then this
+is an indication that v belongs to a connected component of size τ n,k
+ϵ
+. This connected component
+is large enough to contain one of the ϵk random nodes of L with probability at least ϵ. Indeed, the
+probability that none of the τ n,k
+ϵ
+= ⌈nlog (1/ϵ)/(ϵk)⌉nodes is chosen is upper-bounded by ϵ:
+
+1 −τ n,k
+ϵ
+n
+ϵk
+≤
+
+1 −log(1/ϵ)
+ϵk
+ϵk
+≤e−log(1/ϵ) = ϵ.
+
+Eckles et al.: Seeding with Costly Network Information
+38
+B.9. Proof of Lemma 5: Total approximation loss from subsampling and limited probing
+Following the notation in the proof of Lemma 4 (Appendix B.8), consider any Λα,(T )
+ρ,τ
+. Lemma 4
+implies that Λα,(T )
+ρ,τ
+is also Λ(1−ϵ)α,(T )
+ρ
+because the loss in approximation factor from limited probing
+is at most (1−ϵ) when τ = τ n,k
+ϵ
+. Next note that Lemma 3, together with Lemma 1, implies that for
+T = T n,k
+ϵ,δ with probability at least 1 −e−δ, the value of Λ(1−ϵ)α,(T )
+ρ
+for Γρ can be lower-bounded as
+follows: Γρ(Λ(1−ϵ)α,(T )
+ρ
+) ≥(1 −ϵ)αOPTρ −((1 −ϵ)α + 1)ϵn. Finally, another application of Lemma 1
+with Lemma 2 yields that with at least 1 −e−δ probability, Γ(Λ(1−ϵ)α,(T )
+ρ
+) ≥(1 −ϵ)αOPT −2((1 −
+ϵ)α + 1)ϵn. The proof is complete upon combining the preceding statements to get that, with total
+probability at least 1 −2e−δ, Γ(Λα,(T )
+ρ,τ
+) ≥(1 −ϵ)αOPT −2((1 −ϵ)α + 1)ϵn.
+B.10. Proof of Theorem 5: Upper-bounding the total number of edges queries
+To begin, we bound the total number of edges used in our sketch, i.e., the T subsampled graphs
+(G(1)
+ρ,τ,...,G(T )
+ρ,τ ). Let us also denote the set of all edges that appear in our sketch by ET. Fix a choice
+of τ nodes in one of the subsampled graphs. Let X be the number of edges between these τ nodes.
+Note that X is a random variable and its distribution is ﬁxed by PROBE(ρ,T,τ,p). Using the
+Chernoﬀupper tail bound and the fact that E[X] ≤p
+ τ
+2
+
+, we can upper-bound X as follows:
+P
+h
+X ≥pτ(τ −1)/2 + δ′p
+pτ(τ −1)/2
+i
+≤P
+h
+X ≥E[X] + δ′p
+E[X]
+i
+≤e−δ′2/4·
+(13)
+Recall from (6) that En,k
+ϵ,p = pτ n,k
+ϵ
+(τ n,k
+ϵ
+−1)/2 = p
+ τ
+2
+
+with τ = τ n,k
+ϵ
+. Setting τ = τ n,k
+ϵ
+and
+δ′ = 2
+q
+(τ n,k
+ϵ
+log n + log T)δ ≥2
+s
+δ log
+
+T
+ n
+τ n,k
+ϵ
+
+,
+in (13) is enough to ensure that, by union bound, with probability at least 1 −e−δ for any subset
+of size τ n,k
+ϵ
+in all of the T subsampled graphs, we have X ≤X, where
+X := En,k
+ϵ,p +
+q
+δ(τ n,k
+ϵ
+log n + log T)En,k
+ϵ,p ·
+(14)
+Next note that starting from any of the nρ nodes in Vρ we never hit more than τ nodes following
+the limited probing procedure — see the “while loop” condition in step 8 of the PROBE(ρ,T,τ,p)
+algorithm. Moreover, the only way for the connected component of one of the nρ initial nodes in
+G(i)
+ρ,τ to get larger than τ is if an edge is added which combines two connected components each
+containing at least one node in Vρ. Upon inclusion of any such edge in G(i)
+ρ,τ, no further edges will be
+added to the corresponding connected component because of the “while loop” condition in step 8
+of PROBE. Hence, there could be at most nρ such edges in each of the subsampled graphs, and in
+total there are at most nρT such edges in our sketch. Upon removing all such edges, any connected
+
+Eckles et al.: Seeding with Costly Network Information
+39
+component in the remainder of our sketch will have size at most τ and their total number is always
+less than nρT. Given (14), we can bound the total number of edges in our sketch by nρT + nρTX.
+More precisely, with probability at least 1 −e−δ, we have:
+card(ET) ≤nρT(1 + X) = Cn,k
+ϵ,δ ,
+(15)
+where ρ = ρn,k
+ϵ,δ , T = T n,k
+ϵ,δ , τ = τ n,k
+ϵ
+, and Cn,k
+ϵ,δ is deﬁned in (6).
+Note that during the construction of G(i)
+ρ,τ, if the revealed neighbor (νι) in step 10 of the PROBE
+algorithm is previously probed, then the following “if statement” in step 11 prevents the queried edge
+from being added to G(i)
+ρ,τ. Such edges are queried but not added to G(i)
+ρ,τ because they have already
+got their chance of appearing in G(i)
+ρ,τ once (during the probing of νι). We can bound the number of
+such edges in each copy as follows. Let A(i)
+e
+be the indicator variable for the event that both nodes
+incident to edge e are probed; let B(i)
+e
+be the indicator that edge e is queried on its second chance,
+i.e., when the second of the two nodes incident to e is probed. Finally, let C(i)
+e
+be the indicator
+that edge e is queried when the second of its two incident nodes is probed, conditioned on both of
+its incident nodes being probed (i.e., B(i)
+e
+conditioned on A(i)
+e = 1). The edges e for which B(i)
+e = 1,
+are those which are queried but do not appear in G(i)
+ρ,τ. In (15) we bound the total number of edges
+belonging to ET, i.e., the edges that are queried and appear in one or more of the T subsampled
+graphs. Our next goal is to provide a complementary bound on P
+i
+P
+e B(i)
+e , thus controlling the
+total number of edge queries.
+We begin by noting that B(i)
+e = P
+e A(i)
+e C(i)
+e . The indicator variables C(i)
+e ,e ∈E, are i.i.d. Bernoulli
+variables with success probability p. Using the Chernoﬀupper tail bound, conditioned on the real-
+izations of A(i)
+e
+for all e ∈E, we have:
+P
+"X
+e
+A(i)
+e C(i)
+e ≥p
+X
+e
+A(i)
+e + 2n
+p
+δ + log T
+#
+≤exp
+
+−
+4n2 (δ + log T)
+2
+
+pP
+e A(i)
+e + n√δ + log T
+
+
+
+≤exp(−δ −log T) = 1
+T e−δ,
+(16)
+where in the last inequality we have used pP
+e A(i)
+e ≤n2 and √δ + log T ≤n. Union bound over
+i = 1,...,T provides that with probability at least 1 −e−δ, for all i:
+X
+e
+B(i)
+e =
+X
+e
+A(i)
+e C(i)
+e ≤p
+X
+e
+A(i)
+e + 2n
+p
+δ + log T.
+(17)
+
+Eckles et al.: Seeding with Costly Network Information
+40
+To proceed, for any edge e, let D(i)
+e
+be the indicator of the event that edge e gets at least one
+chance to appear in G(i)
+ρ,τ, i.e., at least one of the nodes incident to e are probed. Note that, by
+deﬁnition, A(i)
+e ≤D(i)
+e
+for all i and e; hence, replacing in (17) yields:
+X
+e
+B(i)
+e ≤p
+X
+e
+D(i)
+e + 2n
+p
+δ + log T,
+(18)
+with probability at least 1−e−δ for all i. In the next step, let E(i)
+e
+be the indicator of the event that
+edge e is reported on its ﬁrst chance — i.e., the ﬁrst time that one of its incident nodes is probed.
+Note that E(i)
+e = 1 , e ∈E, are those edges which are queried and appear in G(i)
+ρ,τ. Hence, from (15)
+we have:
+X
+i
+X
+e
+E(i)
+e = card(ET) ≤Cn,k
+ϵ,δ ,
+(19)
+with probability at least 1 −e−δ. Finally, let F (i)
+e
+be the indicator of the event that edge e is
+reported on its ﬁrst chance, conditioned on at least one of its incident nodes being probed (i.e., E(i)
+e
+conditioned on D(i)
+e = 1). By deﬁnition, F (i)
+e
+are i.i.d. Bernoulli variables with success probability
+p, and E(i)
+e = D(i)
+e F (i)
+e . Similarly to (16), using a Chernoﬀlower tail bound we can guarantee that,
+with high probability, P
+e E(i)
+e = P
+e D(i)
+e F (i)
+e
+is not much smaller than pP
+e D(i)
+e . Subsequently, we
+can upper-bound P
+e B(i)
+e
+in (18) in terms of P
+e E(i)
+e . These details are spelled out next.
+Application of the Chernoﬀlower tail bound to P
+e E(i)
+e = P
+e D(i)
+e F (i)
+e , yields:
+P
+"X
+e
+E(i)
+e =
+X
+e
+D(i)
+e F (i)
+e
+≤p
+X
+e
+D(i)
+e −n
+p
+2(δ + log T)
+#
+≤exp
+ 
+−n2 (δ + log T)
+pP
+e D(i)
+e
+!
+≤exp(−δ −log T) = 1
+T e−δ,
+where in the second inequality we use pP
+e D(i)
+e ≤n2. Union bound over i = 1,...,T provides that
+with probability at least 1 −e−δ, for all i:
+p
+X
+e
+D(i)
+e ≤
+X
+e
+E(i)
+e + n
+p
+2(δ + log T).
+(20)
+Combing (18) and (20) and taking the summation over i = 1,...,T gives that with probability at
+least 1 −2e−δ:
+X
+i
+X
+e
+B(i)
+e ≤
+X
+i
+X
+e
+E(i)
+e +
+
+2 +
+√
+2
+
+Tn
+p
+δ + log T.
+(21)
+To complete the proof, we combine (19) and (21) to get the claimed upper bound on the total
+number of edge queries:
+q =
+X
+i
+X
+e
+B(i)
+e + card(ET) ≤2Cn,k
+ϵ,δ +
+
+2 +
+√
+2
+
+T n,k
+ϵ,δ n
+q
+δ + log T n,k
+ϵ,δ ,
+with probability at least 1 −3e−δ.
+
+Eckles et al.: Seeding with Costly Network Information
+41
+B.11. Proof of Theorem 6: Lower-bounding the required number of edge queries
+For this proof, we expand on our construction in Appendix B.4. We set k = 1 and prove the hardness
+result for ﬁxed 0 < µ < 1 and 0 ≤ϵ < µ2/18, while assuming that 3/µ, 1/µ2, and nµ2/9 are all
+integers for simplicity, without any loss in generality. We present our hard example for
+p > 9
+µ2
+log n + c
+n
+and n > (18e¯c/µ2)4,
+(22)
+where ¯c = c + log(γµ/3)/c, c is a constant satisfying c > max{5 + 2log 2,1 −log(γ/6),−log(γµ/3)},
+and 0 < γ < µ/6 is a constant that is ﬁxed arbitrarily. Note that p is allowed to vary with n subject
+to (22). As in Appendix B.4, we rely on a modiﬁcation of a collection of 9/µ2 cliques by connecting
+3/µ of them at random around a circle. One key diﬀerence in our construction here is that rather
+than connecting each clique to the next one by rewiring a single link (as in Figure 5), we do so
+using a collection of −p−1 log(γµ/6) edges, where 0 < γ < µ/6 is a ﬁxed constant. Let graph G be
+the collection of 9/µ2 isolated cliques, each of size µ2n/9. We construct G′, our hard input graph,
+from G via the following random process:
+1. Select 3/µ cliques at random and label them by i = 1,2,3,...,3/µ.
+2. Select
+one
+edge
+from
+each
+of
+the
+3/µ
+selected
+cliques
+uniformly
+at
+random.
+Let
+(v1,u1),(v2,u2),...(v3/µ,u3/µ) be the list of the ﬁrst 3/µ selected edges.
+3. Remove (v1,u1),(v2,u2),...(v3/µ,u3/µ) and replace them by (u1,v2), (u2,v3), ..., (u3/µ−1,v3/µ),
+(u3/µ,v1). Note that this process connects all of the selected clusters while preserving the degree
+distribution (see Figure 5).
+4. Repeat this process until −p−1 log(γµ/6) edges are chosen from each clique, i, and rewired to
+connect to the proceeding clique, i + 1: 1 →2 →3 →... →i →i + 1 →... →3/µ →1.
+We refer to these 3/µ cliques in graph G′ as rewired cliques; see Figure 5. Let Alg be an arbitrary
+(potentially randomized) algorithm for inﬂuence maximization that queries less than pCϵ
+µ,γn2 edges,
+where
+Cϵ
+µ,γ =
+−(µ6 −9µ4ϵ)
+14580log(γµ/6).
+We are interested in the run of Alg on G′. Note that with k = 1 the optimum on G′ is to seed one of
+the nµ/3 nodes in the rewired cliques. The gist of our proof here is the same as the one in Appendix
+B.4: we show that the optimum seed on G′ induces an expected spread size of at least (1 −γ)nµ/3;
+on the other hand, seeding the output of any algorithm that queries less than pCϵ
+µ,γn2 edges of G′,
+induces an expected spread size that is at most (1 −γ)µ2n/3 < µOPT.
+To begin, note that the active edges on each clique constitute an Erdős-Rényi random graph with
+edge probability p on nµ2/9 nodes, except for the 3/µ rewired cliques. The edge probability, p,
+
+Eckles et al.: Seeding with Costly Network Information
+42
+satisfying (22) is large enough to induce a connected random graph on each of the 9/µ2−3/µ isolated
+cliques (with high probability as n →∞). Similarly, since only, −p−1 log(γµ/6) ∈O(n/log n), of
+the
+ nµ2/9
+2
+
+edges in each of the 3/µ cliques are randomly chosen and rewired, the induced random
+graphs on each of the 3/µ rewired cliques are also going to be connected with high probability as
+n →∞. Hence, any time that a node in any of the cliques is activated, all of the nodes in that clique
+are going to be activated. Formally, the probability that a pair of nodes in any of the clique are
+connected by an active edge can be lower-bounded as follows:
+9(log n + c)
+nµ2
+−−p−1 log(γµ/6)
+ nµ2/9
+2
+
+= 9(log n + c)
+nµ2
++
+2(9/µ2)log(γµ/3)
+(log n + c)(nµ2/9 −1)
+n > ec
+> 9(log n + c)
+nµ2
++ (9/cµ2)log(γµ/3)
+(nµ2/9 −1)
+n > nµ2/9 −1
+> 9(log n + c)
+nµ2
++ (9/c)log(γµ/3)
+nµ2
+= log n + ¯c
+¯n
+=: ¯p,
+where ¯c = c + log(γµ/3)/c is a constant term that is corrected for the eﬀect of the −p−1 log(γµ/6)
+edges that are removed at random from each of the 3/µ rewired cliques and ¯n = nµ2/9 is the size
+of each clique. Note that by assumption we have c > −log(γµ/3) which implies that c −1 < ¯c < c.
+These edges are used to construct the graph G′ by connecting the rewired cliques together (Figure
+5). Our next lemma allows us to upper-bound the probability that the active edges on a ﬁxed clique
+do not constitute a connected graph.
+Lemma 6. Let C be a random graph on ¯n nodes with edge probability ¯p = (log n + ¯c)/¯n, where
+n = 9¯n/µ2, 0 < µ < 1, and ¯c > 2(2 + log 2) are ﬁxed constants. Let ¯C be the event that C is not
+connected. If n > (18e¯c/µ2)4, then P( ¯C) < µ2e−¯c/3.
+Proof.
+We use a common technique in random graph theory to upper-bound the probability
+that a random graph on ¯n nodes with edge probability ¯p is not connected. Following (Bollobás
+2001, Theorem 7.3), P( ¯C) is upper-bounded by the sum of the expected values of the number of the
+connected components of sizes j = 1,2,..., ¯n/2:
+P( ¯C) <
+¯n/2
+X
+j=1
+E(Xj),
+(23)
+where Xj is a random variable that counts the number of connected components of size j in a random
+graph on ¯n nodes with edge probability ¯p. We next bound the diﬀerent terms in (23) individually.
+Starting with j = 1, we have:
+E(X1) = ¯n(1 −¯p)¯n−1 < ¯nexp(−¯p¯n) = µ2e−¯c
+9
+·
+(24)
+
+Eckles et al.: Seeding with Costly Network Information
+43
+For j = 2, we have:
+E(X2) =
+¯n
+2
+
+¯p(1 −¯p)2(¯n−2) < ¯p¯n2 exp(−2¯p¯n)
+= e−2¯cµ2
+9
+log n + ¯c
+n
+¯c < log n
+< e−2¯cµ2
+9
+2log n
+n
+2log n/n ≤2/e < 1
+< e−2¯cµ2
+9
+·
+(25)
+For 3 ≤j ≤¯n/2, we can bound E(Xj) by the expected number of trees on j nodes as follows:
+E(Xj) ≤
+¯n
+j
+
+jj−2¯pj−1(1 −¯p)j(¯n−j) < (¯ne/j)
+j jj−2¯pj−1(1 −¯p)j(¯n−j)
+<
+j−2 exp(j + j log ¯n + (j −1)log ¯p −¯pj(¯n −j))
+j−2 < 1
+<
+exp(j(1 −¯c) −j(1 −µ2/9)log n + (j −1)log ¯p + j2¯p)
+j2¯p < j(log n + ¯c)/2 for all j ≤¯n/2
+<
+exp(j(1 −¯c/2) −(j/2 −µ2/9)log n + (j −1)log((log n + ¯c)))
+µ2/9 < 1 and ¯c < log n
+<
+exp(j(1 −¯c/2) −(j −1)log n/2 + (j −1)log(2log n)))
+−log 2 < 0
+<
+ej(1+log 2−¯c/2)  log n/√n
+j−1
+2(2 + log 2) < c −1 < ¯c and 3 ≤j
+<
+e−j(log n)2/n.
+(26)
+Replacing (24), (25), and (26) in (23) and using the fact that P¯n/2
+j=1 e−j <
+e
+e−1 < 2 we get:
+P( ¯C) < 2µ2e−¯c
+9
++ 2(log n)2
+n
+= 2µ2e−¯c
+9
++ (log n)2
+n3/4
+2
+n1/4
+(log n)2
+n3/4
+< 1
+< 2µ2e−¯c
+9
++
+2
+n1/4
+(18e¯c/µ2)4 < n
+< µ2e−¯c
+3
+,
+ﬁnishing the proof.
+Fix any of the 9/µ2 cliques and let ¯P be the probability that it is not connected. Note that
+this probability is decreasing in the probability of the edges being active and because we lower-
+bounded the latter by ¯p, it suﬃces to upper-bound ¯P assuming that the probability of having an
+active edge between each pair of nodes is ¯p. Equipped with Lemma 6, we know that ¯P < µ2e−¯c/3
+if n > (18e¯c/µ2)4. Next, consider the event that the active edges induce a disconnected graph on at
+least one of the 9/µ2 cliques and denote this event by E1. By a union bound over the 9/µ2 cliques,
+
+Eckles et al.: Seeding with Costly Network Information
+44
+we obtain that P(E1) ≤(9/µ2) ¯P < 3e−¯c, which upon choosing ¯c > −log(γ/6) can be upper-bounded
+by γ/2:
+P(E1) < γ
+2, for n > (18e¯c/µ2)4 and ¯c > −log(γ/6)·
+(27)
+We next consider the event that for at least one connected pair of rewired cliques, none of the
+−p−1 log(γµ/6) rewired edges between them are active. Let us denote this event by E2. we upper-
+bound P(E2) by γ/2. Consider the −p−1 log(γµ/3) edges connecting the i-th rewired clique to the
+(i + 1)-th rewired clique and let Ai be the random variable that is the number of active edges
+among these −p−1 log(γµ/3) edges. Random variable Ai has a Bernoulli distribution with parameters
+−p−1 log(γµ/3) and p. Subsequently, we can bound the probability that Ai = 0 as follows:
+P(Ai = 0) = (1 −p)−p−1 log(γµ/6) < elog(γµ/6) = γµ
+6 ·
+By a union bound over the 3/µ rewired cliques, we obtain that, with probability at most γ/2, there
+is a pair of rewired cliques that are connected together but none of the −p−1 log(γµ/6) edges that
+connect them are active:
+P(E2) < γ/2·
+(28)
+Having thus upper-bounded both P(E1) and P(E2) by γ/2 in (27) and (28), we conclude that P(E1 ∪
+E2) < P(E1) + P(E2) < γ. Subsequently, we can give a 1 −γ lower bound on the probability of the
+complement event, Ec
+1 ∩Ec
+2, that the active edges induce a connected graph on each of the cliques and
+at least one of the −p−1 log(γµ/6) rewired edges between each pair of connected cliques is active.
+Hence, with probability at least 1 −γ, after seeding one of the nµ/3 nodes on the rewired cliques,
+the activation is going to spread from one rewired clique to the next. In other words, seeding one of
+rewired clique nodes activates all of the nµ/3 nodes on the rewired cliques with probability at least
+1 −γ, and the optimal expected spread size on G′ is at least (1 −γ)nµ/3.
+So far we have shown that the optimum on G′ is at least (1 −γ)nµ/3. Next we show that the
+expected spread size from seeding the output of Alg on G′ is less than (1 −γ)µ2n/3, which means
+that Alg cannot be a µ-approximation algorithm. This implies that there is no µ-approximation
+algorithm that queries less than pCϵ
+µ,γn2 ∈Oµ(pn2) edges as claimed.
+We use the run of Alg on G to analyze the run of Alg on G′. Note that due to symmetric
+construction of G, Alg seeds one of the nodes of G at random. Observe that the expected spread
+size of a random seed in G′ is upper-bounded as follows:
+
+1 −3/µ
+9/µ2
+ nµ2
+9
++
+ 3/µ
+9/µ2
+ nµ
+3 =
+
+2 −µ
+3
+ µ2n
+9
+< 2(1 −γ)µ2n
+9
+,
+(29)
+
+Eckles et al.: Seeding with Costly Network Information
+45
+where the last inequality follows since γ < µ/6. Moreover, note that the runs of Alg on G and G′
+are the same unless Alg queries one of the positions (i.e., edges) that we rewire in G to construct
+G′. Next we upper-bound the probability that Alg queries one of the rewired edges by µ/3 −3ϵ/µ.
+Using the upper bound in (29), this implies that the expected spread size from seeding the output
+of Alg on G′ is at most (1 −γ)µ2n/3 −ϵn, as claimed:
+
+1 −µ
+3 + 3ϵ
+µ
+ 2(1 −γ)µ2n
+9
++
+µ
+3 −3ϵ
+µ
+ nµ
+3 =
+
+3 −2γ −2µ
+3 (1 −γ) + 6ϵ
+µ (1 −γ)
+ µ2n
+9
+−ϵn
+< (3 −2γ −µ
+3 (1 −γ))µ2n
+9
+−ϵn
+< (1 −γ)µ2n
+3
+−ϵn,
+where the penultimate is because 6ϵ/µ < µ/3 and the last inequality is because µ(1 −γ)/3 > γ.
+To see why, recall the assumptions ϵ < µ2/18 and γ < µ/6. In particular, with the latter we have
+γ < µ(1 −1/6)/3 < µ(1 −µ/6)/3 < µ(1 −γ)/3.
+To ﬁnish the proof, it only remains to verify that µ/3−3ϵ/µ is an upper bound on the probability
+of Alg querying one of the rewired edges of G′. To this end, let Ai be the (possibly random) set of
+all edges belonging to the i-th clique in G that are queried by Alg. Conditioned on Ai, consider any
+of the edges belong to Ai. The probability that this speciﬁc edge is rewired when constructing G′
+from G is at most:
+−p−1 log(γµ/6)
+ µ2n/9
+2
+
+·
+Note that this probability is conditioned on the realization of Ai and is with respect to the random
+process by which G′ is constructed from G. Therefore, conditioned on Ai, the probability that a
+rewired edge belonging to the i-th clique is queried by Alg is at most:
+card(Ai)−p−1 log(γµ/6)
+ µ2n/9
+2
+
+3/µ
+9/µ2 ≤
+−pn2(µ6 −9µ4ϵ)
+14580log(γµ/6)
+ 
+−log(γµ/6)
+p
+ µ2n/9
+2
+
+!
+µ
+3
+< n(µ2 −9ϵ)
+90(n −9)
+µ
+3 < µ3
+27 −ϵµ
+3 ·
+where, in the ﬁst inequality, we have used the assumption that Alg queries less than pCϵ
+µ,γn2 edges;
+therefore, card(Ai) ≤pCϵ
+µ,γn2 with probability one. In the last inequality, we use the fact that
+n/(90(n−9)) < 1/9 for n > 10, and in particular, for n > (18e¯c/µ2)4 > 184 in (22). By averaging over
+all realization of Ai and a union bound over all of the 9/µ2 cliques, we can bound the probability
+that Alg queries any rewired edge by (9/µ2)(µ3/27 −ϵµ/3) = µ/3 −3ϵ/µ, completing the proof.
+
+Eckles et al.: Seeding with Costly Network Information
+46
+B.12. Proof of Theorem 7: Approximation guarantees with bounded edge queries
+Given ϵ′ > 0, ﬁx ϵ = ϵ′/7, δ = 2log n and set ρ = ρn,k
+ϵ,δ , T = T n,k
+ϵ,δ
+and τ = τ n,k
+ϵ
+according to
+Algorithm 4. First we consider the approximation guarantee of SEED(ϵ,k). Running Algorithm
+PROBE(ρ,T,τ,p), provides access to the submodular function Γ(T )
+ρ,ϵ which has the k-IM optimal
+solution Λ(T )
+ρ,ϵ with value OPT(T )
+ρ,ϵ . Using SEED(ϵ,k), we obtain an approximate solution to k-IM on
+Γ(T )
+ρ,ϵ . Call this solution Λ⋆(T )
+ρ,ϵ . The analysis of (Mirzasoleiman et al. 2015, Theorem 1) implies that
+E
+
+Γ(T )
+ρ,ϵ (Λ⋆(T )
+ρ,ϵ )
+
+≥(1 −1/e −ϵ)Γ(T )
+ρ,ϵ (Λ(T )
+ρ,ϵ )
+= (1 −1/e −ϵ)OPT(T )
+ρ,ϵ ,
+where the expectation is with respect to the randomness of the SEED algorithm. We can combine
+the claims of Lemma 5 and Theorem 5 with the assumption n ≥(30/ϵ′)2 >
+p
+35/ϵ′ =
+p
+5/ϵ to
+guarantee that with probability at least 1 −5e−δ = 1 −5/n2 ≥1 −ϵ we have
+Γ(Λ(T )
+ρ,ϵ ) = OPT(T )
+ρ,ϵ ≥(1 −ϵ)OPT −2(2 −ϵ)ϵn.
+Thus the expected number of nodes that are covered by the output of SEED algorithm, Λ⋆(T )
+ρ,ϵ , can
+be lower-bounded as follows:
+E
+
+Γ(Λ⋆(T )
+ρ,ϵ )
+
+≥(1 −1/e −ϵ)E
+h
+OPT(T )
+ρ,ϵ
+i
+≥(1 −1/e −ϵ)(1 −ϵ)((1 −ϵ)OPT −2(2 −ϵ)ϵn)
+≥(1 −1/e −ϵ)(1 −2ϵ)OPT −4ϵn
+≥(1 −1/e)(1 −2ϵ)OPT −(ϵ)(1 −2ϵ)OPT −4ϵn
+≥(1 −1/e)OPT −7ϵn = (1 −1/e)OPT −ϵ′n,
+where the ﬁrst expectation is with respect to the randomness of both SEED and PROBE, and the
+second one is with respect to the randomness of PROBE.
+Next we analyze the running times of PROBE(ρ,T,τ,p) and SEED(ϵ,k) algorithms. Let us denote
+the expected number of edge queries by q. Using Theorem 5, we can upper bound q as follows:
+q ≤(1 −3e−δ)Qn,k
+ϵ,δ + 3e−δ(2Tn2) ≤Qn,k
+ϵ,δ + 6T
+∈Oϵ′(pn2 log4 n +
+p
+kpn1.5 log5.5 n + knlog3.5 n),
+(30)
+where Qn,k
+ϵ,δ is given by (7) with ϵ = ϵ′/7 and δ = 2log n; and the 2Tn2 upper bound is by probing
+every node (so that each edge is queried twice). Note that the n ≥√δ + log T condition in Theorem
+5 is always satisﬁed for n ≥(30/ϵ′)2 with our choice of δ and T. Because with δ = 2log n we have
+log T = log(3(δ + log 2)(k + 1)log n/ϵ2) < log(18nlog2 n/ϵ2) < 4log n for all n ≥(30/ϵ′)2 > 18/ϵ2;
+therefore, √δ + log T < √6log n < n, the later being true for all n ≥3.
+
+Eckles et al.: Seeding with Costly Network Information
+47
+Every iteration of the “while loop” in step 8 of the PROBE algorithm leads to an edge query, and
+therefore, the expected run time of PROBE(ρ,T,τ,p) is O(q). Note that the expected number of
+edges in the T subsampled graphs is upper bounded by q. Hence, using any typical graph traversal
+algorithm (such as DFS or BFS), we can identify the connected components of all the T subsampled
+graphs in a time that is O(q). To compute ∆(v|Λ⋆), we go over the connected components of ν in
+each of the T subsampled graphs and add up their values. These values are pre-computed for each
+connected component, and hence this operation takes O(T) time. Recall that the value of a connected
+component is initially set equal to its number of initial nodes (belonging to Vρ). After adding a node
+v to Λ⋆, we reset the value of the connected components containing v in each of the T subsampled
+graphs to zero (see steps 10 and 11 of the SEED algorithm). This ensures that if we later pick another
+node from these components we do not double count those initial nodes that are already covered by
+v. This process can be done in O(T) = Oϵ′(k log2 n) time, where T = T n,k
+ϵ,δ in (5) with ϵ = ϵ′/7 and δ =
+2log n. Finally, note that as step 9 of Algorithm 3 is repeated k times, the submodular maximization
+algorithm that we are using makes no more than k · card(R) = nlog(1/ϵ) = nlog(7/ϵ′) = Oϵ′(n)
+queries to the function ∆(·|·). Combining the preceding bounds with (30) puts the total running
+time of SEED and PROBE algorithms in Oϵ′(pn2 log4 n + √kpn1.5 log5.5 n + knlog3.5 n) as claimed.
+B.13. Proof of Theorem 8: Hardness of approximation with query discrepancy
+Consider the probe and seed cascade probabilities, and denote their minimum and maximum by
+ˇp := min{p,p′} and ˆp := max{p,p′}; by assumption, we have ˆp/ˇp = 1 + δ. We show when the query
+and seed cascade probability are diﬀerent (given by p and p′), then for ϵ satisfying
+ϵ <
+8µ(δ −δ2)cδ
+41(2 −µ) + 16(δ −δ2)cδ
+< µ
+2
+, where cδ = 1 + (δ −δ2)/2,
+(31)
+there can be no k-IM approximation algorithm that guarantees an expected spread size of at least
+µOPT−ϵn on any input graph with optimum expected spread size OPT. Let Alg be any such k-IM
+approximation algorithm. Deﬁne nϵ,µ := (1 −2ϵ/µ)n and note that under (31) we have 2ϵ/µ < 1.
+The input graph for our hard example is comprised of two subgraphs: G1 and G2. The former is a
+clique of size 2ϵn/µ and the latter is a random graph with edge probability (1−δ/2)/(nϵ,µˇp) on the
+remaining nϵ,µ nodes. We prove our hardness results for k = 1 under the following speciﬁcations:
+n >
+256
+(ϵ −3µe−c −δ2)2 , and
+(32)
+ˇp = min{p,p′} > log n + c
+2ϵn/µ
+, where
+(33)
+c = max
+
+2(2 + log 2),log
+
+3µ
+3 −δ2
+
+·
+First note that the expected spread size when seeding one of the G1 clique nodes is at most 2ϵn/µ,
+irrespective of whether the cascade probability is p or p′. We use Lemma 6, with ¯n = 2ϵn/µ and ¯p = ˇp
+
+Eckles et al.: Seeding with Costly Network Information
+48
+satisfying (33), to provide a companion lower bound on the expected spread size when seeding G1.
+Accordingly, if n > (µec/ϵ)4, then the probability that active edges on G1 do not form a connected
+graph is at most 3µe−c/(2ϵ). Having established this lower bound for ˇp = min{p,p′}, it holds true
+for either of the two cascade probabilities (p and p′) because increasing the cascade probability can
+only increase the expected spread size.
+So far we have shown that the expected spread size from seeding one of the G1 nodes is at most
+2ϵn/µ and at least
+
+1 −3µe−c
+2ϵ
+ 2ϵn
+µ = 2ϵn
+µ −3ne−c,
+both bounds being true irrespective of whether the cascade probability is p or p′. We next show
+that an opposite situation holds in case of G2. The expected spread size from seeding one of the
+nodes in G2 depends critically on the cascade probability and can be much larger or much smaller
+than the range that we have established for G1. We use techniques from the analysis of the giant
+connected component in random graphs (Janson et al. 2011, Theorem 5.4) to lower-bound the
+expected spread size from seeding G2 when the cascade probability is ˆp and to upper-bound it when
+the cascade probability is ˇp. Comparing the two bounds with the range that we have established for
+the expected spread size on G1 reveals that Alg should necessarily seed G2 when cascade probability
+is ˆp and G1 when the cascade probability is ˇp. Therefore, there can be no approximation algorithm
+that provides a µOPT −ϵn guarantee while the query and seed cascade probabilities are diﬀerent.
+We show this for the small enough ϵ in (31), based on the discrepancy between the query and seed
+cascade probabilities (ˆp/ˇp = 1 + δ).
+We begin by lower-bounding the expected spread size from seeding a random node in G2 when
+the cascade probability is ˆp. Note that if the cascade probability is ˆp, then the active edges after
+the independent cascade on G2 constitute a random graph with edge probability:
+ˆp1 −δ/2
+nϵ,µˇp = (1 + δ)(1 −δ/2)
+nϵ,µ
+= cδ
+nϵ,µ
+>
+1
+nϵ,µ
+·
+In this case we show that the expected spread size from seeding a random node in G2 is at least
+nϵ,δ/2, where
+nϵ,δ := 16nϵ,µ(δ −δ2)cδ
+41
+·
+We do so by upper-bounding the probability that a random node on G2 belongs to a component of
+size less than nϵ,δ. Let us denote this event by E. To upper-bound P(E), we consider a random node
+ν and search the component containing ν according to the following procedure:
+
+Eckles et al.: Seeding with Costly Network Information
+49
+Procedure 1. Starting from ν, initialize the set of discovered nodes to include only ν and set
+X0 = 1. At step one (i = 1), declare all neighbors of ν to be discovered and set X1 equal to the number
+of newly discovered nodes. Also declare ν to be explored. At any step i > 1, choose an unexplored
+node at random from the set of discovered but unexplored nodes; declare it to be explored; add
+all of its undiscovered neighbors to the discovered set; and set Xi equal to the number of newly
+discovered nodes at step i.
+Fact 1. Consider τ ≥1 iterations of Procedure 1. The total number of discovered but unexplored
+nodes after τ iterations is given by: Pτ
+i=0 Xi −τ. Therefore, at any step τ, the size of the connected
+component containing ν is greater than τ if, and only if, Pτ
+i=0 Xi > τ; the size of the connected
+component containing ν is equal to τ if, and only if, Pτ
+i=0 Xi = τ; and the size of the connected
+component containing ν is less than τ if, and only if, Pτ
+i=0 Xi < τ.
+Fact 1 implies that P(E) = P
+ Pnϵ,δ
+i=0 Xi < nϵ,δ
+
+. To upper-bound P(E), let X−
+i
+be i.i.d. random
+variables with their common distribution set to:
+Binomial
+
+nϵ,µ −nϵ,δ, cδ
+nϵ,µ
+
+·
+Note that for all i ≤nϵ,δ, Xi stochastically dominates X−
+i ; hence,
+P(E) = P
+ Pnϵ,δ
+i=0 Xi < nϵ,δ
+
+≤P
+ Pnϵ,δ
+i=0 X−
+i ≤nϵ,δ
+
+·
+(34)
+To ease the notation, deﬁne X−= Pnϵ,δ
+i=0 X−
+i and note that X−also has a binomial distribution with
+parameters given by:
+Binomial
+
+nϵ,δ(nϵ,µ −nϵ,δ), cδ
+nϵ,µ
+
+·
+We next point out that,
+E[X−] = nϵ,δ(nϵ,µ −nϵ,δ) cδ
+nϵ,µ
+= nϵ,δ
+
+1 −16
+41(δ −δ2)cδ
+
+cδ
+= nϵ,δ
+
+1 + δ −δ2
+2
+(1 −32
+41c2
+δ)
+
+> nϵ,δ,
+(35)
+where the last inequality follows because 0 < δ −δ2 ≤1/4 which implies cδ = 1 + (δ −δ2)/2 ≤9/8
+and 32c2
+δ/41 ≤81/82 < 1, for all 0 < δ < 1. Combining (34) and (35), we get:
+P(E) ≤P
+ X−≤nϵ,δ
+
+≤P
+ X−< E[X−]
+
+< 1
+2·
+
+Eckles et al.: Seeding with Costly Network Information
+50
+We have established that the probability of the event E that the size of the connected component of
+a random node in G2 is less than nϵ,δ is at most 1/2. This implies that the expected spread size from
+seeding a random node in G2 is at least nϵ,δ/2. Under (31), we have 2ϵn/µ < µnϵ,δ/2 −ϵn; hence,
+whenever the cascade probability is ˆp, Alg should necessarily seed one of the nodes in G2.
+Next, we upper-bound the expected spread size from seeding a node in G2 when the cascade
+probability is ˇp. For a ﬁxed node ν in G2, let ¯E be the event that the size of the connected component
+containing ν is greater than
+¯nϵ,δ := 16log nϵ,µ
+δ2
+·
+Let Xi be deﬁned in the same way as in Procedure 1, then Fact 1 continues to hold and we have:
+P( ¯E) = P
+P¯nϵ,δ
+i=0 Xi > ¯nϵ,δ
+
+·
+To upper-bound P( ¯E), let X+
+i be i.i.d. random variables with common Binomial(nϵ,µ,(1−δ/2)/nϵ,µ)
+distribution and note that for all i, X+
+i stochastically dominates Xi; hence,
+P( ¯E) = P
+P¯nϵ,δ
+i=0 Xi > ¯nϵ,δ
+
+≤P
+P¯nϵ,δ
+i=0 X+
+i > ¯nϵ,δ
+
+= P
+P¯nϵ,δ
+i=1 X+
+i ≥¯nϵ,δ(1 −δ/2) + ¯nϵ,δδ/2
+
+≤exp
+
+−¯n2
+ϵ,δδ2/4
+2¯nϵ,δ(1 −δ/2) + ¯nϵ,δδ/3
+
+≤exp
+−¯nϵ,δδ2
+8
+
+=
+1
+n2
+ϵ,µ
+,
+where the penultimate inequality follows by applying a Chernoﬀbound to P¯nϵ,δ
+i=0 X+
+i
+which is a
+binomial random variable with mean ¯nϵ,δ(1 −δ/2). By union bound, the probability of having at
+least one node that belongs to a connected component of size greater than ¯nϵ,δ is at most nϵ,µP( ¯E) =
+1/nϵ,µ; or equivalently, with probability at least 1−1/nϵ,µ, all of the nodes in G2 belong to connected
+components of size less than or equal to ¯nϵ,δ. Hence, when the cascade probability is ˇp, the expected
+spread size from seeding any of the nodes in G2 is at most
+
+1 −
+1
+nϵ,µ
+
+¯nϵ,δ +
+1
+nϵ,µ
+nϵ,µ < ¯nϵ,δ + 1.
+Therefore, whenever cascade probability is ˇp and
+¯nϵ,δ + 1 < µ(2ϵn/µ)(1 −3µe−c/(2ϵ)) −ϵn = (ϵ −3µe−c)n,
+Alg would necessarily seed one of the nodes in G1 and achieve (2ϵn/µ)(1 −3µe−c/(2ϵ)) expected
+spread size. The conditions in (32) are suﬃcient to ensure ¯nϵ,δ + 1 < (ϵ −3µe−c)n. This completes
+
+Eckles et al.: Seeding with Costly Network Information
+51
+the proof showing that any approximation algorithm Alg seeds diﬀerent nodes for diﬀerent cascades
+probabilities on our hard example. Therefore, the approximation guarantees cannot be achieved
+when the query and seed probability diﬀer under the speciﬁed conditions.
+B.14. A pruning algorithm to correct for query discrepancy
+Algorithm 5: PRUNE(p,p′)
+Input: G′(1)
+ρ,τ,...,G′(T )
+ρ,τ and Vρ generated by PROBE(ρ,T,τ,p′), and target cascade
+probability p
+Output: G(1)
+ρ,τ,...,G(T )
+ρ,τ simulating the output of PROBE(ρ,T,τ,p)
+1 Require: p′ > p.
+2 Set h = p/p′.
+3 for i from 1 to T do
+4
+Initialize G(i)
+ρ,τ ←G′(i)
+ρ,τ·
+5
+for every edge e in G(i)
+ρ,τ do
+6
+Let H be an independent Bernoulli draw with P[H = 1] = h.
+7
+if H = 0 then
+8
+Remove e from G(i)
+ρ,τ.
+9
+end
+10
+end
+11
+for every node ν in G(i)
+ρ,τ do
+12
+if none of the nodes in Vρ are reachable from ν then
+13
+Remove ν from G(i)
+ρ,τ.
+14
+end
+15
+end
+16 end
+17 return G(1)
+ρ,τ,...,G(T )
+ρ,τ ·
+Appendix C: Extensions to other inﬂuence models
+We presented our results for undirected graphs with a homogeneous cascade probability (p). In
+subsection C.1, we present the extension of our results to directed inﬂuence graphs. In subsection
+C.2, we explore other inﬂuence models beyond the independent cascade and provide a pathway to
+perform edge queries in the general class of triggering inﬂuence models.
+
+Eckles et al.: Seeding with Costly Network Information
+52
+C.1. Directed inﬂuence graphs
+To perform edge queries on directed graphs, in steps 6 and 7 of the PROBE algorithm we let Nν
+denote the set of incoming neighbors (i.e., nodes that inﬂuence ν) such that the edge query in step
+10 reveals the ι-th incoming neighbor of ν. Two directed edges that are between the same pair
+of nodes in opposite directions (u →ν and ν →u) are distinguished. Therefore, as long as we do
+not probe a node more than once, each directed edge will get at most one chance of appearing in
+G(i)
+ρ,τ. Subsequently, the “if statement” in step 11 of the PROBE algorithm should be removed when
+performing edge queries on directed graphs: any queried edge in step 10 is always added to G(i)
+ρ,τ in the
+following steps. As a further consequence, our edge query upper bound in the directed case consists
+entirely of the edges that appear in the sketch (denoted by ET in Appendix B.10) and is given by (15):
+with probability at least 1 −eδ no more than Cn,k
+ϵ,δ ∈Oϵ,δ(pn2 log2 n + √kpn1.5 log2.5 n + k2 log2 n)
+edges are queried — a slight improvement over our edge query upper bound in the undirected case.
+In the “while loop” condition in step 8 of the PROBE algorithm, instead of considering the
+size of the connected component of node ν, we count the number of nodes that are reachable via
+directed paths from ν (i.e., the size of its realized cone of inﬂuence). For example, in Figure 8(A),
+the reachable set for all of the initial nodes is empty, therefore we proceed to probe the incoming
+neighbors until there are no new nodes to probe. In fact, of all the initial nodes in all three cascades
+in Figure 8, only the leftmost initial node in Figure 8(B) has a non-empty reachable set that is a
+singleton.
+(A)
+(B)
+(C)
+Figure 8
+Three reverse cascades are depicted in (A) red, (B) orange, and (C) blue. All cascades start from the
+same random initial nodes which are marked in the same color as the cascades. As the cascades diﬀuse
+in reverse, each node reveals its incoming edges at random. To score the nodes, we count the number
+of reachable initial nodes in each cascade and add them up. For example, the node that is marked in
+black scores three in the red cascade, two in the orange cascade, and one in the blue cascade. In total, it
+scores as high as or higher than other nodes across the three cascades. The unsampled nodes and edges
+are dotted.
+We need to make similar changes to the way candidates are scored in the SEED algorithm. First,
+in step 3 of SEED we set the value of each initial node (belonging to Vρ) to be one. When evaluating
+
+Eckles et al.: Seeding with Costly Network Information
+53
+the marginal increments (∆(v|Λ⋆)) in step 7 of SEED, we add the values of the initial nodes that
+are reachable via directed paths from v in each of the T subsampled graphs (G(1)
+ρ,τ,...,G(T )
+ρ,τ ), rather
+than summing the value of its connected components (see Figure 8). Finally, in step 11 of SEED if
+an initial node is reachable from the chosen seed, then we nullify its value for scoring the subsequent
+candidates.
+Figure 9
+With o(n) inﬂuence samples, one is unlikely to discover the center of the directed star network. In such
+a case it is impossible to guarantee a µOPT −ϵn expected spread size with fewer than Ω(n) queries.
+In contrast, ﬁnding an approximately optimal seed set by inﬂuence sampling in a directed graph
+is very hard. For example, consider a star graph with n leafs where all of the edges are directed
+away from the center toward the leafs (see Figure 9). Assume that the cascade probability on each
+edge is 1. In this case, if we seed a leaf we only observe an isolated node and hence we need Ω(n)
+inﬂuence samples to ﬁnd the center of the star and seed it. In a situation where running reverse
+spreads is a plausible way of acquiring network information (e.g., by reverse inﬂuence sampling as
+Borgs et al. (2014) do), our algorithm and proofs continue to hold exactly the same. In particular,
+we can estimate the marginal increase of a candidate node on the current seed set by counting the
+number of times that it has appeared in the output of the reverse inﬂuence samples without any
+of the currently chosen seeds (i.e., the number of times that the random initial nodes are reachable
+from the candidate node but not from any of the currently chosen seeds). Following Algorithm 1
+and Theorem 2, we can collect Oϵ(k2 log n) reverse inﬂuence samples and choose the best k seeds
+by approximating the greedy steps.
+C.2. Triggering models
+In general, the inﬂuence graph may be directed and cascade probabilities may diﬀer in each direction
+and across the edges. When performing edge queries, the probed nodes should reveal each of their
+incoming neighbors (inﬂuencers), with the cascade probability associated with that edge. Here we
+explain how a triggering set technique that is proposed by Kempe et al. (2015) helps us devise
+edge queries in a large class of inﬂuence models, including the independent cascade and linear
+threshold models. Recall that the inﬂuence function Γ maps a seed set to a positive real number
+that is the (expected) number of adopters under a (randomized) model of diﬀusion. Kempe et al.
+(2003, 2005, 2015) — through a conjecture that is positively resolved by Mossel and Roch (2010)
+
+Eckles et al.: Seeding with Costly Network Information
+54
+— identify a broad class of threshold models for which the inﬂuence function is non-negative,
+monotone, and submodular. Inﬂuence maximization in such models can be solved to within a (1 −
+1/e) approximation guarantee, following a natural greedy node selection algorithm.
+In a general threshold model, each node v has an activation function fv and a threshold θv ∈[0,1].
+The activation function maps subsets of neighbors of v to a real number between zero and one. Node
+v becomes an adopter at time t if fv(Av,t−1) ≥θv, where Av,t−1 ⊂Nv is the set of all active (adopter)
+neighbors of node v. Approximate inﬂuence maximization with deterministic thresholds is known
+to be very hard — see, e.g., (Kempe et al. 2015, Section 3.2) and (Schoenebeck and Tao 2019).
+To avoid the intractable settings, Kempe et al. (2003, 2005, 2015) consider a randomized model
+where thresholds are i.i.d. uniform [0,1] variables. Mossel and Roch (2010) show that if the “local”
+activation functions fv are submodular, then the “global” inﬂuence function Γ is also submodular
+and inﬂuence maximization can be achieved with strong approximation guarantees (Mossel and
+Roch 2010, Theorem 1.6 and Corollary 1.7). In the special case of the linear threshold model, each
+node v is inﬂuenced by its incoming neighbours u ∈Nv according to their edge weights buv. Node v
+becomes an adopter at time t if the total weight of her adopting neighbors exceeds her threshold,
+i.e., if fv(Av,t−1) = P
+u∈Av,t−1 buv ≥θv.
+At the heart of the proofs of Kempe et al. (2003, 2015) lie a triggering set technique. Accordingly,
+each node v chooses a random subset of its incoming neighbors, which we call its triggering set and
+denote it by Tv ⊂Nv. Node v becomes an adopter at time t if any of the nodes in Tv is an adopter at
+time t −1. The distribution according to which the triggering sets are drawn is determined by the
+diﬀusion model. However, not all diﬀusion processes can be reduced to a triggering set model. For
+those that do, their inﬂuence function is guaranteed to be submodular (Kempe et al. 2015, Lemma
+4.4).
+For example, in the independent cascade model, the triggering set Tv includes each of the neighbors
+u ∈Nv with cascade probability associated with the u →v edge (puv), independently at random.
+In the case of the linear threshold model, Kempe et al. (2015) devise the following construction,
+assuming P
+u∈Nv buv ≤1: The triggering set Tv is comprised of a single node or no nodes at all. For
+u ∈Nv, the probability that Tv = {u} is equal to buv, and Tv = ∅with probability 1 −P
+u∈Nv buv.
+For diﬀusion processes that can be cast as a triggering set model, we can implement queries
+by having the probed nodes reveal their triggering sets. Starting from random initial nodes, each
+triggering set corresponds to a batch of directed edges that are incoming to the probed node. We
+can use the number of reachable initial nodes to implement an approximate greedy heuristic as
+described in Appendix C.1 — see Figure 10. One needs to analyze the speciﬁc diﬀusion process
+and the triggering distributions to provide approximation guarantees using a bounded number of
+queries.
+
+Eckles et al.: Seeding with Costly Network Information
+55
+(A)
+(B)
+(C)
+Figure 10
+Some diﬀusion processes can be reduced to a triggering set model; whereby, after randomly drawing a
+triggering set from among her neighbors, a node becomes active if any of the nodes in her triggering
+set are active. In such models, we can devise edge queries by having a probed node reveal a random
+realization of her triggering set, and then proceeding to probe the revealed nodes. In the case of the
+linear threshold model, the triggering sets are either empty or a singleton chosen randomly according
+to the edge weights. The reverse cascades in (A), (B) and (C) show three queries where the nodes
+sequentially reveal their triggering sets, starting from a random initial node. The black node appears
+in the output of all three “reversed cascades”, and therefore scores the highest as a seed candidate.
+In the particular case of the linear threshold model, the proof of Theorem 2, and its adaptation
+to directed graphs in Appendix C.1, continue to hold with little change. Using k batches of ρ
+reversed cascades, we can provide an approximate k-IM solution for the linear threshold model over
+directed graphs. At each stage we choose ρ initial nodes at random and implement ρ cascades in
+reverse. In each reversed cascade, we start from the initial node, reveal her triggering set, and then
+proceeding to probe the node that is revealed in the triggering set, etc. After each batch of ρ reversed
+cascades, we choose the node that appears the most number of times, discarding those cascades that
+include any of the already chosen seeds. Following Theorem 2, we can provide a (1 −1/e)OPT −ϵn
+approximation guarantee, by running kρ = k⌈81k log( 6nk
+ϵ )/ϵ3⌉reversed cascades.
+To bound the number of edge queries, recall that each triggering set in the linear threshold
+model consists of at most a single node. Hence, each reversed cascade corresponds to a path of
+length at most n — see Figure 10. Therefore, we can bound the total number of queried edges by
+nkρ = nk⌈81k log( 6nk
+ϵ )/ϵ3⌉. In Theorem 9, we state our results formally for the case of k-IM with
+the linear threshold model over directed graphs.
+References
+Akbarpour M, Malladi S, Saberi A (2020) Just a few seeds more: Value of network information for diﬀusion.
+Technical report, Stanford University, available at SSRN 3062830.
+Alon N, Fischer E, Krivelevich M, Szegedy M (2000) Eﬃcient testing of large graphs. Combinatorica
+20(4):451–476.
+Alon N, Fischer E, Newman I, Shapira A (2009) A combinatorial characterization of the testable graph
+properties: It’s all about regularity. SIAM Journal on Computing 39(1):143–167.
+
+Eckles et al.: Seeding with Costly Network Information
+56
+Badanidiyuru A, Vondrák J (2014) Fast algorithms for maximizing submodular functions. Proceedings of
+the 25th Annual ACM-SIAM Symposium on Discrete Algorithms, 1497–1514 (Portland, Oregon, USA:
+SIAM).
+Balkanski E, Immorlica N, Singer Y (2017a) The importance of communities for learning to inﬂuence.
+Advances in Neural Information Processing Systems 30, 5862–5871 (Long Beach, California, USA:
+Curran Associates, Inc.).
+Balkanski E, Rubinstein A, Singer Y (2016) The power of optimization from samples. Advances in Neural
+Information Processing Systems, 4017–4025 (Barcelona, Spain: Curran Associates, Inc.).
+Balkanski E, Rubinstein A, Singer Y (2017b) The limitations of optimization from samples. Proceedings of
+the 49th Annual ACM SIGACT Symposium on Theory of Computing, 1016–1027 (Montreal, Canada:
+ACM).
+Banerjee A, Chandrasekhar AG, Duﬂo E, Jackson MO (2013) The diﬀusion of microﬁnance. Science
+341(6144):1236498.
+Banerjee A, Chandrasekhar AG, Duﬂo E, Jackson MO (2019) Using gossips to spread information: Theory
+and evidence from two randomized controlled trials. The Review of Economic Studies 86(6):2453–2490.
+Bateni M, Esfandiari H, Mirrokni V (2018) Optimal distributed submodular optimization via sketching.
+Proceedings of the 24th ACM SIGKDD International Conference on Knowledge Discovery & Data
+Mining, 1138–1147, KDD ’18 (New York, NY, USA: ACM), ISBN 978-1-4503-5552-0.
+Bateni MH, Esfandiari H, Mirrokni V (2017) Almost optimal streaming algorithms for coverage problems.
+Proceedings of the 29th ACM Symposium on Parallelism in Algorithms and Architectures, 13–23, SPAA
+’17 (New York, NY, USA: ACM), ISBN 978-1-4503-4593-4.
+Behrman JR, Kohler HP, Watkins SC (2002) Social networks and changes in contraceptive use over time:
+Evidence from a longitudinal study in rural Kenya. Demography 39(4):713–738.
+Bollobás B (2001) Random Graphs (Cambridge, UK: Cambridge University Press).
+Borgs C, Brautbar M, Chayes J, Lucier B (2014) Maximizing social inﬂuence in nearly optimal time. Proceed-
+ings of the 25th Annual ACM-SIAM Symposium on Discrete Algorithms (SODA), 946–957 (Portland,
+Oregon, USA: SIAM).
+Cai J, De Janvry A, Sadoulet E (2015) Social networks and the decision to insure. American Economic
+Journal: Applied Economics 7(2):81–108.
+Catanese SA, De Meo P, Ferrara E, Fiumara G, Provetti A (2011) Crawling Facebook for social network anal-
+ysis purposes. Proceedings of the International Conference on Web Intelligence, Mining and Semantics,
+1–8.
+Chami GF, Ahnert SE, Kabatereine NB, Tukahebwa EM (2017) Social network fragmentation and commu-
+nity health. Proceedings of the National Academy of Sciences 114(36):E7425–E7431.
+
+Eckles et al.: Seeding with Costly Network Information
+57
+Chazelle B, Rubinfeld R, Trevisan L (2005) Approximating the minimum spanning tree weight in sublinear
+time. SIAM Journal on computing 34(6):1370–1379.
+Chen W, Lin T, Tan Z, Zhao M, Zhou X (2016) Robust inﬂuence maximization. Proceedings of the 22nd
+ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, 795–804, KDD
+’16 (San Francisco, California, USA: ACM).
+Chen W, Wang Y, Yang S (2009) Eﬃcient inﬂuence maximization in social networks. Proceedings of the 15th
+ACM SIGKDD International Conference on Knowledge Discovery and Data Mining, 199–208, KDD
+’09 (Paris, France: ACM).
+Chin A, Eckles D, Ugander J (2021) Evaluating stochastic seeding strategies in networks. Management
+Science .
+Christakis NA, Fowler JH (2010) Social network sensors for early detection of contagious outbreaks. PloS
+One 5(9):e12948.
+Cohen E, Delling D, Pajor T, Werneck RF (2014) Sketch-based inﬂuence maximization and computation:
+Scaling up with guarantees. Proceedings of the 23rd International Conference on Conference on Infor-
+mation and Knowledge Management, 629–638 (Shanghai, China: ACM).
+Cohen R, Havlin S, Ben-Avraham D (2003) Eﬃcient immunization strategies for computer networks and
+populations. Physical Review Letters 91(24):247901.
+Domingos P, Richardson M (2001) Mining the network value of customers. Proceedings of the 7th ACM
+SIGKDD International Conference on Knowledge Discovery and Data Mining, 57–66 (San Jose, Cali-
+fornia, USA: ACM).
+Eckles D, Esfandiari H, Mossel E, Rahimian MA (2019) Seeding with costly network information. Proceedings
+of the 2019 ACM Conference on Economics and Computation, 421–422, EC ’19 (New York, NY, USA:
+Association for Computing Machinery).
+Esfandiari H, Mitzenmacher M (2018) Metric sublinear algorithms via linear sampling. 59th Annual Sympo-
+sium on Foundations of Computer Science (FOCS), 11–22 (Paris, France: IEEE).
+Feld SL (1991) Why your friends have more friends than you do. American Journal of Sociology 96(6):1464–
+1477.
+Feng C, Fu L, Jiang B, Zhang H, Wang X, Tang F, Chen G (2020) Neighborhood matters: Inﬂuence maxi-
+mization in social networks with limited access. IEEE Transactions on Knowledge and Data Engineering
+.
+Flodgren G, Parmelli E, Doumit G, Gattellari M, O’Brien MA, Grimshaw J, Eccles MP (2011) Local opinion
+leaders: Eﬀects on professional practice and health care outcomes. The Cochrane Database of Systematic
+Reviews 2011(8):CD000125.
+Godes D, Mayzlin D (2009) Firm-created word-of-mouth communication: Evidence from a ﬁeld test. Mar-
+keting Science 28(4):721–739.
+
+Eckles et al.: Seeding with Costly Network Information
+58
+Goel S, Salganik MJ (2010) Assessing respondent-driven sampling. Proceedings of the National Academy of
+Sciences 107(15):6743–6747.
+Golovin D, Krause A (2011) Adaptive submodularity: Theory and applications in active learning and stochas-
+tic optimization. Journal of Artiﬁcial Intelligence Research 42:427–486.
+Gomez-Rodriguez M, Leskovec J, Krause A (2012) Inferring networks of diﬀusion and inﬂuence. ACM Trans-
+actions on Knowledge Discovery from Data (TKDD) 5(4):1–37.
+Gonen M, Ron D, Shavitt Y (2011) Counting stars and other small subgraphs in sublinear-time. SIAM
+Journal on Discrete Mathematics 25(3):1365–1411.
+Goyal A, Bonchi F, Lakshmanan LVS (2010) Learning inﬂuence probabilities in social networks. Proceedings
+of the 3rd ACM International Conference on Web Search and Data Mining, 241–250 (New York, New
+York, USA: ACM).
+He X, Kempe D (2016) Robust inﬂuence maximization. Proceedings of the 22nd ACM SIGKDD International
+Conference on Knowledge Discovery and Data Mining, 885–894, KDD ’16 (New York, NY, USA: ACM).
+He X, Kempe D (2018) Stability and robustness in inﬂuence maximization. ACM Transactions on Knowledge
+Discovery from Data 12(6):66:1–66:34.
+Heckathorn DD, Cameron CJ (2017) Network sampling: From snowball and multiplicity to respondent-driven
+sampling. Annual Review of Sociology 43:101–119.
+Hinz O, Skiera B, Barrot C, Becker JU (2011) Seeding strategies for viral marketing: An empirical compar-
+ison. Journal of Marketing 75(6):55–71.
+Horel T, Singer Y (2015) Scalable methods for adaptively seeding a social network. Proceedings of the 24th
+International Conference on World Wide Web, 441–451 (Florence, Italy: International World Wide Web
+Conference).
+Indyk P (1999) Sublinear time algorithms for metric space problems. Proceedings of the 31st Annual ACM
+Symposium on Theory of Computing, 428–434 (Atlanta, Georgia, USA: ACM).
+Janson S, Luczak T, Rucinski A (2011) Random graphs, volume 45 (Hoboken, NJ: John Wiley & Sons).
+Karimi M, Lucic M, Hassani H, Krause A (2017) Stochastic submodular maximization: The case of coverage
+functions. Advances in Neural Information Processing Systems, 6853–6863 (Long Beach, CA, USA:
+Curran Associates, Inc.).
+Kempe D, Kleinberg J, Tardos É (2003) Maximizing the spread of inﬂuence through a social network.
+Proceedings of the 9th ACM SIGKDD International Conference on Knowledge Discovery and Data
+Mining, 137–146 (Washington, DC, USA: ACM).
+Kempe D, Kleinberg J, Tardos É (2005) Inﬂuential nodes in a diﬀusion model for social networks. Proceedings
+of the 32nd International Colloquium on Automata, Languages, and Programming, 1127–1138 (Lisbon,
+Portugal: Springer).
+
+Eckles et al.: Seeding with Costly Network Information
+59
+Kempe D, Kleinberg J, Tardos É (2015) Maximizing the spread of inﬂuence through a social network. Theory
+of Computing 11(4):105–147.
+Kim DA, Hwong AR, Staﬀord D, Hughes DA, O’Malley AJ, Fowler JH, Christakis NA (2015) Social network
+targeting to maximise population behaviour change: A cluster randomised controlled trial. The Lancet
+386(9989):145–153.
+Kumar R, Moseley B, Vassilvitskii S, Vattani A (2015) Fast greedy algorithms in mapreduce and streaming.
+ACM Transactions on Parallel Computing (TOPC) 2(3):14.
+Kumar V, Krackhardt D, Feld S (2018) Network interventions based on inversity: Leveraging the friendship
+paradox in unknown network structures, working Paper, Yale University.
+Kumar V, Sudhir K (2019) Can friends seed more buzz and adoption?, Cowles Foundation Discussion Paper
+No. 2178.
+Lattanzi S, Singer Y (2015) The power of random neighbors in social networks. Proceedings of the 8th ACM
+International Conference on Web Search and Data Mining, 77–86, WSDM ’15 (Shanghai, China: ACM).
+Leskovec J, Faloutsos C (2006) Sampling from large graphs. Proceedings of the 12th ACM SIGKDD Interna-
+tional Conference on Knowledge Discovery and Data Mining, 631–636 (Philadelphia, PA, USA: ACM).
+Libai B, Muller E, Peres R (2013) Decomposing the value of word-of-mouth seeding programs: Acceleration
+versus expansion. Journal of Marketing Research 50(2):161–176.
+Lungeanu A, McKnight M, Negron R, Munar W, Christakis NA, Contractor NS (2021) Using Trellis software
+to enhance high-quality large-scale network data collection in the ﬁeld. Social Networks 66:171–184.
+Manshadi V, Misra S, Rodilitz S (2020) Diﬀusion in random networks: Impact of degree distribution. Oper-
+ations Research 68(6):1722–1741.
+Mihara S, Tsugawa S, Ohsaki H (2015) Inﬂuence maximization problem for unknown social networks. Proceed-
+ings of the International Conference on Advances in Social Networks Analysis and Mining, 1539–1546
+(Paris, France: IEE/ACM).
+Mihara S, Tsugawa S, Ohsaki H (2017) On the eﬀectiveness of random jumps in an inﬂuence maximization
+algorithm for unknown graphs. International Conference on Information Networking (ICOIN), 395–400
+(Da Nang, Vietnam: IEEE).
+Mirzasoleiman B, Badanidiyuru A, Karbasi A, Vondrák J, Krause A (2015) Lazier than lazy greedy. Proceed-
+ings of the 29th AAAI Conference on Artiﬁcial Intelligence, 1812–1818 (Austin, Texas, USA: AAAI).
+Mossel E, Roch S (2010) Submodularity of inﬂuence in social networks: From local to global. SIAM Journal
+on Computing 39(6):2176–2188.
+Nemhauser GL, Wolsey LA, Fisher ML (1978) An analysis of approximations for maximizing submodular
+set functions–I. Mathematical programming 14(1):265–294.
+
+Eckles et al.: Seeding with Costly Network Information
+60
+Nguyen HT, Thai MT, Dinh TN (2016) Stop-and-stare: Optimal sampling algorithms for viral marketing
+in billion-scale networks. Proceedings of the 2016 International Conference on Management of Data,
+695–710.
+Paluck EL, Shepherd H, Aronow PM (2016) Changing climates of conﬂict: A social network experiment in
+56 schools. Proceedings of the National Academy of Sciences 113(3):566–571.
+Sadeh G, Cohen E, Kaplan H (2020) Sample Complexity Bounds for Inﬂuence Maximization. Vidick T,
+ed., 11th Innovations in Theoretical Computer Science Conference (ITCS 2020), volume 151 of Leibniz
+International Proceedings in Informatics (LIPIcs), 29:1–29:36 (Dagstuhl, Germany: Schloss Dagstuhl–
+Leibniz-Zentrum fuer Informatik).
+Salganik MJ, Heckathorn DD (2004) Sampling and estimation in hidden populations using respondent-driven
+sampling. Sociological Methodology 34(1):193–240.
+Schoenebeck G, Tao B (2019) Beyond worst-case (in)approximability of nonsubmodular inﬂuence maximiza-
+tion. ACM Trans. Comput. Theory 11(3):12:1–12:56, ISSN 1942-3454.
+Seeman L, Singer Y (2013) Adaptive seeding in social networks. Proceedings of the 54th Annual Symposium
+on Foundations of Computer Science (FOCS), 459–468 (Berkeley, California, USA: IEEE).
+Stein S, Eshghi S, Maghsudi S, Tassiulas L, Bellamy RKE, Jennings NR (2017) Heuristic algorithms for
+inﬂuence maximization in partially observable social networks. Proceedings of the 3rd International
+Workshop on Social Inﬂuence Analysis, 20–32 (Melbourne, Australia: CEUR Workshop Proceedings).
+Tang Y, Shi Y, Xiao X (2015) Inﬂuence maximization in near-linear time: A martingale approach. Proceedings
+of the 2015 ACM SIGMOD International Conference on Management of Data, 1539–1554.
+Tang Y, Xiao X, Shi Y (2014) Inﬂuence maximization: Near-optimal time complexity meets practical eﬃ-
+ciency. Proceedings of the 2014 ACM SIGMOD international conference on Management of data, 75–86.
+Traud AL, Mucha PJ, Porter MA (2012) Social structure of Facebook networks. Physica A: Statistical
+Mechanics and its Applications 391(16):4165–4180.
+van der Vaart AW, Wellner JA (1996) Weak Convergence and Empirical Processes: With Applications to
+Statistics (New York, NY, USA: Springer-Verlag).
+Wang C, Chen W, Wang Y (2012) Scalable inﬂuence maximization for independent cascade model in large-
+scale social networks. Data Mining and Knowledge Discovery 25(3):545–576.
+Wen Z, Kveton B, Valko M, Vaswani S (2017) Online inﬂuence maximization under independent cascade
+model with semi-bandit feedback. Advances in Neural Information Processing Systems 30, 3022–3032
+(Long Beach, California, USA: Curran Associates, Inc.).
+Wilder B, Immorlica N, Rice E, Tambe M (2017a) Inﬂuence maximization with an unknown network by
+exploiting community structure. Proceedings of the 3rd International Workshop on Social Inﬂuence
+Analysis, 2–7 (Melbourne, Australia: CEUR Workshop Proceedings).
+
+Eckles et al.: Seeding with Costly Network Information
+61
+Wilder B, Immorlica N, Rice E, Tambe M (2018) Maximizing inﬂuence in an unknown social network. Pro-
+ceedings of the 32nd AAAI Conference on Artiﬁcial Intelligence, 4743–4750 (New Orleans, Louisiana,
+USA: AAAI).
+Wilder B, Yadav A, Immorlica N, Rice E, Tambe M (2017b) Uncharted but not uninﬂuenced: Inﬂuence max-
+imization with an uncertain network. Proceedings of the 16th Conference on Autonomous Agents and
+Multiagent Systems, 1305–1313 (São Paulo, Brazil: International Foundation for Autonomous Agents
+and Multiagent Systems).
+Wu Q, Li Z, Wang H, Chen W, Wang H (2019) Factorization bandits for online inﬂuence maximization.
+Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data
+Mining, 636–646.
+Yadav A, Wilder B, Rice E, Petering R, Craddock J, Yoshioka-Maxwell A, Hemler M, Onasch-Vera L,
+Tambe M, Woo D (2017) Inﬂuence maximization in the ﬁeld: The arduous journey from emerging
+to deployed application. Proceedings of the 16th Conference on Autonomous Agents and Multiagent
+Systems, 150–158.
+Dean Eckles
+is an associate professor at the MIT Sloan School of Management. His research
+interests include social inﬂuence, networks, and causal inference.
+Hossein Esfandiari
+is a senior research scientist at Google. His works are in theoretical com-
+puter science, including approximation algorithms and sublinear-time algorithms.
+Elchanan Mossel
+works in probability, combinatorics, and inference. He is on the senior faculty
+of the Mathematics Department, with a jointly core faculty appointment at the Statistics and Data
+Science Center of Massachusetts Institute of Technology’s Institute for Data, Systems, and Society.
+M. Amin Rahimian
+is an assistant professor of Industrial Engineering at University of Pitts-
+burgh. He works at the intersection of networks, data, and decision sciences. He borrows tools from
+applied probability, statistics, algorithms, as well as decision and game theory to address problems
+of distributed inference and decentralized interventions in large-scale sociotechnical systems.

@@ -1,0 +1,2598 @@
+TITLE: Robust Direct Aperture Optimization for Radiation Therapy Treatment Planning
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2022
+DOI: https://doi.org/10.1287/ijoc.2022.1167
+---
+
+ROBUST DIRECT APERTURE OPTIMIZATION FOR RADIATION
+THERAPY TREATMENT PLANNING ∗
+Danielle A. Ripsman
+Department of Management Sciences
+University of Waterloo
+ON, Canada
+daripsman@uwaterloo.ca
+Thomas G. Purdie
+Princess Margaret Cancer Centre
+Toronto
+ON, Canada
+tom.purdie@rmp.uhn.on.ca
+Timothy C. Y. Chan
+Department of Mechanical and Industrial Engineering
+University of Toronto
+ON, Canada
+tcychan@mie.utoronto.ca
+Houra Mahmoudzadeh
+Department of Management Sciences
+University of Waterloo
+ON, Canada
+houra.mahmoudzadeh@uwaterloo.ca
+ABSTRACT
+Intensity-modulated radiation therapy (IMRT) allows for the design of customized, highly-conformal
+treatments for cancer patients. Creating IMRT treatment plans, however, is a mathematically complex
+process, which is often tackled in multiple, simpler stages. This sequential approach typically
+separates radiation dose requirements from mechanical deliverability considerations, which may
+result in suboptimal treatment quality. For patient health to be considered paramount, holistic
+models must address these plan elements concurrently, eliminating quality loss between stages. This
+combined direct aperture optimization (DAO) approach is rarely paired with uncertainty mitigation
+techniques, such as robust optimization, due to the inherent complexity of both parts. This paper
+outlines a robust DAO (RDAO) model and discusses novel methodologies for efﬁciently integrating
+salient constraints. Because the highly-complex RDAO model is difﬁcult to solve, an original
+candidate plan generation (CPG) heuristic is proposed. The CPG produces rapid, high-quality,
+feasible plans, which are immediately clinically viable, and can also be used to generate a feasible
+incumbent solution for warm starting the RDAO model. Computational results obtained using clinical
+patient datasets with motion uncertainty show the beneﬁt of incorporating the CPG, both in terms of
+ﬁrst incumbent solution and ﬁnal output plan quality.
+Keywords Intensity-Modulated Radiation Therapy · Direct Aperture Optimization · Robust Optimization · Mixed
+Integer Programming · Solution Heuristics
+1
+Introduction
+According to estimates by GLOBOCAN, 2018 brought 18.1 million new cancer cases, and 9.6 million cancer deaths,
+globally [Bray et al., 2018]. Radiation therapy (RT) is recommended over the course of the treatment process for
+roughly half of all cancer patients [Baskar et al., 2012]. The goal of RT is to provide a treatment that eliminates
+a cancerous region (target) while sparing adjacent, healthy tissue. Today, many RT treatments are delivered using
+intensity-modulated RT (IMRT) which conforms plans to the targets using advanced mathematical planning [Bortfeld,
+2006].
+∗Citation: Danielle A Ripsman, Thomas G Purdie, Timothy CY Chan, and Houra Mahmoudzadeh. Robust Direct Aperture
+Optimization for Radiation Therapy Treatment Planning. INFORMS Journal on Computing, 2022. https://doi.org/10.1287/
+ijoc.2022.1167
+arXiv:2111.04847v2 [math.OC] 17 Mar 2022
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Figure 1: IMRT leaves move toward the centre of the beam to form an aperture. Peripheral parts of the leaves are then
+covered with insulating jaws.
+IMRT is largely characterized by its modulating beam shapes, called apertures. Apertures are formed when extending
+radiation-absorbing pieces of metal, called leaves and jaws, block out portions of an initially rectangular ﬁeld during
+treatment, as shown in Figure 1. In IMRT treatment delivery, the mouth of the delivery device, called a multileaf
+collimator (MLC), is rotated on an arm, called a gantry, to a speciﬁed angle where it delivers a set of shaped beams to
+the patient who is typically lying on a bench, as shown in Figure 2.
+Figure 2: The gantry rotates the MLC to various angles, delivering beams through a collection of apertures.
+An IMRT plan consists of a set of predetermined apertures, each with an associated beam angle and ﬂuence intensity.
+For simplicity, this work will focus on step-and-shoot treatment plans, wherein the apertures are delivered statically and
+mechanical re-orientations or steps between apertures occur with the beam turned off. The step-and-shoot planning
+techniques discussed may be generalized to commonly-used dynamic treatments, such as Volumetric Modulated Arc
+Therapy (VMAT), with the placement of additional ﬂuence intensity and aperture shape requirements [Craft et al.,
+2014].
+Even when plans are static, calculating the optimal combination of beam angles, apertures and intensity values
+simultaneously is an intractably large combinatorial version of an already NP-hard problem [Azizi-Sultan, 2006].
+Although beam angle selection is an active area of research, empirical selection methods, such as choosing a prespeciﬁed
+number of equidistant angles, are often used in practice [Jiang et al., 2005, Bertsimas et al., 2013]. Once beam angles
+are chosen, the selection of apertures and their intensity values is often structured as a two-step problem:
+Step 1. Solve a ﬂuence map optimization (FMO) problem.
+Step 2. Decompose the FMO into ﬁnite deliverable apertures and intensities.
+Step 1 has received the bulk of the attention in the literature over the years, as the FMO model serves as a base for
+studying most clinically-signiﬁcant objectives. While some of these objectives are inherently non-linear, many have
+been shown to have analogous linearizations, allowing for linear programming (LP) formulations of the FMO problem
+that can be rapidly solved to optimality [Romeijn et al., 2003, Ehrgott et al., 2010, Chan et al., 2014]. Regardless
+of formulation, during FMO, the beam is typically divided into a ﬁnite grid and each ﬂuence in the grid is chosen
+independently, neglecting real-life delivery constraints. The left-hand side of Figure 3 shows a hypothetical FMO
+output, which is optimal for target coverage but undeliverable for an MLC.
+Step 2, depicted on the right-hand side of Figure 3, is a secondary decomposition model that follows the FMO problem
+[Bortfeld, 2006, Ta¸skın et al., 2010, Jing et al., 2015]. The decomposition often involves a heuristic leaf-sequencing
+algorithm, due to the mathematical difﬁculty associated with ﬁnding a clinically viable breakdown of an FMO solution
+2
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Figure 3: Single-angle Step 1 ﬂuence map broken down into two deliverable apertures in Step 2.
+[Carlsson, 2008]. Some studies segment the ﬂuence maps into discrete ﬂuence levels initially and then apply sequencing
+algorithms [Gladwish et al., 2007, Xia and Verhey, 1998, Kamath et al., 2003]. Others contribute exact algorithms for
+leaf sequencing when the goal is minimizing beam-on-time (BOT), i.e., the total duration of radiation delivery [Siochi,
+1999, Langer et al., 2001]. The leaf sequencing problem with a BOT minimization objective is structurally similar to
+network ﬂow problems, a feature that has been exploited to create polynomially solvable LP decomposition models
+[Boland et al., 2004, Ahuja and Hamacher, 2004, Ta¸skın et al., 2010]. However, choosing more realistic objectives for
+this step of the problem, including minimizing the total number of apertures or total treatment time, leads to NP-hard
+problems [Baatar et al., 2005].
+When combined, the two steps of traditional step-and-shoot planning form a computationally challenging problem
+called direct aperture optimization (DAO). The DAO approach was initially introduced using a simulated annealing
+algorithm to generate the uniform apertures [Shepard et al., 2002]. This work was later augmented by a number of
+inexact methods for generating direct aperture plans [Li et al., 2003, Milette, 2008, Broderick et al., 2009]. Efforts
+to ﬁnd a globally optimal set of apertures have led to column generation approaches for both DAO and the dynamic
+VMAT version of the problem, which can be solved (or approximately solved) quite rapidly [Romeijn et al., 2005, Men
+et al., 2007, Carlsson, 2008, Salari and Unkelbach, 2013, Mahnam et al., 2017, Dursun et al., 2019a]. While the column
+generation approaches in the literature are fast to converge, they do not allow for a hard limit on the number of apertures
+to be imposed a priori, which may translate to unreasonably long total treatment times and negligibly small apertures,
+or a loss in optimality, when it comes to step-and-shoot planning. A framework for creating optimal treatment plans
+using a constrained number of apertures requires the explicit modeling of clinical and practical constraints in a single
+optimization model; a task that was recently examined in a dynamic setting [Akartunalı et al., 2015, Dursun et al.,
+2016], but has not previously been considered in static planning, to the best of our knowledge.
+In addition to delivery issues, theoretically optimal treatment plans may suffer from data uncertainty, which can
+adversely affect the quality of IMRT treatment in practice. Robust FMO (i.e., RFMO, the robust formulation of Step 1)
+is a popular method for immunizing problems against the parameter uncertainty seen in many forms of RT planning,
+from mechanical setup to patient and organ location uncertainty [Bertsimas et al., 2011, Unkelbach et al., 2018]. Using
+robust optimization to handle RT uncertainty for patient setup and organ motion was ﬁrst proposed by Chu et al. [2005].
+Similarly, uncertainties in dose calculation [Olafsson and Wright, 2006], machine parameter and delivery uncertainty,
+and machine parameter and organ location uncertainty [Bertsimas et al., 2010, Cromvik and Patriksson, 2010], have all
+been addressed using robust optimization. Intra-fractional breathing motion has also been captured by RFMO, where
+the uncertainty set is the proportion of time spent in each phase of a breathing cycle from inhale to exhale [Chan et al.,
+2006, Bortfeld et al., 2008]. Continued studies by Chan et al. [2014] and Mahmoudzadeh et al. [2015, 2016] have
+further solidiﬁed the robust model as a ﬂexible and extensible model for addressing phase-based uncertainty in RT
+planning.
+Robust optimization in conjunction with DAO (RDAO) has been used to mitigate the impact of the tongue-and-groove
+effect in IMRT devices; a phenomenon that occurs when the interlocking MLC leaf edges are left exposed in an aperture,
+blocking radiation intended to reach the target [Salari et al., 2011]. However, other practical phase-based sources of
+uncertainty, such as motion uncertainty, have not been considered in the presence of DAO. Some studies have covered
+the impact of motion uncertainty in a non-robust capacity using a commercial planning software [Zhang et al., 2006].
+Alternatively, Ahunbay and Li [2007] account for motion using a gating system along with a commercial DAO planning
+system. To the best of our knowledge, however, there is no uniﬁed approach for embedding more generalized forms of
+robust optimization, into a complete RDAO model.
+This paper presents a holistic mixed integer programming (MIP) framework for combining robust and DAO modeling
+methodologies. Due to the computational difﬁculty of solving this large-scale MIP model, novel symmetry-breaking
+constraints are introduced for angle allocation, as well as a more practical candidate plan generation (CPG) heuristic
+for rapidly ﬁnding viable plans. These CPG plans can be used as stand-alone treatments, or converted into a basic
+feasible solution for the RDAO model. It should be noted that the focus of this paper is providing a mathematical
+3
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+proof-of-concept for mechanical deliverability constraints, with little focus on advanced dose and clinical constraints
+commonly discussed in the literature. More formally, the contributions of this paper include:
+• The development of a MIP framework for integrating robust and DAO constraints.
+• An original formulation for ﬁve types of mechanical deliverability constraints.
+• An exploration of symmetry-breaking techniques for aperture-angle assignments.
+• A heuristic for rapidly generating high-quality, feasible, robust DAO treatments.
+• An algorithm for converting feasible robust DAO treatments into initial incumbent solutions for warm starting
+commercial solvers.
+The rest of this paper is organized as follows. Section 2 builds up the holistic model, starting with a basic RFMO
+model, then introducing and integrating compatible DAO constraints. Section 3 proposes the CPG heuristic for creating
+deliverable plans, followed by an algorithm for converting these plans into warm starts for the RDAO model. Section 4
+provides the results of running the proposed RDAO model and CPG heuristic (both separately and together) on clinical
+breast cancer case studies with breathing motion uncertainty. Finally, Section 5 contains concluding remarks, limitations
+and future research directions.
+2
+Problem Formulation
+The RT treatment planning problem can be deﬁned in terms of the relationship between the beam of radiation and the
+patient’s region(s) of interest. Under this framework, the beam is broken down into a grid of b ∈B rectangular units
+called beamlets. A region of interest is comprised of a set of s ∈S structures and can be modeled as a ﬁnite grid of
+three-dimensional (3D) units called voxels, which are denoted by v ∈Vs. Typically, the structure set S is partitioned
+into targets t ∈T and healthy organs h ∈H.
+The dosimetric inﬂuence that each beamlet b has on each voxel v, per unit of radiation intensity, is captured by a dose
+inﬂuence matrix Dv,b. In standard RT treatment planning, the dose inﬂuence matrix is constant throughout the treatment.
+One way to capture changes or uncertainty in organ shape, location or dose delivery during treatment is to discretize the
+changes into phases, allowing the dose inﬂuence matrix to take on a third phase dimension. Under breathing motion
+uncertainty, for example, each phase i is associated with a snapshot of the healthy and target organs at a speciﬁed point
+in time. Adjusted parameter Dv,b,i captures the inﬂuence that a unit of intensity of each beamlet b has on each voxel v
+during phase i. Each phase i ∈I also has a corresponding parameter pi, which is the proportion of time spent in phase
+i, over the course of a complete treatment cycle.
+In this section, a complete robust direct aperture optimization model for IMRT planning is outlined. Section 2.1 provides
+the base, robust ﬂuence map optimization model, ignoring deliverability constraints. Section 2.2 introduces ﬁve novel
+formulations for direct aperture optimization constraints. Finally, Section 2.3 contains a summary of the proposed
+robust direct aperture optimization model. Note that calligraphic capital letters will continue to denote sets throughout
+this paper, whereas bold letters indicate vectors or matrices.
+2.1
+Basic Robust FMO Model
+In a typical ﬂuence map optimization (FMO) model, each beamlet b may assume any intensity value, ωb, independent
+of its neighboring beamlets. While there are many ways to model this problem (see Romeijn and Dempsey [2008] for a
+discussion about selecting clinical goals and objectives) this paper will use FMO to refer to the following simple LP
+problem. The objective concerns minimizing the expected dose to healthy organ voxels v ∈VH, while controlling
+for target voxel v ∈VT overdose. Constraints ensure a prescribed dose is met, the simplest form of which enforces a
+uniform level of dose Lv in each target voxel. Finally, the model becomes a robust FMO (RFMO) when it addresses
+some worst-case parametric uncertainty e.g., the proportion of time spent in each phase i ∈I. Uncertain parameter ˜pi
+may fall in uncertainty set P, resulting in the following model.
+(RFMO)
+min
+X
+s∈{T ,H}
+cs
+|Vs|
+X
+v∈Vs
+X
+b∈B
+X
+i∈I
+piDv,b,iωb
+(1a)
+s.t.
+X
+b∈B
+X
+i∈I
+˜piDb,v,iωb ≥Lv
+∀v ∈VT , ˜p ∈P,
+(1b)
+ωb ≥0
+∀b ∈B,
+(1c)
+4
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+where cs is the objective weight for structure s ∈S. For a nominal FMO model, the robustness assumption is dropped,
+and ﬁxed parameter pi dictates the ﬁxed proportion of time spent in each phase i ∈I. Static (single-phase) treatments
+can be captured by (RFMO) as well, by setting |I| = 1.
+Note that the complexity of (RFMO) depends on the shape of the uncertainty set P. If for instance, P is ellipsoidal,
+there exists a robust counterpart that is a second-order conic program [Ben-Tal and Nemirovski, 1999], whereas the
+following polyhedral set often seen in RT,
+P = {˜p ∈R|I|| pi −pi ≤˜pi ≤pi + ¯pi ∀i ∈I;
+X
+i∈I
+˜pi = 1; 0 ≤˜pi ≤1 ∀i ∈I},
+(2)
+has been shown by Chan et al. [2006] to lead to the linear program in Appendix A. The set (2) places bounds on
+each element in vector ˜p with a set of upper and lower deviations from the nominal proportions, denoted as ¯p and p,
+respectively, as well as enforcing feasible cycles with the P
+i∈I ˜pi = 1 term.
+Also note that (RFMO) objective function, (1a), does not contain uncertain parameters due to an RT practice called
+fractionation. Fractionation is the division of a treatment plan into smaller doses called “fractions”, which are then
+delivered over multiple treatment sessions. This practice leads to any uncertainty in the objective function largely
+washing out over a complete treatment, while the constraints must hold at each individual fraction to ensure complete
+eradication of target cells [Bortfeld et al., 2008].
+2.2
+DAO Constraints
+In this section, we propose additional constraints to transform (RFMO) from a continuous FMO, to a linear, mixed
+integer model that produces distinct apertures, deliverable by IMRT collimators. Prior to adding constraints, the decision
+variable ωb must be adjusted to handle direct aperture optimization (DAO) requirements. To this end, a new decision
+variable wb,a is introduced, which captures both beamlet intensity and the assignment of those intensities to one of the
+a ∈A apertures. Substituting,
+ωb =
+X
+a∈A
+wb,a ∀b ∈B,
+(3)
+makes (RFMO) DAO-compatible, meaning it may be integrated with the proposed DAO constraints in the upcoming
+subsections, without any additional modiﬁcation. The following subsections introduce ﬁve sets of constraints that
+ensure model intensity output is compatible with conventional IMRT multileaf collimators (MLCs). Section 2.2.1
+enforces aperture ﬂuence uniformity, Section 2.2.2 governs aperture-angle allocation and Section 2.2.3 prevents MLC
+leaf discontinuities. Finally, Sections 2.2.4 and 2.2.5 provide optional constraints to rule out undesirable vertical and
+horizontal aperture breaks, respectively.
+2.2.1
+Uniformity Constraints.
+Each active beamlet in a given aperture a must either take on a ﬁxed intensity value (to be chosen by the model), or
+have no intensity at all. Mathematically, this requirement may be enforced in w through the introduction of binary
+variables xb,a and continuous aperture intensity variable fa. The xb,a variables indicate whether beamlet b in aperture a
+is open (i.e., no leaf is blocking the radiation) or shut (i.e., blocked by a leaf), as follows,
+wb,a =
+
+fa
+if beamlet b is active (xb,a = 1),
+0
+if beamlet b is inactive (xb,a = 0).
+This property is achieved by adding the following constraints to the model:
+wb,a ≤Mxb,a
+∀b ∈B, a ∈A,
+(4a)
+wb,a ≤fa + M(1 −xb,a)
+∀b ∈B, a ∈A,
+(4b)
+wb,a ≥fa −M(1 −xb,a)
+∀b ∈B, a ∈A,
+(4c)
+fa ≥0
+∀a ∈A,
+(4d)
+xb,a ∈{0, 1}
+∀b ∈B, a ∈A,
+(4e)
+where M is a very large number that may be selected based on the machine-speciﬁc dose rate and a clinically-determined
+upper bound on allowable treatment time.
+5
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+2.2.2
+Aperture Selection.
+The set B includes all beamlets over all angles θ ∈Θ. Let B1, . . . , B|Θ| be a partitioning of the set of all beamlets
+B, where Bθ is the set of beamlets at angle θ. This implicit beamlet partitioning, deﬁned by b ∈{1, . . . , |B|} =
+{1, . . . , |B1|, |B1| + 1, . . . , |B2|, . . . , |B|Θ||}, is not accounted for in uniformity constraints (4), which may lead to
+single apertures that span multiple beam angles in a given treatment plan. In order to generate deliverable plans,
+non-zero ﬂuence intensities must be restricted to a single angle at each aperture.
+One way to enforce the angle-aperture allocation is through preallocation, i.e., assigning a prespeciﬁed number of
+apertures to each angle, at a potential loss of global optimality. Alternatively, the decision to activate any single angle θ
+for a given aperture a, can be incorporated into a decision-based model using binary decision variable ua,θ, where,
+ua,θ =
+
+1
+if angle θ is active in aperture a,
+0
+if angle θ is inactive in aperture a.
+The assignment is then enforced through the following constraints,
+X
+b∈Bθ
+xb,a ≤|Bθ|ua,θ
+∀a ∈A, θ ∈Θ,
+(5a)
+X
+θ∈Θ
+ua,θ = 1
+∀a ∈A.
+(5b)
+This decision-based allocation increases model ﬂexibility, but it comes with a cost, both in terms of model size and
+symmetry in the solution space, as shown in Lemma 2.1. Note that in the context of this section, preallocated models
+differ from decision-based models only in that binary decision variable u in constraints (5) is replaced with a matrix of
+a priori-determined {0, 1} parameters.
+Lemma 2.1. Let Pd and Pp be the number of aperture permutations in decision-based and preallocated models,
+respectively. If ua1,θ1 = 1 and ∃ua̸=a1,θ̸=θ1 = 1, then Pd > Pp.
+Proof. When aperture allocation is decision-based, there are Pd = |A|! ways to sequence the set among |Θ| angles.
+If |Aθ| apertures are preallocated to each angle, then within each angle only |Aθ|! permutations are possible. The
+total permutations Pp = Q
+θ∈Θ |Aθ|!, where P
+θ∈Θ |Aθ| = |A|, so unless all apertures are assigned to the same angle,
+Pp < Pd.
+Lemma 2.1 shows that there is redundancy in both models due to symmetry, but decision-based models grow faster than
+preallocated models for any plan with more than one active angle. To mitigate the effect of symmetry in either model, it
+is desirable to include symmetry reduction techniques. Proposition 2.1 shows that there are effective constraints for
+shrinking the decision space of both preallocated and decision-based models. For the ease of notation, in what follows
+P (x)
+d
+and P (x)
+p
+will denote the number of aperture permutations with the addition of symmetry-breaking constraint
+number (x), for the decision-based and preallocated models, respectively.
+Proposition 2.1. Using constraints (6) and (7) below, P (6)
+d
+= P (6)
+p
+= P (7)
+p
+= 1 under the following conditions.
+a. P (6)
+d
+= P (6)
+p
+= 1 when P
+θ∈Θ
+P
+b∈Bθ wb,a is unique ∀a ∈A, and constraints (6) are
+X
+θ∈Θ
+X
+b∈Bθ
+wb,a ≥
+X
+θ∈Θ
+X
+b∈Bθ
+wb,a+1 ∀a ∈{1, . . . , |A| −1}.
+(6)
+b. P (7)
+p
+= 1 when P
+b∈Bθ wb,a is unique ∀a ∈A within each angle θ ∈Θ. Constraints (7) are
+X
+b∈Bθ
+wb,a ≥
+X
+b∈Bθ
+wb,a+1 ∀a ∈{1, . . . , |Aθ| −1}, θ ∈Θ.
+(7)
+There is no P (7)
+d , as constraints (7) do not apply to decision-based models.
+Proof. We discuss each condition in turn.
+a. Constraints (6) sequence total aperture ﬂuence in a monotonically decreasing order. Since only sequencing is
+considered, no unique, feasible plans are excluded from the decision space. If the uniqueness clause is violated, there
+will be P (6)
+d
+= P (6)
+p
+= Q
+η∈F nη! plan permutations, where F indexes the set of unique aperture ﬂuence summations,
+P
+b∈B wb,a, within a plan and nη is the total number of appearances of summation η ∈F.
+6
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+b. In the case of preallocated models, tighter constraints (7) hold, as aperture intensities are only sorted within a set
+of angles. This further reduces P (7)
+p
+in the case of identical aperture sums, since if P
+b∈Bθ1 wb,a = P
+b∈Bθ2 wb,a, but
+θ1 ̸= θ2, the two sums are no longer included in the same index η.
+Constraints (7) can be shown to be incompatible with decision-based models by contradiction: suppose constraints (7) do
+not impact the solution space of the decision-based model. Given a problem instance with |Θ| = 2 beam angles, suppose
+there is a non-zero ﬂuence value in aperture 1, angle 1, i.e., P
+b∈B1 wb,1 > 0. This, in turn, forces P
+b∈B2 wb,1 = 0.
+Every subsequent aperture must then be assigned a ﬂuence of zero in angle 2 since the total ﬂuence of angle 2 must
+not exceed the ﬁrst aperture’s total ﬂuence value. The same issue occurs when the angles are reversed, ruling out
+any plan with radiation delivered from both angles, which greatly reduces the decision space, and contradicts our
+assumption.
+Proposition 2.1 shows that tighter symmetry reduction constraints (7) can be applied only when preallocated models
+are used. Proposition 2.2 shows that decision-based models can achieve the strong symmetry reduction seen in
+Proposition 2.1b, using constraints (8) in the special case of two-angle treatments. Two-angle treatments are used in
+practice for certain regions of the body, such as tangential breast cancer RT [Purdie et al., 2011, 2014].
+Proposition 2.2. When |Θ| = 2, the following constraints result in a P (8)
+d
+= 1 under the same conditions as P (7)
+p
+= 1
+in Proposition 2.1b.
+X
+b∈B1
+wb,a ≥
+X
+b∈B1
+wb,a+1
+∀a ∈1, . . . , |A| −1,
+(8a)
+X
+b∈B2
+wb,a ≤
+X
+b∈B2
+wb,a+1
+∀a ∈1, . . . , |A| −1.
+(8b)
+Proof. Each aperture a, has two associated total ﬂuence values, a1 = P
+b∈B1 wb,a, and a2 = P
+b∈B2 wb,a. By
+deﬁnition, both a1 and a2 ≥0. At least one of those equalities is strict by Constraints (5). By constraints (8b), any
+aperture with a2 = 0 will be grouped and sequenced ﬁrst, and any aperture with a1 = 0 will be assigned to a group that
+is partitioned second by (8a). Assuming no redundant summations, there is only one sequencing for the a1 > 0 group,
+which also extends to the a2 > 0 group. Any redundant summation values lead to possible plan permutations, but only
+within a given angle, as in the preallocated case in under constraints (7).
+Figure 4: Visualization of intensity sorting by angle. Lighter boxes represent higher total beam intensities.
+Figure 4 provides the visual intuition behind Proposition 2.2. By grouping the darkened, or “off” angles, the apertures
+are partitioned into two groups. Within these groups, the sequencing of apertures does not impact the other group
+and therefore leads to an independent symmetry elimination at each angle. Incorporating constraints (8) into the
+decision-based RDAO model leads to a reduced solution space that eliminates identical solutions, potentially leading
+to faster solution times. For larger cases with more angles, however, only the less restrictive constraints (6) may be
+applied.
+2.2.3
+Island Removal.
+In practice, the deliverability of each aperture is limited by the linear beam modulation, performed by the MLC leaves.
+As such, the model must output beam setups that may be physically realized by the MLC. Mathematically, this means
+preventing breaks in the leaves, which result in detached sections or islands, as shown in Figure 5. In order to add
+7
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+(a) MLC leaves form a deliverable aperture
+(b) Undeliverable MLC setup with islands
+Figure 5: Possible MLC realizations with the current DAO constraints
+these aperture requirements, the set of beamlets B is further partitioned from angles, into angle-dependent row and
+column coordinates, Qθ and Kθ, respectively. For the sake of exposition, it is assumed that the beam is an identical
+|Q| row × |K| column rectangle at each angle and that the leaves may traverse the entire span of the collimator from
+both the left and right sides. Moving forward, variables will be denoted using a dimension for each column, row and
+angle, instead of relying on the general beamlet identiﬁer. The original beamlet identiﬁer B ←[Q, K, Θ] can always be
+obtained using transformation b = Pθ−1
+θ′=0 |Bθ′| + |K| × (q −1) + k, where |B0| = 0.
+To restrict the leaves, the binary on-off constraints xq,k,θ,a, used to enforce uniformity, can be joined by two additional
+sets of binary variables, lq,k,θ,a and rq,k,θ,a. These variables represent the continuous leaves extended from the left and
+right side of the collimator, respectively, and impact xq,k,θ,a as follows:
+xq,k,θ,a =
+
+1
+if lq,k,θ,a = 1 and rq,k,θ,a = 1,
+0
+otherwise.
+A left leaf is open (i.e., not extended over a beamlet) when l = 1, and similarly, an open right leaf is indicated by r = 1.
+If l = 1 and r = 1 a beamlet is open, meaning it is on, or x = 1. If either l or r = 0, a beamlet is closed. Both left and
+right leaves cannot cover the same beamlet simultaneously, meaning they cannot both be 0, or l + r ≥1. The following
+constraints create continuous non-overlapping leaves.
+lq,k+1,θ,a ≥lq,k,θ,a
+∀k ∈K′, q ∈Q, θ ∈Θ, a ∈A,
+(9a)
+rq,k,θ,a ≥rq,k+1,θ,a
+∀k ∈K′, q ∈Q, θ ∈Θ, a ∈A,
+(9b)
+xq,k,θ,a = −1 + lq,k,θ,a + rq,k,θ,a
+∀k ∈K, q ∈Q, θ ∈Θ, a ∈A,
+(9c)
+lq,k,θ,a, rq,k,θ,a ∈{0, 1}
+∀k ∈K, q ∈Q, θ ∈Θ, a ∈A,
+(9d)
+where, K′ = {1, ..., |K| −1}.
+An alternative approach to island removal, which uses a larger number of variables but fewer constraints, was proposed
+for FMO leaf sequencing by [Boland et al., 2004]. While their constraints result in the same feasible set of x and w
+variables, we found that our proposed method runs faster in the full model empirically, possibly due to the reduced
+number of binary variables.
+2.2.4
+Vertical Continuity.
+So far, DAO constraints have been derived to ensure the deliverability of the plans for an MLC. There are, however,
+certain features that clinicians might prefer to see in a ﬁnal plan, that are not strict mechanical deliverability requirements.
+For instance, multiple separated groups of beamlets within an aperture can be undesirable due to a possible leakage
+between adjacent closed leaves. This phenomenon can be largely avoided through the creation of continuous segments
+that are mostly covered by jaws.
+A clinician presented with the split aperture shown in Figure 6a, for example, would typically, manually create two
+separate apertures, as in Figures 6b and 6c. To see why, contrast the leakage protection by the jaws in Figure 6d, with
+that of the combined Figures 6e and 6f. This change, however, would increase the total number of apertures; a parameter
+previously controlled for in the model.
+Constraints (10) enforce the same principle by disallowing vertically-disconnected apertures, through the introduction
+of 2×|Q|×|Θ|×|A| new binary variables. Variables¯j and j restrict upper and lower jaw motion, respectively. Variable
+¯jq,θ,a indicates if the upper jaw at angle θ, aperture a is blocking row q (i.e., ¯jq,θ,a = 0) or open (i.e., ¯jq,θ,a = 1).
+Similarly, jq,θ,a does the same for the lower jaw. Summary variable jq,θ,a indicates whether or not a row is active.
+8
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+(a) Vertically separated
+(b) First aperture
+(c) Second aperture
+(d) Original jaw coverage
+(e) First jaw coverage
+(f) Second jaw coverage
+Figure 6: Deliverable aperture with clinically undesirable vertical break, separated to two apertures. Images (d-f) use
+darker color to show jaw coverage.
+Together, these constraints prevent vertical breaks between active rows.
+jq,θ,a = −1 + ¯jq,θ,a + jq,θ,a
+∀q ∈Q, θ ∈Θ, a ∈A,
+(10a)
+jq,θ,a ≤
+X
+k∈K
+xq,k,θ,a
+∀q ∈Q, θ ∈Θ, a ∈A,
+(10b)
+|K| × jq,θ,a ≥
+X
+k∈K
+xq,k,θ,a
+∀q ∈Q, θ ∈Θ, a ∈A,
+(10c)
+¯jq,θ,a ≤¯jq+1,θ,a
+∀q ∈Q′, θ ∈Θ, a ∈A,
+(10d)
+jq+1,θ,a ≤jq,θ,a
+∀q ∈Q′, θ ∈Θ, a ∈A,
+(10e)
+jq,θ,a, ¯jq,θ,a, jq,θ,a ∈{0, 1}
+∀q ∈Q, θ ∈Θ, a ∈A,
+(10f)
+where Q′ = {1, ..., |Q| −1}.
+2.2.5
+Horizontal Continuity.
+In the same vein as vertical continuity, there is a clinical incentive to avoid difﬁcult, leakage-prone setups such as leaf
+collisions and disconnected rows. Leaf collisions can occur when the right leaves extend beyond adjacent row left
+leaves (or vice-versa) as shown in Figure 7a. If the leaves become even slightly misaligned, they might collide during
+setup, so given a choice, planners typically prefer to mitigate this risk.
+(a) Leaf collision
+(b) Disconnected rows
+Figure 7: Examples of undesirable behavior between pairs of adjacent rows
+Disconnected rows have no vertical beamlet connection between adjacent rows, leading to horizontally-separated
+segments, as shown in Figure 7b. Since leakage primarily arises around the edges of leaves, plans with very small and
+separated sections can lead to unwanted leakage.
+While previous work on leaf sequencing has introduced preventative measures for collisions, their models still allow
+rows to become disconnected [Boland et al., 2004]. To prevent all horizontal detachment, the following set of constraints
+9
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+is proposed,
+jq,θ,a + jq−1,θ,a −
+|K|
+X
+δ=k+1
+xq,δ,θ,a ≤1 +
+k
+X
+δ=1
+xq−1,δ,θ,a
+∀k ∈K, q ∈Q′′, θ ∈Θ, a ∈A,
+(11a)
+jq,θ,a + jq−1,θ,a −
+|K|−k
+X
+δ=1
+xq,δ,θ,a ≤1 +
+|K|
+X
+δ=|K|−k+1
+xq−1,δ,θ,a
+∀k ∈K, q ∈Q′′, θ ∈Θ, a ∈A,
+(11b)
+where Q′′ = {2, . . . , |Q|}. Constraints (11a) and (11b) ensure from the left and right side, respectively, that all active,
+adjacent rows share at least one active beamlet, before reaching the total number of active beamlets in that row. The
+additional jq,θ,a terms represent edge cases, relaxing the constraints when one or both of the rows in a pair are off. All
+other edge cases are eliminated by the no islands constraints (9).
+2.3
+Complete RDAO Model
+Putting all the constraints in this section together, the full, proposed robust direct aperture optimization (RDAO) model
+can be derived as follows,
+(RDAO)
+min
+X
+s∈{T ,H}
+cs
+|Vs|
+X
+v∈Vs
+X
+b∈B
+X
+i∈I
+X
+a∈A
+piDv,b,iwb,a
+s.t. (1b), (1c) with substitution (3),
+(Robustness)
+(4a), (4b), (4c), (4d), (4e),
+(Uniformity)
+(5a), (5b) and optionally (6) or (8a), (8b),
+(Aperture Selection)
+(9a), (9b), (9c), (9d),
+(Island Removal)
+(10a), (10b), (10c), (10d), (10e), (10f),
+(Vertical Continuity)
+(11a), (11b).
+(Horizontal Continuity)
+This same (RDAO) model with explicit constraints is detailed in Appendix B.
+3
+Candidate Plan Generation Heuristic
+The RDAO model is an extremely large-scale MIP model, which makes it computationally challenging to solve. Even
+ﬁnding an initial feasible solution can be non-trivial, often resulting in long search times and very large initial optimality
+gaps. For this reason, we propose the candidate plan generation (CPG) heuristic as a method for ﬁnding high-quality,
+deliverable plans. The CPG heuristic is similar to some of the smoothing techniques in the literature such as the nearest
+neighbor-pair smoothing in Saberian et al. [2017], which was inspired by the objective smoothing term in Breedveld
+et al. [2006] and earlier work by Webb et al. [1998]. Unlike the CPG method, however, the Saberian et al. [2017] nearest
+neighbor constraints prevent the sharp dosage drops necessary for robust optimization, while the objective smoothing
+term in Breedveld et al. [2006] results in a loss of control over the ﬁnal number of apertures.
+The CPG plans generated by the heuristic can either be used as a standalone approach, or translated to (RDAO)
+variables, providing an initial incumbent solution to warm start the solver. Section 3.1 details the three steps of the
+heuristic, while Section 3.2 discusses the process of translating CPG output into a feasible incumbent solution for
+(RDAO).
+3.1
+The Three-Step CPG Heuristic
+The CPG heuristic, outlined in Figure 8, is a three-step process in which each step is a continuous LP or a rapid
+algorithm. The process for each step is as follows.
+Step 1: Find a Lower Bound by running the continuous (RFMO).
+Output: z∗
+RF MO – An optimal (RFMO) objective function value.
+Step 2: Run a Surrogate Model to ﬁnd a lower bound on each of the CPG ﬂuence intensities, wcpg, within some factor
+of z∗
+RF MO. This surrogate model approximates the binary segment-uniformity constraints with a min-max objective,
+10
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Figure 8: Outline of the 3-step candidate plan generation heuristic, with sample output aperture depictions.
+which has a leveling effect on every active beamlet in a given aperture.
+(CPG-S)
+min α
+X
+θ∈Θ
+X
+a∈A′
+mθ,a + (1 −α)
+X
+s∈{T ,H}
+cs
+|Vs|
+X
+v∈Vs
+X
+b∈B
+X
+i∈I
+X
+a∈A′
+piDv,b,iwcpg
+b,a
+(12a)
+s.t.
+X
+b∈B
+X
+i∈I
+X
+a∈A′
+˜piDb,v,iwcpg
+b,a ≥Lv
+∀v ∈VT , ∀˜p ∈P,
+(12b)
+mθ,a ≥wcpg
+b,a
+∀b ∈Bθ, a ∈A′, θ ∈Θ,
+(12c)
+wcpg
+b,a ≥0
+∀b ∈B, a ∈A,
+(12d)
+where A′ = {1, . . . , |A|
+|Θ|}, A is the desired set of apertures in the ﬁnal model, 0 ≤α ≤1 is a tuneable parameter, and
+mθ,a is the maximum intensity value at angle θ in aperture a. The model resembles the continuous (RFMO), with
+the following three differences: First, the new objective function (12a) has two terms; the ﬁrst minimizes the sum of
+maximum dose in each aperture (in use when α > 0), while the second is identical to the (RFMO) model’s objective
+function (1a) (in use when α < 1). The weighting term α dictates the balance between uniformity and original objective
+function minimization. Second, the min-max property is enforced in constraints (12c). Finally, the DAO variables wcpg
+b,a
+must be used, rather than ωb, to store intensities at each of the |A′| apertures, which are implicitly preallocated equally
+to angles. This assumption can be loosened with additional decision variables, but doing so within the CPG is outside
+the scope of this paper.
+Output: wcpg
+b,a – A lower bound on a set of deliverable intensities, and mθ,a – The maximum intensity at each active
+aperture-angle pair.
+Step 3: Gap Filling, as outlined in Algorithm 1, is done to enforce deliverability constraints while remaining as close
+as possible to the Step 2 optimal plan. The goal is to output a set of intensities appropriate for both clinical use and
+warm-starting a solver.
+The gap ﬁlling algorithm has four main parts. The ﬁrst part, A1.1, is initialization, where ﬂuence values are set to zero,
+and apertures are sequenced based on the desired symmetry-breaking pattern. A1.2 contains the search for the index of
+the ﬁrst and last active column in each row (all middle indices must be active to avoid islands). A1.3 is an optional
+segment, wherein row endpoints are adjusted to ensure that there are no gaps between adjacent rows, either horizontally
+or vertically. Finally, A1.4, ﬁlls in uniform ﬂuence values to the assigned aperture, based on each row’s endpoints.
+Output: wcpg
+b,a - A deliverable direct aperture plan.
+11
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Algorithm 1: Gap Filling
+A1.1 initialize intensities wcpg
+b,a to 0 for all b ∈B and a ∈A.
+create sa: a symmetry-breaking sequencing of the |A′| × |Θ| apertures in mθ,a.
+for aperture a ∈A′ and angle θ ∈Θ do
+A1.2
+for each row q do
+initialize ﬁrst and last active column kq,θ,a ←{} and ¯kq,θ,a ←{}
+if ∃wcpg
+q,k,θ,a > 0 then kq,θ,a ←mink{wcpg
+q,k,θ,a > 0}, ¯kq,θ,a ←maxk{wcpg
+q,k,θ,a > 0}.
+A1.3
+Optional: initialize q′ ←0, k′ ←1, ¯k′ ←|K| to track the last active row.
+for each active (kq,θ,a ̸= ∅) row q do
+if row q starts after the last (q′) ﬁnishes, kq,θ,a > ¯k′ then kq,θ,a ←¯k′.
+if row q ﬁnishes before q′ starts, ¯kq,θ,a < k′ then ¯kq,θ,a ←k′.
+if (q > 0 and q −q′ > 1) then
+¯kt,θ,a ←kt,θ,a ←max {k′, kq,θ,a} ∀t ∈{q′ + 1, . . . , q −1}.
+update q′ ←q, k′ ←kq,θ,a and ¯k′ ←¯kq,θ,a.
+A1.4
+for each row q assign wcpg
+q,k,θ,sa ←mθ,a ∀k ∈{kq,θ,a, . . . , ¯kq,θ,a}.
+Proposition 3.1 formally demonstrates that the solution generated by the CPG heuristic meets all the requirements of
+the (RDAO) model, and is therefore feasible.
+Proposition 3.1. The solution of the CPG heuristic is feasible for (RDAO).
+Proof. It is sufﬁcient to show that the new wcpg
+b,a values generated in Algorithm 1 meet each of the following (RDAO)
+constraints:
+Robustness: Plan wcpg
+b,a from Step 2 satisﬁes robust dose constraints (1b) and (1c), as they are also included in the
+surrogate model as constraints (12b) and (12d). Since intensity values are increased in the heuristic, never decreased,
+we can guarantee that P
+a∈A wcpg
+b,a ≥P
+a∈A′ wcpg
+b,a , ∀b ∈B, and therefore wcpg
+b,a must also satisfy robust constraints.
+Uniformity: All nonzero values assigned to each aperture-angle pair in wcpg
+b,a take on a value of mθ,a in A1.4, hence
+uniformity constraints (4a)–(4e) are met.
+Aperture Selection: Since |A′| =
+|A|
+|Θ|, the |A′| × |Θ| apertures from wcpg
+b,a are each assigned to one of the |A′|
+apertures in wcpg
+b,a in A1.4, therefore P
+θ∈Θ ua,θ = 1 ∀a ∈A is satisﬁed, and by extension, constraints (5b) and
+(5a). Dose intensities are assigned in A1.4 according to sequencing sa introduced in A1.1, ensuring that any desired
+symmetry-breaking sequencing is also conserved, satisfying (6) or (8a) and (8b).
+Island Removal: Filling in all intensities between the ﬁrst and last active columns in each active row, kq,θ,a and ¯kq,θ,a,
+identiﬁed in A1.2 and enforced in A1.4, guarantees no islands can form, thereby satisfying constraints (9a)–(9d).
+Vertical and Horizontal Continuity: When A1.3 is applied, horizontal continuity is guaranteed by adjusting non-
+overlapping row-endpoints kq,θ,a or ¯kq,θ,a to overlap with the last active row by one beamlet, satisfying constraints
+(11a) and (11b). Rows separated vertically are then connected using a single-beamlet column, satisfying (10a)–(10f).
+We claim max {k′, kq,θ,a} is a connecting column where horizontal continuity is guaranteed, which can be shown by
+contradiction. If the row with a further starting point does not share a common column with the earlier starting point,
+either kq,k,θ,a > ¯k′ or k′ > ¯kq,k,θ,a, implying horizontal adjustments have not been made, contradicting the initial
+claim.
+3.2
+Full Warm Start Solution Generation
+In order to use deliverable intensities wcpg
+b,a as a warm start for a commercial solver, the remaining mixed-integer
+(RDAO) variable values must be generated. Since Proposition 3.1 has already shown that the plan intensities are
+feasible, the remaining variables can be made feasible by construction. Warm start generation algorithm, Algorithm 2,
+constructs a feasible starting point for the full (RDAO) model from deliverable intensities.
+The algorithm has ﬁve parts. In the ﬁrst part, A2.1, all variables are initialized to 0, except the right leaves and lower
+jaw, which are initialized to 1, or the “on” or “open” position. Conceptually, this means that all left leaves and upper
+jaws are assumed to completely span the beam when the algorithm begins. In A2.2, active aperture angles and their
+12
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Algorithm 2: Warm Start Generation
+A2.1 initialize xcpg
+b,a , f cpg
+a
+, ucpg
+a,θ , lcpg
+q,k,θ,a, jcpg
+q,θ,a and ¯jcpg
+q,θ,a to 0.
+initialize rcpg
+q,k,θ,a and jcpg
+q,θ,a to 1.
+initialize beamOn, beamOff, rowOn, rowOff to 0.
+for all apertures a ∈A do
+A2.2
+set f cpg
+a
+←maxa{wcpg
+b,a } and θ ←angle(maxa{wcpg
+b,a }),
+set ucpg
+a,θ ←1,
+beamOn ←0, beamOff ←0.
+for each row q ∈Q in each angle θ ∈Θ do
+set rowOn ←0, rowOff ←0.
+A2.3
+for each columns k ∈K do
+if wcpg
+q,k,θ,a > 0 then xcpg
+q,k,θ,a ←1 and rowOn ←1.
+else if rowOn then rowOff ←1.
+if rowOn then lcpg
+q,k,θ,a ←1.
+if (rowOn and rowOff) then rcpg
+q,k,θ,a ←0.
+A2.4
+Optional: if rowOn then jcpg
+q,θ,a ←1 and beamOn ←1.
+else if beamOn then beamOff ←1.
+if beamOn then ¯jcpg
+q,θ,a ←1.
+if (beamOn and beamOff) then jcpg
+q,θ,a ←0.
+A2.5 run (RFMO) ﬁxing ωb = P
+a∈A wcpg
+b,a , ∀b ∈B, for robust counterpart variables.
+corresponding ﬂuence values are identiﬁed. Flag pairs beamOn and beamOff, and rowOn and rowOff, which are used
+detect the start and end of apertures and beamlet-openings, respectively, are also reset. A2.3 handles the beamlet
+activation binaries, including the deactivation of left leaves and the activation of right leaves in any row with active
+beamlets. A2.4 does the same with the upper and lower jaws, respectively, when vertical and horizontal continuity
+constraints have been activated. Finally, since robust optimization is typically done using a robust counterpart, A2.5
+suggests running (RFMO) with ﬁxed values based on wcpg
+b,a , to ﬁnd any dual variable values, yielding a complete
+candidate solution.
+Output: variable values for (RDAO), including: {x, f, u, l, r, j,¯j, j}.
+4
+Results and Discussion
+The (RDAO) model and CPG heuristic were tested on ﬁve clinical four-dimensional left-sided breast cancer patient
+datasets, provided by the Princess Margaret Cancer Centre in Toronto, Canada. Model implementation was done
+using a combination of C++ and CPLEX. Instances of (RDAO) were run on a cluster with 125 GB RAM, while the
+considerably smaller CPG heuristic was run on a 4–16 GB RAM allocation.
+The (RDAO) model and the CPG heuristic are both capable of independently generating deliverable, robust IMRT
+treatment plans. In the presence of the warm start generation algorithm (Algorithm 2), they can be combined into
+the warm-started (RDAO), which provides a third plan generation option. The remainder of this section contains a
+performance analysis of each of the three methods of plan generation and is organized as follows. Section 4.1 outlines
+the data and parameter speciﬁcations, Section 4.2 shows the CPG heuristic in action, Section 4.3 reports on the outcomes
+of running the (RDAO) model with no warm start. Finally, Section 4.4 dives into the results of running the (RDAO)
+model with the CPG heuristic used as a warm start.
+4.1
+Data Speciﬁcation and Parameterization
+Breast cancer patients A, B, C, D and E were each prescribed a dose of 42.4 Gy, to be delivered by two-beam (angle)
+tangential IMRT treatment. The goal of the treatment is to irradiate the target T , which in this case is the whole-breast
+volume, while avoiding any unnecessary dose to the healthy organs H, or the exposed region of the heart. Each patients’
+beam setup and treatment region features are summarized in Table 1.
+Before running the models, the decision spaces were pruned, ﬁrst by omitting heart voxels that received zero or
+negligible dose from the beam, then by sampling every 32nd target voxel; a method previously shown to maintain plan
+13
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Beam
+Target Voxels
+Heart Voxels
+Resolution
+Beamlets |B|
+Original
+Sampled
+Original
+Reduced
+Patient A
+46 × 26
+2,392
+73,441
+2,296
+53,050
+8,930
+Patient B
+40 × 19
+1,520
+33,592
+1,050
+42,342
+2,898
+Patient C
+46 × 23
+2,116
+101,354
+3,168
+44,210
+5,435
+Patient D
+44 × 22
+1,936
+56,923
+1,779
+51,709
+2,465
+Patient E
+36 × 25
+1,800
+70,050
+2,190
+52,847
+3,812
+Table 1: Patient cardinality information for the ﬁve tangential breast cancer studies.
+quality and compare to the granularity achieved by typical planning systems [Chan et al., 2014]. The ﬁnal number of
+voxels are listed in Table 1 and the datasets are included in this paper’s online supplement.
+The model’s objective parameters for the target and heart, cT and cH, were set to 0.7 and 0.3, respectively, as these
+values were empirically found to produce a good balance between the clinical objectives of conformity and heart sparing.
+Similarly, to compromise between plan quality and aperture ﬂexibility, |A| = 6 was selected as the ﬁxed number of
+apertures for all generated plans.
+In radiation therapy for breast cancer, when the patient’s lungs expand and contract throughout each regular breathing
+cycle, deformation occurs in both the heart and the breast. To quantify the extent of breathing motion, patients may
+undergo a four-dimensional (4D) computed tomography (CT) scan, capturing the state of organs at various phases in
+the breathing cycle. These 4D-CT images are comprised of sets of 3D-CT images, wherein each image corresponds to a
+speciﬁc patient breathing phase.
+For each patient, the heart and target in every 3D-CT image within the 4D scan were delineated separately, using
+RayStation (version 3.99.0.8, RaySearch Laboratories AB, Stockholm, Sweden). Voxels were then tracked across
+each of the scans using the hybrid deformable image registration technique discussed in Weistrand and Svensson
+[2015], Kadoya et al. [2016] and RaySearch Laboratories [2017], which creates a one-to-one mapping for each voxel
+at all phases. The dose-inﬂuence matrix at each phase i, Dv,b,i, was then calculated using the research version of
+RayStation. To account for breathing motion uncertainty, a set of upwards and downwards deviations from the nominal
+(expected) breathing proportions were used to form the polyhedral uncertainty set (2). For each patient, |I| = 5
+breathing phases, sequenced from full inhale to full exhale, were considered. Nominal breathing proportions were
+set to p = [0.125, 0.125, 0.125, 0.125, 0.5], with associated uncertainty set p = ¯p = 0.1 (i.e., the range around each
+nominal value is ±0.1) used for robust planning, based on the literature [Mahmoudzadeh et al., 2015]. Nominal plans
+are recovered using the singular P obtained when p = ¯p = 0. Unless indicated otherwise, the upcoming sections uses
+the nominal p value to evaluate model outputs.
+In order to evaluate both clinical and run-time impacts of all model variants, the focus was placed on three key, model
+features; robustness, continuity and deliverability. As a result, models were run with nominal and robust uncertainty
+sets; with and without the vertical and horizontal continuity constraints (which are activated/deactivated together);
+as well as with and without any deliverability constraints (to provide a baseline) for a total of six model variants: 1)
+FMO, 2) RFMO, 3) DAO, 4) DAO-C, 5) RDAO, and 6) RDAO-C. The “-C” indicates variants are run with continuity
+constraints.
+Model
+Base Model
+Uncertainty
+Deliverability
+Continuity
+FMO
+✓
+
+
+
+RFMO
+✓
+✓
+
+
+DAO
+✓
+
+✓
+
+RDAO
+✓
+✓
+✓
+
+DAO-C
+✓
+
+✓
+✓
+RDAO-C
+✓
+✓
+✓
+✓
+Table 2: Constraints sets included in each model variant.
+A breakdown of the constraints used in each model variant is found in Table 2, with the complete mathematical overview
+presented in Appendix B. Note that the Section 2.2.2 symmetry-breaking constraints are included in the deliverability
+constraints.
+Table 3 contains size information for all six model variants. Recall that the FMO acts as the baseline models for DAO
+and DAO-C, while RFMO does the same for its mixed-integer counterparts. It is evident that the largest jump in both
+14
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+constraints and variables comes from adding DAO requirements. The robust counterpart adds a relatively large number
+of additional variables and constraints, but none of the added variables are binary, while the continuity adds an even
+larger number of constraints and a relatively low number of variables, however, all additional variables are binary.
+Model
+Feature
+FMO
+DAO
+DAO-C
+RFMO
+RDAO
+RDAO-C
+Patient A
+Constraints
+2,296
+87,332
+118,148
+13,776
+98,812
+129,628
+Variables
+2,392
+57,426
+59,082
+16,168
+71,202
+72,858
+Binaries
+0
+43,068
+44,724
+0
+43,068
+44,724
+Patient B
+Constraints
+1,050
+54,838
+74,998
+6,300
+60,088
+80,248
+Variables
+1,520
+36,498
+37,938
+7,820
+42,798
+44,238
+Binaries
+0
+27,372
+28,812
+0
+27,372
+28,812
+Patient C
+Constraints
+3,168
+78,268
+105,844
+19,008
+94,108
+121,684
+Variables
+2,116
+50,802
+52,458
+21,124
+69,810
+71,466
+Binaries
+0
+38,100
+39,756
+0
+38,100
+39,756
+Patient D
+Constraints
+1,779
+70,447
+95,767
+10,674
+79,342
+104,662
+Variables
+1,936
+46,482
+48,066
+12,610
+57,156
+58,740
+Binaries
+0
+34,860
+36,444
+0
+34,860
+36,444
+Patient E
+Constraints
+2,190
+66,154
+89,290
+13,140
+77,104
+100,240
+Variables
+1,800
+43,218
+44,514
+14,940
+56,358
+57,654
+Binaries
+0
+32,412
+33,708
+0
+32,412
+33,708
+Table 3: Problem size of the six model variants for each patient.
+4.2
+CPG Heuristic Performance
+Running the CPG heuristic on its own yields a clinically viable IMRT plan. To gain insight into the heuristic, the output
+can be visualized at each step using a ﬂuence map, which shows dose intensity from the beam of radiation’s perspective.
+Within the map, lighter beamlets depict higher intensities and blackened beamlets have zero intensity.
+Step 1
+Step 2
+Step 3
+Figure 9: The three-step CPG algorithm output demonstrated on Patient B. A log10 scale is applied to the beamlet
+intensities in Step 1, whereas Steps 2 and 3 have a linear scale.
+Figure 9 depicts the ﬂuence map of the output of all three steps of the CPG heuristic. Note the model output is visually
+similar across all patients and model variants, so the selection of Patient B’s DAO output was arbitrary. The Step 1
+output is exactly the FMO intensities, since the model was DAO. Had a robust model variant (RDAO or RDAO-C) been
+chosen, the visually-similar RFMO output would have been presented instead. A log10 scale was applied to the FMO
+ﬂuence map because the contrast between high and low intensities was so large that most active beamlets did not show
+up on the map without a change in scaling. In the Figure 9 example, the highest intensity was 104,051 units, which
+could take on the order of weeks to deliver. In contrast, the maximum intensity seen in the following steps is a much
+more reasonable 56 units.
+15
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Figure 9’s Step 2 ﬂuence map depicts a more-uniform, but still undeliverable (CPG-S) plan, with only
+1
+|A| = 1
+2 of the
+required apertures. Finally, Step 3 reveals a properly-sorted, deliverable six-aperture plan. The ﬁnal plan, while not
+optimal, could be delivered without adjustment, if a clinician felt it was of sufﬁciently high-quality. One way to assess
+the quality of a CPG plan is through the comparison of its objective function value (zCP G) to that of its Step 1 linear
+(RFMO) counterpart, which acts as a lower bound.
+Model
+Lower Bound
+zCPG
+% Difference
+α
+Patient A
+DAO/DAO-C
+36.38
+55.33
+34.24
+0.4
+RDAO/RDAO-C
+36.89
+56.76
+35.00
+0.8
+Patient B
+DAO/DAO-C
+31.27
+37.65
+16.94
+0.4
+RDAO/RDAO-C
+31.42
+38.22
+17.78
+0.4
+Patient C
+DAO/DAO-C
+34.32
+51.54
+33.42
+0.8
+RDAO/RDAO-C
+34.51
+51.81
+33.40
+0.8
+Patient D
+DAO/DAO-C
+32.62
+50.55
+35.47
+0.2
+RDAO/RDAO-C
+33.18
+51.39
+35.44
+0.2
+Patient E
+DAO/DAO-C
+33.25
+51.72
+35.70
+0.4
+RDAO/RDAO-C
+33.47
+52.98
+36.82
+0.8
+Table 4: Table of objective function values (z∗) of the linear FMO/RFMO models (lower bounds), compared to the
+CPG objective function values, and the resulting worst-case optimality gap.
+Table 4 contains the CPG heuristic and linear lower bounds on the objective function value for each variant of the
+model. See Appendix C for the tuning of parameter α. Note that the DAO and DAO-C, as well as RDAO and RDAO-C,
+have been merged in the table because none of the DAO or RDAO plans generated had discontinuities, likely due to the
+geometry of the target at hand. That means that the plans are identical to the those produced for DAO-C and RDAO-C,
+respectively.
+The second-to-last column in Table 4 shows the optimality gap between the lower bound obtained from (RFMO) and
+the CPG heuristic plan. This value, which is on average 34.6%, 17.4%, 33.4%, 35.5% and 36.3% for patients A to E,
+provides an upper bound on the true optimality gap of the CPG plans. It likely overestimates the true gap, since the
+linear models relax deliverability constraints and are therefore not feasible plans. For the RDAO models, the plan also
+depends on the size of the uncertainty set. See Appendix D for a brief analysis of this relationship.
+4.3
+Basic RDAO Model Performance
+To test the exact holistic model, all four MIP variants of (RDAO) were run with no warm start, then compared to CPG
+heuristic output for each case study. Since (RDAO) is a very large-scale problem, each model variant was allocated a
+total runtime of three days. Table 5 shows each model’s objective function value (z), the time at which it was obtained
+and its corresponding CPLEX-reported optimality gap at the ﬁrst feasible integer solution (First Incumbent) and after
+the three-day runtime (Best Incumbent). Finally, the CPG objective function values, runtimes and worst-case optimality
+gaps, are provided.
+It is evident from Table 5 that the CPG heuristic dominates, not only the ﬁrst incumbent values found by the solver
+for (RDAO), but also every best CPLEX-obtained incumbent value across the board. The discrepancies are most
+pronounced in the cases with continuity constraints, which make the models more complex to solve. In particular, none
+of the models with robust continuity constraints (RDAO-C) ﬁnd a feasible incumbent solution within the three day
+time limit, and DAO-C proves equally difﬁcult for patients A and D. In contrast, the CPG heuristic ﬁnds solutions to
+every instance with optimality gaps ranging between 16.9% and 36.8%. The remaining DAO-C models hardly fared
+better, with the solver proposing ﬁrst incumbents objective function values that are orders of magnitude greater than
+those produced by the CPG heuristic for patients B and D, with only patient C ﬁnding a reasonable solution within the
+allocated time period.
+The runtime information in Table 5 also appears to conﬁrm the CPG heuristic’s dominance over ﬁnding a ﬁrst incumbent
+solution in larger cases. While the CPG runtimes varied from under three minutes, to just under two hours, many of the
+(RDAO) variants spent days ﬁnding plans that were ultimately lower quality than the CPG. Even in the six cases where
+the incumbent is found faster using (RDAO), the CPG model catches up in a matter of minutes, signiﬁcantly overtaking
+the solution in terms of quality.
+16
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+First Incumbent
+Best Incumbent
+CPG Heuristic
+Model
+zInc
+Gap
+Time
+zBest
+Gap
+Time
+zCP G
+Gap
+Time
+Patient A
+DAO
+59.1
+38.1%
+0.21
+58.32
+37.3%
+9.56
+55.3
+34.2%
+0.33
+DAO-C
+-
+-
+-
+-
+-
+-
+55.3
+34.2%
+0.33
+RDAO
+60.5
+38.6%
+2.85
+60.46
+38.6%
+2.85
+56.8
+35.0%
+0.81
+RDAO-C
+-
+-
+-
+-
+-
+-
+56.8
+35.0%
+0.81
+Patient B
+DAO
+57.4
+45.5%
+0.04
+56.88
+45.0%
+1.34
+37.7
+16.9%
+0.05
+DAO-C
+3839.2
+99.2%
+5.02
+3046.26
+99.0%
+12.64
+37.7
+16.9%
+0.05
+RDAO
+57.6
+45.4%
+0.21
+57.58
+45.4%
+0.21
+38.2
+17.8%
+0.14
+RDAO-C
+-
+-
+-
+-
+-
+-
+38.2
+17.8%
+0.14
+Patient C
+DAO
+71.0
+51.6%
+0.32
+64.59
+46.7%
+32.35
+51.5
+33.4%
+0.76
+DAO-C
+79.1
+56.5%
+41.61
+76.70
+55.2%
+41.85
+51.5
+33.4%
+0.76
+RDAO
+71.1
+51.5%
+5.07
+71.13
+51.5%
+5.07
+51.8
+33.4%
+1.97
+RDAO-C
+-
+-
+-
+-
+-
+-
+51.8
+33.4%
+1.97
+Patient D
+DAO
+64.2
+48.5%
+0.14
+59.87
+44.8%
+12.26
+50.6
+35.5%
+0.32
+DAO-C
+-
+-
+-
+-
+-
+-
+50.6
+35.5%
+0.32
+RDAO
+64.5
+48.0%
+1.20
+64.47
+48.0%
+1.20
+51.3
+35.3%
+1.40
+RDAO-C
+-
+-
+-
+-
+-
+-
+51.3
+35.3%
+1.40
+Patient E
+DAO
+64.8
+48.5%
+0.12
+64.79
+48.5%
+0.12
+51.7
+35.7%
+0.24
+DAO-C
+3816.4
+99.1%
+14.61
+3529.40
+99.1%
+63.49
+51.7
+35.7%
+0.24
+RDAO
+65.6
+48.7%
+1.35
+65.57
+48.7%
+1.35
+53.0
+36.8%
+0.34
+RDAO-C
+-
+-
+-
+-
+-
+-
+53.0
+36.8%
+0.34
+Table 5: The ﬁrst and best incumbent solutions of the 4 integer variants of the (RDAO) model for all patients (run for
+3-days), compared to the heuristic CPG plan objective. A dash indicates no solution is found, bold values show the best
+(lowest) optimality gaps and runtimes (given in hours, wall-clock time).
+Table 6 provides information about the basic-(RDAO)-generated and CPG-generated plan alternatives. Within the table,
+all plans were normalized to provide 95% of the desired dose to 95% of the target volume; a practice commonly used in
+clinic. Given this normalization, the average and highest dose-to target (T ave and T max) as well as the average and
+highest dose to the heart (Have and Hmax) are reported for each plan.
+Based on these quality assessment metrics, it is evident that the CPG heuristic continues to outperform 3-days of solver
+runtime. With the exception of Patient C’s DAO average heart dose and Patient E’s RDAO maximum heart dose, all
+values output were lower for the CPG plan. It should be noted that when normalization was applied to the robust
+cases, 95% of the minimum dose in the generated plan was used, rather than 95% of the prescribed dose, in an effort
+to maintain the robust effect. There could, however, still potentially be some erosion of the robust guarantee due to
+interpolation in these instances.
+In clinic, the quality of a plan is often assessed using a tool called a dose-volume histogram (DVH), which depicts
+the percentage of the prescribed dose received by a particular volume of an organ in the region of interest. Using this
+tool, the plans above may be depicted and compared. For example, Patient D’s normalized DAO and RDAO plans are
+shown in Figure 10, obtained by running the (RDAO) models (solid line) and the CPG heuristic (dotted line). Note that
+the trend of quality gain with the CPG heuristic continues to be seen, as a much more conformal plan appears to be
+generated, in agreement with Table 6, above. The other patients (omitted, due to being visually similar to Patient D)
+follow this same trend.
+4.4
+Warm-Started RDAO Model Performance
+In this section, the quality improvement of the plans generated with the CPG heuristic warm starting (RDAO), over the
+solutions of (RDAO) alone is demonstrated, followed by a discussion of the warm-started (RDAO) results.
+Table 7 presents the objective function values and optimality gaps of the best solutions found using the (RDAO) variants
+both alone and with the CPG algorithm as a warm start. The table is partitioned horizontally, based on whether or not
+the model was run with continuity constraints (-C), seeing as CPLEX struggled to ﬁnd reasonable incumbents in these
+cases, making the difference far more pronounced (with the exception of Patient C’s DAO-C). Note that the objective
+function values of the non-warm-started (No WS) (RDAO) model after three days, zBest No WS, were previously
+reported in Table 5, under Best Incumbent, and are duplicated here for reference. The warm-started (WS) models
+17
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Best Basic (RDAO) Plan
+CPG Heuristic Plan
+Model
+T ave
+T max
+Have
+Hmax
+T ave
+T max
+Have
+Hmax
+Patient A
+DAO
+56.8
+78.4
+5.0
+59.8
+51.8
+65.9
+4.2
+53.1
+DAO-C
+-
+-
+-
+-
+51.8
+65.9
+4.2
+53.1
+RDAO
+57.8
+79.2
+5.3
+60.6
+55.5
+74.1
+5.0
+57.8
+RDAO-C
+-
+-
+-
+-
+55.5
+74.1
+5.0
+57.8
+Patient B
+DAO
+54.4
+72.7
+1.3
+51.6
+44.4
+48.8
+0.6
+42.1
+DAO-C
+1835.6
+26769.2
+32.5
+15193.9
+44.4
+48.8
+0.6
+42.1
+RDAO
+54.6
+72.9
+1.4
+52.1
+45.0
+49.4
+0.5
+42.4
+RDAO-C
+-
+-
+-
+-
+45.0
+49.4
+0.5
+42.4
+Patient C
+DAO
+67.5
+105.9
+2.2
+61.2
+51.5
+65.6
+2.3
+54.6
+DAO-C
+69.9
+105.5
+2.8
+84.4
+51.5
+65.6
+2.3
+54.6
+RDAO
+67.6
+101.2
+3.3
+63.4
+51.9
+66.2
+2.4
+55.1
+RDAO-C
+-
+-
+-
+-
+51.9
+66.2
+2.4
+55.1
+Patient D
+DAO
+59.6
+85.2
+0.7
+50.3
+46.1
+52.7
+0.4
+41.6
+DAO-C
+-
+-
+-
+-
+46.1
+52.7
+0.4
+41.6
+RDAO
+59.2
+84.2
+0.9
+54.3
+48.5
+55.7
+0.4
+43.5
+RDAO-C
+-
+-
+-
+-
+48.5
+55.7
+0.4
+43.5
+Patient E
+DAO
+65.0
+93.4
+1.6
+56.4
+51.3
+64.8
+1.1
+54.6
+DAO-C
+1373.0
+33006.1
+9.2
+2888.9
+51.3
+64.8
+1.1
+54.6
+RDAO
+65.7
+94.4
+1.6
+57.1
+53.9
+70.9
+1.3
+59.2
+RDAO-C
+-
+-
+-
+-
+53.9
+70.9
+1.3
+59.2
+Table 6: Normalized plans from the integer (RDAO) variants using a basic solver (for 3-days) compared to the heuristic
+CPG values. Bolded values are the best (lowest) average or maximum doses to the target T , or heart H.
+(a) DVH of DAO plan
+(b) DVH of RDAO plan
+Figure 10: The DVH of Patient D’s DAO and RDAO plans generated using CPLEX (solid line), compared to the DAO
+and RDAO plan generated using the CPG heuristic (dotted line).
+consistently outperform the No WS models. As such, the percent reduction in the optimality gap of the warm-started
+(RDAO), compared to the non-warm started best gap is provided in the ﬁnal row of each section of the Table 7. These
+values range from a low-end improvement of 11.6% to a high-end of 75.8%, with no continuity constraints, and from
+43.8% to 84.6% with continuity constraints.
+Figure 11 graphically depicts the variation in optimality gaps from the ﬁrst and best incumbent plans reported in Tables 5
+and 7. It can be observed that the gaps may be sorted in a monotonically increasing order, with the warm-started
+(RDAO) after three days (CPG WS, Best) being the smallest, or closest to optimality, followed by its ﬁrst incumbent, or
+CPG heuristic output (CPG WS, Inc). The next closest to optimal is the best independent (RDAO) after seven days (No
+WS, Best), followed by (and sometimes tied with) the ﬁrst incumbent solution found by the solver (No WS, Inc). Note
+that the difference between the non-warm started ﬁrst and best incumbent solutions are often quite small (in the 13/20
+cases where an incumbent is found at all). We hypothesize that with the better starting solution, zCP G, the MIP solver
+is able to prune more branches, allowing it to more effectively traverse the solution space.
+18
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Patient A
+Patient B
+Patient C
+Patient D
+Patient E
+No Continuity
+DAO
+RDAO
+DAO
+RDAO
+DAO
+RDAO
+DAO
+RDAO
+DAO
+RDAO
+zBest No WS
+58.3
+60.5
+56.9
+57.6
+64.6
+71.1
+59.9
+64.5
+64.8
+65.6
+Gap (%)
+37.3
+38.6
+45.0
+45.4
+46.7
+51.5
+44.8
+48.0
+48.5
+48.7
+zBest CPG WS
+54.5
+56.6
+35.2
+37.6
+50.4
+51.8
+50.6
+51.3
+51.7
+53.0
+Gap (%)
+32.8
+34.1
+10.9
+16.2
+31.6
+33.2
+30.7
+33.4
+29.2
+36.2
+Reduction
+12.1%
+11.6%
+75.8%
+64.3%
+32.3%
+35.5%
+31.5%
+30.5%
+39.8%
+25.7%
+Patient A
+Patient B
+Patient C
+Patient D
+Patient E
+-C Constraints
+DAO-C
+RDAO-C
+DAO-C
+RDAO-C
+DAO-C
+RDAO-C
+DAO-C
+RDAO-C
+DAO-C
+RDAO-C
+zBest No WS
+-
+-
+3046.3
+-
+76.7
+-
+-
+-
+3529.4
+-
+Gap (%)
+100.0
+100.0
+99.0
+100.0
+55.2
+100.0
+100.0
+100.0
+99.1
+100.0
+zBest CPG WS
+54.7
+56.6
+37.0
+37.8
+49.9
+51.8
+49.2
+51.3
+49.5
+52.9
+Gap (%)
+33.1
+34.2
+15.3
+16.8
+31.0
+33.2
+31.9
+33.4
+32.5
+36.2
+Reduction
+66.9%
+65.8%
+84.6%
+83.2%
+43.8%
+66.8%
+68.1%
+66.6%
+67.2%
+63.8%
+Table 7: Final objective function values and optimality gaps for each patient and model variant, compared when run
+without and with the CPG warm start.
+Figure 11: The cplex-reported optimality gap present at the ﬁrst incumbent and 3-day stages, for both warm started and
+independently-run RDAO variants.
+To better understand the plans, it helps to look at the ﬂuence maps they generate. An instance of Patient B’s warm-started
+(RDAO) plans are depicted in Figure 12. The ﬁrst column in Figure 12 shows the consolidated map of each model
+variant’s plan. This is an aggregated set of ﬂuences, as in Step 1 in Figure 9, however unlike the output of an FMO
+problem, the ﬁgures in the ﬁrst column are known to decompose into the six ﬁxed, deliverable apertures, depicted in the
+second column, i.e., a plan. Each row in the ﬁgure depicts the output of a different model variant, with the non-robust
+variants in the ﬁrst two rows, followed by the robust variants. It is noteworthy that the best incumbent RDAO-C variant
+uses only 5 of the 6 allowable apertures This information could be beneﬁcial for clinicians, seeing as fewer apertures
+reduces setup time. It is unclear, however, whether this reduction would hold at optimality, since none of the models
+had converged within the three-day time limit.
+Model variants with continuity constraints, i.e., DAO-C and RDAO-C, may pose more of a challenge for the solver, but
+Figure 12 provides some insight as to why they are valuable. Consider the non-continuous DAO variant, particularly
+apertures 4 and 5. Both display undesirable behaviors from Sections 2.2.4 and 2.2.5, with single leaves blocking entire
+rows, as well as disconnected rows, which would be unlikely to make it through a quality assessment in clinic. With
+these behaviors disallowed in DAO-C, the leaf placements are far more desirable.
+In theory, in addition to continuity constraints, clinicians are likely to prefer the delivery guarantees provided by the
+robust models, making RDAO-C the gold standard for modeling. In practice, however, there were some drawbacks
+when it came to generating robust plans at such large optimality gaps. By nature, robust plans tend to trade off a slight
+overdose for greater reliability. Since all plans terminated with fairly large optimality gaps, they each had signiﬁcant
+overdose, and therefore, a tendency to be fairly robust to uncertainty, impacting the costs versus beneﬁts of using a
+robust over a nominal model. This phenomenon can be seen illustrated in Table 8, where the unnormalized warm-started
+(RDAO) plans of the robust and nominal variety are exposed to both nominal and non-nominal breathing patterns,
+19
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Full Fluence Map
+Aperture Breakdown
+DAO
+DAO-C
+RDAO
+RDAO-C
+Figure 12: Aggregated and complete Patient B ﬂuence maps, depicting the best output plans for the four model variants
+run with a CPG warm start. A log10 scale is used in all diagrams to enhance visibility.
+20
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Nominal (DAO) Model
+Robust (RDAO) Model
+p
+-C
+T min
+T ave
+T max
+Have
+Hmax
+T min
+T ave
+T max
+Have
+Hmax
+Patient A
+pnom
+
+42.4
+64.9
+83.6
+5.1
+66.6
+43.1
+65.9
+88.0
+5.9
+68.5
+preal
+
+40.6
+64.9
+83.6
+5.2
+66.7
+42.6
+65.9
+88.0
+6.1
+68.6
+pnom
+✓
+42.4
+64.9
+84.0
+5.2
+66.8
+43.1
+65.9
+88.0
+5.9
+68.5
+preal
+✓
+40.7
+64.9
+84.1
+5.4
+66.9
+42.6
+65.9
+88.0
+6.1
+68.6
+Patient B
+pnom
+
+42.4
+47.0
+54.3
+0.5
+46.0
+42.4
+50.2
+55.6
+0.6
+46.2
+preal
+
+41.1
+47.0
+54.3
+0.5
+46.1
+42.4
+50.1
+55.7
+0.6
+46.2
+pnom
+✓
+42.4
+49.3
+54.5
+0.6
+45.7
+42.6
+50.5
+55.6
+0.6
+46.8
+preal
+✓
+41.3
+49.3
+54.6
+0.6
+45.7
+42.4
+50.5
+55.7
+0.6
+46.8
+Patient C
+pnom
+
+42.4
+63.4
+79.5
+2.5
+63.2
+42.7
+63.9
+81.5
+2.9
+67.8
+preal
+
+41.4
+63.3
+79.5
+2.4
+63.5
+42.4
+63.8
+81.5
+2.8
+67.9
+pnom
+✓
+42.4
+63.2
+80.4
+2.7
+65.2
+42.7
+63.9
+81.5
+2.9
+67.8
+preal
+✓
+41.3
+63.1
+80.4
+2.6
+65.4
+42.4
+63.8
+81.5
+2.8
+67.9
+Patient D
+pnom
+
+42.4
+64.6
+77.0
+0.5
+63.3
+43.4
+67.8
+77.8
+0.6
+60.8
+preal
+
+41.0
+64.5
+77.1
+0.6
+66.9
+43.7
+67.8
+77.8
+0.7
+63.6
+pnom
+✓
+42.4
+65.5
+76.0
+0.5
+59.7
+43.4
+67.8
+77.8
+0.6
+60.8
+preal
+✓
+41.3
+65.4
+76.0
+0.6
+62.9
+43.7
+67.8
+77.8
+0.7
+63.6
+Patient E
+pnom
+
+42.4
+61.9
+79.4
+1.1
+67.3
+42.4
+66.2
+87.3
+1.6
+72.9
+preal
+
+41.3
+61.8
+79.3
+1.0
+67.2
+42.4
+66.1
+87.2
+1.5
+73.0
+pnom
+✓
+42.4
+64.3
+80.1
+1.2
+66.4
+42.4
+66.2
+87.3
+1.6
+72.9
+preal
+✓
+40.7
+64.2
+80.0
+1.1
+66.5
+42.4
+66.1
+87.2
+1.5
+73.0
+Table 8: Unadjusted Warm-Started plans for all ﬁve patients with the nominal and with an alternate realized breathing
+pattern. Underdoses, i.e., Tmin < the prescription dose of 42.4 Gy are bolded.
+within the uncertainty set P. The realized non-nominal breathing pattern preal selected was intended to places more
+emphasis on the exhale phase for all patients: preal = [0.025, 0.025, 0.125, 0.225, 0.6].
+The highlighted columns in Table 8 show the minimum dose delivered to a target voxel in a given model variant,
+given the realized dataset. When the nominal p is used, the target dose of 42.4 Gy is always met, regardless of model.
+However, when a different p is realized, i.e., preal, the hard constraint is no longer met in any of the nominal model
+variants.
+The drawbacks of the robust method however, can be seen in the remaining columns, where its remaining metrics are
+consistently outperformed by the DAO and DAO-C models. These observations are reinforced by Figure 13, which
+shows the effects of a non-nominal breathing-phase realization on robust and non-robust plans. In ﬁgures 13a and 13b,
+the DAO and DAO-C plans, are visibly more conservative than their robust counterparts. Images 13c and 13d show the
+cost of these better plans, however, which is the violation of the hard dose constraints.
+To sum up these ﬁndings, robust and continuous constraints both contain features clinicians want to see, but make the
+already-difﬁcult DAO MIP model even harder to solve. With the help of the CPG heuristic as a warm start, running a
+tractable RDAO-C is a more realistic goal than it was previously, in overcoming the incumbent-ﬁnding issue. There do,
+however, remain some hurdles before robust integration lives up to its full potential.
+5
+Conclusions and Future Work
+This paper proposes a novel, mixed-integer, robust direct aperture optimization (RDAO) model for IMRT treatment
+planning. It also provides an original candidate plan generation (CPG) heuristic, which outputs deliverable plans that
+satisfy the feasibility criteria of the RDAO model. The planning mechanisms introduced in this paper are demonstrated
+using ﬁve clinical breast cancer case studies with breathing motion uncertainty. Three combinations of plan generation
+techniques are demonstrated: 1) the CPG heuristic alone, 2) the RDAO model alone, and ﬁnally, 3) the CPG heuristic
+as a warm start for the RDAO model. The CPG-RDAO warm start combination was found to dominate both other
+methods, as expected, as the CPG heuristic was able to provide a boost for the solver, improving its ability to prune
+sub-optimal solutions. More surprisingly, the CPG heuristic dominated the RDAO model on its own, even when the
+RDAO model was allowed to run for three days.
+21
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+(a) DVH of DAO vs. RDAO WS plan
+(b) DVH of DAO-C vs. RDAO-C WS plan
+(c) Zoomed-in DAO vs. RDAO WS
+(d) Zoomed-in DAO-C vs. RDAO-C WS
+Figure 13: The DVH of Patient B’s DAO plans compared to the Robust plans, all generated using the warm start
+algorithm followed by CPLEX with a p = preal value (rather than nominal). Images 13c and 13d are the zoomed in
+images of 13a and 13b, respectively. In both images, the lighter blue line is the DAO/-C model, which under-doses in
+non-nominal p realizations, whereas the black RDAO/-C line continues to deliver 100% of the dose to 100% of the
+target.
+While the CPG method did lead to fairly reasonable and deliverable plans, both in standalone and warm-start contexts,
+the plans did not have the surgical precision that is desired from an optimization methodology, due to the large optimality
+gaps in the reported solutions. This sub-optimality served to undermine the effects of some salient features of the model,
+such as robustness, which tends to shine in high-precision scenarios.
+To address the solvability concerns, decomposition approaches could be developed to increase the efﬁciency of the
+solution procedures for the RDAO model. Column generation could be employed for aperture generation, as in Romeijn
+et al. [2005], Men et al. [2007] and Mahnam et al. [2017], or Benders’ decomposition could be used to create faster
+solution algorithms, as in Ta¸skın et al. [2010] and Dursun et al. [2019b]. These improvements would be critical, for
+handling larger and more complex treatment regions with multiple at-risk organs, as well as the integration of more
+sophisticated, and potentially non-linear constraints. Additionally, the integration of more clinically relevant robust
+dose-control metrics (e.g., the CVaR constraints, as in Chan et al. [2014]) could be added to the base model to improve
+plan quality, and allow for more detailed exploration of salient trade-offs between robustness and plan quality.
+Another limitation of this work concerns the CPG methodology, which exceeded expectations in terms of generating
+stand-alone plans, but was not powerful enough as a warm start to bring the more precise RDAO model to optimality,
+which was its intended purpose. Going forward, the CPG heuristic may generalize well to other applications, such as
+VMAT, when it is modeled as a sequence of DAO-style problems at a large number of control-points, as in Men et al.
+[2010] and Dursun et al. [2019b]. Alternatively, the CPG heuristic could be used in column generation planning tools,
+which often beneﬁt from a strong warm starting point.
+The models introduced in this paper, and in particular the CPG heuristic, could readily be extended to other application
+areas. Mathematically, the deﬁning features of the problem at hand are (i) a set-covering structure with side constraints,
+and (ii) a coupled subset of binary and continuous variables. Problems wherein continuous, uniform geometric layers
+must be preordered and assembled to cover a speciﬁed area, e.g., in industries like construction and manufacturing,
+would mirror the radiation therapy planning process, mathematically. Similarly, difﬁcult scheduling problems could
+be reframed as time-segment selection to cover workloads in applications like worker, or ﬂight shift scheduling,
+making them a good potential candidate for the CPG heuristic. Finally, the models could be applied to supply
+22
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+chain management, where the robustness could help address demand, or raw-material-arrival uncertainty, and the
+interdependent continuous-binary relationship would be a good ﬁt for describing facility selection and production-level
+decisions.
+Immediate future directions for this work include targeting structurally similar treatment sites like the liver or lungs,
+examining methods to speed up RDAO runtime, as well as incorporating new forms of uncertainty and deliverability
+constraints. For the CPG heuristic, next steps could address some of the limitations of the algorithm, such as its lack of
+angle ﬂexibility, which led to hard-coded even-angle distribution across apertures in this paper. It would also be of
+interest to evaluate the CPG’s performance against some of the state-of-the art leaf sequencing algorithms both in clinic
+and from the literature.
+Acknowledgments
+The authors would like to thank the Natural Sciences and Engineering Research Council of Canada for supporting this
+work. The research was also made possible by the facilities of the Shared Hierarchical Academic Research Computing
+Network (SHARCNET:www.sharcnet.ca) and Compute/Calcul Canada.
+A
+Robust Counterpart of (RFMO) for Polyhedral Uncertainty
+Polyhedral uncertainty set (2) leads to inﬁnite possible realizations of ˜p when pi −pi < pi + ¯pi for at least one phase i,
+and therefore, constraints (1b) are intractable. Chan et al. [2006] show that the equivalent robust counterpart of these
+constraints is both tractable and linear, at the expense of introducing a set of |VT | × (|I| + 1) new dual variables (yi,v)
+and |VT | × |I| new constraints as follows.
+min
+X
+s∈{T ,H}
+cs
+|Vs|
+X
+v∈Vs
+X
+b∈B
+X
+i∈I
+piDv,b,iωb
+s.t.
+X
+i∈I
+h
+piy0,v −(pi + ¯pi)yi,v + (pi −pi)
+X
+b∈B
+Db,v,iωb
+i
+≥Lv
+∀v ∈VT ,
+(13a)
+X
+b∈B
+Db,v,iωb −y0,v + yi,v ≥0
+∀i ∈I, v ∈VT ,
+(13b)
+ωb ≥0
+∀b ∈B,
+(13c)
+yi,v ≥0
+∀i ∈I, v ∈VT ,
+(13d)
+y0,v URS
+∀v ∈VT .
+(13e)
+The above robust counterpart to the (RFMO) model ﬁnds the worst-case realization of ˜p for each voxel and optimizes
+over this realization, thereby immunizing the problem against the worst-case feasible realization of the uncertainty set
+for any chosen intensities.
+B
+Complete Robust Direct Aperture Model
+The following is the complete (RDAO) formulation, with all relevant Section 2.2 deliverability constraints. The shaded
+lines are the base model, which assuming |P| = 1 (i.e., no uncertainty) is the FMO model. When the shaded region is
+run and there is uncertainty (|P| > 1), it is denoted the RFMO model. The remaining unannotated constraints are the
+classical deliverability constraints. When they are included in the model and certain, the DAO model is being run. If
+uncertain, the RDAO model is being run. Finally, when the boxed vertical and horizontal continuity constraints are
+included with the classical deliverability constraints on top of a certain base model, the model is denoted DAO-C, and
+when uncertain, the model is RDAO-C.
+C
+CPG-S α-Parameter Selection
+The value of the (CPG-S) parameter α was determined by running the problem at different α values in increments of
+0.2 and choosing the best plan in terms of objective function value gap. The variation in objective function value as a
+function of α is depicted in Figure 14. The plot starts at α = 0.2, since the problem collapses back into a ﬂuence map
+optimization as α approaches 0, generating an optimality gap of 100% across all cases. Note that the bounds changed
+very little for 0.2 ≤α ≤0.8, so in general, choosing any value in this range should lead to a high-quality warm start.
+23
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+min
+X
+s∈{T ,H}
+cs
+|Vs|
+X
+v∈Vs
+X
+b∈B
+X
+i∈I
+X
+a∈A
+piDv,b,iwb,a
+s.t.
+X
+b∈B
+X
+i∈I
+˜piDb,v,iωb ≥Lv
+∀v ∈VT , ˜p ∈P,
+wb,a ≤Mxb,a
+∀b ∈B, a ∈A,
+wb,a ≤fa + M(1 −xb,a)
+∀b ∈B, a ∈A,
+wb,a ≥fa −M(1 −xb,a)
+∀b ∈B, a ∈A,
+X
+b∈Bθ
+xb,a ≤|Bθ|ua,θ
+∀a ∈A, θ ∈Θ,
+X
+θ∈Θ
+ua,θ = 1
+∀a ∈A,
+lq,k+1,θ,a ≥lq,k,θ,a
+∀k ∈K′, q ∈Q, θ ∈Θ, a ∈A,
+rq,k,θ,a ≥rq,k+1,θ,a
+∀k ∈K′, q ∈Q, θ ∈Θ, a ∈A,
+xq,k,θ,a = −1 + lq,k,θ,a + rq,k,θ,a
+∀k ∈K, q ∈Q, θ ∈Θ, a ∈A,
+Continuity Constraints (“-C”)
+jq,θ,a = −1 + ¯jq,θ,a + jq,θ,a
+∀q ∈Q, θ ∈Θ, a ∈A,
+jq,θ,a ≤
+X
+k∈K
+xq,k,θ,a
+∀q ∈Q, θ ∈Θ, a ∈A,
+|K| × jq,a,s ≥
+X
+k∈K
+xq,k,θ,a
+∀q ∈Q, θ ∈Θ, a ∈A,
+¯jq,θ,a ≤¯jq+1,θ,a
+∀q ∈Q′, a ∈A, s ∈S,
+jq+1,θ,a ≤jq,θ,a
+∀q ∈Q′, a ∈A, s ∈S,
+jq,θ,a + jq−1,θ,a −
+|K|
+X
+δ=k+1
+xq,δ,θ,a ≤1 +
+k
+X
+δ=1
+xq−1,δ,θ,a
+∀k ∈K, q ∈Q′′, θ ∈Θ, a ∈A,
+jq,θ,a + jq−1,θ,a −
+|K|−k
+X
+δ=1
+xq,δ,θ,a ≤1 +
+|K|
+X
+δ=|K|−k+1
+xq−1,δ,θ,a
+∀k ∈K, q ∈Q′′, a ∈A, s ∈S,
+jq,θ,a, ¯jq,θ,a, jq,θ,a ∈{0, 1}
+∀q ∈Q, θ ∈Θ, a ∈A,
+wb,a ≥0
+∀b ∈B, a ∈A,
+fa ≥0
+∀a ∈A,
+xb,a ∈{0, 1}
+∀b ∈B, a ∈A,
+ua,θ ∈{0, 1}
+∀a ∈A, θ ∈Θ,
+lq,k,θ,a, rq,k,θ,a ∈{0, 1}
+∀k ∈K, q ∈Q, θ ∈Θ, a ∈A.
+D
+A Note on RDAO Uncertainty Levels
+The RDAO algorithm provides immunization against the worst-case realization of an uncertainty set, which is chosen
+to be the polyhedral set (2) in this paper, with p = ¯p = 0.1. To give some insight into the impact of the magnitude
+of this uncertainty set, p and ¯p are varied in Table 9. The objective function values of the CPG-proposed RDAO plan
+zCP G for each of four different uncertainty conditions, around the nominal p = [0.125, 0.125, 0.125, 0.125, 0.5] are
+reported. Note that the DAO model (i.e., p = ¯p = 0) and previously studied p = ¯p = 0.1 results are included with the
+new smaller p = ¯p = 0.05 and larger p = ¯p = 0.125 uncertainty sets for reference.
+Patient
+p = ¯p
+A
+B
+C
+D
+E
+0
+55.3
+37.7
+51.5
+50.6
+51.7
+0.05
+56.8
+38.1
+52.2
+51.0
+52.7
+0.1
+56.8
+38.2
+51.8
+51.3
+53.0
+0.125
+58.1
+38.6
+52.3
+51.6
+53.7
+Table 9: The impact robust uncertainty set size on zCP G.
+24
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Figure 14: The objective function gap at various α values between 0.2 and 1.
+The overall trend is that the objective function increases monotonically as the uncertainty set grows larger. This is
+intuitive, seeing as a plan may have to compensate for larger proportions of time in the worst case phase-realization,
+thereby giving more dose to the target and healthy organs in order to ensure full dose to target. This trend is not true
+100% of the time in the CPG case (as in Patient C, 0.05 exceeds 0.1) since the CPG heuristic ﬁnds non-optimal solutions,
+however it would be the case at optimality.
+References
+Freddie Bray, Jacques Ferlay, Isabelle Soerjomataram, Rebecca L Siegel, Lindsey A Torre, and Ahmedin Jemal. Global
+cancer statistics 2018: Globocan estimates of incidence and mortality worldwide for 36 cancers in 185 countries. CA:
+a cancer journal for clinicians, 68(6):394–424, 2018.
+Rajamanickam Baskar, Kuo Ann Lee, Richard Yeo, and Kheng-Wei Yeoh. Cancer and radiation therapy: current
+advances and future directions. International Journal of Medical Sciences, 9(3):193, 2012.
+Thomas Bortfeld. IMRT: a review and preview. Physics in Medicine & Biology, 51(13):R363, 2006.
+David Craft, Dávid Papp, and Jan Unkelbach. Plan averaging for multicriteria navigation of sliding window imrt and
+vmat. Medical physics, 41(2):021709, 2014.
+Ahmad-Saher Azizi-Sultan. Optimization of Beam Orientation in Intensity Modulated Radiation Therapy Planning.
+PhD thesis, Technische Universität Kaiserslautern, 2006.
+Zhirong Jiang, MA Earl, GW Zhang, Cedric X Yu, and David M Shepard. An examination of the number of required
+apertures for step-and-shoot IMRT. Physics in Medicine & Biology, 50(23):5653, 2005.
+Dimitris Bertsimas, Valentina Cacchiani, David Craft, and Omid Nohadani. A hybrid approach to beam angle
+optimization in intensity-modulated radiation therapy. Computers & Operations Research, 40(9):2187–2197, 2013.
+H Edwin Romeijn, Ravindra K Ahuja, James F Dempsey, Arvind Kumar, and Jonathan G Li.
+A novel linear
+programming approach to ﬂuence map optimization for intensity modulated radiation therapy treatment planning.
+Physics in Medicine & Biology, 48(21):3521, 2003.
+Matthias Ehrgott, Çi˘gdem Güler, Horst W Hamacher, and Lizhen Shao. Mathematical optimization in intensity
+modulated radiation therapy. Annals of Operations Research, 175(1):309–365, 2010.
+Timothy CY Chan, Houra Mahmoudzadeh, and Thomas G Purdie. A robust-CVaR optimization approach with
+application to breast cancer therapy. European Journal of Operational Research, 238(3):876–885, 2014.
+Z Caner Ta¸skın, J Cole Smith, H Edwin Romeijn, and James F Dempsey. Optimal multileaf collimator leaf sequencing
+in IMRT treatment planning. Operations Research, 58(3):674–690, 2010.
+Jia Jing, Hui Lin, Kai Zhao, and Yu Juan Hu. An effective tool for optimizing the leaf sequencing algorithms.
+In Computing, Control, Information and Education Engineering: Proceedings of the 2015 Second International
+Conference on Computer, Intelligent and Education Technology (CICET 2015), April 11-12, 2015, Guilin, PR China,
+page 161. CRC Press, 2015.
+Fredrik Carlsson. Combining segment generation with direct step-and-shoot optimization in intensity-modulated
+radiation therapy. Medical Physics, 35(9):3828–3838, 2008.
+25
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Adam Gladwish, Mike Oliver, Jeff Craig, Jeff Chen, Glenn Bauman, Barbara Fisher, and Eugene Wong. Segmentation
+and leaf sequencing for intensity modulated arc therapy. Medical Physics, 34(5):1779–1788, 2007.
+Ping Xia and Lynn J Verhey. Multileaf collimator leaf sequencing algorithm for intensity modulated beams with
+multiple static segments. Medical Physics, 25(8):1424–1434, 1998.
+Srijit Kamath, Sartaj Sahni, Jonathan Li, Jatinder Palta, and Sanjay Ranka. Leaf sequencing algorithms for segmented
+multileaf collimation. Physics in Medicine & Biology, 48(3):307, 2003.
+R Alfredo C Siochi. Minimizing static intensity modulation delivery time using an intensity solid paradigm. International
+Journal of Radiation Oncology, Biology, Physics, 43(3):671–680, 1999.
+Mark Langer, Van Thai, and Lech Papiez. Improved leaf sequencing reduces segments or monitor units needed to
+deliver IMRT using multileaf collimators. Medical Physics, 28(12):2450–2458, 2001.
+Natashia Boland, Horst W Hamacher, and Frank Lenzen. Minimizing beam-on time in cancer radiation treatment using
+multileaf collimators. Networks, 43(4):226–240, 2004.
+Ravindra K Ahuja and Horst W Hamacher. A network ﬂow algorithm to minimize beam-on time for unconstrained
+multileaf collimator problems in cancer radiation therapy. Networks: An International Journal, 45(1):36–41, 2004.
+Davaatseren Baatar, Horst W Hamacher, Matthias Ehrgott, and Gerhard J Woeginger. Decomposition of integer matrices
+and multileaf collimator sequencing. Discrete Applied Mathematics, 152(1-3):6–34, 2005.
+David M Shepard, MA Earl, XA Li, S Naqvi, and Cedric Yu. Direct aperture optimization: A turnkey solution for
+step-and-shoot IMRT. Medical Physics, 29(6):1007–1018, 2002.
+Yongjie Li, Jonathan Yao, and Dezhong Yao. Genetic algorithm based deliverable segments optimization for static
+intensity-modulated radiotherapy. Physics in Medicine & Biology, 48(20):3353, 2003.
+Marie-Pierre Milette. Direct optimization of 3D dose distributions using collimator rotation. PhD thesis, University of
+British Columbia, 2008.
+Maria Broderick, Michelle Leech, and Mary Coffey. Direct aperture optimization as a means of reducing the complexity
+of intensity modulated radiation therapy plans. Radiation Oncology, 4(1):8, 2009.
+H Edwin Romeijn, Ravindra K Ahuja, James F Dempsey, and Arvind Kumar. A column generation approach to
+radiation therapy treatment planning using aperture modulation. SIAM Journal on Optimization, 15(3):838–862,
+2005.
+Chunhua Men, H Edwin Romeijn, Z Caner Ta¸skın, and James F Dempsey. An exact approach to direct aperture
+optimization in IMRT treatment planning. Physics in Medicine & Biology, 52(24):7333, 2007.
+Ehsan Salari and Jan Unkelbach. A column-generation-based method for multi-criteria direct aperture optimization.
+Physics in Medicine & Biology, 58(3):621, 2013.
+Mehdi Mahnam, Michel Gendreau, Nadia Lahrichi, and Louis-Martin Rousseau. Simultaneous delivery time and
+aperture shape optimization for the volumetric-modulated arc therapy (vmat) treatment planning problem. Physics in
+Medicine & Biology, 62(14):5589, 2017.
+Pınar Dursun, Z Caner Ta¸skın, and ˙I Kuban Altınel. Using branch-and-price to determine optimal treatment plans for
+volumetric modulated arc therapy (vmat). Computers & Operations Research, 110:1–17, 2019a.
+Kerem Akartunalı, Vicky Mak-Hau, and Thu Tran. A uniﬁed mixed-integer programming model for simultaneous
+ﬂuence weight and aperture optimization in vmat, tomotherapy, and cyberknife. Computers & Operations Research,
+56:134–150, 2015.
+Pınar Dursun, Z Caner Ta¸skın, and ˙I Kuban Altınel. Mathematical models for optimal volumetric modulated arc therapy
+(vmat) treatment planning. Procedia Computer Science, 100:644–651, 2016.
+Dimitris Bertsimas, David B Brown, and Constantine Caramanis. Theory and applications of robust optimization. SIAM
+Review, 53(3):464–501, 2011.
+Jan Unkelbach, Markus Alber, Mark Bangert, Rasmus Bokrantz, Timothy CY Chan, Joseph O Deasy, Albin Fredriksson,
+Bram L Gorissen, Marcel Van Herk, Wei Liu, et al. Robust radiotherapy planning. Physics in Medicine & Biology,
+63(22):22TR02, 2018.
+Millie Chu, Yuriy Zinchenko, Shane G Henderson, and Michael B Sharpe. Robust optimization for intensity modulated
+radiation therapy treatment planning under uncertainty. Physics in Medicine & Biology, 50(23):5463, 2005.
+Arinbjörn Olafsson and Stephen J Wright. Efﬁcient schemes for robust IMRT treatment planning. Physics in Medicine
+& Biology, 51(21):5621, 2006.
+26
+
+Robust Direct Aperture Optimization for RT Planning
+D. Ripsman et al.
+Dimitris Bertsimas, Omid Nohadani, and Kwong Meng Teo. Nonconvex robust optimization for problems with
+constraints. INFORMS journal on computing, 22(1):44–58, 2010.
+Christoffer Cromvik and Michael Patriksson. On the robustness of global optima and stationary solutions to stochastic
+mathematical programs with equilibrium constraints, part 1: Theory. Journal of optimization theory and applications,
+144(3):461–478, 2010.
+Timothy CY Chan, Thomas Bortfeld, and John N Tsitsiklis. A robust approach to IMRT optimization. Physics in
+Medicine & Biology, 51(10):2567, 2006.
+Thomas Bortfeld, Timothy CY Chan, Alexei Troﬁmov, and John N Tsitsiklis. Robust management of motion uncertainty
+in intensity-modulated radiation therapy. Operations Research, 56(6):1461–1473, 2008.
+Houra Mahmoudzadeh, Jenny Lee, Timothy CY Chan, and Thomas G Purdie. Robust optimization methods for cardiac
+sparing in tangential breast IMRT. Medical Physics, 42(5):2212–2222, 2015.
+Houra Mahmoudzadeh, Thomas G Purdie, and Timothy CY Chan. Constraint generation methods for robust optimization
+in radiation therapy. Operations Research for Health Care, 8:85–90, 2016.
+Ehsan Salari, Chunhua Men, and H Edwin Romeijn. Accounting for the tongue-and-groove effect using a robust direct
+aperture optimization approach. Medical Physics, 38(3):1266–1279, 2011.
+Guowei Zhang, Ziping Jiang, David Shepard, Bin Zhang, and Cedric Yu. Direct aperture optimization of breast IMRT
+and the dosimetric impact of respiration motion. Physics in Medicine & Biology, 51(20):N357, 2006.
+Ergun Ahunbay and X Allen Li. Investigation of the reliability, accuracy, and efﬁciency of gated IMRT delivery with a
+commercial linear accelerator. Medical Physics, 34(7):2928–2938, 2007.
+H Edwin Romeijn and James F Dempsey. Intensity modulated radiation therapy treatment plan optimization. TOP, 16
+(2):215–243, 2008.
+Aharon Ben-Tal and Arkadi Nemirovski. Robust solutions of uncertain linear programs. Operations research letters, 25
+(1):1–13, 1999.
+Thomas G Purdie, Robert E Dinniwell, Daniel Letourneau, Christine Hill, and Michael B Sharpe. Automated planning
+of tangential breast intensity-modulated radiotherapy using heuristic optimization. International Journal of Radiation
+Oncology, Biology, Physics, 81(2):575–583, 2011.
+Thomas G Purdie, Robert E Dinniwell, Anthony Fyles, and Michael B Sharpe. Automation and intensity modulated
+radiation therapy for individualized high-quality tangent breast treatment plans. International Journal of Radiation
+Oncology, Biology, Physics, 90(3):688–695, 2014.
+Fatemeh Saberian, Archis Ghate, and Minsun Kim. Spatiotemporally optimal fractionation in radiotherapy. INFORMS
+Journal on Computing, 29(3):422–437, 2017.
+Sebastiaan Breedveld, Pascal RM Storchi, Marleen Keijzer, and Ben JM Heijmen. Fast, multiple optimizations of
+quadratic dose objective functions in imrt. Physics in Medicine & Biology, 51(14):3569, 2006.
+S Webb, DJ Convery, and PM Evans. Inverse planning with constraints to generate smoothed intensity-modulated
+beams. Physics in Medicine & Biology, 43(10):2785, 1998.
+Ola Weistrand and Stina Svensson. The anaconda algorithm for deformable image registration in radiotherapy. Medical
+physics, 42(1):40–53, 2015.
+Noriyuki Kadoya, Yujiro Nakajima, Masahide Saito, Yuki Miyabe, Masahiko Kurooka, Satoshi Kito, Yukio Fujita,
+Motoharu Sasaki, Kazuhiro Arai, Kensuke Tani, et al. Multi-institutional validation study of commercially available
+deformable image registration software for thoracic images. International Journal of Radiation Oncology* Biology*
+Physics, 96(2):422–431, 2016.
+RaySearch
+Laboratories.
+Deformable
+registration
+in
+raystation.
+https://www.raysearchlabs.
+com/49e915/siteassets/about-overview/media-center/wp-re-ev-n-pdfs/white-papers/
+deformable-registration-in-raystation2.pdf, 2017. Accessed: 2021-10-13.
+Pınar Dursun, Z Caner Ta¸skın, and ˙I Kuban Altınel. The determination of optimal treatment plans for volumetric
+modulated arc therapy (vmat). European Journal of Operational Research, 272(1):372–388, 2019b.
+Chunhua Men, H Edwin Romeijn, Xun Jia, and Steve B Jiang. Ultrafast treatment plan optimization for volumetric
+modulated arc therapy (vmat). Medical physics, 37(11):5787–5791, 2010.
+27

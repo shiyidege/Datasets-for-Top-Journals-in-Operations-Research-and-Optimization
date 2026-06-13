@@ -1,0 +1,2777 @@
+TITLE: Strategic bidding in freight transport using deep reinforcement learning
+JOURNAL: Annals_OR
+YEAR: 2022
+DOI: https://doi.org/10.1007/s10479-022-04572-z
+---
+
+Annals of Operations Research (2025) 350:131–168
+https://doi.org/10.1007/s10479-022-04572-z
+ORIGINAL RESEARCH
+Strategic bidding in freight transport using deep
+reinforcement learning
+W. J. A. van Heeswijk1
+Accepted: 21 January 2022 / Published online: 22 February 2022
+© The Author(s) 2022
+Abstract
+This paper presents a multi-agent reinforcement learning algorithm to represent strategic
+bidding behavior by carriers and shippers in freight transport markets. We investigate whether
+feasible market equilibriums arise without central control or communication between agents.
+Observed behavior in such environments serves as a stepping stone towards self-organizing
+logistics systems like the Physical Internet, while also offering valuable insights for the design
+of contemporary transport brokerage platforms. We model an agent-based environment in
+which shipper and carrier actively learn bidding strategies using policy gradient methods,
+posing bid- and ask prices at the individual container level. Both agents aim to learn the best
+response given the expected behavior of the opposing agent. Inspired by ﬁnancial markets,
+a neutral broker allocates jobs based on bid-ask spreads. Our game-theoretical analysis and
+numerical experiments focus on behavioral insights. To evaluate system performance, we
+measure adherence to Nash equilibria, fairness of reward division and utilization of transport
+capacity. We observe good performance both in predictable, deterministic settings (∼95%
+adherence to Nash equilibria) and highly stochastic environments (∼85% adherence). Risk-
+seeking behavior may increase an agent’s reward share, yet overly aggressive strategies
+destabilize the system. The results suggest a potential for full automation and decentralization
+of freight transport markets. These insights ease the design of real-world market platforms,
+suggesting an innate tendency of markets to reach equilibria without behavioral models,
+information sharing or explicit incentives.
+Keywords Strategic bidding · Deep reinforcement learning · Policy gradient ·
+Self-organizing logistics
+1 Introduction
+While the transport sector traditionally relies on ﬁxed contracts and manual negotiations,
+modern technology allows for automated negotiation and more appropriate responses to its
+inherently dynamic nature. Paradigms such as the Physical Internet and self-organizing logis-
+tics provide conceptual outlines to organize such systems, yet many facets remain unexplored.
+B W. J. A. van Heeswijk
+w.j.a.vanheeswijk@utwente.nl
+1
+University of Twente, Drienerlolaan 5, Enschede, The Netherlands
+123
+
+132
+Annals of Operations Research (2025) 350:131–168
+This paper investigates a strategic bidding mechanism based on multi-agent reinforcement
+learning, deliberately exploring a setting without communication or centralized control and
+presenting decentralized planning in a pure form. For present-day applications, the resulting
+insights are useful for market platform design, which deal with challenges such as horizon-
+tal collaboration, information-sharing infrastructures and incentive design (Cruijssen 2020;
+Karam et al. 2021). With the platform economy rapidly growing, ﬁnding ways to connect
+independentmarketparticipantsbecomesincreasinglyimportant(KenneyandZysman2016).
+We study a multi-agent environment containing a carrier, shipper and broker, as envi-
+sioned in the Physical Internet (Montreuil et al. 2013). For each individual transport job
+(e.g., a smart container), the shipper and carrier pose bid- and ask prices respectively. The
+neutral broker agent—with a business model inspired by transport matching platforms and
+highly decentralized ﬁnancial markets—matches these bids and asks at a batch level, solving
+a knapsack problem that maximizes bid-ask spread. Being a rule-based agent, the broker may
+be considered as the ‘environment’ rather than an active agent. The shipper and carrier com-
+pete against each other, actively learning strategies to maximize their own reward given the
+deployed strategy of the opponent. We stress that the learning algorithm is model-free; agents
+do not explicitly model the expected strategy of the opponent. By investigating a model-free
+and stochastic setting, we minimize behavioral assumptions. Both agents constantly adjust
+their strategy in an online learning setting, representing a self-organizing freight transport
+market. The behavior of such a market is the key interest of this work, keeping future exten-
+sions towards multiple carriers and shippers in mind. Inspired by game theory, efﬁciency and
+fairness are the primary performance metrics.
+This paper expands upon Van Heeswijk (2019)—which introduced a learning bidding
+agent—in several ways. First, the carrier, which was a passive price-taker in the earlier
+work, now is a learning agent with a dynamic strategy. This adds a strategic dimension that
+vastly increases the complexity. Second, we add a (non-learning) broker agent to the setting,
+exploring the role of a neutral transport planner in self-organizing systems. Third, we test a
+variety of actor-critic models and deep learning techniques, whereas the earlier work relies
+on a basic policy gradient algorithm. Fourth, we root the performance metrics and numerical
+results in game-theoretical foundations.
+The remainder of this paper is structured as follows. Section 2 discusses related literature.
+In Sect. 3 we deﬁne the system as a Markov Decision Process (MDP) model. Section 4
+presents the solution method; we describe several variants of policy gradient algorithms to
+learn bidding- and asking prices. Section 5 presents the experimental design and Sect. 6 the
+numerical results. Section 7 ends the paper with the main conclusions.
+2 Literature review
+This literature overview is structured as follows. First, we discuss the core concepts of
+self-organizing logistics and the Physical Internet. Second, we highlight several studies on
+reinforcement learning in the Delivery Dispatching Problem, which relates to our setting.
+Third, we discuss optimal bidding and (contemporary) transport platforms. Fourth, we assess
+the links with game theory, which will be used for our analysis and experimental design.
+The inspiration for this paper stems from the Physical Internet paradigm (Montreuil 2011;
+Montreuil et al. 2013). The Physical Internet envisions an open market in which logistics
+services are offered, with automated interactions between smart containers and other con-
+stituents determining routes and schedules. Sallez et al. (2016) emphasize the active role of
+123
+
+Annals of Operations Research (2025) 350:131–168
+133
+smart containers, communicating, memorizing, negotiating, and learning both individually
+and collectively. Ambra et al. (2019) present a recent literature review of work performed
+in the domain of the Physical Internet. Interestingly, their overview does not mention works
+that deﬁne the smart container itself as an actor. Instead, existing works focus on traditional
+actors such as carriers, shippers and logistics service providers, even though smart containers
+supposedly route themselves in the Physical Internet.
+The problem studied in this paper is related to the Delivery Dispatching Problem (Minkoff
+1993), which entails dispatching decisions from a carrier’s perspective. Transport jobs arrive
+at a hub according to some external stochastic process. The carrier subsequently decides
+which subset of jobs to accept, anticipating future job arrivals. Basic instances may be
+solved with queuing models, but more complicated variants are computationally intractable;
+researchers often resort to reinforcement learning to learn high-quality strategies. We high-
+light some recent works in this domain. Klapp et al. (2018) develop an algorithm that solves
+the dispatching problem for a transport service operating on the real line. Van Heeswijk and
+La Poutré (2018) compare centralized and decentralized transport for networks with ﬁxed
+line transport services, concluding that decentralized planning yields considerable computa-
+tional beneﬁts. Van Heeswijk et al. (2019a) study a variant including a routing component,
+using value function approximation to ﬁnd strategies. Voccia et al. (2019) solve a variant that
+includes both pickups and deliveries. Our current paper distinguishes itself from the afore-
+mentioned works by assigning jobs based on bid-ask spreads (neutral perspective) rather than
+transport efﬁciency (carrier perspective).
+Next, we highlight related works on optimal bidding in freight transport; in most of these
+studies competing carriers bid on transport jobs. For instance, Yan et al. (2018) propose a
+particle swarm optimization algorithm to place carrier bids on jobs. Miller and Nie (2020)
+emphasize the importance of integrating carrier competition, routing and bidding. Wang et al.
+(2018) design a reinforcement learning algorithm based on knowledge gradients, solving for a
+bidding structure with a broker intermediating between carriers and shippers. The broker aims
+to propose a price that satisﬁes both carrier and shipper, taking a percentage of accepted bids
+as its reward. In the context of market platforms, Zha et al. (2017) study market equilibriums,
+concluding that carriers and the broker beneﬁt in times of scarce supply. Atasoy et al. (2020)
+address interaction between a brokerage platform and multiple carriers, ﬁnding that the broker
+retains proﬁtability even after providing ﬁnancial incentives to carriers. In a Physical Internet
+context, Qiao et al. (2019) model hubs as spot freight markets where carriers can place bids
+on transport bids. To this end, they propose a dynamic pricing model based on an auction
+mechanism. Most studies assume that shippers have limited to no inﬂuence in the bidding
+process; we aim to add a fresh perspective with this work. This paper builds onto the work
+of Van Heeswijk (2019), in which the shipper is a learning agent and the carrier a passive
+price taker. The author uses a policy gradient algorithm to learn bidding strategies. To the
+best of our knowledge, there are no studies that explicitly model both carriers and shippers
+as intelligent bidding agents.
+Weanalyzeourexperimentalresultsfromagametheoreticalperspective.Conceptually,the
+bid-ask problem may be classiﬁed as an inﬁnitely repeated non-cooperative game, in which
+both agents aim to maximize their average reward. More speciﬁcally, it may be classiﬁed as
+a bargaining game such as deﬁned by Nash (1953), in which both agents claim a share of
+system-wide gains. Folk theorems provide insights into equilibria in such settings (Friedman
+1971). Each payoff proﬁle that is feasible and individually rational in the one-shot game
+constitutes a Nash equilibrium in the repeated game. For bargaining games, the presence of a
+threat or disagreement point for deviating opponents is essential to prove the existence of Nash
+equilibria. Aumann and Shapley (1994) and Rubinstein (1980, 1994) present solutions for
+123
+
+134
+Annals of Operations Research (2025) 350:131–168
+Nash equilibria under temporary punishments. Performance metrics and normative solutions
+are discussed in Sect. 5.2.
+3 System description
+This section formally deﬁnes our system as a Markov Decision Process model. In Sect. 3.1 we
+provide a high-level outline of the system and the agents involved. Section 3.2 describes the
+system state; Sect. 3.3 follows up with the decisions and reward functions. Finally, Sect. 3.4
+provides the transition function to complete the model deﬁnition.
+3.1 Model outline
+The system contains three agent types: (i) shipper (S), (ii) carrier (C) and (iii) broker (B).
+We provide a global outline here; more detail follows in the subsequent sections.
+We consider a singular transport service with a ﬁxed origin (e.g., a transport hub). Every
+day, the shipper places individual bids (autonomous smart containers using a joint stochastic
+policy) for each job to be transported to its destination on a real line. The job is shipped if
+its bid is accepted. If the job reaches its due date and is still not shipped, it is removed from
+the system as a failed job. Second, the carrier is responsible for performing the transport
+service. Without knowing the bid price, it poses a daily ask price for each job. Depending on
+volume and distance, each job has its own marginal transport costs. When the broker assigns
+a job, the carrier is obliged to transport it and receives the requested ask price. Third, the
+freight broker is responsible for scheduling jobs. After receiving all bids and asks for the
+day, the broker assigns transport jobs to the carrier. Its proﬁt is the difference between the
+bid- and ask price of each shipped job. This means that (i) jobs are never shipped when the
+ask exceeds the bid and (ii) in case transport capacity is insufﬁcient, the broker assigns jobs
+in a way that maximizes its own total proﬁt. Unlike the other agents, the broker’s behavior
+is rule-based rather than learned (i.e., a passive agent). Furthermore, it makes decisions at
+the batch level (scheduling all jobs for the day) rather than at the individual job level. We
+illustrate the strategic bidding problem in Fig. 1.
+We consider an inﬁnite horizon setting in which strategies are updated daily (i.e., an online
+learning setting). For practical and notational purposes, the horizon length is set to N = ∞
+and the corresponding decision epochs (representing days) to n ∈{0, 1, . . . , N}. Every day
+n, a transport service with ﬁxed capacity ζ C departs along the real line; all shipped jobs are
+delivered the same day (i.e., before the next epoch). Neither past bid- and ask prices nor job
+allocations impact current decisions, satisfying the Markovian memoryless property.
+3.2 State description
+The system state is deﬁned as the set of transport jobs. An individual job is deﬁned by an
+attribute vector j. In addition to the global time horizon that runs till N, each job has an
+individual time horizon Tn, j that corresponds to the number of decision epochs till due date
+(i.e., decreasing with time). Each job is represented by an attribute vector:
+j =
+⎛
+⎝
+jτ = # epochs till due date
+jd = distance to destination
+jv = container volume
+⎞
+⎠
+123
+
+Annals of Operations Research (2025) 350:131–168
+135
+$
+1
+2
+3
+3
+3
+4
+$
+$
+$
+$
+$
+$
+1
+1
+2
+3
+3
+3
+4
+1
+Broker
+Bid-ask
+Carrier
+Ask price
+Shipper
+Bid price
+$
+$
+$
+$
+$
+$
+$
+Fig. 1 Visual representation of the bid-ask system. For each job, the shipper and carrier pose a bid- and ask
+price respectively. The broker assigns jobs based on bid-ask spread. For the carrier and shipper, the process is
+essentially a black box
+The integer attribute jτ ∈[0, τ max] indicates how many decision epochs remain until
+the latest possible shipment date. Whenever a new job arrives in the system, we initialize
+Tn, j = { jτ, jτ −1, . . . , 0}. The time horizon is tied to the individual job; the corresponding
+number of decision epochs till due date—represented by attribute jτ—is decremented with
+each time step. If jτ = 0 and the job has not been shipped, it is removed from the system.
+Next, the attribute jd ∈[1, dmax] indicates the distance between origin and destination.
+Finally, the job volume jv ∈[1, ζ max], with ζ max ≤ζ C represents the transport capacity
+required for the job. The system state at day n is represented by the set Jn, which contains
+all jobs j present in the system. We use Jn to denote the set of feasible states.
+3.3 Decisions and rewards
+We introduce the decisions and reward functions. For each job, the shipper places a bid
+bn, j ∈R and the carrier poses an ask price an, j ∈R. The broker assigns jobs to the carrier,
+earning bn, j −an, j for each shipped job. As strategic behavior is the focal point of interest
+in this study, for each job only one bid/ask per epoch may be posed.
+We ﬁrst discuss the decisions and reward function of the shipper. The shipper bids accord-
+ing to a strategy πshp
+n
+= P(bn, j | ( j, Jn))—used by all smart containers—with S denoting
+the set of feasible strategies. How to obtain a strategy will be explained in Sect. 4. All bids
+are stored in a vector bn = [bn, j]∀j∈Jn. Remind that the payoff depends on the broker’s
+decision—denoted by binary variable γn, j, with 1 indicating the job will be shipped—and
+is unknown when posing the bid. The maximum willingness to pay for transporting job j
+is represented by cS,max
+j
+= cS,max · jv · jd (i.e., depending on volume and distance); this
+value is used to compute the reward. As a well-functioning system is desired, we add variable
+penalties to express regret on failed bids, with lower bids yielding higher penalties (note that
+reward functions of shippers and carriers are not symmetric). At any given decision epoch,
+the direct reward function for individual jobs is deﬁned as follows:
+123
+
+136
+Annals of Operations Research (2025) 350:131–168
+r S
+j (γn, j, bn, j) =
+
+cS,max
+j
+−bn, j
+if γn, j = 1
+−max
+
+0, cS,max
+j
+−bn, j
+
+if γn, j = 0 .
+(1)
+The carrier makes its decision according to a strategy πC
+n = P(an, j | ( j, Jn)), with C
+denoting the set of strategies. Ask prices during an episode are stored in a vector an. Each job
+has a marginal transport cost that depends on its distance and volume: cC,trn
+j
+= cC,trn · jv · jd.
+Posinganaskpricebelowthetransportcostsyieldsalosswhenaccepted.Apenaltyisincurred
+when (i) the ask price exceeds the shipment costs and (ii) there is sufﬁcient idle capacity to
+accommodate the rejected job. If a job is assigned, the carrier’s reward is the difference
+between the ask price and the transport costs:
+rC
+j (γn, j, an, j) =
+⎧
+⎪⎪⎨
+⎪⎪⎩
+an, j −cC,trn
+j
+if γn, j = 1
+−max
+
+0, an, j −cC,trn
+j
+
+if γn, j = 0 ∧ζ C −
+
+j∈Jn γn, j · jv
+
+> 0
+0
+otherwise
+.
+(2)
+For the broker, a job’s value is its bid price (bn, j) minus its ask price (an, j). Using these
+values and the available capacity, the broker solves a 0–1 knapsack problem for the entire
+batch of jobs, using dynamic programming (Kellerer et al. 2004). The broker maximizes its
+direct rewards by selecting γ n as follows:
+arg max
+γn∈(Jn)
+⎛
+⎝
+j∈Jn
+γn, j(bn, j −an, j)
+⎞
+⎠,
+(3)
+s.t.
+
+j∈Jn
+γn, j · jv ≤ζ C .
+The corresponding reward function for the broker is:
+r B
+j (γn, j, bn, j, an, j) =
+
+bn, j −an, j
+if γn, j = 1
+0
+otherwise
+.
+(4)
+Note that the broker never selects jobs with a higher ask than bid; this would yield a
+negative payoff. We formalize this minor result in Lemma 1, serving as a building block for
+later proofs.
+Lemma 1 (Job selection when bid price is lower than ask price) If bn, j < an, j, the broker
+will always set γ n, j = 0 to maximize its proﬁts.
+Proof The proof is found in “Appendix A”. The broker always rejects jobs that would yield
+a negative payoff, since rejecting yields a payoff of 0.
+⊓⊔
+3.4 Transition function
+To conclude the system deﬁnition, we describe the transition function X : (Jn, ωn+1, γ n) 
+→
+Jn+1—formally outlined in Algorithm 1—for the system state that occurs in the time step
+from decision epoch n to n + 1. Three state changes occur during a time step; (i) number
+of decision epochs till due dates are decreased for all unshipped jobs, (ii) failed and shipped
+jobs are removed and (iii) newly arrived jobs (denoted by set ωn+1 ∈) are added.
+123
+
+Annals of Operations Research (2025) 350:131–168
+137
+Algorithm 1 Transition function X(Jn, ωn+1, γ n)
+0:
+Input: Jn, ωn+1, γ n
+▶Current state, job arrivals, shipping selection
+1:
+Jn+1 ← ∅
+▶Initialize next state
+2:
+Jxn ← Jn
+▶Copy state
+3:
+∀j ∈Jn
+▶Loop over all jobs
+4:
+Jxn ← Jxn \ j | γn, j = 1
+▶Remove shipped job
+5:
+Jxn ← Jxn \ j | jτ = 0 ∧γn, j = 0
+▶Remove unshipped job at due date
+6:
+jτ ← jτ −1 | jτ > 0
+▶Decrement number of epochs till due date
+7:
+Jn+1 ← Jxn ∪ωn+1
+▶Merge existing and new job sets
+8:
+Output: Jn+1
+▶New state
+3.5 Policies and game-theoretical properties
+From a game-theoretical perspective, the system has some interesting properties that are
+worth exploring before turning to solutions. In inﬁnitely repeated games without discounting
+(corresponding to our inﬁnite horizon problem), a common objective is to maximize average
+proﬁts (Friedman 1971). Following the limit of means theorem, the optimal strategy (for the
+shipper, carrier is near-equivalent) looks as follows:
+π S,∗= lim
+n
+→∞
+1
+n
+N
+
+n=0
+
+j∈Jn
+⎛
+⎝
+n+|T j|
+
+n′=n
+arg max
+bn′, j∈R
+E(r j(γn′, j, bn′, j))
+⎞
+⎠
+(5)
+The problem may be classiﬁed as a non-cooperative bargaining game (Nash 1953), in
+which the difference between transport costs and maximum willingness to pay is a surplus
+to be divided between shipper and carrier (remind the broker does not actively inﬂuence
+the game). Both agents independently ‘claim’ a proportion of the system-wide gain. The
+so-called feasibility set contains all solutions in which both agents achieve a nonnegative
+payoff. If no agreement is reached (i.e., the cumulative claim exceeds the system-wide gain
+or agents only earn negative payoffs), a disagreement point should exist. That is, each agent
+can execute a credible threat when the opponent deviates from the set of feasible solutions,
+as such capping its payoff. As shown in Lemma 2, each agent may cap the opponent’s payoff
+at 0. We prove this result for the carrier; a similar proof can be constructed for the shipper.
+Lemma 2 (Existence of disagreement point) For the carrier, there exists a strategy πC that
+ensures the shipper’s payoff r S
+j equals at most 0 for any job j, regardless of the opponent’s
+strategy π S.
+Proof The full proof is found in “Appendix A”. If the carrier asks a price higher than the
+shipper’s maximum willingness to pay, the shipper must either bid higher than that (resulting
+in a negative payoff when accepted) or bid below the ask and forfeit the agreement (payoff
+of 0).
+⊓⊔
+Following Nash (1953), uncertainty vanishes in the limit and the game converges to an
+equilibrium. In such an equilibrium, agents cannot improve their payoff by unilaterally chang-
+ing their strategy. The folk theorem (Friedman 1971) states that an equilibrium payoff proﬁle
+123
+
+138
+Annals of Operations Research (2025) 350:131–168
+should satisfy two properties. First, the payoff should be a convex combination of payoffs of
+the stage game, e.g., a weighted average as deﬁned in Eq. (5). Second, the equilibrium payoff
+must be individually rational, paying at least as much as the deviation point. Lemma 3 shows
+that the latter condition holds and formalizes the Nash equilibrium.
+Lemma 3 (Existence of Nash equilibrium) Any payoff proﬁle satisfying rC
+j +r S
+j ≡cS,max
+j
+−
+cC,trn
+j
+is a Nash equilibrium. This payoff proﬁle is achieved by any pair of strategies satisfying
+cC,trn
+j
+≤an, j = bn, j ≤cS,max
+j
+.
+Proof The full proof is found in “Appendix A”. Intuitively, when an, j < bn, j, an agent
+could unilaterally improve its payoff without triggering the disagreement point. All proﬁles
+not satisfying cC,trn
+j
+≤an, j = bn, j ≤cS,max
+j
+are outside the feasible set and invoke the
+disagreement point.
+⊓⊔
+The key result of this section is that any payoff proﬁle satisfying cC,trn
+j
+≤an, j = bn, j ≤
+cS,max
+j
+is a Nash equilibrium. Although the bargaining game is non-cooperative, several
+normative solutions exist that incorporate utility symmetry and Pareto efﬁciency as fairness
+criteria. The Nash bargaining solution (not be confounded with the equilibrium) describes
+the product of utilities as optimal (Nash 1950), the Kalai–Smorodinsky solution maximizes
+utility ratios (Kalai and Smorodinsky 1975), and Kalai’s solution maximizes the minimum
+surplus utility (Kalai 1977). In Sect. 5 we use the game-theoretical foundation to deﬁne
+appropriate measures for the experimental design.
+4 Solution method
+This section explains the solution method, which is based on deep reinforcement learning
+techniques. Finding optimal strategies to solve Eq. (5) is hard. The expectation depends on
+both the (unknown and potentially mixed) strategy of the opposing agent and the stochastic
+realization of new jobs; the optimal strategy today might fail tomorrow. Furthermore, bid and
+ask prices are generated at the individual job level, whereas the broker allocates jobs at the
+batch level. Finally, continuous action spaces by deﬁnition contain inﬁnitely many actions.
+Thus, we use reinforcement learning to learn approximate strategies. Both shipper and carrier
+actively learn their pricing strategies based on observations. As changing the strategy of one
+agent inﬂuences the other, we are dealing with a highly non-stationary system.
+In Sect. 4.1 we present a stochastic policy gradient algorithm, in which the strategy is
+constantly adjusted to maximize expected rewards given the expected value. Section 4.2
+presents several extensions to the base algorithm, including value function approximations
+(actor-critic models). Finally, Sect. 4.3 describes the update procedure.
+4.1 Policy gradient learning
+The reinforcement learning algorithms used in this paper are policy gradient algorithms,
+operating directly on the strategy. The strategy itself is stochastic, meaning the bid/ask is
+drawn from a distribution. This makes the strategy harder to counter than deterministic
+or rule-based strategies. In addition, stochastic policies tend to work better in uncertain
+environments; the opponent’s strategy is never known with certainty. Policy gradient methods
+can be expanded by adding a value function approximation to estimate downstream rewards
+123
+
+Annals of Operations Research (2025) 350:131–168
+139
+related to current actions—in that case we speak of actor-critic algorithms. We ﬁrst discuss
+the vanilla policy gradient algorithm REINFORCE (Williams 1992) and extend to actor-critic
+models in Sect. 4.2. For readability, we only present notation for the shipper; carrier variants
+are near-identical.
+Learning takes place in episodes m ∈{0, 1, . . . , M}, with each episode containing a
+ﬁnite number of decision epochs n. Every episode m yields a batch of job observations
+with corresponding rewards for shipper and carrier, used to update the policies. Rewards are
+weighted equally and thus not discounted.
+In policy gradient reinforcement learning, actions are applied directly on the state. The
+actions are determined by a stochastic strategy:
+π S,m
+θ S
+
+bm
+n, j | j, Jn
+
+= Pθ S
+bm
+n, j | j, Jn
+
+,
+(6)
+where θ S is the parametrization of the strategy. The probability distributions representing the
+strategies are Gaussian distributions; bids (asks) are drawn independently for each container:
+bm
+n, j ∼N(μθ S( j, Jn), σθ S), ∀j ∈Jn .
+(7)
+The parameterized standard deviation σθ S determines the level of exploration while learn-
+ing, but is also an integral part of the strategy itself. Standard deviations typically decrease
+to small values once appropriate means are identiﬁed, but may also be larger when retain-
+ing some ﬂuctuation is beneﬁcial. For instance, strategies embedding randomness are more
+difﬁcult to counter.
+The stored action-reward trajectories during each episode m indicate which actions
+resulted in good rewards. We compute gradients which ensure strategy updates in that direc-
+tion. Only completed jobs (i.e., shipped or removed) are used to update the strategy, such
+that we capture full reward trajectories. We might also learn from single observations (i.e.,
+uncompleted jobs), yet full reward trajectories are unbiased and the trajectories are fairly
+short in this problem setting. Completed jobs are stored in a set ˆJ
+m. For each episode the
+cumulative rewards per job—shown for the shipper here, with a slight abuse of notation—are
+deﬁned as follows:
+ˆvS,m
+n, j (γn, j, bn, j) =
+
+rn, j
+
+γn, j, bm
+n, j
+S,m
+if jτ = 0
+rn, j
+
+γn, j, bm
+n, j
+S,m + ˆvS,m
+n+1, j
+if jτ > 0
+, ∀jτ ∈T j .
+The cumulative rewards observed at time n in episode m are stored in vectors ˆvS,m
+n
+=
+
+[ˆvS,m
+n, j ] jτ ∈T j
+
+∀j∈Jn and ˆvC,m
+n
+=
+
+[ˆvC,m
+n, j ] jτ ∈T j
+
+∀j∈Jn. At the end of each episode, we can
+construct the information vector:
+I S,m =
+
+[Jm
+n , bm
+n , ˆvS,m
+n
+, γ m
+n ]∀n∈{0,...,N}, ˆJ
+m
+.
+The information vector contains the states, actions and rewards required for the strategy
+updates. For this purpose we utilize the policy gradient theorem; see Sutton and Barto (2018)
+for a detailed description. We present the theorem for the shipper:
+∇θ Sv
+πθS
+n, j ∝
+N
+
+n=1
+
+Jn∈Jn
+Pπ S
+θ (Jn | Jn−1)
+
+bm
+n, j∈R
+∇θ Sπ S
+θ
+
+bm
+n, j | j, Jn
+
+v
+π S
+θ
+n, j
+
+γn, j, bm
+n, j
+
+
+.
+We proceed to apply the policy gradient theorem to our system, adopting a Gaussian decision-
+making strategy, using a neural network (actor network) to output the distribution parameters.
+123
+
+140
+Annals of Operations Research (2025) 350:131–168
+The carrier and shipper both deploy a neural network, which is utilized at the individ-
+ual container level (i.e., a jointly used policy). Let θ S deﬁne the set of weight parameters
+describing the decision-making strategy πθ S : ( j, Jn) 
+→bm
+n, j. Furthermore, let φ( j, Jn)
+be a feature vector distilling the most salient state attributes, for instance the average num-
+ber of epochs till due date or the number of jobs waiting (note that information is shared
+between containers). The features used for our study are described in Sect. 5.4. For the
+actor network, the feature vector φ is the input, θ S represents the network weights, and the
+mean bid (ask) μθ S and standard deviation σθ S are the output. We formalize the strategy as
+πθ S =
+1
+√
+2πσθ e
+−
+
+bm
+n, j −μθ S ( j,Jn)
+2
+2σ2
+θ S
+, with bm
+n, j being the bid price, μθ S( j, Jn) the Gaussian mean
+and σθ S the parametrized standard deviation.1 The corresponding action bm
+n, j is acquired from
+the inverse normal distribution. Parameter updates take place after each episode, utilizing a
+function U(θ S,m, I S,m) that is detailed in Sect. 4.3.
+The core concept behind the policy gradient algorithm is that the strategy converges to a
+price distribution appropriate for the state. Actions with high rewards and low probabilities
+yield the strongest update signals. The algorithmic procedure to update the parametrized
+strategy is formalized in Algorithm 2. To summarize the procedure: we perform M training
+episodes containing N decision epochs each, with new jobs arriving stochastically each
+epoch. For every individual job, bids and asks are generated at each epoch by the actor
+networks. Based on bid-ask pairs, the broker allocates jobs by solving a knapsack problem.
+Reward trajectories per job are stored; if a job is shipped or reaches its due date, it is added
+to the set of completed jobs. After each episode m, the reward trajectories of all completed
+job are used to update the actor networks for shipper and carrier respectively.
+Algorithm 2 Outline of the policy gradient algorithm (based on Williams 1992)
+0:
+Input: π0
+θ S , π0
+θC
+▶Differentiable parametrized strategies
+1:
+θ S ← R|θ S|, θC ← R|θC |
+▶Initialize parameters
+2:
+∀m ∈{0, . . . , M}
+▶Loop over episodes
+3:
+ˆJm ← ∅
+▶Initialize completed job set
+4:
+J0 ← J0
+▶Generate initial state
+5:
+∀n ∈{0, . . . , N}
+▶Loop over ﬁnite time horizon
+6:
+bm
+n, j ← πm
+θ S ( j, Jn), ∀j ∈Jn
+▶Bid placement jobs
+7:
+am
+n, j ← πm
+θC ( j, Jn), ∀j ∈Jn
+▶Ask placement jobs
+8:
+γ mn ← arg max
+γ mn ∈(Jn)
+▶Job allocation broker, Eq. (3)
+
+j∈Jt′ γ m
+n, j(bm
+n, j −am
+n, j)
+
+9a:
+ˆvS,m
+jτ , j ← r j(γ m
+n, j, bm
+n, j), ∀j ∈Jn
+▶Compute cumulative rewards shipper
+9b:
+ˆvC,m
+jτ , j ← r j(γ m
+n, j, bm
+n, j), ∀j ∈Jn
+▶Compute cumulative rewards carrier
+10:
+∀j ∈Jn | jτ = 0 ∨γ m
+n, j = 1
+▶Loop over completed jobs
+11:
+ˆJm ← ˆJm ∪{ j}
+▶Update set of completed jobs
+12:
+ωn+1 ← 
+▶Generate job arrivals
+1 πθ S is the parameterized strategy, π represents the mathematical constant.
+123
+
+Annals of Operations Research (2025) 350:131–168
+141
+13:
+Jn+1 ← SM(Jn, ωn+1, γ mn )
+▶Transition function, Algorithm 1
+14a:
+I S,m ←
+
+[Jmn , bmn , ˆvS,m
+n
+, γ mn ]∀n∈{0,...,N}, ˆJm
+▶Store information shipper
+14b:
+IC,m ←
+
+[Jmn , amn , ˆvC,m
+n
+, γ mn ]∀n∈{0,...,N}, ˆJm
+▶Store information carrier
+15a:
+θ S,m+1 ← U(θ S,m, I S,m)
+▶Update actor network shipper
+15b:
+θC,m+1 ← U(θC,m, IC,m)
+▶Update actor network carrier
+16:
+Output: π M
+θ S , π M
+θC
+▶Return tuned strategies
+Table 1 Algorithmic variants of the policy gradient algorithm
+Algorithm
+Reward signal
+Description
+Policy gradient
+ˆvm
+n, j
+Cumulative reward
+Policy gradient with baseline
+ˆvm
+n, j −¯vm
+jτ
+Deduct average reward
+Q-value
+Q(bm
+n, j, j, Jn)
+Estimated cumulative reward
+TD(1)
+ˆvm
+n, j −Q(bm
+n, j, j, Jn)
+Deduct Q-value
+Advantage value
+Q(bm
+n, j, j, Jn) −Q(μθ, j, Jn)
+Deduct average Q-value
+4.2 Policy gradient extensions
+Section 4.1 presented the basic policy gradient algorithm. We now introduce four extensions,
+namely (i) policy gradient with baseline, (ii) actor-critic with Q-value, (iii) temporal differ-
+ence learning—more speciﬁcally TD(1)—and (iv) actor-critic with advantage function. The
+algorithms are summarized in Table 1; for detailed descriptions we refer to Sutton and Barto
+(2018).
+We ﬁrst discuss the policy gradient with baseline. Rewards may exhibit large variance that
+hampers learning. To reduce this variance, we deduct the average observed value ¯vm
+jτ during
+the episode as a baseline value (Sutton and Barto 2018). In our update procedure, we then
+replace ˆvm
+n, j with ˆvm
+n, j −¯vm
+jτ , yielding lower variance than the original.
+The second extension is the actor-critic algorithm with Q-values; a hybrid of policy
+approximation and value approximation. Figure 2 provides an illustration of an actor-critic
+architecture. Policy gradient methods rely on directly observed rewards, which may strongly
+vary between episodes. Furthermore, actor networks do not leverage information about par-
+ticular states encountered. In the actor-critic approach, we replace the observed value ˆv with
+a function Q(bm
+n, j, j, Jn) that is often deﬁned by a neural network (critic network). The
+critic network transforms the input features into an expected reward value, popularly known
+as a Q-value. Drawbacks of actor-critic methods are (i) the need to learn additional param-
+eters, (ii) slower convergence than actor-only methods and (iii) simultaneous adjustments
+of strategy and value function. Particularly the latter is problematic in highly non-stationary
+multi-agent settings; value functions learned in the past may no longer be representative for
+current strategies and vice versa.
+The third extension, temporal difference learning, utilizes the Q-value as a baseline by
+subtracting it from the observed rewards. We use the TD(1) variant that incorporates the full
+reward trajectory (Sutton and Barto 2018). Unlike TD(0), the reward signals are unbiased.
+Subtracting the Q-value yields a reward signal ˆvm
+n, j −Q(bm
+n, j, j, Jn). This approach preserves
+both the actual observations and the value function approximations while reducing variance.
+123
+
+142
+Annals of Operations Research (2025) 350:131–168
+Hidden
+layer 1
+Hidden
+layer 2
+Hidden
+layer 3
+μ
+σ
+Input
+layer
+Output
+layer
+Hidden
+layer 1
+Hidden
+layer 2
+Hidden
+layer 3
+Q
+Input
+layer
+Output
+layer
+Fig. 2 Example of actor network (left) outputting μ and σ and critic network (right) outputting ¯V . The input
+layer contains the feature vector φ
+The fourth extension we discuss is the advantage function (also known as Advantage Actor
+Critic or A2C). It also uses a baseline function, but utilizes value functions rather than reward
+observations. Speciﬁcally, we deﬁne the reward signal Q(bm
+n, j, j, Jn)−Q(μθ, j, Jn), where
+the baseline term is a reward function that depends on the state but is independent of the action
+(bid or ask). Concretely, the ﬁrst Q-value uses the sampled bid/ask as a feature, the second
+Q-value the mean bid/ask. Again, the objectives are to reduce the variance and to generalize
+past observations.
+4.3 Update procedure
+Algorithm 2 outlined the generic policy gradient algorithm with a generic update function
+U(θ S,m, I S,m). Here we discuss the updating procedure in more detail. Traditionally, pol-
+icy gradient algorithms follow stochastic gradient ascent for updates. The corresponding
+gradients can be computed with respect to each feature and are deﬁned by
+∇μθ ( j, Im) =
+(bm
+n, j −μθ( j, Jn))φ( j, Jn)
+σ 2
+θ
+,
+∇σθ ( j, Im) =
+(bm
+n, j −μθ( j, Jn))2 −σ 2
+θ
+σ 3
+θ
+.
+In a neural network setting, we might compute these gradients with respect to the activa-
+tion functions and determine the corresponding updates for the network weights (classical
+stochastic gradient ascent). However, it is often convenient to deﬁne a loss function that
+allows updating with state-of-the-art gradient descent algorithms, using a backpropagation
+procedure. Update algorithms such as ADAM often outperform traditional gradient descent.
+The Gaussian loss function (Van Heeswijk et al. 2019b) is deﬁned by:
+Lactor
+bm
+n, j, Jn, ˆv j
+
+= −log
+⎛
+⎜⎜⎝
+1
+√
+2πσθ
+e
+−
+
+bm
+n, j −μθ ( j,Jn)
+2
+2σ2
+θ S
+⎞
+⎟⎟⎠ˆv j .
+(8)
+To update critic networks, we also start with a loss function such that we can perform
+backpropagation. This loss function is simply the mean-squared error between Q-value and
+observed rewards:
+123
+
+Annals of Operations Research (2025) 350:131–168
+143
+Table 2 Settings for Case I (deterministic) and Case II (stochastic)
+Setting
+Case I
+Case II
+Number of job arrivals
+1
+[1–10]
+Due date
+0
+[1–5]
+Job transport distance
+1
+[1–5]
+Job volume
+1
+[1–5]
+Willingness to pay (per volume unit per mile)
+2
+2
+Transport costs (per volume unit per mile)
+1
+1
+Transport capacity
+1
+{40, 300}
+Lcritic
+bm
+n, j, Jn, ˆv j
+
+=
+
+ˆvm
+jτ , j −Q
+
+bm
+n, j, j, Jn
+2 .
+(9)
+5 Experimental design
+This section introduces the experimental design. The main objective is to provide insights
+into the behavior of the algorithm. Section 5.1 introduces the two test cases and Sect. 5.2
+deﬁnes the performance metrics. Section 5.3 describes the Python implementation. Finally,
+Sect. 5.4 lists the features used as network input.
+5.1 Case properties
+We present two test cases for this study; a toy-sized deterministic one (Case I) and a larger
+stochastic one (Case II).
+In Case I (deterministic), each day exactly one job arrives with jτ = 0 (i.e., only one
+decision epoch), volume jv = ζ C and a ﬁxed distance jd. It follows that the job is shipped
+if am
+n, j < bm
+n, j and fails otherwise. The maximum willingness to pay is 2, the transport costs
+are 1. This simple setting allows to test behavior in-depth under a variety of circumstances.
+In addition, it abstractly links to a setting in which modular containers bid in unison (e.g., as
+a horizontal collaboration or cluster of containers) (Sallez et al. 2016). We use Case I to tune
+parameters, explore the parameter space and obtain behavioral insights.
+Case II stochastically generates a number of job arrivals each day and includes varying
+job properties. Due dates, volumes and distances range between 1 and 5. Per volume unit
+per mile, the maximum willingness to pay is 2 and transport costs are 1. The number of jobs
+arriving daily varies between 0 and 10; the total number of jobs may accumulate up to 50.
+We consider two variants of the case, one in which the transport capacity is 40 (somewhat
+scarce) and one where it is 300 (abundant). The additional challenges in Case II, compared to
+Case I, stem from the uncertain availability of sufﬁcient capacity and the varying dimensions
+of the jobs. Table 2 summarizes the case settings.
+5.2 Performance metrics
+The objective of our market design is to represent a completely decentralized, self-organizing
+transport market without interventions or regulations. The performance metrics are aligned
+123
+
+144
+Annals of Operations Research (2025) 350:131–168
+to this purpose. Remind that we study an online environment, subject to strategy updates
+while measuring performance.
+In Sect. 3.5, we established that inﬁnitely many Nash equilibria exist for our system.
+However, the Nash equilibrium is a theoretical result that emerges in the limit after all
+uncertainty has been resolved. The setting studied here is inherently uncertain; due to the
+stochastic nature of the policies perfect adherence is never achieved. Therefore, adherence
+to the Nash equilibrium is the ﬁrst performance metric. Formally, we deﬁne Nash adherence
+as follows:
+max
+⎛
+⎝0,
+
+t∈T j
+γt, j
+
+am
+n, j −cmin
+j
+
++
+
+cmax
+j
+−bm
+n, j
+
+
+cmax
+j
+−cmin
+j
+
+⎞
+⎠.
+The second performance metric is fairness. Although a Nash equilibrium is rational, it is
+not necessarily perceived as fair; one agent might receive the full system gain. Section 3.5
+introduced several normative solutions that guarantee Pareto optimality and symmetry of
+utilities, setting an upper bound for fairness. For our linear utility functions, the solutions
+boil down to a 50/50 split. We note that agents compete to increase their own reward share
+in a stochastic setting with incomplete information. As such, unfairness is an inherent aspect
+of competitive markets and not necessarily an indication of poor performance. We formalize
+fairness with the following metric:
+max
+⎛
+⎝0, 1 −
+
+
+t∈T j
+γt, j
+
+am
+n, j −cmin
+j
+
+−
+
+cmax
+j
+−bm
+n, j
+
+
+am
+n, j −cmin
+j
+
++
+
+cmax
+j
+−bm
+n, j
+
+
+⎞
+⎠.
+Thethirdmetricisutilization.Ifatransportservicedepartswithidlecapacitywhilefeasible
+jobs (in terms of capacity) remain unshipped, this indicates an inefﬁciency in the market.
+Also note that the preceding metrics suffer due to low utilization. To determine the upper
+bound of utilized capacity, we solve a variant of the knapsack problem in which we substitute
+the job value with the job volume, thus maximizing utilization of transport capacity:
+arg max
+γ ζC
+j ∈ζC (Jn)
+⎛
+⎝
+j∈Jn
+γ ζ C
+j
+· jv
+⎞
+⎠,
+(10)
+s.t.
+
+j∈Jn
+γ ζ C
+j
+· jv ≤ζ C .
+Dividing the true utilization by the theoretically possible utilization gives the relative
+utilization:
+
+j∈Jn γn, j · jv
+
+j∈Jn γ ζ C
+n, j · jv
+(11)
+As a concluding remark, we emphasize that the learning algorithms are purposefully
+designed to be model-free, and the policies to be stochastic. This way, we make minimal
+assumptions on the behavior of agents. We admit, however, that deterministic or rule-based
+policies likely achieve better system-wide performance. The present study’s objective is not
+to achieve the best possible performance (as the solution itself is trivial), but instead observe
+behavior under minimalistic behavioral assumptions.
+123
+
+Annals of Operations Research (2025) 350:131–168
+145
+5.3 Implementation
+The algorithm is coded in Python 3.8 and uses TensorFlow 2.3 for the neural network archi-
+tectures. To initialize the neural network weights, we use He initialization (He et al. 2015) for
+all but the last layer. For the ﬁnal layer of the actor networks, we initialize bias weights such
+that the carrier’s ask equals cC,trn and the shipper’s bid equals cS,max (we test different bias
+initializations in later experiments). For the Q-value (critic network), all weights in the ﬁnal
+layer are initialized at 0, guaranteeing an unbiased initial estimate that does not inﬂuence
+decisions in the early iterations. We use the ADAM optimizer for network updates, which
+we ﬁnd to consistently outperform optimizers such as classic stochastic gradient descent and
+RMSprop.
+All solution methods are veriﬁed by checking the behavior of trivial strategies (e.g., by
+ﬁxing the strategy of the opposing agent). We remark that our actor-critic methods (requiring
+to learn a Q-value) generally take long to converge even in simple settings, but their eventual
+convergence is conﬁrmed.
+We perform 5 replications for the main experiments (after the initial explorations), which
+in stable experiments gives standard deviations less than 5% on the KPIs. We report average
+values (excluding the ﬁrst 10% of iterations, which serve as a warm-up period) and end-of-
+horizon results, the latter provide convergence insights.
+5.4 Features
+To parametrize the strategy we use several features, denoted by vector φ( j, Jn). This vector
+(unique for each job) serves as input layer for the neural networks. We adopt the same
+set of features as deﬁned in Van Heeswijk (2019) for the single-agent system, namely (i)
+bias, (ii) job due date, (iii) job transport distance, (iv) job volume, (v) average # epochs till
+due date, (vi) average distance, (vii) average volume and (viii) total volume. Note that the
+features contain both individual job- and system-wide properties, implying that the containers
+share information (but not between agents). Such information-sharing is shown to have a
+small but positive impact on solution quality (Van Heeswijk 2019). The proposed feature
+set demonstrates expected patterns, such as bid prices increasing closer to the due date and
+higher bids being placed for larger volumes.
+For computing Q-values, we add the selected bid- or ask price to the vector; for the
+advantage function we use the average bid/ask price. “Appendix F” mathematically deﬁnes
+the features. By initializing weights corresponding to the bias, we determine the initial values
+for μ0
+θ and σ 0
+θ . In the implementation, all features are normalized before being used as input
+for the neural networks.
+6 Numerical results and analysis
+This section presents the results and analysis of the numerical experiments, as outlined in
+Sect. 5. In Sect. 6.1 we explore the parameter space and determine suitable hyper-parameters
+(based on Case I). Section 6.2 analyzes behavior for the deterministic Case I, Sect. 6.3 for
+the stochastic Case II.
+123
+
+146
+Annals of Operations Research (2025) 350:131–168
+0
+0.2
+0.4
+0.6
+0.8
+1
+·104
+0
+1
+2
+3
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 3 Convergence with transport costs 1 and maximum willingness 2
+6.1 Exploration of parametric space
+The experiments in this section (utilizing Case I) set suitable hyper-parameters for the sub-
+sequent experiments and provide insights into various architectural settings. After validating
+basic mechanisms, the aspects we test are (i) number and length of episodes, (ii) learning
+rates, (iii) initial standard deviations, (iv) actor network architectures, (v) actor-critic vari-
+ants and (vi) critic network architectures. In the result tables, we provide average results
+(excluding the 10% warm-up period) and end-of-horizon results between parentheses.
+6.1.1 Veriﬁcation
+We highlight a few veriﬁcation experiments to demonstrate algorithmic behavior, using sim-
+pliﬁed system settings. If we ﬁx a single agent’s bid (ask), the other agent’s ask (bid) converges
+to the ﬁxed value when within the feasible region. If both agent adopt equivalent strategies,
+we ﬁnd that bid- and ask prices gravitate roughly towards the average of maximum willing-
+ness and transport costs, i.e., a fair balance. Figures 3, 4, 5 and 6 illustrate some of the initial
+(pre-ﬁnetuning) behaviors observed during veriﬁcation.
+6.1.2 Episode lengths
+We test the effects of adjusting the number and length of episodes. Smaller batches of obser-
+vations result in more frequent but potentially less stable strategy updates. We ﬁx the total
+number of simulated days at 1 million, selecting m ∈{10, 100, 1000, 10,000} episodes with
+the appropriate number of corresponding days per episode. With 1000 or fewer strategy
+updates, the solution quality notably decreases (Table 3). We use 1000 episodes of length
+1000—yielding both adherence and fairness over 0.90—in the remaining experiments.
+123
+
+Annals of Operations Research (2025) 350:131–168
+147
+0
+0.2
+0.4
+0.6
+0.8
+1
+·104
+0
+1
+2
+3
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 4 Convergence with transport costs 1.5 and maximum willingness 3
+0
+0.2
+0.4
+0.6
+0.8
+1
+·104
+0
+1
+2
+3
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 5 Convergence with bid ﬁxed at 2.0
+6.1.3 Learning rates
+We test a variety of learning rates α ∈{0.1, 0.01, 0.001, 0.0001, 0.00001}. Higher learning
+rates are more responsive to changes in the system, but also display worse convergence
+behavior (Table 4). Learning rates 0.1 and 0.01 are unstable due to exploding gradients. We
+ﬁnd that 0.001 generally provides the best average results, but lower learning rates yield
+better results after 100,000 iterations. As we perform online learning that requires both
+responsiveness and quality, we set α = 0.001.
+123
+
+148
+Annals of Operations Research (2025) 350:131–168
+0
+0.2
+0.4
+0.6
+0.8
+1
+·104
+0
+1
+2
+3
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 6 Convergence with ask ﬁxed at 1.0
+Table 3 Comparison for various numbers of batches and episode lengths m
+# Batches
+m
+Utilization
+Nash adherence
+Fairness
+100,000
+10
+1.00 (1.00)
+0.95 (0.96)
+0.88 (0.91)
+10,000
+100
+0.99 (0.99)
+0.93 (0.93)
+0.90 (0.85)
+1000
+1000
+0.99 (0.99)
+0.92 (0.94)
+0.93 (0.92)
+100
+10,000
+0.89 (0.99)
+0.78 (0.87)
+0.82 (0.92)
+10
+100,000
+0.71 (0.90)
+0.51 (0.66)
+0.65 (0.83)
+A balance between yields both adherence and fairness over 0.90 on average
+Table 4 Comparison for various
+learning rates
+α
+Utilization
+Nash adherence
+Fairness
+0.1
+N/A
+N/A
+N/A
+0.01
+N/A
+N/A
+N/A
+0.001
+0.99 (0.99)
+0.92 (0.94)
+0.92 (0.92)
+0.0001
+0.99 (1.00)
+0.94 (0.97)
+0.73 (0.96)
+0.00001
+0.94 (1.00)
+0.78 (0.98)
+0.78 (0.93)
+Low learning rates display better convergence, but worse results on aver-
+age
+6.1.4 Initial standard deviations
+We test initial standard deviations σ 0
+θ ranging from 0.01 to 2 (results in Table 5). Overall,
+results are quite close. Lower initial standard deviations encourage less exploration and
+increase Suggestions for editing time to converge, whereas a larger deviation may cause
+stronger ﬂuctuations that impact fairness in particular. A standard deviation of 0.1 yields the
+best results for this particular setting. We note that—regardless of initialization—standard
+deviations converge to similar, relatively low values eventually. However, there seemingly is a
+123
+
+Annals of Operations Research (2025) 350:131–168
+149
+Table 5 Comparison for standard
+deviation initializations
+σ 0
+θ
+Utilization
+Nash adherence
+Fairness
+0.01
+0.99 (0.99)
+0.89 (0.94)
+0.86 (0.88)
+0.1
+0.99 (0.99)
+0.91 (0.93)
+0.92 (0.93)
+0.5
+0.99 (0.99)
+0.91 (0.86)
+0.86 (0.82)
+1.0
+0.99 (1.00)
+0.91 (0.91)
+0.95 (0.95)
+1.5
+0.99 (0.99)
+0.90 (0.92)
+0.89 (0.86)
+2.0
+0.99 (0.99)
+0.91 (0.91)
+0.85 (0.94)
+Results are close, but σ 0
+θ = 0.1 strikes a good balance between fairness
+and Nash adherence
+Table 6 Comparison of various
+actor network architectures
+Architecture
+Utilization
+Nash adherence
+Fairness
+Linear
+0.99 (1.00)
+0.96 (0.97)
+0.86 (0.97)
+1L 20N
+0.99 (1.00)
+0.91 (0.91)
+0.95 (0.95)
+2L 20N
+0.99 (0.99)
+0.89 (0.91)
+0.92 (0.94)
+3L 20N
+0.99 (0.99)
+0.89 (0.93)
+0.92 (0.96)
+The 1-layer network with 20 nodes yields the best performance on aver-
+age. The linear architecture performs best on Nash adherence but worst
+on fairness
+beneﬁt to preserve some randomness in the actions, as standard deviations do not completely
+converge to 0. This way, opponents can never perfectly counter the strategy.
+6.1.5 Actor networks architectures
+We now address actor network architectures. We test a setting without hidden layer (i.e., a
+linear model) and 1–3 layers with 5–30 nodes each. The input dimension equals the num-
+ber of features |θ|, the output contains two nodes (μθ and σθ). Adding hidden nodes and
+-layers may capture more complicated functions, but take both additional time and obser-
+vations to train. Table 6 shows the key results; the full table of experiments is displayed in
+“Appendix B”. First, we ﬁnd that performance is fairly stable across architectures. Some
+sub-par convergence behavior is noted for both the smallest (5 nodes) and largest (25 or
+30 nodes) networks, although all converge to good (0.90+) metric scores eventually. Sec-
+ond, computational times are fairly similar for various network sizes, with 10% difference
+between network conﬁgurations. Third, the linear approximation schemes outperforms the
+neural network architectures with respect to eventual performance, but does notably worse on
+average fairness. We continue with an actor network consisting of one layer with 20 nodes.
+As Rolnick and Tegmark (2017) point out, relatively small neural networks sufﬁce for many
+real-world problems. For our system, this notion appears to apply as well.
+6.1.6 Policy gradient algorithms
+We test ﬁve variants of the policy gradient algorithm: (i) vanilla policy gradient, (ii) policy
+gradient with baseline, (iii) actor-critic with Q-value, (iv) TD(1) and (v) actor-critic advan-
+tage function. The critic- and actor networks use the same architecture; one layer with 20
+nodes. The key results are summarized in Table 7. The policy gradient algorithms consistently
+123
+
+150
+Annals of Operations Research (2025) 350:131–168
+Table 7 Comparison of policy gradient algorithms
+Algorithm
+Utilization
+Nash adherence
+Fairness
+Policy gradient
+0.99 (0.99)
+0.92 (0.94)
+0.93 (0.92)
+Policy gradient w. baseline
+0.99 (0.99)
+0.90 (0.91)
+0.95 (0.96)
+Q-value
+0.82 (0.98)
+0.69 (0.86)
+0.66 (0.81)
+TD(1)
+0.09 (0.00)
+0.07 (0.00)
+0.08 (0.00)
+Advantage value
+0.98 (1.00)
+0.00 (0.00)
+0.00 (0.00)
+The actor-critic algorithms suffer from poor convergence
+Table 8 Comparison of critic
+network architectures
+Architecture
+Utilization
+Nash adherence
+Fairness
+Q-value linear
+0.95 (0.95)
+0.05 (0.17)
+0.00 (0.00)
+Q-value 1L20N
+0.82 (0.98)
+0.69 (0.86)
+0.66 (0.81)
+Q-value 2L20N
+0.06 (0.57)
+0.05 (0.51)
+0.00 (0.00)
+Q-value 3L20N
+0.17 (0.91)
+0.13 (0.77)
+0.57 (0.30)
+Similar to the actor networks, a 1-layer network with 20 nodes yield
+the best results. Overall, performance when adding a critic network is
+subpar
+outperform the actor-critic methods; especially TD(1) and Advantage Value suffer from pre-
+mature convergence and perform very poorly. As target values keep changing over time,
+simultaneously updating the strategies and value functions is notoriously hard. An incorrect
+Q-value leads to poor strategies and vice versa, as reﬂected in the performance. This observa-
+tion is in line with Grondman et al. (2012), stating that actor-critic methods are less suitable
+for highly non-stationary environments. We therefore prefer policy gradient algorithms; the
+vanilla- and baseline variants perform similarly.
+6.1.7 Critic network
+Finally, we test various architectures for the critic network, using either a linear approximation
+scheme or 1–3 hidden layers. The one-layer network outperforms all alternatives (Table 8).
+Furthermore, it is conﬁrmed again that the actor-critic approaches do not achieve consistent
+results.
+6.1.8 Summary exploration
+We summarize the main conclusions of our exploration. Due to the highly non-stationary
+environment, convergence to stable solutions is relatively slow. Policy gradient algorithms
+without a critic deal much better with this non-stationarity, responding more quickly to
+environmental changes. With the exception of critic-based solutions, we ﬁnd solutions to be
+fairly stable across test settings. Still, there is an inherent trade-off between responsiveness
+and solution quality. Deep neural networks and low learning rates yield good results for
+static targets (reﬂected in the end-of-horizon results), but average performance worsens in
+dynamic (e.g., online) settings. For our remaining experiments, we therefore adopt an equal
+balance between batch size and number of episodes (both 1000), a learning rate of 0.001, an
+123
+
+Annals of Operations Research (2025) 350:131–168
+151
+Table 9 Comparison of asymmetric learning rates
+Learning rate (S)
+Utilization
+Nash adherence
+Reward share (S)
+Reward share (C)
+0.0001
+0.99 (1.00)
+0.92 (0.95)
+0.33 (0.40)
+0.51 (0.56)
+0.0005
+0.99 (0.99)
+0.87 (0.91)
+0.37 (0.45)
+0.47 (0.50)
+0.001
+0.99 (0.99)
+0.92 (0.93)
+0.40 (0.43)
+0.43 (0.48)
+0.002
+0.99 (0.99)
+0.91 (0.92)
+0.43 (0.44)
+0.40 (0.48)
+0.005
+0.99 (0.99)
+0.91 (0.94)
+0.43 (0.48)
+0.39 (0.47)
+0.01
+N/A
+N/A
+N/A
+N/A
+The carrier has a ﬁxed learning rate of 0.001. Higher learning rates yield an advantage in terms of reward share
+initial standard deviation of 0.1, and an actor-network consisting of one hidden layer with 20
+neurons.
+6.2 Analysis case I
+In Sect. 6.1 we discussed the elementary system behavior and determined appropriate param-
+eters.Wenowfurtherdelveintothecompetitiveelementsoftheenvironment,withbothagents
+aiming to obtain the best deal for themselves by making strategic decisions. In addition to
+the system metrics, we therefore also consider average rewards as agent-speciﬁc metrics. We
+present the reward shares for carrier and shipper instead of fairness; remind that the remaining
+share goes to the broker.
+We explore whether agents can outperform their counterpart with a deviating strategy. For
+convenience we mostly keep the carrier’s behavior ﬁxed and alter that of the shipper; similar
+results are obtained the other way around. This section addresses the following aspects: (i)
+asymmetric learning rates, (ii) penalty function, (iii) actor network architecture, (iv) actor-
+critic algorithm, (v) bias initialization and (vi) standard deviation initialization. Based on
+the obtained insights, we then run a number of experiments in which both shipper’s and
+carrier’s strategies vary based on their risk proﬁle, trying to determine the best response to
+the opponent’s strategy.
+6.2.1 Asymmetric learning rates
+The learning rate determines how responsive the strategy updates are to new information. If an
+agent uses a higher learning rate than its opponent, it could adapt faster to a new environment.
+We ﬁnd that, to a certain degree, higher learning rates yields better results (Table 9), with the
+shipper outearning the carrier by up to 9%. For learning rates of 0.01 and higher, we did not
+consistently ﬁnd stable solutions.
+6.2.2 Penalty function
+The penalty functions’ slopes [Eqs. (1)–(2)] determine the artiﬁcial penalty incurred when
+jobs are not shipped. By default both have a slope of 1, such that missed rewards are weighted
+the same as realized rewards. Here we test a number of alternative slopes, ranging from 0 (i.e.,
+no penalty) to 5 (high risk aversion). We ﬁnd that lower penalties average yield strategies
+with higher realized rewards (Table 10). A shipper without a penalty function obtains up to
+68% of the revenues, versus only 26% for the carrier (the remainder going to the broker).
+123
+
+152
+Annals of Operations Research (2025) 350:131–168
+Table 10 Comparison of asymmetric penalty functions
+Penalty slope (S)
+Utilization
+Nash adherence
+Reward share (S)
+Reward share (C)
+0
+0.98 (0.98)
+0.92 (0.93)
+0.64 (0.68)
+0.21 (0.26)
+0.5
+0.99 (0.99)
+0.93 (0.94)
+0.49 (0.51)
+0.34 (0.42)
+1.0
+0.99 (0.99)
+0.92 (0.93)
+0.40 (0.43)
+0.43 (0.48)
+2.0
+0.99 (0.99)
+0.93 (0.94)
+0.32 (0.38)
+0.51 (0.56)
+5.0
+0.99 (1.00)
+0.93 (0.94)
+0.26 (0.33)
+0.58 (0.61)
+The carrier has a ﬁxed penalty slope of 1. Lower penalties considerably beneﬁt the shipper
+Nash adherence and utilization are only marginally affected, but do go down slightly with
+risk-seeking behavior.
+6.2.3 Linear approximation versus actor network
+By default we use actor networks with 1 layer and 20 neurons. We now test whether adopting
+a linear approximation scheme by the shipper yields a beneﬁt or disadvantage, being more
+responsive but less powerful. We ﬁnd that, in this setting, the average reward shares are 32%
+(was 40%) for the shipper and 53% (was 43%) for the carrier. This substantial difference
+implies that the neural network improves decisions.
+6.2.4 Q-value versus policy gradient
+Section6.1alreadyindicatedthatalgorithmsrelyingonvaluefunctionapproximationperform
+much worse than those relying on reward observations. We now test a setting in which
+only the shipper uses an actor-critic method, checking once more whether the additional
+expressive power of the critic network could give an advantage. Again, the results are poor.
+Nash adherence is only 65%, and on average the shipper earns a negative reward. Although
+some runs yield reasonable outcomes for the shipper, others yield unstable solutions in which
+shipping agreements rarely materialize.
+6.2.5 Initial bias
+In Sect. 6.1 we assumed that an agent’s initial bid (ask) equals its willingness to pay (marginal
+transport costs). However, this directly reveals their highest bid; in reality they may start with
+a lower bid (higher ask) and update until ﬁnding a balance. Thus, we conduct an experiment
+in which the shipper starts with lower bids; the initial average bid is set at 0, 0.5, 1.0, 1.5, or
+2.0. Naturally, the bias weight is updated over time as before. The results (Table 11) show
+that starting out with a low bid is clearly beneﬁcial, with the bid-ask pairs converging to
+equilibria that are considerably better for the shipper.
+6.2.6 Initial standard deviation
+A higher initial standard deviation than the opponent enables exploring more, yet also
+increases the risk of ending up in unfeasible solution regions. We test for σ S,0
+θ
+∈
+{0.01, 0.1, 0.5, 1, 1.5, 2.0}. This only entails the initial standard deviations; we ﬁnd them
+123
+
+Annals of Operations Research (2025) 350:131–168
+153
+Table 11 Comparison of varying initial bias
+Bias μS,0
+θ
+Utilization
+Nash adherence
+Reward share shipper
+Reward share carrier
+0.0
+0.99 (0.99)
+0.93 (0.92)
+0.81 (0.62)
+0.23 (0.32)
+0.5
+0.99 (0.99)
+0.93 (0.93)
+0.75 (0.60)
+0.25 (0.34)
+1.0
+0.99 (0.99)
+0.94 (0.95)
+0.66 (0.62)
+0.29 (0.33)
+1.5
+0.99 (0.99)
+0.93 (0.93)
+0.51 (0.49)
+0.39 (0.45)
+2.0
+0.99 (0.99)
+0.92 (0.93)
+0.40 (0.43)
+0.43 (0.48)
+The carrier’s initial bias is set at μC,0
+θ
+= 1. Low bias initializations strongly improve performance for the
+shipper
+Table 12 Comparison of varying initial SD
+SD σ S,0
+θ
+Utilization
+Nash adherence
+Reward share shipper
+Reward share carrier
+0.01
+0.99 (0.99)
+0.93 (0.93)
+0.32 (0.44)
+0.52 (0.50)
+0.1
+0.99 (0.99)
+0.93 (0.94)
+0.36 (0.46)
+0.49 (0.49)
+0.5
+0.99 (0.99)
+0.92 (0.93)
+0.40 (0.47)
+0.44 (0.47)
+1.0
+0.99 (0.99)
+0.92 (0.93)
+0.40 (0.43)
+0.43 (0.48)
+1.5
+0.99 (0.99)
+0.92 (0.93)
+0.38 (0.42)
+0.45 (0.51)
+2.0
+0.99 (0.99)
+0.92 (0.92)
+0.35 (0.41)
+0.49 (0.52)
+The carrier’s initial st. dev. is set at σC,0
+θ
+= 1. Middle-range exploration yields better results for the shipper
+all converging to similar values regardless of initialization. The experiments show a clear
+disadvantage when the shipper uses lower standard deviations (Table 12). For higher standard
+deviations performance also decreases, although not as sharply. There appears no imminent
+beneﬁt to alter the standard deviation, as the default value yields the best outcome.
+6.2.7 Shipper versus carrier
+After completing the experiments varying only the shipper’s behavior, we design experiments
+in which both agents adopt strategy settings reﬂecting a certain risk appetite. We deﬁne three
+proﬁles—risk-seeking, risk-neutral, risk-averse—varying in initial bias, penalty slope and
+learning rate (see Table 13).
+Using the risk proﬁles, we perform nine experiments pitting each proﬁle pair. The results
+are shown in Table 14. Overall, the more risk-seeking agent consistently obtains better
+rewards. Figures 7, 8, 9 and 10 illustrate the dynamics between agents with different risk
+proﬁles for four settings. The bid-ask prices converge to equilibria that favor the agent with
+higher risk tolerance. However, when both agents use a risk-seeking proﬁle, they stick to
+their initial bias and never explore feasible solution regions, partially due to the absence of
+penalties. This implies that reward shaping is desirable for a functioning system. We also
+tested variants with two risk-seeking agents (e.g., with small penalty slopes or larger standard
+deviations), but they tend to be unstable.
+In terms of system performance, we ﬁnd no major differences, with utilizations close to 1
+and Nash adherence generally between 0.90 and 0.95. Occasionally, systems with a systems
+with a risk-seeking agent fail to ﬁnd equilibria, (temporarily) resulting in non-functioning
+transport markets. From a game-theoretical perspective, “Appendix D” shows that when
+123
+
+154
+Annals of Operations Research (2025) 350:131–168
+Table 13 Risk proﬁles for carrier and shipper
+Risk proﬁle
+Carrier
+Shipper
+Risk-seeking
+Init. Bias = 1
+Init. Bias = 2
+Penalty slope = 2
+Penalty slope = 2
+Learning rate = 0.005
+Learning rate = 0.005
+Risk-neutral
+Init. Bias = 1
+Init. Bias = 2
+Penalty slope = 1
+Penalty slope = 1
+Learning rate = 0.001
+Learning rate = 0.001
+Risk-averse
+Init. Bias = 1
+Init. Bias = 2
+Penalty slope = 2
+Penalty slope = 2
+Learning rate = 0.0001
+Learning rate = 0.0001
+A risk-averse proﬁle is aimed at ﬁnding feasible solutions, a risk-seeking proﬁle at maximizing individual
+gains
+Table 14 Performance for various risk proﬁles
+Carrier
+Shipper
+RS
+RN
+RA
+RS
+N/A [0.00]
+0.81/0.18 [0.85]
+0.82/0.14 [0.95]
+RN
+0.25/0.75 [0.97]
+0.46/0.49 [0.99]
+0.62/0.28 [0.99]
+RA
+0.11/0.85 [0.98]
+0.26/0.63 [0.99]
+0.41/0.40 [1.00]
+Each cell reports ’reward share carrier/reward share shipper [utilization]’. Risk-seeking behavior if generally
+rewarded, but not if both agents engage in it
+the opponent is risk-seeking, the best response is to be either risk-averse (for carrier) or
+risk-neutral (for shipper).
+6.2.8 Managerial insights case I experiments
+From the experiments, we draw a number of conclusions. We reconﬁrm that actor-critic
+methods yield poor performance and that actor networks outperform linear approximations.
+Furthermore, risk-seeking behavior generally pays off. By responding faster to market ﬂuctu-
+ations (higher learning rate), placing lower penalty weights on failed shipments, and setting a
+bold initial opening bid/ask, a competing agent may be outperformed. However, we also ﬁnd
+evidence of destabilizing effects and poor market efﬁciency due to risk-seeking behavior.
+Without central regulation or communication between agents, risk-seeking behavior might
+have grave consequences; game theory may guide intelligent responses to the other agent’s
+strategy. As performance differences can be quite substantial, these ﬁndings imply that algo-
+rithmic optimization is crucial to successfully participate in decentralized freight transport
+markets.
+6.3 Analysis case II
+This section analyzes the second experimental setting, which generates up to 10 jobs per day
+with varying properties in terms of volume, due date and distance. Case II serves as a proof-of-
+123
+
+Annals of Operations Research (2025) 350:131–168
+155
+0
+200
+400
+600
+800
+1,000
+1
+1.5
+2
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 7 Carrier RA and shipper RA
+0
+200
+400
+600
+800
+1,000
+1
+1.5
+2
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 8 Carrier RN and shipper RN
+concept and to measure performances in a more realistic setting. To recap: we now consider
+125 distinct job types (varying in due date, volume and distance), with order accumulation
+possible up to 60 jobs. With a maximum daily volume of 50 and a transport capacity of either
+40 (somewhat scarce) or 300 (abundant), we evaluate instances that favor either carrier or
+shipper. We re-use the same network parameters as ﬁne-tuned for Case I. Proper re-tuning
+on Case II might elevate performance, however, preliminary experiments gave insufﬁcient
+indication that results would improve consistently and signiﬁcantly. Following Sect. 6.2.7,
+we again utilize the three risk proﬁles, starting by using the same proﬁles for both agents.
+The bias initialization procedure is comparable to Case I, but notationally more involved and
+therefore formalized in “Appendix C”.
+The initial results of pairing the three risk proﬁles illustrate the increased challenges of the
+stochastic case (Table 15). The risk-seeking and risk-neutral proﬁles do not consistently yield
+123
+
+156
+Annals of Operations Research (2025) 350:131–168
+0
+200
+400
+600
+800
+1,000
+1
+1.5
+2
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 9 Carrier RS and shipper RS
+0
+200
+400
+600
+800
+1,000
+1
+1.5
+2
+# episodes m
+Mean bid/ask µm
+θ
+Carrier
+Shipper
+Fig. 10 Carrier RA and shipper RS
+stable solutions. For the risk-averse proﬁles, utilization ranges from 67 to 89%, indicating an
+increased difﬁculty to ﬁnd suitable transport matches. Furthermore, adherence to the Nash
+equilibrium drops to 65%, revealing substantial market inefﬁciencies. Bid-ask spreads are
+higher due to the large uncertainty in the market; the broker now takes 35% of the market
+value. Finally, fairness and reward shares indicate unbalances in the market, with a tendency to
+favor the carrier. Recall from Eqs. (1)–(2) that penalty functions are not symmetric; omitting
+the idle capacity constraint for the carrier yields fair (but less sensible) outcomes.
+To improve system performance, we execute a number of follow-up experiments. Using
+the insights obtained from Case I experiments, we vary the initial bias and sigma, the learning
+rate, and the penalty slope. As only risk-averse proﬁles yield consistent results, we consider
+several variants of that proﬁle. Table 16 shows that most modiﬁcations are unsuccessful in
+123
+
+Annals of Operations Research (2025) 350:131–168
+157
+Table 15 Results Case II per risk proﬁle, with both agents using the same proﬁle
+Risk proﬁle
+Case variant (capacity)
+Utilization
+Nash adherence
+Fairness
+Reward share shipper
+Reward share carrier
+Risk-seeking
+ζC = 40
+N/A
+N/A
+N/A
+N/A
+N/A
+Risk-seeking
+ζC = 300
+N/A
+N/A
+N/A
+N/A
+N/A
+Risk-neutral
+ζC = 40
+0.86 (0.86)
+0.53 (0.43)
+0.14 (0.16)
+0.34 (0.01)
+0.23 (0.20)
+Risk-neutral
+ζC = 300
+N/A
+N/A
+N/A
+N/A
+N/A
+Risk-averse
+ζC = 40
+0.89 (0.80)
+0.65 (0.67)
+0.13 (0.14)
+0.05 (0.13)
+0.74 (0.73)
+Risk-averse
+ζC = 300
+0.67 (0.76)
+0.65 (0.22)
+0.23 (0.04)
+0.06 (0.12)
+0.73 (0.73)
+Compared to Case I, Nash adherence drops substantially. Risk-seeking proﬁles do not achieve stable results
+123
+
+158
+Annals of Operations Research (2025) 350:131–168
+0
+200
+400
+600
+800
+1,000
+0
+1
+2
+3
+4
+# episodes m
+Mean bid/ask ¯µm
+θ
+Carrier
+Shipper
+Fair value
+Fig. 11 Carrier RA bias and shipper RA bias (ζC = 40)
+achieving notable improvements, yet using a risk-neutral bias initialization (i.e., halfway
+expected willingness to pay and expected transport costs) strongly improves performance.
+We ﬁnd a utilization of 0.98–0.99 and a Nash adherence of 0.84–0.87. Although fairness
+remains low (recall that fairness is calculated at the individual job level), for overall proﬁts
+the shares of carrier and shipper differences are less pronounced (0.54/0.39 and 0.60/0.32).
+The system effectiveness of starting with a fair bid/ask is an important result, yet not
+necessarily individual rational. The shipper’s performance improves drastically (the reward
+share increases from 0.05 to 0.54), but the carrier’s reward share drops from 0.74 to 0.39.
+The increased number of jobs shipped does not compensate for that. As a ﬁnal experiment,
+we therefore again test the impact of asymmetric agent proﬁles, determining individually
+rational bias initializations. Although we describe biases in terms of risk, the learning rate
+and penalty function remain risk-averse. The results are shown in Table 17 (ζ C = 40) and
+Table 18 (ζ C = 300). As before, risk-seeking approaches generally improve individual
+performance, although the results are less congruous and clear-cut than for the deterministic
+case.
+We discuss best responses of individual agents, considering bias initialization as a game
+on itself. Formally, we achieve Nash equilibria2 when the shipper adopts the risk-seeking
+bias initialization and the carrier uses a risk-neutral bias (ζ C = 40) or risk-averse bias
+(ζ C = 300), see “Appendix D” for details and payoff matrices. With a somewhat less
+rigorous interpretation, the payoffs imply that if one agent adopts a bold bias, the opponent
+should settle for lower individual gains. If both agents use bold bid/ask strategies, systems
+do not converge properly and individual gains are minimal as a result. Figures 11, 12, 13 and
+14 highlight results for four risk proﬁle pairs, including the two Nash equilibria.
+To conclude, in the stochastic case (with 125 job types and uncertain numbers of jobs)
+stability is harder to achieve than in the deterministic case, requiring more cautious updating
+strategies. The results suggest that clustering containers for joint bids (as is implicitly done
+in Case I) yields more stability. The main determinant for the agents’ individual gains is
+2 The Nash equilibrium discussed here (for the game of initializing the bias) should not be convoluted with
+the Nash equilibrium for the bargaining game as mentioned earlier.
+123
+
+Annals of Operations Research (2025) 350:131–168
+159
+Table 16 Results Case II for variants of risk-averse proﬁles
+Parameter setting
+Case variant (capacity)
+Utilization
+Nash adherence
+Fairness
+Reward share shipper
+Reward share carrier
+lr=0.00001
+ζC = 40
+0.98(0.98)
+0.41 (0.61)
+0.09 (0.13)
+0.06 (0.03)
+0.43 (0.76)
+lr=0.00001
+ζC = 300
+0.98(0.98)
+0.42 (0.59)
+0.09 (0.13)
+0.05 (0.00)
+0.46 (0.77)
+σ = 10
+ζC = 40
+0.99 (1.00)
+0.53 (0.54)
+0.13 (0.12)
+0.30 (0.38)
+0.36 (0.32)
+σ = 10
+ζC = 300
+0.99 (0.99)
+0.53 (0.60)
+0.12 (0.11)
+0.31 (0.42)
+0.37 (0.34)
+Pen. slope = 0
+ζC = 40
+0.01 (0.00)
+0.01 (0.00)
+N/A
+N/A
+N/A
+Pen. slope = 0
+ζC = 300
+0.13 (0.10)
+0.12 (0.13)
+0.22 (0.23)
+0.87 (N/A)
+−0.02 (N/A)
+Pen. slope = 1
+ζC = 40
+0.97 (0.95)
+0.62 (0.69)
+0.13 (0.14)
+−0.03 (−0.08)
+0.81 (0.93)
+Pen. slope = 1
+ζC = 300
+0.99 (1.00)
+0.60 (0.64)
+0.13 (0.14)
+−0.26 (−0.76)
+0.78 (0.89)
+RN bias
+ζC = 40
+0.99 (0.99)
+0.87 (0.91)
+0.14 (0.16)
+0.54 (0.56)
+0.39 (0.40)
+RN bias
+ζC = 300
+0.98 (0.98)
+0.84 (0.89)
+0.14 (0.15)
+0.60 (0.63)
+0.32 (0.31)
+RS bias
+ζC = 40
+N/A
+N/A
+N/A
+N/A
+N/A
+RS bias
+ζC = 300
+N/A
+N/A
+N/A
+N/A
+N/A
+Setting a risk-neutral bias has by far the largest positive impact on system performance
+123
+
+160
+Annals of Operations Research (2025) 350:131–168
+Table 17 Performance for various bias initializations, ζ = 40
+Carrier
+Shipper
+RS Bias
+RN Bias
+RA Bias
+RS Bias
+N/A [0.0]
+0.18/0.69 [0.82]
+0.72/0.08 [0.99]
+RN Bias
+0.02/0.91 [0.63]
+0.39/0.54 [0.99]
+0.88/−0.01 [0.98]
+RA Bias
+0.00/0.94 [0.96]
+0.35/0.51 [0.92]
+0.74/0.05 [0.89]
+Each cell reports ’reward share carrier/reward share shipper [utilization]’. Agents use risk-averse learning rates
+and -penalty functions; only bias initializations deviate
+Table 18 Performance for various bias initializations, ζ = 300
+Carrier
+Shipper
+RS
+RN
+RA
+RS
+−0.02/0.87 [0.13]
+0.09/0.73 [0.92]
+0.69/0.21 [0.99]
+RN
+−0.09/0.98 [0.78]
+0.32/0.60 [0.98]
+0.95/−0.08 [0.99]
+RA
+0.01/0.89 [0.98]
+0.32/0.53 [0.92]
+0.73/0.06 [0.67]
+Each cell reports ‘reward share carrier/reward share shipper [utilization]’. Agents use risk-averse learning
+rates and -penalty functions; only bias initializations deviate
+0
+200
+400
+600
+800
+1,000
+0
+1
+2
+3
+4
+# episodes m
+Mean bid/ask ¯µm
+θ
+Carrier
+Shipper
+Fair value
+Fig. 12 Carrier RN bias and shipper RN bias (ζC = 40)
+their initial bias (colloquially the opening bid/ask), which to a large degree determines the
+eventual convergence. Fairness is hard to achieve, but the best-case scenarios show almost
+full capacity utilization and a Nash adherence of about 85%.
+7 Conclusions
+This paper presents a policy gradient algorithm to explore strategic bidding behavior of
+shippers and carriers in self-organizing logistics. The research aligns with contemporary
+123
+
+Annals of Operations Research (2025) 350:131–168
+161
+0
+200
+400
+600
+800
+1,000
+0
+1
+2
+3
+4
+# episodes m
+Mean bid/ask ¯µm
+θ
+Carrier
+Shipper
+Fair value
+Fig. 13 Carrier RN bias and shipper RS bias (ζC = 40)
+0
+200
+400
+600
+800
+1,000
+0
+1
+2
+3
+4
+# episodes m
+Mean bid/ask ¯µm
+θ
+Carrier
+Shipper
+Fair value
+Fig. 14 Carrier RA bias and shipper RS bias (ζC = 300)
+freight platforms, while providing a building block of the Physical Internet. When moving
+towards automated negotiations and dynamic resource utilization, bidding strategies have
+a major impact on system stability. In our model-free learning interpretation, agents only
+observe whether bids/asks are accepted or rejected, learning and adapting their strategy
+based on this limited information while their opponent does the same. As strategies may be
+updated at any time, the learning problem is online and non-stationary.
+To minimize behavioral assumptions, we propose a deep reinforcement learning algorithm
+rooted in policy gradienttheory to learn strategies for bidding and asking. Inspired by ﬁnancial
+markets, a neutral rule-based broker (which may be viewed as the environment by carrier
+and shipper) schedules jobs at a batch level by maximizing bid-ask spreads. This mechanism
+123
+
+162
+Annals of Operations Research (2025) 350:131–168
+ensures that the highest bidders and most economical transport services get preference, which
+would be desirable in real life.
+We perform a number of numerical experiments, analyzing the results based on desired
+properties in bargaining games. Adherence to Nash equilibria, utilization of transport capacity
+and fairness are deﬁned as key performance metrics. Any solution that divides the market
+value (difference between maximum willingness to pay and transport costs) between carrier
+and shipper is a non-cooperative Nash equilibrium, and as such may be seen as an optimal
+solution. Approximating the Nash equilibrium is only possible with high utilization. A fair
+division between of market value between agents is not requisite for an equilibrium, but
+is reﬂected in both normative game-theoretical solutions and practical settings. From an
+individual perspective, the agents attempt solely to maximize their own rewards.
+In a deterministic test case, the ideal market situation is approximated quite closely. With
+both agents adopting comparable learning algorithms, we obtain stable markets that score
+well on the KPIs, with ∼99% of jobs being shipped and Nash adherence and fairness metrics
+being well over 90% (the stochastic nature of the policies prevents perfect Nash equilibria).
+When varying the agents’ risk proﬁles, we ﬁnd that being more risk-seeking (in terms of
+opening bid and ask, penalizing failed negotiations and responsiveness to changes) than the
+opponent is generally rewarded. This gives agents a strong incentive to strategically place
+bids and asks. Fairness suffers as a result, although utilization and Nash adherence remain
+high.
+In a stochastic case, the best attained Nash adherence is ∼85%. As the market is more
+uncertain, bid-ask spreads increase and the broker takes a larger reward share. We ﬁnd that
+cautious strategy updates are necessary to preserve system stability. To improve individual
+gains, proper initialization of bids and asks is essential. Bold opening bids and asks tend
+to yield higher rewards, yet if both agents adopt the same strategy results are poor for all
+included, illustrating the strategic complexities of the environment.
+For both test cases, the ability to improve one’s reward share by risk-seeking behavior has
+a potential drawback from a system perspective. The results show that—especially if both
+agents engage in overly risky behavior—the system performance may strongly decline or
+even cease to be stable. Being unable to observe the opponent’s strategy, this causes concern
+when designing fully decentralized transport markets. From a game-theoretical perspective,
+risk-seeking behavior might be avoided to safeguard long-term rewards.
+Overall, the results are encouraging as a stepping stone towards decentralized and self-
+organizing freight transport markets. In particular, the work could be extended towards
+multiple shippers and carriers, such that a variety of strategies competes. After some calibra-
+tion efforts, we consistently obtain solutions that approximate the Nash equilibria describing
+optimal markets. By appropriately designing their bidding- and asking algorithms, market
+actors can embed their real-life preferences and risk appetite. The neutral broker appro-
+priately assigns jobs, taking a larger reward share in markets characterized by uncertainty.
+Generally, we expect to see such properties in a healthy market. The evaluated algorithmic
+design results in a well-functioning and self-organized market without reliance on contracts,
+regulations or communication protocols. For the real-world transport market platforms that
+gain prominence nowadays, this implies that a strong central party and dense regulation are
+not essential, potentially easing the design of such platforms. However, it also highlights that
+competitive unbalance may arise due to algorithmic advances. For long term visions such as
+the Physical Internet, the research demonstrates a rational basis for completely decentralized
+transport markets.
+123
+
+Annals of Operations Research (2025) 350:131–168
+163
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+Appendix A: Proofs
+Lemma 1 (Job selection when bid price is lower than ask price) If bn, j < an, j, the broker
+will always set γn, j = 0 to maximize its proﬁts.
+Proof Take any pair (bn, j, an, j) ∈R2 satisfying bn, j < an, j. Then γn, j(bn, j −an, j) < 0
+if γn, j = 1 and γn, j(bn, j −an, j) = 0 if γn, j = 0. As Eq. (3) is a maximization function, it
+follows that γn, j = 0, ∀bn, j < an, j.
+⊓⊔
+Lemma 2 (Existence of disagreement point) For the carrier, there exists a strategy πC that
+ensures the shipper’s payoff r S
+j equals at most 0 for any job j, regardless of the opponent’s
+strategy π S.
+Proof Take any job j. Let an, j ∈R be the ask price. If cC,trn ≤an, j ≤bn, j is satisﬁed, the
+carrier earns an, j −cmin ≥0 if γn, j = 1 and 0 if γn, j = 0 [see Eq. (2)]. As both strategies
+map onto the real domain, there exists pairs of strategies (πC, π S) that ensure nonnegative
+payoffs for the carrier. The carrier needs not to invoke the disagreement point in this case.
+Now suppose an, j ≤bn, j < cC,trn
+j
+. In this case, the carrier earns an, j −cC,trn
+j
+< 0 if
+γn, j = 1 and can achieve at most 0 (when γn, j = 0). It follows that if bn, j < cC,trn
+j
+, the
+carrier is better off asking an, j such that bn, j < cC,trn
+j
+≤an, j, which by Lemma 1 always
+guarantees that γn, j = 0, yielding a payoff of 0 for both carrier and shipper. To execute the
+threat, it is not necessary that bn, j < cC,trn
+j
+≤an, j always holds. Following Eq. (1), if πC
+yield an, j ≥cS,max
+j
+, the shipper’s reward r S
+j can be at most 0. If bn, j ≥an, j ≥cS,max
+j
+, the
+shipper receives either cS,max
+j
+−bn, j ≤0 or 0. If bn, j < an, j, the payoff is by default 0
+(Lemma 1). Thus, setting an, j ≥cS,max guarantees that the payoff of the shipper is at most
+0; a result holding for all bids bn, j ∈R and thus for all strategies π S ∈S.
+⊓⊔
+Lemma 3 (Nash equilibrium) Any payoff proﬁle satisfying rC
+j + r S
+j ≡cS,max
+j
+−cC,trn
+j
+is a
+Nash equilibrium. This payoff proﬁle is achieved by any pair of strategies satisfying cC,trn
+j
+≤
+an, j = bn, j ≤cS,max
+j
+.
+Proof Take any job j. We ﬁrst show that rational agents will adopt strategies that satisfy
+cC,trn
+j
+≤an, j ≤bn, j ≤cS,max
+j
+, being the only proﬁle that may yield positive payoffs. After
+establishing that this is the feasible set, we continue to prove the Nash equilibrium.
+It cannot be guaranteed that γn, j = 1 for any bid-ask pair; from Eq. (3) it follows this
+decision also depends on availability of sufﬁcient capacity. However, γn, j = 0 yields a payoff
+of 0, which is equivalent to the disagreement point. For this reason, we always refer to payoffs
+≥0 or ≤0. We distinguish between four sets of payoff proﬁles.
+Set 1 (not f easible) : bn, j < cC,trn
+j
+123
+
+164
+Annals of Operations Research (2025) 350:131–168
+The carrier cannot obtain a positive payoff with any an, j satisfying an, j ≤bn, j < cC,trn
+j
+.
+From Lemma 2, it is therefore beneﬁcial for the carrier to execute the threat, ensuring a payoff
+of 0 for both agents.
+Set 2 (not f easible) : an, j > cS,max
+j
+The shipper cannot obtain a positive payoff with any bn, j satisfying bn, j ≥an, j > cS,max
+j
+.
+From Lemma 1, it is beneﬁcial for the shipper to execute the threat, ensuring a payoff of 0
+for both agents.
+Set 3 (not f easible) : cC,trn
+j
+≤bn, j < an, j ≤cS,max
+j
+From Lemma 1, any bid-ask pair for which bn, j < an, j ensures a payoff of 0 for both agents.
+Set 4 ( f easible) : cC,trn
+j
+≤an, j ≤bn, j ≤cS,max
+j
+The carrier may earn a′
+n, j −cC,trn
+j
+≥0 and the shipper may earn cS,max
+j
+−b′
+n, j ≥0. Both
+agents have no incentive to invoke the disagreement point as payoffs are greater than or equal
+to 0.
+We established that Set 4 is the only feasible set; positive payoffs can only be attained
+when adhering to ctrn
+j
+≤an, j ≤bn, j ≤cmax
+j
+. We now show that rC
+j +r S
+j = cS,max
+j
+−cC,trn
+j
+must be satisﬁed for a Nash equilibrium. For a proof by contradiction, suppose cC,trn
+j
+≤
+an, j < bn, j ≤cS,max
+j
+holds. The carrier may earn an, j −cC,trn
+j
+≥0. However, it could
+unilaterally improve its payoff by selecting any a′
+n, j satisfying an, j < a′
+n, j ≤bn, j, yielding
+a potential payoff a′
+n, j −cC,trn
+j
+> an, j −cC,trn
+j
+without triggering the disagreement point.
+Similarly, the shipper may select any b′
+n, j satisfying an, j ≤b′
+n, j < bn, j, potentially yielding
+cS,max
+j
+−b′
+n, j > cS,max −b j without triggering the disagreement point. It follows that
+cC,trn
+j
+≤an, j = bn, j ≤cS,max
+j
+is the equilibrium point. Any unilateral deviation would
+either reduce the agent’s own payoff or invoke the disagreement point. Under the condition
+that an, j = bn, j, subject to cC,trn
+j
+≤an, j and bn, j ≤cS,max
+j
+, the payoff is (an, j −cC,trn
+j
+) +
+(cS,max
+j
+−bn, j) = (an, j −cC,trn
+j
+) + (cS,max
+j
+−an, j) = cS,max
+j
+−cC,trn
+j
+; exactly the full
+system gain is divided between the agents. This result is equivalent to the equilibrium for the
+bargaining game as deﬁned by Nash (1953).
+⊓⊔
+Appendix B: Experimental results for actor network architectures
+This appendix shows the results of various actor network architectures, corresponding to
+Sect. 6.1.5. See Table 19 for the results per network architecture.
+Appendix C: Bias initialization
+At the start of each experiment, we initialize the bias weight, with the bias node itself being
+a node with value 1. With all other weights at the output layer being initialized at 0, this
+means that the initial bids and asks are equal to the bias weights provided. Informally the
+bias initialization can be seen as the opening bid or ask, greatly inﬂuencing the eventual
+convergence.
+The costs and willingness to pay for each job depend on two job characteristics: distance
+and volume. Let d = [1, . . . , dmax] be the vector of feasible distances and v = [1, . . . , ζ max]
+123
+
+Annals of Operations Research (2025) 350:131–168
+165
+Table 19 Comparison of various
+actor network architectures
+Architecture
+Utilization
+Nash adherence
+Fairness
+Linear
+0.99 (1.00)
+0.96 (0.97)
+0.86 (0.97)
+1L5N
+0.99 (1.00)
+0.93 (0.95)
+0.64 (0.85)
+1L10N
+0.99 (0.99)
+0.92 (0.92)
+0.93 (0.93)
+1L15N
+0.99 (0.99)
+0.91 (0.92)
+0.85 (0.94)
+1L20N
+0.99 (1.00)
+0.91 (0.91)
+0.95 (0.95)
+1L25N
+0.99 (0.99)
+0.91 (0.89)
+0.92 (0.96)
+1L30N
+0.99 (0.99)
+0.90 (0.92)
+0.94 (0.96)
+2L5N
+0.99 (0.99)
+0.90 (0.93)
+0.60 (0.93)
+2L10N
+0.99 (0.99)
+0.88 (0.91)
+0.91 (0.94)
+2L15N
+0.99 (0.99)
+0.89 (0.90)
+0.93 (0.94)
+2L20N
+0.99 (0.99)
+0.89 (0.91)
+0.92 (0.94)
+2L25N
+0.99 (0.99)
+0.89 (0.93)
+0.91 (0.90)
+2L30N
+0.87 (0.99)
+0.76 (0.91)
+0.60 (0.89)
+3L5N
+0.99 (0.99)
+0.91 (0.92)
+0.88 (0.86)
+3L10N
+0.99 (0.99)
+0.89 (0.94)
+0.94 (0.94)
+3L15N
+0.99 (0.99)
+0.89 (0.94)
+0.94 (0.94)
+3L20N
+0.99 (0.99)
+0.89 (0.93)
+0.92 (0.96)
+3L25N
+0.74 (1.00)
+0.61 (0.92)
+0.22 (0.35)
+3L30N
+0.94 (0.99)
+0.85 (0.94)
+0.82 (0.88)
+Ingeneral,weobserveworseaverageresultsfordeepnetworksandworse
+average results for large numbers of nodes. End-of-horizon values are
+generally better than for smaller networks
+be the vector of feasible volumes. By taking the outer product of the vectors, we obtain a
+matrix containing the marginal weight of each job type:
+d ⊗v =
+⎡
+⎢⎢⎢⎣
+d1v1
+d1v2
+. . .
+d1vζ max
+d2v1
+d2v2
+. . .
+d2vζ max
+...
+...
+...
+...
+ddmax v1
+ddmax v2
+. . .
+ddmax vζ max
+⎤
+⎥⎥⎥⎦.
+Recall that cC,trn describes the transport cost per volume unit per distance unit and cS,max
+the willingness to pay. The transport cost matrix—containing transport costs for each job
+type—is then given by (d ⊗v) · cC. Similarly, we may retrieve the willingness to pay for
+each job type by computing (d ⊗v)·cS,max. As we assume independent uniform probability
+distributions for every job characteristic, each matrix element has an equal probability. Thus,
+Table 20 Bias initializations per
+risk proﬁle
+Risk proﬁle
+Carrier
+Shipper
+Risk-seeking
+¯cS,max
+¯cC,trn
+Risk-neutral
+(¯cC,trn + ¯cS,max)/2
+(¯cC,trn + ¯cS,max)/2
+Risk-averse
+¯cC,trn
+¯cS,max
+123
+
+166
+Annals of Operations Research (2025) 350:131–168
+Table 21 Normalized net
+rewards per agent
+Carrier
+Shipper
+RS
+RN
+RA
+RS
+0.00/0.00
+0.69/0.15
+0.78/0.13
+RN
+0.24/0.73
+0.46/0.49
+0.61/0.28
+RA
+0.80/0.83
+0.26/0.62
+0.41/0.40
+Best individual responses (Case I) to an opponent’s strategy are under-
+lined, Nash equilibria are in bold
+Table 22 Normalized net
+rewards per agent
+Carrier
+Shipper
+RS Bias
+RN Bias
+RA Bias
+RS Bias
+0.00/0.00
+0.15/0.57
+0.08/0.67
+RN Bias
+0.01/0.57
+0.39/0.53
+0.87/−0.01
+RA Bias
+0.00/0.90
+0.32/0.47
+0.66/0.05
+Best individual responses (Case II, ζ = 40) to an opponent’s strategy
+are underlined, Nash equilibria are in bold
+Table 23 Normalized net
+rewards per agent
+Carrier
+Shipper
+RS Bias
+RN Bias
+RA Bias
+RS Bias
+0.00/0.11
+0.08/0.67
+0.68/0.21
+RN Bias
+−0.07/0.76
+0.31/0.59
+0.94/−0.08
+RA Bias
+0.01/0.87
+0.29/0.49
+0.49/0.04
+Best individual responses (Case II, ζ = 300) to an opponent’s strategy
+are underlined, Nash equilibria are in bold
+the average transport costs and average willingness to pay are simple the averages of all
+elements in the respective matrices.
+We use the average transport cost ¯cC,trn and average willingness to pay ¯cS,max to initialize
+the bias weights. To provide some intuition: if the shipper would set ¯cC,trn as the initial bias
+weight, it would on average pose bids equal to the average transport costs for all jobs. As we
+use a single actor network for all jobs, the bias is a constant that holds for all job types. At the
+risk of being superﬂuous, we stress that the network must still learn the values corresponding
+to the various job types.
+The initial bias weights are formalized in Table 20.
+Appendix D: Nash equilibria
+This appendix investigates the existence of pure Nash equilibria when agents adopt asym-
+metric strategies. Assuming the opponent’s strategy is ﬁxed, an agent can determine its best
+response to that strategy. When both agents cannot improve rewards by unilaterally changing
+their strategy, an equilibrium is reached. There may be multiple equilibria. The results—for
+Case I, Case II (ζ = 40) and Case II (ζ = 300) respectively—are found in Tables 21, 22
+and 23. The tables contain the normalized net rewards per agent (which depend on both the
+reward shares and the number of jobs shipped) and the best responses per agent.
+123
+
+Annals of Operations Research (2025) 350:131–168
+167
+Appendix F: Features
+The input for the actor- and critic networks is a vector φ( j, Jn). For each job j, a unique
+input vector is computed to determine its bid- or ask price.
+For all experiments, the features as tested and proposed in Van Heeswijk (2019) are used,
+expanded with the ask/bid price for the critic network. The features contained in vector φ are
+detailed in Table 24.
+Table 24 Features describing the
+key state attributes, used as input
+for the actor- and critic networks
+Feature
+Description
+1
+Bias
+jτ
+Job due date
+jd
+Job transport distance
+jv
+Job volume
+
+j∈Jn jτ
+|Jn|
+Average due date
+
+j∈Jn jd
+|Jn|
+Average distance
+
+j∈Jn jv
+|Jn|
+Average volume
+
+j∈Jn jv
+Total volume
+|Jn|
+Total number of jobs
+am
+n, j
+Ask (only for Q-value carrier)
+bm
+n, j
+Bid (only for Q-value shipper)
+References
+Ambra, T., Caris, A., & Macharis, C. (2019). Towards freight transport system uniﬁcation: Reviewing and
+combining the advancements in the physical internet and synchromodal transport research. International
+Journal of Production Research, 57(6), 1606–1623.
+Atasoy, B., Schulte, F., & Steenkamp, A. (2020). Platform-based collaborative routing using dynamic prices
+as incentives. Transportation Research Record, 2674(10), 670–679.
+Aumann, R. J., & Shapley, L. S. (1994). Long-term competition-a game-theoretic analysis. In N. Megiddo
+(Ed.), Essays in game theory (pp. 1–15). Springer.
+Cruijssen, F. (2020). Cross-chain collaboration in logistics. In International series in operations research and
+management science (ISOR) vol. 297.
+Friedman, J. W. (1971). A non-cooperative equilibrium for supergames. The Review of Economic Studies,
+38(1), 1–12.
+Grondman, I., Busoniu, L., Lopes, G. A., & Babuska, R. (2012). A survey of actor-critic reinforcement
+learning: Standard and natural policy gradients. IEEE Transactions on Systems, Man, and Cybernetics,
+Part C (Applications and Reviews), 42(6), 1291–1307.
+He, K., Zhang, X., Ren, S., & Sun, J. (2015). Delving deep into rectiﬁers: Surpassing human-level performance
+on imagenet classiﬁcation. In Proceedings of the IEEE international conference on computer vision (pp.
+1026–1034).
+Kalai, E. (1977). Proportional solutions to bargaining situations: Interpersonal utility comparisons. Economet-
+rica: Journal of the Econometric Society, 45(7), 1623–1630.
+Kalai, E., & Smorodinsky, M. (1975). Other solutions to Nash’s bargaining problem. Econometrica: Journal
+of the Econometric Society, 43(3), 513–518.
+Karam, A., Reinau, K. H., & Østergaard, C. R. (2021). Horizontal collaboration in the freight transport sector:
+Barrier and decision-making frameworks. European Transport Research Review, 13(1), 1–22.
+123
+
+168
+Annals of Operations Research (2025) 350:131–168
+Kellerer, H., Pferschy, U., & Pisinger, D. (Eds.). (2004). Multidimensional knapsack problems. In Knapsack
+problems (pp. 235–283). Springer.
+Kenney, M., & Zysman, J. (2016). The rise of the platform economy. Issues in Science and Technology, 32(3),
+61.
+Klapp, M. A., Erera, A. L., & Toriello, A. (2018). The one-dimensional dynamic dispatch waves problem.
+Transportation Science, 52(2), 402–415.
+Miller, J., & Nie, Y. M. (2020). Dynamic trucking equilibrium through a freight exchange. Transportation
+Research Part C: Emerging Technologies, 113, 193–212.
+Minkoff, A. S. (1993). A Markov decision model and decomposition heuristic for dynamic vehicle dispatching.
+Operations Research, 41(1), 77–90.
+Montreuil, B. (2011). Toward a Physical Internet: Meeting the global logistics sustainability grand challenge.
+Logistics Research, 3(2–3), 71–87.
+Montreuil, B., Meller, R. D., & Ballot, E. (2013). Physical internet foundations (pp. 151–166). Berlin Heidel-
+berg.: Springer.
+Nash, J. (1950). The bargaining problem. Econometrica, 8, 155–162.
+Nash, J. (1953). Two-person cooperative games. Econometrica: Journal of the Econometric Society, 21(1),
+128–140.
+Qiao, B., Pan, S., & Ballot, E. (2019). Dynamic pricing model for less-than-truckload carriers in the Physical
+Internet. Journal of Intelligent Manufacturing, 30(7), 2631–2643.
+Rolnick, D., & Tegmark, M. (2017). The power of deeper networks for expressing natural functions. arXiv
+preprint arXiv:1705.05502.
+Rubinstein, A. (1980). Strong perfect equilibrium in supergames. International Journal of Game Theory, 9(1),
+1–12.
+Rubinstein, A. (1994). Equilibrium in supergames. In N. Megiddo (Ed.), Essays in game theory (pp. 17–27).
+Springer.
+Sallez, Y., Pan, S., Montreuil, B., Berger, T., & Ballot, E. (2016). On the activeness of intelligent physical
+internet containers. Computers in Industry, 81, 96–104.
+Sutton, R. S., & Barto, A. G. (2018). Reinforcement learning: An introduction (2nd ed.). Cambridge, Mas-
+sachusetts: The MIT Press.
+Van Heeswijk, W. J. A. (2019). Smart containers with bidding capacity: A policy gradient algorithm for semi-
+cooperative learning. In E. Lalla-Ruiz, M. R. K. Mes, & S. Voß (Eds.), Lecture notes in computer science
+(Vol. 12433, pp. 469–491). Cham: Springer.
+Van Heeswijk, W. J. A., & La Poutré, H. (2018). Scalability and performance of decentralized planning in
+ﬂexible transport networks. In 2018 IEEE International Conference on Systems Man, and Cybernetics
+(pp. 292–297). Piscataway, New Jersey: Institute of Electrical and Electronics Engineers Inc.
+Van Heeswijk, W. J. A., Mes, M. R. K., & Schutten, J. M. J. (2019a). The delivery dispatching problem with
+time windows for urban consolidation centers. Transportation Science, 53(1), 203–221.
+Van Heeswijk, W. J. A., Mes, M. R. K., & Schutten, J. M. J. (2019). Transportation management. In H. Zijm,
+M. Klumpp, A. Regattieri, & S. Heragu (Eds.), Operations, Logistics and supply chain management (pp.
+469–491). Cham: Springer.
+Voccia, S. A., Campbell, A. M., & Thomas, B. W. (2019). The same-day delivery problem for online purchases.
+Transportation Science, 53(1), 167–184.
+Wang, Y., Nascimento, J. M. D., & Powell, W. B. (2018). Reinforcement learning for dynamic bidding in
+truckload markets: an application to large-scale ﬂeet management with advance commitments. arXiv
+preprint arXiv:1802.08976.
+Williams, R. J. (1992). Simple statistical gradient-following algorithms for connectionist reinforcement learn-
+ing. Machine Learning, 8(3–4), 229–256.
+Yan, F., Ma, Y., Xu, M., & Ge, X. (2018). Transportation service procurement bid construction problem from
+less than truckload perspective. Mathematical Problems in Engineering, 2018, 1–17.
+Zha, L., Yin, Y., & Du, Y. (2017). Surge pricing and labor supply in the ride-sourcing market. Transportation
+Research Procedia, 23, 2–21.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

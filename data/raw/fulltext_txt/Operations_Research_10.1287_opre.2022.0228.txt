@@ -1,0 +1,1811 @@
+TITLE: Projective Hedging Algorithms for Multistage Stochastic Programming, Supporting Distributed and Asynchronous Implementation
+JOURNAL: Operations_Research
+YEAR: 2023
+DOI: https://doi.org/10.1287/opre.2022.0228
+---
+
+LLNL-JRNL-863762
+Projective Hedging Algorithms for
+Multi-Stage Stochastic Programming,
+Supporting Distributed and Asynchronous
+Implementation
+J. Eckstein, J. P. Watson, D. L. Woodruff
+April 29, 2024
+Operations Research
+
+Disclaimer 
+ 
+This document was prepared as an account of work sponsored by an agency of the United States 
+government. Neither the United States government nor Lawrence Livermore National Security, LLC, 
+nor any of their employees makes any warranty, expressed or implied, or assumes any legal liability or 
+responsibility for the accuracy, completeness, or usefulness of any information, apparatus, product, or 
+process disclosed, or represents that its use would not infringe privately owned rights. Reference herein 
+to any specific commercial product, process, or service by trade name, trademark, manufacturer, or 
+otherwise does not necessarily constitute or imply its endorsement, recommendation, or favoring by the 
+United States government or Lawrence Livermore National Security, LLC. The views and opinions of 
+authors expressed herein do not necessarily state or reflect those of the United States government or 
+Lawrence Livermore National Security, LLC, and shall not be used for advertising or product 
+endorsement purposes. 
+ 
+
+Projective Hedging Algorithms for Multi-Stage
+Stochastic Programming, Supporting Distributed and
+Asynchronous Implementation
+Jonathan Eckstein
+Department of Management Science and Information Systems, Rutgers Business School Newark and New Brunswick, Rutgers
+University, Piscataway NJ 08854, jeckstei@business.rutgers.edu
+Jean-Paul Watson
+Center for Applied Scientific Computing and Global Security Directorate, Lawrence Livermore National Laboratory,
+Livermore CA 94550, jeanpaulwatson@llnl.gov
+David L. Woodruff
+Graduate School of Management, University of California, Davis, Davis CA 95616, dlwoodruff@ucdavis.edu
+We propose a decomposition algorithm for multistage stochastic programming that resembles the progressive
+hedging method of Rockafellar and Wets, but is provably capable of several forms of asynchronous operation.
+We derive the method from a class of projective operator splitting methods fairly recently proposed by
+Combettes and Eckstein, significantly expanding the known applications of those methods. Our derivation
+assures convergence for convex problems whose feasible set is compact, subject to some standard regularity
+conditions and a mild “fairness” condition on subproblem selection. The method’s convergence guarantees
+are deterministic and do not require randomization, in contrast to other proposed asynchronous variations
+of progressive hedging. Computational experiments described in an online appendix show the method to
+outperform progressive hedging on large-scale problems in a highly parallel computing environment.
+Key words : stochastic programming, high performance computing, decomposition
+1. Introduction
+The progressive hedging (PH) method for stochastic programming is a decomposition algorithm for
+multistage convex stochastic programming problems introduced by Rockafellar and Wets (1991).
+Consider a stochastic programming problem defined over a finite multistage scenario tree with n
+leaf nodes. We henceforth use the the term “scenario” to refer to an entire path through this tree
+from the root to one of the leaves. PH cycles through the following steps:
+1
+
+2
+1. Solve each of the n scenarios as a separate subproblem, with a quadratic perturbation to the
+objective function.
+2. For each non-leaf node in the scenario tree, average the portions of the scenario solutions that
+correspond to it.
+3. Perform a Lagrange multiplier update.
+The quadratic perturbation in each scenario subproblem includes both a linear Lagrange multiplier
+term and a quadratic penalty for deviating from the averaged solution found in step 2 of the
+previous iteration.
+PH is a naturally parallel algorithm, since the n subproblems in step 1 may be solved con-
+currently, and the remaining calculations are quite simple and may readily be distributed and
+executed in parallel using standard communication patterns whose time requirements grow only
+logarithmically with the number of processors. However, the original form of PH is also strongly
+synchronous, in that every scenario subproblem must be fully solved before an iteration can be
+completed. This synchronousness has a number of drawbacks: first, even at iterations in which only
+a few subproblems diverge significantly from the globally averaged solution, all of them must be
+processed. Furthermore, if the run times of the subproblems are highly variable, most processors
+will accumulate significant idle time while waiting for the slowest subproblems to complete. This
+drawback is particularly acute when PH is applied to problems with integer variables, as in Watson
+and Woodruff (2011), since the subproblems are mixed-integer programs. Initially, such applica-
+tions of PH were largely heuristic, but later it has been shown (Boland et al. 2018, Gade et al.
+2016) that with suitable adjustments the technique can find useful Lagrangian lower bounds on
+the global integer-optimal solution value.
+This paper introduces a class of stochastic programming algorithms that resemble PH, but
+are less synchronous in two ways: first, only a subset of the subproblems need to solved at each
+iteration, subject to some very loose restrictions. We call this feature of the algorithm being “block
+asynchronous” (in some earlier work, this mode of operation is called “block iterative” or “block
+
+3
+activated”). The second departure from synchronousness is that subproblems may be “dispatched”
+for solution in one iteration, but their results incorporated into the coordination calculations some
+bounded number of iterations later. This feature is likely to be useful when the time to solve the
+subproblems is highly variable.
+Our algorithms are an application of an operator splitting method described in Eckstein (2017),
+which is essentially a simplification of one of the methods developed in Combettes and Eck-
+stein (2018). Although the original convergence proof for PH in Rockafellar and Wets (1991) is
+self-contained, the method is an application of the alternating direction method of multipliers
+(ADMM) (Fortin and Glowinski 1983, Gabay 1983) in a suitably formulated space with a spe-
+cially chosen inner product. As noted in Gabay (1983), the ADMM is in turn an application of a
+ubiquitous general algorithmic template known as Douglas-Rachford splitting (Lions and Mercier
+1979). Broadly speaking, our new class of algorithms is obtained by substituting the relatively new
+asynchronous projective splitting algorithm of Eckstein (2017) for the more traditional Douglas-
+Rachford approach (Eckstein and Bertsekas 1992, Gabay 1983, Lions and Mercier 1979). However,
+there are numerous differences in detail: for example, PH is an application of a two-operator split-
+ting scheme in an n-way product space, whereas our new approach uses an n-operator splitting
+scheme. Since it is based on the asynchronous projective splitting methods proposed in Combettes
+and Eckstein (2018) and Eckstein (2017), we call our new method “Asynchronous Projective Hedg-
+ing” (APH).
+It should be noted that Eckstein (2017) contains two algorithms, an abstract monotone operator
+splitting method and a method resembling an asynchronous n-block implementation of the ADMM,
+the second being an application of the first. The stochastic programming method we present here
+is also an application of the first, more abstract method in Eckstein (2017), and thus of one of
+the methods in Combettes and Eckstein (2018). However, it is not an application of the second,
+ADMM-like method in Eckstein (2017); attempting to apply the second method in Eckstein (2017)
+to stochastic programming would require representing the nonanticipativity of the solution through
+
+4
+explicit linear constraints and appears to result in a factor of n increase in working storage as
+compared to the algorithm developed here.
+While the fundamental convergence “engine” behind our algorithm is the abstract monotone
+operator splitting procedure from Combettes and Eckstein (2018) and Eckstein (2017) and is
+therefore not novel, we believe that new applications of this “engine” constitute a noteworthy
+contribution. This class of algorithms is relatively recent and only Johnstone and Eckstein (2022)
+and B`ui et al. (2022) describe its concrete applications, giving examples in data analysis and image
+recovery. Thus, we believe that adding a very different application to the literature is of signifi-
+cant value. Further, considerable care must be exercised when deriving the method from Eckstein
+(2017) in order to produce an algorithm whose general form and working storage requirements are
+comparable to those of PH.
+For this paper, we have restricted computational testing to cases for which our current analysis
+proves convergence, namely continuous problems with convex objective functions and constraints.
+Within these classes of problems, we did not observe any test cases in which subproblem solution
+times had significant variance, so our computational tests do not address the entire possible range
+of departures from synchronous behavior of which the proposed method is theoretically capable.
+However, our tests do thoroughly explore “block-asynchronous” operation, meaning that, although
+the processors alternate in a fully coordinated manner between subproblem solution and coordina-
+tion phases, only a subset of the subproblems needs to be solved during each subproblem-solving
+phase. This property is sufficient to give the algorithm a significant efficiency advantage over PH.
+Some of our computational tests involve problems for which there is no practical alternative to
+PH, so improving its efficiency is a noteworthy contribution.
+Highly parallel computational experiments comparing PH and APH are described in Appendix B
+in this paper’s online companion, and show APH to outperform PH, with a particularly large
+margin of superiority in settings in which one can exploit its “block asynchronous” capabilities.
+
+5
+2. Related Work
+PH has been implemented with asynchronous subproblem solving in Crainic et al. (2011), Perboli
+et al. (2015), Ryan et al. (2016), and Somervell (1998), but these efforts were of a heuristic nature.
+Rigorously derived, convergence-guaranteed asynchronous versions of PH were first published
+in an earlier preprint of this work (under a slightly different title) and in Bareilles et al. (2020).
+The latter work presents three randomized versions of PH, each of which has a convergence proof
+based on a distinct underlying randomized block-coordinate fixed-point algorithm. The first of
+these versions of PH is block asynchronous, processing one randomly chosen scenario per iteration.
+The convergence theory of this version is based on the randomized fixed-point algorithm developed
+in Iutzeler et al. (2013), where it was also used to derive an asynchronous ADMM for certain
+optimization problems defined over networks. The second version of PH from Bareilles et al. (2020)
+is also block asynchronous, processing a fixed-size but randomly chosen subset of scenarios at each
+iteration. The validity of this algorithm may be verified by using the more general randomized fixed-
+point iteration developed by Combettes and Pesquet (2015). The final version of PH in Bareilles
+et al. (2020) is potentially fully asynchronous, a property facilitated in the algorithm statement by
+allowing subproblem calculations to be based on information up to τ iterations old, where τ is some
+given integer. This version’s theoretical underpinnings are the “ARock” randomized fixed-point
+procedure of Peng et al. (2016).
+In the ARock-based version of PH in Bareilles et al. (2020), only one scenario can be processed
+per iteration, and the steps taken by the algorithm must be under-relaxed by a factor strictly below
+n/(n + 2τ), where n is the number of scenarios. The one-scenario-per-iteration requirement of the
+algorithm could effectively increase τ: for example, suppose that the algorithm implementation
+simultaneously initiates processing of 5 scenario subproblems whose solutions all arrive simulta-
+neously 3 iterations later. These scenario solutions must be incorporated into the master solution
+estimate one-by-one, with the first having a perceived delay of 3, the second having a perceived
+delay of 4, and so forth, with the fifth having a perceived delay of 3 + 5 −1 = 7, meaning that
+
+6
+one must set τ ≥7 to ensure convergence. The convergence theory requires that larger values of
+τ require more under-relaxation of the algorithm stepsize, which can be expected to slow down
+convergence.
+In all the algorithms from Bareilles et al. (2020), the analysis relies on random selection of
+scenarios and yields almost sure convergence, meaning that over all possible infinite sequences of
+scenarios that might be selected over the course of the algorithm, those that exhibit convergence
+constitute a set with probability one. While this is a fairly strong guarantee and very common in
+algorithms associated with machine learning problems, deterministic results explicitly character-
+izing the sequences of algorithmic choices for which convergence occurs are generally considered
+preferable when they are possible.
+The work presented here is fundamentally different, being based on the projective splitting
+methods in Combettes and Eckstein (2018) and Eckstein (2017). These methods do not require
+randomization and deterministically guarantee convergence along any algorithmic path satisfy-
+ing certain “fairness” conditions, so the same is true for the PH-like methods derived from them
+here. These resulting methods support various kinds of asynchronism, but with some important
+differences from algorithms derived from randomized fixed-point methods. In our approach, any
+number of subproblems may be processed per iteration, and while the maximum delay to process
+a scenario must be bounded, the bound does not appear explicitly in the algorithm’s calculations,
+but only in the convergence proof. As a result, the maximum delay need not be explicitly esti-
+mated and no delay-based underrelaxation is required. These advantages come at the cost of some
+additional per-scenario working variables that must undergo some relatively simple, linear-time
+updates at each iteration, including iterations in which the corresponding subproblem was not
+reoptimized. In a shared-memory environment, our method could therefore exhibit more memory
+contention than the algorithms in Bareilles et al. (2020). In pure master-worker implementations,
+our proposed methods could also somewhat increase the per-iteration workload at the master as
+compared to simpler algorithms. However, in a scalable distributed implementation without a cen-
+tralized master processor, such as the one presented in Appendix B, it is not clear whether the
+
+7
+iterate-updating pattern of our algorithm has any implementation disadvantages as compared to
+the methods in Bareilles et al. (2020).
+Since PH is an application of the ADMM, it is natural to ask whether any other prior proposals
+for asynchronous ADMM variants, besides those discussed immediately above, could yield asyn-
+chronous versions of PH. One possible candidate is the asynchronous ADMM proposed by Wei and
+Ozdaglar (2013). It appears possible to derive a variant of PH from this method, but because of
+its strong graph orientation and related restrictive constraint structure assumptions, it does not
+appear that such a process would be very natural, nor would it offer any obvious advantages over
+the algorithms discussed above. Any such algorithm would, like those of Bareilles et al. (2020),
+require randomized scenario selection and exhibit almost-sure convergence.
+The other algorithm in the literature that can fairly be described as a rigorously founded
+asynchronous ADMM was proposed by Hong (2018). While this algorithm is suitable for some
+machine-learning problems and has a local convergence analysis for nonconvex objectives, it requires
+assumptions that do not apply to decomposition methods for stochastic programming. It therefore
+appears that PH procedures based on randomized fixed-point iterations as in Bareilles et al. (2020),
+Combettes and Pesquet (2015), Iutzeler et al. (2013), and Peng et al. (2016) are currently the
+most plausible competitor algorithms to the one proposed here. Ideally, however, one would want
+to combine the delay tolerance of ARock-based algorithms (Peng et al. 2016) with the ability to
+process multiple blocks per iteration as in Combettes and Pesquet (2015), but we are not presently
+aware of any randomized fixed-point algorithm with these properties.
+3. Notation and Problem Setup
+Consider a stochastic programming problem defined on a finite scenario tree T with stages indexed
+by t ∈1..T, and n leaf nodes indexed by i ∈1..n. Let Tt denote the set of tree nodes at each stage
+t ∈1..T, and for each N ∈Tt, we let S(N) ⊆1..n denote the set of leaf nodes that have N as an
+ancestor. The sets {S(N) | N ∈Tt } comprise a partition of 1..n for each t ∈1..T. For each i ∈1..n,
+we denote the probability of leaf node i by πi ∈(0,1], subject to Pn
+i=1 πi = 1. For each node N in
+
+8
+the tree, we also let π(N) = P
+i∈S(N) πi denote its probability. We assume that all zero-probability
+nodes have already been pruned from the scenario tree.
+For simplicity (and without loss of generality), we assume that every stage-t node in the tree
+has the same number of decision variables mt ≥1, and we let m = PT
+t=1 mt denote the full number
+of decision variables associated with each scenario. For each i ∈1..n, let Xi denote the space of
+vectors of possible decisions for scenario i, from all stages. We denote a generic element of Xi by xi,
+and its subvector corresponding to each stage t ∈1..T by xit ∈Rmt. We give Xi the inner product
+⟨xi,yi⟩Xi = πi(xi)⊤(yi) = πi
+T
+X
+t=1
+(xit)⊤(yit),
+(1)
+We use the scaled inner product (1) to maximize the resemblance of our algorithm to the original
+PH method proposed in Rockafellar and Wets (1991). It is also possible to use an unweighted inner
+product for Xi in the analysis below, resulting in a very similar algorithm development, but with
+different averaging operations.
+Let X = X1 × ··· × Xn, under the inner product induced by (1),
+⟨x,y⟩X =
+n
+X
+i=1
+⟨xi,yi⟩Xi =
+n
+X
+i=1
+πi(xi)⊤(yi) =
+n
+X
+i=1
+πi
+T
+X
+t=1
+(xit)⊤(yit).
+(2)
+This kind of probability-scaled inner product is common in the stochastic programming literature.
+One may envision the elements of X as expanding decision vectors defined on the scenario tree
+into a “grid” by making |S(N)| replicas of the decision variables at each node N in the tree. Thus,
+vectors in X have n sets of decision variables for each stage t, regardless of the number of tree
+nodes |Tt| at stage t.
+Next, let m′ = m −mT = PT −1
+t=1 mt. For each i ∈1..n, let Zi denote the space of all decision
+variables for scenario i, except those for stage T. We use a similar indexing scheme and inner
+product to Xi, so that
+⟨zi,ui⟩Zi = πi(zi)⊤(ui) = πi
+T −1
+X
+t=1
+(zit)⊤(uit).
+(3)
+Let Z = Z1 × ··· × Zn with the inner product induced by (3),
+⟨z,u⟩Z =
+n
+X
+i=1
+⟨zi,ui⟩Zi =
+n
+X
+i=1
+πi(zi)⊤(ui) =
+n
+X
+i=1
+πi
+T −1
+X
+t=1
+(zit)⊤(uit).
+(4)
+
+9
+Vectors in Z have the same “grid” interpretation as vectors in X, except that they are missing the
+variables for the final stage. Essentially, X is Rmn and Z is Rm′n, but with scenario-weighted inner
+products.
+For each i ∈1..n, let Mi denote the linear map Xi →Zi that simply drops the last-stage variables,
+so Mi(xi1,...,xiT) = (xi1,...,xi,T −1). We then let M : X →Z be the linear map given by
+M :
+ (x11,...,x1T),...,(xn1,...,xnT)
+
+7→(M1x1,...,Mnxn)
+=
+ (x11,...,x1,T −1),...,(xn1,...,xn,T −1)
+
+,
+(5)
+which drops all the last-stage variables from its argument.
+As in Rockafellar and Wets (1991), we define a linear subspace N of Z by
+N =
+n
+z ∈Z
+
+ ∀t ∈1..(T −1)
+
+(∀N ∈Tt)
+ ∀i,j ∈S(N)
+
+: zit = zjt
+o
+.
+(6)
+Vectors in z ∈N are nonanticipative in the sense that zit = zjt whenever scenarios i and j are
+indistinguishable at stage t. They thus correspond to implementable plans for stages 1,...,T −1.
+For each i ∈1..n, let hi : Rm →R ∪{+∞} be a closed proper convex function and consider the
+optimization problem
+min
+x∈X
+n
+X
+i=1
+πihi(xi)
+ST Mx ∈N.
+(7)
+This optimization model can subsume any convex stochastic programming problem defined on the
+scenario tree T, in the following manner: within the context of the “clairvoyant” situation in which
+one knows that leaf node i ∈1..n of the tree will occur, define hi(xi) = +∞whenever xi is infeasible,
+and otherwise let hi(xi) be the total cost of the plan described by xi. In particular, hi(xi) will be
++∞if xi violates any constraint within a stage or any coupling constraint between stages. For all
+scenarios i ∈1..n, such constraints are embedded within the objective function of (7), while the
+constraint Mx ∈N requires selection of an implementable, non-clairvoyant plan.
+
+10
+One can now derive the PH algorithm by defining convex functions F : X →R ∪{+∞} and
+G : Z →R ∪{+∞} as follows:
+F(x) =
+n
+X
+i=1
+πihi(xi)
+G(z) =
+
+
+
+
+
+
+
+
+
+0,
+z ∈N
++∞,
+z ̸∈N.
+(8)
+Problem (7) may then be expressed as simply
+min
+x∈X
+
+F(x) + G(Mx)
+ 
+,
+(9)
+which is a standard form for applying the ADMM. Doing so while keeping in mind the inner
+products defined in (2) and (4) yields the PH method.
+The ADMM for the problem (9) interacts with F by solving partial augmented Lagrangian
+subproblems of the form minx
+
+F(x)+⟨wk,x⟩+ ρ
+2
+x −zk 
+, where wk ∈N⊥and zk ∈N are iterates
+of the method and ρ > 0 is a constant parameter. With F defined as in (8), this subproblem
+necessarily involves solving an optimization problem for all n scenarios. The resulting method
+(progressive hedging) thus treats the scenarios completely synchronously, and the same would
+apply to any algorithm based directly on decomposition of the two-function formulation (9). So,
+to obtain a method in which scenarios are more loosely coordinated, we avoid the formulation (9)
+and will instead formulate the stochastic program through the n-function model problem
+min
+z∈H0
+( n
+X
+i=1
+fi(Liz)
+)
+,
+(10)
+where H0,...,Hn are real Hilbert spaces with respective inner products ⟨·,·⟩H0,...,⟨·,·⟩Hn, and,
+for all i ∈1..n, fi : Hi →R∪{∞} is a closed proper convex function and Li : H0 →Hi is a bounded
+linear map. To apply this formulation to the stochastic programming problem (7), we assign the
+elements of this model as follows:
+S1. H0 = N, the nonanticipativity subspace, under the inner product ⟨·,·⟩Z from (4).
+S2. For all i ∈1..n, we let Hi = Zi, thus using the inner product (3).
+S3. For all i ∈1..n, we define Li by Li : (z1,...,zn) 7→zi, that is, Li selects only the portion of
+its argument corresponding to scenario i.
+
+11
+S4. For all i ∈1..n, we define fi by
+fi(zi) = πi min
+
+hi
+ (zi,xiT)
+
+| xiT ∈RmT 
+,
+(11)
+that is, given the values of all decision variables zi for the scenario i except those for the last stage,
+fi optimizes over the last-stage variables and returns the resulting objective value, scaled by πi.
+This approach to applying (10) to stochastic programming, in which we implicitly minimize over
+the last-stage variables within the functions fi, may seem slightly unnatural, but it is necessary to
+avoid generating undesired quadratic terms associated with the last-stage variables in the algorithm
+we will develop below.
+We make the following blanket assumption for the remainder of this paper:
+Assumption 1. For all i ∈1..n, domhi = {xi ∈Rm | hi(xi) < ∞} is compact.
+This assumption will allow us to model any finite-dimensional stochastic programming problem on
+the tree T whose feasible region is closed and bounded, a very weak restriction in most practical
+settings. It is also possible to relax this restriction, but we adopt it here in the interest of simplicity.
+Proposition 1. Under Assumption 1, meaning that the functions hi are closed and convex with a
+compact effective domain, the functions fi defined by (11) are closed proper convex for all i ∈1..n.
+Proof.
+Closedness is established in Bauschke and Combettes (2013, Lemma 1.30), while con-
+vexity is established in Bauschke and Combettes (2013, Proposition 8.35).
+□
+Proposition 2. Suppose that H0,...,Hn, f1,...,fn, and L1,...,Ln are constructed as in
+items S1-S4 above and Assumption 1 holds. Then a vector z∗∈Rm′ is an optimal solution of the
+problem (10) if and only if it is of the form z∗= Mx∗, where x∗is an optimal solution of (7) and
+M is as defined in (5).
+Proof.
+Under Assumption 1, problem (7) must attain its minimum value, since its feasible region
+is the intersection of the compact set Qn
+i=1 domhi with the (necessarily closed) linear subspace
+{x ∈X | Mx ∈N}. Thus, it is the minimum value of a closed (lower semicontinuous) function over
+
+12
+a compact set and must be attained; see for example Bauschke and Combettes (2013, Theorem
+1.29). Under the stated hypotheses, problem (10) must also attain its minimum, because, for each
+i ∈1..n,
+domfi =
+n
+zi ∈Rm′ | ∃xiT ∈RmT : (zi,xiT) ∈domhi
+o
+= Mi domhi.
+(12)
+Since domhi is compact, this set is also compact. By Proposition 1, the functions fi are closed
+proper convex. The feasible region of problem (10), namely
+F = {z ∈N | (∀i ∈1..n)Liz ∈domfi },
+is clearly closed since the domfi are compact. It also cannot contain an unbounded sequence of
+points {zk}, since at least one of the corresponding sequences {Lizk}, i ∈1..n, would then have
+to be unbounded and could not be contained in domfi. Therefore F is compact since N is finite
+dimensional. Since the fi are lower semicontinuous (closed), it is easily seen that Pn
+i=1 fi ◦Li
+must also be lower semicontinuous. Hence, problem (10) also involves minimization of a lower
+semicontinuous function over a compact set and attains its minimum. We then calculate
+min
+z∈H0
+( n
+X
+i=1
+fi(Liz)
+)
+= min
+z∈N
+( n
+X
+i=1
+fi(zi)
+)
+= min
+z∈N
+( n
+X
+i=1
+πi min
+
+hi
+ (zi,xiT)
+
+| xiT ∈RmT 
+)
+= min
+(
+n
+X
+i=1
+πihi
+ (zi,xiT)
+
+ z ∈N,(∀i ∈1..n)xiT ∈RmT
+)
+= min
+(
+n
+X
+i=1
+πihi(xi)
+ x ∈X : Mx ∈N
+)
+,
+so the objective values of the two problems are equal.
+Suppose x∗is an optimal solution of (7). If we let z∗= Mx∗, then for all i ∈1..n we have fi(Liz∗
+i ) ≤
+πihi(Liz∗
+i ,x∗
+iT) = πihi(x∗
+i ). Summing, we have Pn
+i=1 fi(Liz∗) ≤Pn
+i=1 πihi(x∗
+i ), which in view of the
+just-established equivalence of optimal values means that z∗is optimal for (10). Conversely, let z∗
+be any optimal solution of (10), consider for each i ∈1..n the problem minxiT ∈RmT
+
+hi
+ (z∗
+i ,xiT)
+ 
+,
+whose optimum must be attained at some x∗
+iT ∈RmT since it is again the minimum of a lower
+
+13
+semicontinuous function over a compact set. In view of the equality of optimal values of the two
+problems already established, x∗=
+ (z∗
+1,x∗
+1T)...,(z∗
+n,x∗
+nT)
+
+must be an optimal solution of (7), and
+we clearly have Mx∗= z∗.
+□
+4. A General Asynchronous Splitting Method for Optimization
+At this point, we have recast our stochastic programming problem into the relatively abstract,
+general optimization form (10). We next follow a two-step process to arrive at a solution procedure
+for stochastic programming problems in the form (7):
+• Specialize the monotone inclusion algorithm given in Eckstein (2017) to solve any convex
+optimization problem in the form (10).
+• Further specialize the resulting algorithm to the particular case of (7) using the construction
+from Section 3 above.
+This section handles the first of these steps, resulting in Algorithm 1 below, and the next section
+handles the second step. In specializing the monotone inclusion algorithm of Eckstein (2017) to
+the minimization problem (10), we need to consider three particular issues:
+1. The standard sufficient optimality condition of (10) is the monotone inclusion given below
+as (14). So, we will solve (10) by applying the monotone inclusion algorithm of Eckstein (2017)
+to this sufficient optimality condition. Unfortunately, the sufficient optimality condition may fail
+to be necessary for optimality in some atypical cases, so we state a constraint-qualification-like
+assumption (Assumption 2 immediately below) guaranteeing that the condition is necessary. With-
+out such a condition, it is possible that our algorithm might not be able find an optimal solution
+to (10) even though one exists.
+2. The monotone inclusion algorithm of Eckstein (2017) handles each subproblem with an
+abstract “Prox” operation on a monotone operator. To obtain an implementable method for opti-
+mization, we specialize these operations to minimizations in Algorithm 1. This specialization is
+explained and justified in Proposition 4 below.
+
+14
+3. Having addressed the previous point, the general convergence theorem of Eckstein (2017)
+applies to Algorithm 1. We state the resulting conclusions in Proposition 5 below. Because there are
+some minor notation adjustments between the two methods and we are claiming a few additional
+convergence properties not explicitly established in Eckstein (2017), we provide a short proof for
+this proposition. This proof does not repeat any of the lengthy core analysis needed to establish
+the results in Eckstein (2017).
+We begin by addressing the first issue:
+Assumption 2. Assume that at least one of the following holds:
+1. The functions h1,...,hn are polyhedral, or
+2. There exists ¯x ∈X such that, for all i ∈1..n,
+(¯xi1,..., ¯xi,T −1) ∈riMi(domhi),
+(13)
+where the operator ri denotes taking the relative interior of a set as defined for example in Bertsekas
+et al. (2003, Section 1.4).
+Assumption 2(1) will hold in the case of linear stochastic programming problems, while the nonlin-
+ear case is handled by Assumption 2(2), which is essentially a Slater-class constraint qualification.
+For a typical nonlinear convex stochastic programming formulation translated into (10) through S1-
+S4, the assumption essentially states that there exists a point that is strictly feasible with respect
+to all inequality constraints at stages 1 through T −1.
+By Bauschke and Combettes (2013, Corollary 6.15), the set riMi(domhi) on the right-hand side
+of (13) is identical to Mi(ridomhi). It is possible to substitute less restrictive assumptions for
+Assumption 2, but we use the form above to keep the analysis relatively simple.
+Proposition 3. In the context of problem (10), suppose that z ∈H0 satisfies
+0 ∈
+n
+X
+i=1
+L∗
+i ∂fi(Liz),
+(14)
+
+15
+where the summation sign denotes the Minkowski sum of sets, L∗
+i denotes the adjoint linear operator
+of Li, and ∂g denotes the subgradient mapping of a convex function g. Then z is an optimal solution
+of (10). Under Assumption 1 and the setup S1-S4, if one subsequently lets, for all i ∈1..n,
+xiT ∈Arg min
+ξ∈RmT
+
+hi(Liz,ξ)
+ 
+ ∀t ∈1..(T −1)
+
+xit = zit,
+(15)
+then the resulting vector x ∈X is optimal for (7).
+Conversely, suppose that assumptions 1 and 2 hold, and x is an optimal solution to (7). Then
+z = Mx must satisfy the optimality condition (14).
+Parts of the proof of this result are somewhat technical, so we defer it to Appendix A in the online
+companion. Our algorithm is based on finding a solution to the optimality condition (14), which
+is always a sufficent condition for optimality; if Assumption 2 holds, it is also necessary.
+Algorithm 1 presents a method to solve the monotone inclusion problem (14). Its iterates {zk}
+are estimates of the primal solution z in (14), while the iterates {wk} =
+
+(wk
+1,...,wk
+n)
+ 
+are estimates
+of the dual solution. In this situation, a dual solution consists of vectors w1 ∈∂f1(L1z),...,wn ∈
+∂fn(Lnz) that verify (14) by having Pn
+i=1 L∗
+i wi = 0.
+Lines 3-11 constitute the “decomposition” portion of the algorithm, which processes the indi-
+vidual functions fi. Of these, lines 5-9 operate on some subset Ik of the possible indices i ∈1..n,
+solving subproblems to produce for each i ∈Ik some pair (xk
+i ,yk
+i ) ∈H2
+i . For i ̸∈Ik, line 11 instead
+“recycles” the earlier pair (xk
+i ,yk
+i ) ∈H2
+i . Lines 12-20 constitute the “coordination” phase of the
+algorithm. It uses the pairs
+
+(xk
+i ,yk
+i )
+ n
+i=1 to attempt to compute improved primal and dual solu-
+tion estimates (zk+1,wk+1) = (zk+1,wk+1
+1
+,...,wk+1
+n
+). Its form, originating in earlier publications
+such as Alotaibi et al. (2014), Combettes and Eckstein (2018), Eckstein (2017), and Eckstein and
+Svaiter (2009), is based on projecting the current iterate (zk,wk) onto a halfspace containing all
+primal-dual solutions. This halfspace is constructed using the vectors
+
+(xk
+i ,yk
+i )
+ n
+i=1.
+On lines 1 and 12, W denotes the linear subspace of H1 × ··· × Hn given by
+W =
+(
+w = (w1,...,wn) ∈H1 × ··· × Hn
+
+n
+X
+i=1
+L∗
+i wi = 0
+)
+.
+(16)
+
+16
+1 Start with any z0 ∈H0, w0 ∈W and (x−1
+i ,y−1
+i
+∈Hi)i∈1..n
+2 for k = 0,1,... do
+3
+Select some Ik ⊆1..n
+4
+for i ∈Ik do
+5
+Select some integer d(i,k) ∈0..k
+6
+Select some scalar ζik > 0
+7
+rk
+i = Lizd(i,k) + ζikwd(i,k)
+i
+8
+xk
+i = arg minxi∈Hi
+n
+fi(xi) +
+1
+2ζik
+xi −rk
+i
+2
+Hi
+o
+9
+yk
+i =
+1
+ζik (rk
+i −xk
+i )
+10
+end
+11
+for i ∈1..n\Ik do (xk
+i ,yk
+i ) = (xk−1
+i
+,yk−1
+i
+)
+12
+uk = projW(xk
+1,...,xk
+n)
+13
+vk = Pn
+i=1 L∗
+i yk
+i
+14
+τk =
+uk2 +
+vk2
+15
+if τk > 0 then
+16
+Choose some νk : 0 < νk < 2
+17
+θk = νk
+τk
+max
+
+0,Pn
+i=1⟨Lizk −xk
+i ,yk
+i −wk
+i ⟩Hi
+ 
+18
+else θk = 0
+19
+zk+1 = zk −θkvk
+20
+wk+1 = wk −θkuk
+21 end
+Algorithm 1: Abstract algorithm for problem (14)
+On line 12, projW denotes the orthogonal projection map from Z = H1 × ··· × Hn onto W. In the
+general case, such a projection might be difficult to implement, in which case techniques exist for
+
+17
+avoiding it (Combettes and Eckstein 2018, Johnstone and Eckstein 2022), but in the particular
+application to stochastic programming developed in this paper, it turns out to be straightforward.
+On lines 3 and 5, Algorithm 1 describes the per-iteration parameters Ik and d(i,k) as being
+explicitly “selected”. In a fully asynchronous parallel implementation, these parameters would not
+be actively chosen but would instead be implicitly determined by the asynchronous execution path.
+For example, if the solution of a subproblem ¯i actually initiated three iterations ago were to be
+completed and available in iteration k, then Ik would contain ¯i and d(¯i,k) would be k −3. The
+computational tests in this paper will consider only block-asynchronous implementations which
+alternate between non-overlapping decomposition and coordination phases, the only departure from
+classical decomposition procedures being that the decomposition phase processes only a subset of
+the possible subproblems, with considerable freedom as to which subproblems to select. In such
+cases, Ik is indeed directly chosen (we will discuss how to make this choice later), and d(i,k) = k
+for all k ≥0 and i ∈Ik.
+We now establish a relationship between Algorithm 1 and the monotone inclusion algorithm
+proposed in Eckstein (2017).
+Proposition 4. For any closed proper convex functions fi : Hi →R∪{+∞} and continuous linear
+maps Li : H0 →Hi (for i ∈1..n), Algorithm 1 develops the same sequences of iterates as Algorithm 1
+of Eckstein (2017) with, in the notation of Eckstein (2017), ˆk = 0, the mappings Ti set to ∂fi for
+all i ∈1..n, the parameters µi,d(i,k) = ζik, for all i and k, and the error parameter ek
+i set to 0 for all
+i ∈1..n and k ≥0.
+Proof.
+Taking ˆk = 0, Algorithm 1 of Eckstein (2017) reduces to a method identical to Algo-
+rithm 1, except that it has the single assignment
+(xk
+i ,yk
+i ) = Prox
+µi,d(i,k)
+Ti
+
+Lizd(i,k) + µi,d(i,k)wd(i,k)
+i
++ ek
+i
+
+in place of lines 7-9. Setting Ti = ∂fi and ek
+i = 0, and setting µi,d(i,k) = ζik for all i and k, we may
+rewrite this equation as
+(xk
+i ,yk
+i ) = Proxζik
+∂fi
+
+Lizd(i,k) + ζikwd(i,k)
+i
+
+= Proxζik
+∂fi(rk
+i ),
+(17)
+
+18
+where rk
+i is as computed in line 7. In Eckstein (2017), Proxµ
+∂f(r) is defined as the unique pair (x,y)
+such that y ∈∂f(x) and x + µy = r, so (17) is equivalent to the conditions
+yk
+i ∈∂fi(xk
+i )
+xk
+i + ζikyk
+i = rk
+i .
+The vectors xk
+i and yk
+i computed by lines 8 and 9 satisfy precisely these conditions, since lines 8
+and 9 implement the standard operations for computing the proximal map of a closed convex
+function; see for instance Bauschke and Combettes (2013, Example 23.3 and Definition 12.23).
+□
+Finally, we restate and slightly extend the convergence result in Eckstein (2017) in the case of
+Algorithm 1.
+Proposition 5. Suppose that (14) has a solution and that the parameter choices in Algorithm 1
+conform to the following:
+A1. There exist ν, ¯ν ∈]0,2[ such that ν ≤νk ≤ν for all k.
+A2. For some scalars 0 < ζ ≤¯ζ, we have ζ ≤ζik ≤¯ζ for all k ≥0 and i ∈i..n.
+A3. For some fixed integer M ≥1, each index i is selected for membership in Ik at least once in
+every M iterations, that is,
+(∀j ≥0)
+:
+ j+M−1
+[
+k=j
+Ik
+!
+= 1..n.
+(18)
+A4. For some fixed integer D ≥0, we have k −d(i,k) ≤D for all i,k with i ∈Ik. That is, there
+is a constant bound on the extent to which the information zd(i,k) and wd(i,k)
+i
+in line 7 may be “out
+of date”.
+Then the sequences developed by Algorithm 1 has the properties below. Here, “⇀” denotes con-
+vergence in the weak topology, which is equivalent to ordinary convergence in finite-dimensional
+spaces.
+1. zk ⇀z∞, where z∞is some solution of (14)
+2. (∀i ∈1..n) wk
+i ⇀w∞
+i , where w∞
+i ∈∂fi(Liz∞), and Pn
+i=1 L∗
+i w∞
+i = 0
+3. (∀i ∈1..n) xk
+i ⇀Liz∞
+4. (∀i ∈1..n) yk
+i ⇀w∞
+i .
+
+19
+5. vk ⇀0
+6. uk ⇀0.
+Proof.
+Proposition 4 asserts that Algorithm 1 generates the same sequence of iterates as Algo-
+rithm 1 of Eckstein (2017) with ˆk = 0, Ti = ∂fi for all i ∈1..n, and ek
+i = 0 for all i ∈1..n and k ≥0.
+Assumption A2 is identical to Assumption 2.1(2) in Eckstein (2017), except that there has been
+some renumbering between the parameters µik of Eckstein (2017) and the ζik here. However, since
+both assumptions simply stipulate fixed positive upper and lower bounds on the two parameter
+sets, the numbering differences are inconsequential and Assumption 2.1(2) of Eckstein (2017) is
+satisfied. Assumptions A1, A3, and A4 correspond exactly to assumptions 2.1(1), 2.1(3), and 2.1(4)
+of Eckstein (2017). Since ek
+i = 0 for all i ∈1..n and k ≥0, Assumption 2.1(5) of Eckstein (2017) is
+also trivially satisfied. Thus, that entire assumption holds and the sequences developed by Algo-
+rithm 1 conform to the conclusions of Proposition 2.3 of Eckstein (2017). Conclusions 1-4 then
+follow immediately, and conclusion 5 follows since Algorithm 1 sets vk = Pn
+i=1 L∗
+i yk
+i and Proposition
+2.3 of Eckstein (2017) asserts that Pn
+i=1 L∗
+i yk
+i ⇀0.
+Finally, we consider conclusion 6. First, we note that (L1z∞,...,Lnz∞) ∈W⊥, since for any
+(w1,...,wn) ∈W we have
+
+(L1z∞,...,Lnz∞),(w1,...,wn)
+
+=
+
+(z∞,...,z∞),(L∗
+1w1,...,L∗
+nwn)
+
+=
+n
+X
+i=1
+⟨z∞,L∗
+i wi⟩H0 =
+D
+z∞,
+n
+X
+i=1
+L∗
+i wi
+E
+H0
+= ⟨z∞,0⟩H0 = 0.
+Let a = (a1,...,an) be any element of H = H1 × ··· × Hn. Then
+
+projW(a),(xk
+1,...,xk
+n) −(L1z∞,...,Lnz∞)
+
+→0
+because conclusion 3 asserts that (xk
+1,...,xk
+n) ⇀(L1z∞,...,Lnz∞). Using that orthogonal projec-
+tion maps onto linear subspaces are linear and self-adjoint, we then equivalently have
+
+a,projW(xk
+1,...,xk
+n) −projW(L1z∞,...,Lnz∞)
+
+→0.
+(19)
+Now, Algorithm 1 sets uk = projW(xk
+1,...,xk
+n), and we have projW(L1z∞,...,Lnz∞) = 0 since we
+have already established that (L1z∞,...,Lnz∞) ∈W⊥. Therefore, (19) is equivalent to ⟨a,uk⟩→0.
+Since the vector a was arbitrary, it follows that uk ⇀0 and conclusion 6 is established.
+□
+
+20
+5. Deriving an Algorithm for Stochastic Programs
+We now derive an algorithm for convex stochastic programming by applying Algorithm 1 to the
+setup described in items S1-S4 of Section 3. In order to apply this setup, we need to determine the
+form of the adjoint operators L∗
+i and the subspace W:
+Proposition 6. Under the choices of H0,...,Hn and L1,...,Ln specified in S1-S3,
+1. For all i ∈1..n the adjoint mapping L∗
+i : Hi →H0 = N is given by
+L∗
+i : wi 7→projN(0,...,0,wi,0,...,0),
+(20)
+where wi appears in the ith position in (0,...,0,wi,0,...,0) and projN denotes the orthogonal
+projection map from Z = H1 × ··· × Hn onto N.
+2. For any vectors w1 ∈H1,...,wn ∈Hn, one has Pn
+i=1 L∗
+i wi = projN(w1,...,wn).
+3. W = N⊥, where W is the subspace defined in (16).
+Proof.
+Consider any particular i ∈1..n. The adjoint of Li : H0 →Hi is the unique linear operator
+L∗
+i : Hi →H0 with the property
+(∀z ∈H0) (∀wi ∈Hi)
+⟨z,L∗
+i wi⟩H0 = ⟨Liz,wi⟩Hi.
+Under S1-S3, the above condition reduces to Li : Zi →Z satisfying
+(∀z ∈N) (∀wi ∈Zi)
+⟨z,L∗
+i wi⟩Z = πi(zi)⊤(wi)
+= ⟨z,(0,...,0,wi,0,...,0)⟩Z
+= ⟨z,projN(0,...,0,wi,0,...,0)⟩Z,
+where the last equality holds because z ∈N. Because projN(0,...,0,wi,0,...,0) ∈Z, we conclude
+that L∗
+i has the form wi 7→projN(0,...,0,wi,0,...,0). Since i ∈1..n was arbitrary, the first claim
+is established.
+
+21
+Now take any w1 ∈H1 = Z1,...,wn ∈Hn = Zn. Using the first claim and the linearity of the
+projN operator, we have
+n
+X
+i=1
+L∗
+i wi =
+n
+X
+i=1
+projN(0,...,0,wi,0,...,0) = projN
+ n
+X
+i=1
+(0,...,0,wi,0,...,0)
+!
+= projN(w1,...,wn),
+and the second claim is established. Combining the definition of W from (16) and the second claim,
+we then have
+W = {(w1,...,wn) ∈Z | Pn
+i=1 L∗
+i wi = 0} = {w ∈Z | projN(w) = 0} = N⊥,
+and the third claim is established.
+□
+It remains to consider how to perform the proximal computation on line 8 of Algorithm 1.
+Proposition 7. Under S1-S4, the computation of xk
+i on line 8 of Algorithm 1 for any i ∈1..n
+may be implemented by finding
+(xk
+i ,xk
+iT) ∈Arg min
+xi∈Rm′
+xiT ∈RmT
+
+hi(xi,xiT) +
+1
+2ζik
+xi −rk
+i
+2
+2
+
+,
+(21)
+where ∥·∥2 denotes the usual Cartesian L2-norm on RmT . That is, one finds a minimizer of the
+function in (21) over all (xi,xiT) ∈Rm′ ×RmT = Rm, and xk
+i consists of the first m′ components of
+the that minimizer (those components not corresponding to the last stage).
+Proof.
+Under S1-S4, line 8 of Algorithm 1 takes the form
+xk
+i = arg min
+xi∈Hi
+
+fi(xi) +
+1
+2ζik
+xi −rk
+i
+2
+Hi
+
+= arg min
+xi∈Rm′
+
+πi
+min
+xiT ∈RmT
+
+hi(xi,xiT)
+ 
++
+1
+2ζik
+πi
+xi −rk
+i
+2
+2
+
+= arg min
+xi∈Rm′
+
+min
+xiT ∈RmT
+
+hi(xi,xiT)
+ 
++
+1
+2ζik
+xi −rk
+i
+2
+2
+
+,
+Now, since
+min
+xi∈Rm′
+
+min
+xiT ∈RmT
+
+hi(xi,xiT)
+ 
++
+1
+2ζik
+xi −rk
+i
+2
+2
+
+=
+min
+xi∈Rm′
+xiT ∈RmT
+
+hi(xi,xiT) +
+1
+2ζik
+xi −rk
+i
+2
+2
+
+,
+the claim follows immediately.
+□
+
+22
+Note that Assumption 1 guarantees that (21) has a solution, since it involves minimizing a lower
+semicontinuous function with a compact effective domain; see for example the version of the classical
+Weierstrass theorem in Bertsekas et al. (2003, Proposition 2.1.1).
+Considering that rk
+i = Lizd(i,k) + ζikwd(i,k)
+i
+on line 7 of Algorithm 1, and using the form of Li
+from S3, the minimand in (21) may be written
+hi(xi,xiT) +
+1
+2ζik
+xi −rk
+i
+2
+2
+= hi(xi,xiT) +
+1
+2ζik
+xi −
+
+zd(i,k)
+i
++ ζikwd(i,k)
+i
+
+2
+2
+= hi(xi,xiT) −
+
+wd(i,k)
+i
+⊤
+(xi) +
+1
+2ζik
+xi −zd(i,k)
+i
+
+2
+2 + ζik
+2
+wd(i,k)
+i
+
+2
+2 ,
+(22)
+where the last term (ζik/2)
+wd(i,k)
+i
+2
+2 may be dropped from the minimization since it is independent
+of xi and xiT. Further, the calculation of yk
+i in line 9 of Algorithm 1 may be written
+yk
+i = 1
+ζik
+(rk
+i −xk
+i ) = 1
+ζik
+(zd(i,k)
+i
++ ζikwd(i,k)
+i
+−xk
+i ) = wd(i,k)
+i
++ 1
+ζik
+(zd(i,k)
+i
+−xk
+i ).
+(23)
+If we reverse the signs of the {wk
+i } and {yk
+i } sequences and replace ζik with a reciprocal parameter
+ρik = 1/ζik, we conclude that we may implement lines 7-9 of Algorithm 1 through the following
+calculations:
+(xk
+i ,xk
+iT) ∈Arg min
+xi∈Rm′
+xiT ∈RmT
+
+hi(xi,xiT) +
+
+wd(i,k)
+i
+⊤
+(xi) + ρik
+2
+xi −zd(i,k)
+i
+
+2
+2
+
+(24)
+yk
+i = wd(i,k)
+i
++ ρik(xk
+i −zd(i,k)
+i
+).
+(25)
+Other than the potential delay encompassed in the iteration counter d(i,k), the minimization
+problem (24) is identical to the subproblem solved in PH (Rockafellar and Wets 1991), while (25)
+resembles the PH Lagrange multiplier update.
+Algorithm 2 displays the entire “Asynchronous Projective Hedging” (APH) method one obtains
+by specializing Algorithm 1 to the setup S1-S4, with the signs of {wk
+i } and {yk
+i } reversed and ρik =
+1/ζik for all i ∈1..n and k ≥1. As with Algorithm 1, a fully asynchronous implementation would
+
+23
+1 Start with any z0 ∈N, w0 ∈N⊥and (x−1
+i ,y−1
+i
+∈Rm′)i∈1..n
+2 for k = 0,1,... do
+3
+Select some Ik ⊆1..n
+4
+for i ∈Ik do
+5
+Select some integer d(i,k) ∈0..k
+6
+Select some scalar ρik > 0
+7
+Find (xk
+i ,xk
+iT) ∈Arg min
+xi∈Rm′
+xiT ∈RmT
+
+hi(xi,xiT) +
+
+wd(i,k)
+i
+⊤
+(xi) + ρik
+2
+xi −zd(i,k)
+i
+
+2
+2
+
+8
+yk
+i = wd(i,k)
+i
++ ρik(xk
+i −zd(i,k)
+i
+)
+9
+end
+10
+for i ̸∈Ik do (xk
+i ,yk
+i ) = (xk−1
+i
+,yk−1
+i
+)
+11
+uk = projN⊥(xk
+1,...,xk
+n)
+12
+vk = projN(yk
+1,...,yk
+n)
+13
+τk = Pn
+i=1 πi
+ uk
+i
+2
+2 +
+vk
+i
+2
+2
+
+14
+if τk > 0 then
+15
+Choose some νk : 0 < νk < 2
+16
+θk = νk
+τk
+max
+
+0,Pn
+i=1 πi(zk
+i −xk
+i )⊤(wk
+i −yk
+i )
+ 
+17
+else θk = 0
+18
+zk+1 = zk + θkvk
+19
+wk+1 = wk + θkuk
+20 end
+Algorithm 2: Asynchronous projective hedging (APH) — Algorithm 1 specialized to
+the setup S1-S4.
+not explicitly “select” the parameters Ik and d(i,k) on lines 3 and 5; instead, these parameters
+would be implicitly determined by the execution sequence.
+
+24
+In Algorithm 2, the foregoing discussion establishes that lines 7-8 are equivalent to lines 7-9 of
+Algorithm 1 under the setup S1-S4, after reversing the signs of {wk
+i } and {zk
+i } and substituting
+the parameter ρik = 1/ζik for ζik. Proposition 6 guarantees that lines 11 and 12 are respectively
+equivalent to lines 12 and 13 of Algorithm 1, although the sign of vk is reversed from Algorithm 1
+due to the reversed signs of the yk
+i . Line 13 computes the squared length of the hyperplane normal
+(−vk,uk) in the product norm induced by the norm ⟨·,·⟩Z from (4) chosen for H0 = N and W = N⊥.
+Line 16 is then equivalent to line 17 of Algorithm 1, considering the the choice of the inner products
+on H1,...,Hn in S2 and the sign reversals for {wk
+i } and {zk
+i }. Finally, line 18 is equivalent to the
+z update in line 19 of Algorithm 1 considering the sign reversal in vk induced by the sign reversal
+of the {yk
+i }, while line 19 is equivalent to the w update in line 20 of Algorithm 1 when considering
+the sign reversal of the {wk} sequence.
+To implement the algorithm, we need to perform the projections onto N⊥and N specified on
+lines 11 and 12. Due to the probability-weighted form of the inner product ⟨·,·⟩Z, the projection
+projN consists of the same probability-weighted tree averaging operation as in the originally pro-
+posed form of the PH algorithm (Rockafellar and Wets 1991). Since projN⊥= Id−projN, where
+“Id” represents the identity map, the complementary projection onto N⊥involves a nearly identical
+calculation to projection onto N. Specifically, we may implement line 12 by
+(∀t ∈1..T −1) (∀N ∈Tt) : compute ¯y(N) =
+1
+π(N)
+X
+i∈S(N)
+πiyk
+it, then (∀i ∈S(N)) vk
+it = ¯y(N),
+(26)
+whereas line 11 may be implemented by
+(∀t ∈1..T −1) (∀N ∈Tt) :
+compute ¯x(N) =
+1
+π(N)
+X
+i∈S(N)
+πixk
+it, then (∀i ∈S(n)) uk
+it = xk
+it −¯x(N).
+(27)
+Proposition 8. Suppose that a stochastic programming problem formulated as (7) has a solution
+and Assumption 2 holds. Suppose that we operate Algorithm 2 in accordance with the following
+conditions:
+
+25
+1. There exist ν, ¯ν ∈]0,2[ such that ν ≤νk ≤ν for all k.
+2. For some scalars 0 < ρ ≤¯ρ, we have ρ ≤ρik ≤¯ρ for all k ≥0 and i ∈i..n.
+3. For some fixed integer M ≥1,
+Sj+M−1
+k=j
+Ik
+
+= 1..n for all j > 0.
+4. For some fixed integer D ≥0, we have k −d(i,k) ≤D for all i,k with i ∈Ik.
+Then
+zk →x∞
+xk →x∞
+vk →0
+uk →0,
+(28)
+where x∞= M ¯x∗for some optimal solution ¯x∗∈Rm of (7), that is, x∞is some optimal solution
+to (7) with the last-stage variables deleted.
+For each i ∈1..n let Ii = {k ≥0 | i ∈Ik }, which is infinitely large by assumption 3, and let {x∞
+iT}
+be any limit point of the sequence {xk
+iT}i∈Ii, where xk
+iT is the last-stage solution vector found in
+line 7 of Algorithm 2. Then the vector
+¯x∞=
+ (x∞
+i ,x∞
+iT)
+n
+i=1 =
+ (x∞
+1 ,x∞
+1T),...,(x∞
+n ,x∞
+nT)
+
+(29)
+is an optimal solution of (7).
+Proof.
+First, Proposition 2 states that any solution ¯x∗of (7) has a corresponding solution
+z∗= Mx∗of (10). Since Assumption 2 is in force, the second part of Proposition 3 implies that z∗
+must be a solution to the inclusion (14). Therefore a solution to (14) exists.
+We have already established that Algorithm 2 is a special case of Algorithm 1 under the setup S1-
+S4, with the signs of {wk
+i } and {yk
+i } reversed and ρik = 1/ζik. Setting ζ = 1/ρ and ζ = 1/ρ, condi-
+tion 2 here is equivalent to condition A2 of Proposition 5 if ρik = 1/ζik for all i ∈1..n and k ≥0.
+The remaining conditions here are identical to those of Proposition 5, so all of the assumptions of
+Proposition 5 hold. That proposition then immediately asserts that zk ⇀z∞, xk ⇀z∞, vk ⇀0, and
+uk ⇀0, where z∞is some solution of (14). By Proposition 3, such a point is necessarily a solution
+to (10), and so Proposition 2 guarantees it is of the form M ¯x∗for some optimal solution ¯x∗to (7).
+Since all the spaces are finite dimensional, weak and ordinary convergence are equivalent, and so
+we have established (28).
+
+26
+To establish the last claim, let ¯x∗=
+ (x∞
+1 ,x∗
+1T),...,(x∞
+n ,x∗
+nT)
+
+be an optimal solution of (7) such
+that x∞= M ¯x∗. Consider any k ≥0 and i ∈Ik. By the calculation in line 7, we must have for all
+k ≥0 and i ∈Ik that
+hi(xk
+i ,xk
+iT) +
+
+wd(i,k)
+i
+⊤
+(xk
+i ) + ρik
+2
+xk
+i −zd(i,k)
+i
+
+2
+2
+≤hi(x∞
+i ,x∗
+iT) +
+
+wd(i,k)
+i
+⊤
+(x∞
+i ) + ρik
+2
+x∞
+i −zd(i,k)
+i
+
+2
+2 .
+Under assumption 4, d(i,k) →∞as k →∞for all i ∈1..n, and from Proposition 5 we know
+that {wk} converges to some w∞∈W. Let Ki ⊆Ii denote an infinite set of indices such that
+limk→∞,k∈Ki{xk
+iT} = x∞
+iT. Taking limits over k ∈Ki in the above inequality and using that {xk} and
+{zk} both converge to the same limit x∞, we conclude that
+limsup
+k→∞
+k∈Ki
+{hi(xk
+i ,xk
+iT)} + (w∞
+i )
+⊤(x∞
+i ) ≤hi(x∞
+i ,x∗
+iT) + (w∞
+i )
+⊤(x∞
+i ).
+Canceling the identical terms (w∞
+i )
+⊤(x∞
+i ) and using that fi is a lower semicontinuous function, we
+then have that
+hi(x∞
+i ,x∞
+iT) ≤liminf
+k→∞
+k∈Ki
+{hi(xk
+i ,xk
+iT)} ≤limsup
+k→∞
+k∈Ki
+{hi(xk
+i ,xk
+iT)} ≤hi(x∞
+i ,x∗
+iT).
+Multiplying by πi and summing over i, we obtain that
+n
+X
+i=1
+πihi(x∞
+i ,x∞
+iT) ≤
+n
+X
+i=1
+πihi(x∞
+i ,x∗
+iT) =
+n
+X
+i=1
+πihi(¯x∗
+i ),
+and thus that ¯x∞as defined in (29) is an optimal solution to (7).
+□
+It is also possible to show that the common limit w∞of {wk} and {yk} is an appropriately
+defined dual solution of (7), but we omit this result since it is not required for our subsequent
+analysis, nor for the experiments in the online companion.
+The following result shows that if the algorithm encounters the condition τk = 0 encountered in
+line 14, then it has reached exact convergence.
+Proposition 9. In Algorithm 2, if uk = 0 and vk = 0 (or equivalently τk = 0) for any k sufficiently
+large that Sk
+ℓ=0 Iℓ= 1..n, then xk = (xk
+1,...,xk
+n) is an optimal solution of the problem formula-
+tion (10).
+
+27
+Proof.
+If Sk
+ℓ=0 Iℓ= 1..n, every subproblem has been processed at least once, and we have
+yk
+i ∈∂fi(Lixk) = ∂fi(xk
+i ) for all i ∈1..n. Since uk = projN⊥(xk) from line 11 of the algorithm,
+the hypothesis uk = 0 implies that xk ∈N. From line 12 and Proposition 6(2-3), we have vk =
+projN(yk
+1,...,yk
+n) = Pn
+i=1 L∗
+i yk
+i , so from the hypothesis vk = 0 we obtain
+0 =
+n
+X
+i=1
+L∗
+i yk
+i ∈
+n
+X
+i=1
+L∗
+i ∂fi(Lixk),
+where the inclusion follows because we have already established that yk
+i ∈∂fi(Lixk) for all i ∈1..n.
+Therefore the sufficient optimality condition (14) holds and x is an optimal solution of (10).
+□
+In practice, we have never observed the condition uk = 0 and vk = 0 to hold exactly; however, since
+both uk →0 and vk →0 as established in Proposition 8, we can use small values of ∥uk∥and ∥vk∥
+as numerical termination conditions for the algorithm.
+As a last remark, we note that it would also be possible derive an asynchronous decomposition
+method for stochastic programming from the second, ADMM-like algorithm in Eckstein (2017),
+instead of directly from its abstract monotone inclusion algorithm. In that case, however, one would
+have to represent the nonanticipativity constraints as Θ(m′n) linear constraints (recall that m′
+is the number of decision variables per scenario, excluding the last stage). Applying the second
+algorithm in Eckstein (2017), each of the vectors playing the role of wk
+i and yk
+i (along with some
+other variables) in the resulting method would all have dimension on the order of the number of
+constraints, that is, Θ(m′n). Since there are n possible values of i, the working storage requirements
+of the resulting algorithm would be Θ(m′n2), as opposed to Θ(m′n) for Algorithm 2. We briefly
+considered whether the resulting methods might be equivalent to some more memory-efficient algo-
+rithm, but did not find such a simplification. Therefore, there does not seem to be any simpler path
+to deriving a progressive-hedging-like algorithm from the operator splitting methods in Combettes
+and Eckstein (2018) and Eckstein (2017).
+Another point worth mentioning is that even if one operates APH synchronously, that is, one
+fixes Ik = 1..n for all k, and also holds all the ρik fixed, the resulting algorithm is not equivalent
+to PH, although it is fairly similar. The relationship between projective splitting algorithms and
+
+28
+Douglas-Rachford splitting for monotone operators (Lions and Mercier 1979) — the general class
+of methods including PH and the ADMM — is discussed in Eckstein and Svaiter (2008, Section
+4.4). That analysis shows that Douglas-Rachford methods may be viewed as a boundary case
+of a certain class of two-operator projective splitting procedures, using parameter values on the
+boundary of, but not contained in, the set permitted by the known projective splitting convergence
+theory. Algorithm 1 does not approach this boundary case for any possible parameter choices,
+so one cannot expect equivalence to PH for its special case realized in Algorithm 2. Indeed, the
+computational results in Appendix B (in the online companion) empirically confirm that operating
+APH synchronously is not equivalent to running PH.
+6. Including a Scaling Parameter
+Consider two optimization problems P and ˜P, identical except that the objective function of ˜P is
+obtained by multiplying P’s objective function by some positive constant C. The PH algorithm
+has a property we may call parametric scale invariance, as follows: if we apply PH to P and ˜P with
+respective penalty parameters ρ and Cρ and initialize the second algorithm at (˜z0, ˜w0) = (z0,Cw0),
+it will generate respective sequences of iterates {(zk,wk)} and {(˜zk, ˜wk)} that are equivalent in
+the sense that (˜zk, ˜wk) = (zk,Cwk) will hold for all k ≥0. Essentially, the two instances of PH will
+follow the same path, except that the dual iterates for ˜P will be scaled by C. Thus, the penalty
+parameter ρ can be used to compensate for the relative scaling of the primal and dual variables.
+Unfortunately, the APH algorithm as we have stated it so far lacks this desirable property. If
+we initialize (˜z0, ˜w0) = (z0,Cw0), multiply all the proximal parameters for the ˜P instance by C,
+and keep all the other parameters the same, running APH on P and ˜P will not generate equivalent
+paths. The reason is that the projection operations in APH minimize the distance to a separating
+hyperplane in the primal-dual space of iterates (zk,wk). If the dual wk iterates become larger (as
+must eventually happen if C > 1), then they will become a larger fraction of the squared distance
+to each separating hyperplane, so APH will emphasize dual convergence over primal convergence
+for sufficiently large C. Conversely, for C sufficiently small, the primal iterates zk will start to
+
+29
+dominate the distance to the separating hyperplane and APH will emphasize primal convergence
+over dual convergence.
+In projective splitting algorithms, one can compensate for such effects by using a scaled norm
+for the projections, as discussed in Johnstone and Eckstein (2022). In the case of the stochastic
+programming setup developed in Section 3, this means selecting a scalar parameter γ > 0 and using
+the following inner product on the space H0 × H1 × ··· × Hn = N × Z:
+
+(z,w),(z′,w′)
+
+γ =
+n
+X
+i=1
+πi ·
+
+γ⟨zi,z′
+i⟩+ ⟨wi,w′
+i⟩
+
+.
+(30)
+Essentially, all the primal components of the inner product are multiplied by γ. Using the norm
+induced by this inner product to perform the hyperplane projections results in the following two
+changes to Algorithm 2:
+Line 13 becomes:
+τk = Pn
+i=1 πi
+uk
+i
+2
+2 + γ−1 vk
+i
+2
+2
+
+Line 18 becomes:
+zk+1 = zk + γ−1θkvk.
+Otherwise, Algorithm 2 remains unchanged.
+These modifications make it possible to recover a form of parameterized scale invariance: for two
+hypothetical problems P and ˜P as described above, if we initialize (˜z0, ˜w0) = (z0,Cw0), multiply all
+the proximal parameters for the ˜P instance by C, multiply its value of γ by C, and leave all the other
+algorithm parameters unchanged, we will recover the path equivalence that (˜zk, ˜wk) = (zk,Cwk) for
+all k ≥0. More crucially, the parameter γ allows the user to adjust the APH algorithm’s relative
+emphasis on primal and dual convergence: increasing γ shifts emphasis towards primal convergence,
+and decreasing γ shifts emphasis toward dual convergence.
+For the problem instances used in the experiments summarized in the following section (and
+presented in more detail in the online companion), we found APH to exhibit good practical per-
+formance with γ = 1. For other problem instances, however, using γ ̸= 1 may be critical to the
+performance of APH.
+
+30
+7. Computational Experiment Summary
+Appendix B in the online companion describes experiments comparing the APH method to PH
+on large-scale convex stochastic programs in an HPC parallel computing environment. The test
+problems had either two or five stages, the number of scenarios ranged from 20,000 to 1,000,000,
+and the number of processor cores employed ranged from 48 to 6,000. We found APH to outperform
+PH in all cases, with its margin of superiority increasing as one increases the ratio between the
+number of scenarios and the number of processor cores.
+8. Possible Further Work
+APH presents opportunities for further research both in theory and in applications. A dual deriva-
+tion of the method may be worth pursuing and might yield convergence under different assumptions
+(for example, without the compactness condition in Assumption 1). Although we have so far only
+studied the theory of APH for the convex case, the software we have developed can be applied to a
+very broad range of multi-stage optimization problems with uncertainty represented by scenarios.
+Progressive hedging has helped advance the applicability of stochastic programming methods and
+we hope that the projective hedging approach will contribute to further advances. In addition to
+experimentally exploring the practical behavior of APH for mixed-integer and other nonconvex
+problems, its theoretical behavior in such settings also deserves study, and it would be interesting
+to consider whether it can be adapted to provide lower bounds on the optimal solution value in
+such cases, possibly by adapting the techniques of Boland et al. (2018) or Gade et al. (2016).
+Acknowledgments
+This research was funded in part by National Science Foundation grant CCF-1617617, and by the US
+Department of Energy Office of Electricity’s Advanced Grid Modeling (AGM) program. This document was
+prepared as an account of work sponsored by an agency of the United States government. Neither the United
+States government nor Lawrence Livermore National Security, LLC, nor any of their employees makes any
+warranty, expressed or implied, or assumes any legal liability or responsibility for the accuracy, completeness,
+or usefulness of any information, apparatus, product, or process disclosed, or represents that its use would not
+
+31
+infringe privately owned rights. Reference herein to any specific commercial product, process, or service by
+trade name, trademark, manufacturer, or otherwise does not necessarily constitute or imply its endorsement,
+recommendation, or favoring by the United States government or Lawrence Livermore National Security,
+LLC. The views and opinions of authors expressed herein do not necessarily state or reflect those of the United
+States government or Lawrence Livermore National Security, LLC, and shall not be used for advertising or
+product endorsement purposes. This work was performed in part under the auspices of the U.S. Department
+of Energy by Lawrence Livermore National Laboratory under Contract DE-AC52-07NA27344.
+References
+Alotaibi A, Combettes PL, Shahzad N (2014) Solving coupled composite monotone inclusions by successive
+Fej´er approximations of their Kuhn-Tucker set. SIAM J. Optim. 24(4):2076–2095.
+Bareilles G, Laguel Y, Grishchenko D, Iutzeler F, Malick J (2020) Randomized progressive hedging methods
+for multi-stage stochastic programming. Ann. Oper. Res. 295(2):535–560.
+Bauschke HH, Combettes PL (2013) Convex analysis and monotone operator theory in Hilbert spaces (Cham,
+Switzerland: Springer), second edition.
+Bertsekas DP, Nedi´c A, Ozdaglar AE (2003) Convex Analysis and Optimization (Belmont, MA, USA: Athena
+Scientific).
+Boland N, Christiansen J, Dandurand B, Eberhard A, Linderoth J, Luedtke J, Oliveira F (2018) Combining
+progressive hedging with a Frank-Wolfe method to compute Lagrangian dual bounds in stochastic
+mixed-integer programming. SIAM J. Optim. 28(2):1312–1336.
+B`ui MN, Combettes PL, Woodstock ZC (2022) Block-activated algorithms for multicomponent fully non-
+smooth minimization. 2022 IEEE International Conference on Acoustics, Speech and Signal Processing
+(ICASSP 2022), 5428–5432.
+Combettes PL, Eckstein J (2018) Asynchronous block-iterative primal-dual decomposition methods for mono-
+tone inclusions. Math. Program. 126(1–2):645–672.
+Combettes PL, Pesquet JC (2015) Stochastic quasi-Fej´er block-coordinate fixed point iterations with random
+sweeping. SIAM J. Optim. 25(2):1221–1248.
+
+32
+Crainic TG, Fu X, Gendreau M, Rei W, Wallace SW (2011) Progressive hedging-based metaheuristics for
+stochastic network design. Networks 58(2):114–124.
+Eckstein J (2017) A simplified form of block-iterative operator splitting and an asynchronous algorithm
+resembling the multi-block alternating direction method of multipliers. J. Optim. Theory Appl.
+173(1):155–182.
+Eckstein J, Bertsekas DP (1992) On the Douglas-Rachford splitting method and the proximal point algorithm
+for maximal monotone operators. Math. Program. 55(3):293–318.
+Eckstein J, Svaiter BF (2008) A family of projective splitting methods for the sum of two maximal monotone
+operators. Math. Program. 111(1-2):173–199.
+Eckstein J, Svaiter BF (2009) General projective splitting methods for sums of maximal monotone operators.
+SIAM J. Control Optim. 48(2):787–811.
+Fortin M, Glowinski R (1983) On decomposition-coordination methods using an augmented Lagrangian.
+Fortin M, Glowinski R, eds., Augmented Lagrangian methods: Applications to the numerical solution
+of boundary-value problems, volume 15 of Studies in Mathematics and its Applications, 97–146 (Ams-
+terdam: North-Holland).
+Gabay D (1983) Applications of the method of multipliers to variational inequalities. Fortin M, Glowinski
+R, eds., Augmented Lagrangian methods: Applications to the numerical solution of boundary-value
+problems, volume 15 of Studies in Mathematics and its Applications, 299–340 (Amsterdam: North-
+Holland).
+Gade D, Hackebeil G, Ryan SM, Watson JP, Wets RJB, Woodruff DL (2016) Obtaining lower bounds from
+the progressive hedging algorithm for stochastic mixed-integer programs. Math. Program. 157(1):47–67.
+Hong M (2018) A distributed, asynchronous, and incremental algorithm for nonconvex optimization: An
+ADMM approach. IEEE Trans. Control Netw. Syst. 5(3):935–945.
+Iutzeler F, Bianchi P, Ciblat P, Hachem W (2013) Asynchronous distributed optimization using a randomized
+alternating direction method of multipliers. 52nd IEEE Conference on Decision and Control, 3671–
+3676.
+Johnstone PR, Eckstein J (2022) Projective splitting with forward steps. Math. Program. 191(2):631–670.
+
+33
+Lions PL, Mercier B (1979) Splitting algorithms for the sum of two nonlinear operators. SIAM J. Numer.
+Anal. 16(6):964–979.
+Peng Z, Xu Y, Yan M, Yin W (2016) ARock: an algorithmic framework for asynchronous parallel coordinate
+updates. SIAM J. Sci. Comput. 38(5):A2851–A2879.
+Perboli G, Gobbato L, Maggioni F (2015) A progressive hedging method for the multi-path traveling salesman
+problem with stochastic travel times. IMA J. Manage. Math. 28:65–86.
+Rockafellar RT, Wets RJB (1991) Scenarios and policy aggregation in optimization under uncertainty. Math.
+Oper. Res. 16(1):119–147.
+Ryan K, Rajan D, Ahmed S (2016) Scenario decomposition for 0-1 stochastic programs: Improvements and
+asynchronous implementation. 2016 IEEE International Parallel and Distributed Processing Symposium
+Workshops (IPDPSW) 722–729.
+Somervell M (1998) Progressive hedging in parallel. Proceedings of the 33rd Annual Conference of the Oper-
+ational Research Society of New Zealand, 84–93.
+Watson JP, Woodruff DL (2011) Progressive hedging innovations for a class of stochastic mixed-integer
+resource allocation problems. Comp. Manage. Sci. 8(4):355–370.
+Wei E, Ozdaglar A (2013) On the O(1/k) convergence of asynchronous distributed alternating direction
+method of multipliers. Tewfik A, ed., 2013 IEEE Global Conference on Signal and Information Pro-
+cessing (GlobalSIP), 551–554, proofs and additional relevant material in ArXiv preprint 1307.8524.
+Jonathan Eckstein is a Distinguished Professor in the department of Management Science
+and Information Systems at Rutgers University. His principle research interests are in numerical
+optimization algorithms, both continuous and discrete, and especially their implementation on
+parallel computing platforms. Areas of particular focus include augmented Lagrangian/proximal
+methods and branch-and-bound algorithms. In 2014, he was elected a fellow of INFORMS.
+Jean-Paul Watson is a Senior Research Scientist in the Center for Applied Scientific Com-
+puting at Lawrence Livermore National Laboratory. His research primarily considers optimization
+under uncertainty considering mixed continuous-discrete decisions, with application to critical
+
+34
+infrastructure operations, planning, and resilience. He is co-inventor of the widely used Pyomo
+algebraic modeling language for mathematical programming and has received the INFORMS Com-
+puting Society Prize.
+David L. Woodruff is a Professor in the Graduate School of Management at the University of
+California, Davis. His current research primarily concerns computational aspects of optimization
+under uncertainty, including solution algorithms, problem representation, and modeling language
+support. He has worked on applications in energy, operations, logistics, and science. He has been
+a recipient of the INFORMS Computing Society Prizes for Research and for Service.

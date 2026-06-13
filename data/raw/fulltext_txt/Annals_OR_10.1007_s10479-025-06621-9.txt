@@ -1,0 +1,2127 @@
+TITLE: A ‘divide and conquer’ reject inference approach leveraging graph-based semi-supervised learning
+JOURNAL: Annals_OR
+YEAR: 2025
+DOI: https://doi.org/10.1007/s10479-025-06621-9
+---
+
+Annals of Operations Research (2026) 361:383–412
+https://doi.org/10.1007/s10479-025-06621-9
+ORIGINAL RESEARCH
+A ‘divide and conquer’ reject inference approach leveraging
+graph-based semi-supervised learning
+Zongxiao Wu1 · Yizhe Dong1
+· Yaoyiran Li2 · Yaorong Liu3
+Received: 2 January 2024 / Accepted: 7 April 2025 / Published online: 10 May 2025
+© The Author(s) 2025
+Abstract
+Many credit scoring studies suffer from potential sample selection bias due to their exclusive
+focus on accepted applicants. To address this issue, previous works have proposed reject
+inference (RI) strategies to ﬁrst estimate the repayment ability of rejected applicants and
+then incorporate these estimates as additional supervision signals to reﬁne their credit scor-
+ing models. However, existing RI methods often fail to effectively account for the local
+characteristics and default patterns inherent in diverse applicant groups. Our study intro-
+duces a novel ‘divide and conquer’ graph-based RI framework, named SAIL, that effectively
+captures inter-individual differences relevant to credit scoring. This framework comprises (1)
+Spectral clustering for the categorisation of accepted and rejected applicants, (2) isolation
+forests for identifying Anomalies among rejected cases, (3) Iterative relabelling mechanisms
+incorporating the Label spreading and self-learning algorithm for relabelling rejected sam-
+ples, and (4) binary classiﬁcation for the relabelled dataset. Using a unique loan dataset,
+we ﬁnd that our proposed framework signiﬁcantly enhances the efﬁcacy of credit scoring
+models and outperforms other popular RI techniques in predicting defaults. Furthermore, our
+ablation studies conﬁrm the crucial role of each component of our framework in enhancing
+prediction accuracy. Our work provides a comprehensive and adaptative RI framework for
+ﬁnancial institutions to improve their loan decision-making and risk management.
+Keywords Reject inference · Credit scoring · Graph theory · Semi-supervised machine
+learning
+B Yizhe Dong
+Yizhe.Dong@ed.ac.uk
+Zongxiao Wu
+Zongxiao.Wu@ed.ac.uk
+Yaoyiran Li
+yl711@cam.ac.uk
+Yaorong Liu
+Y.R.Liu@sms.ed.ac.uk
+1
+Business School, University of Edinburgh, Edinburgh EH8 9JS, UK
+2
+Language Technology Lab, University of Cambridge, Cambridge CB3 9DA, UK
+3
+School of Economics, Guangdong University of Finance and Economics, Guangzhou 510320, China
+123
+
+384
+Annals of Operations Research (2026) 361:383–412
+1 Introduction
+Credit scoring, used to estimate the default risk of applicants, has become a ﬁrmly estab-
+lished domain within ﬁnance, broadly recognised as a fundamental component of the lending
+decision-making process (Anderson et al., 2023; Liu et al., 2024; Shi et al., 2024). With tech-
+nological advancements, the ﬁeld of credit scoring has seen a rapid expansion of methods,
+signiﬁcantly enhancing risk assessment and decision support, and fuelling the growth of the
+borrowing and lending market (Lessmann et al., 2015; Lu et al., 2022). However, most exist-
+ing credit scoring practices rely on samples that systematically exclude rejected applications,
+known as the sample selection bias problem in credit scoring (Li et al., 2017; Mancisidor
+et al., 2020). Using biased samples to estimate credit scoring models can lead to several prob-
+lems. First, it results in biased model parameters, reducing effectiveness when applied to a
+broader applicant pool (Bücker et al., 2013; Kozodoi et al., 2020). Second, it may lead to an
+underestimation of applicants’ probabilities of default, affecting risk premiums and as a con-
+sequence, the lenders’ capacity to make proﬁt (Marshall et al., 2010). Furthermore, sample
+selection bias can create additional challenges, such as inefﬁcient utilisation of information
+resources and a contraction of the customer base (Verstraeten & Van den Poel, 2005).
+To tackle the challenges posed by sample selection bias in credit scoring, reject infer-
+ence (RI) has been the object of longstanding interest from academia and industry alike
+(Anderson et al., 2023; Banasik et al., 2003; Hand & Adams, 2014; Li et al., 2017). RI
+involves a process which infers possible default outcomes for rejected applications and then
+integrates these predicted results into credit scoring models. However, traditional RI studies
+focus on training a single relabelling model which treats all rejected applicants as homoge-
+nous entities, thereby ignoring the distinct default distributions and local characteristics of
+diverse applicant groups. In this study, we propose a ‘divide and conquer’ approach, conduct-
+ing ﬁner-grained relabelling for heterogeneous rejected groups to reduce the sample bias in
+credit scoring models. Our RI framework, named SAIL, consists of four key components: (1)
+Spectral clustering identiﬁes homogeneous groups among both accepted and rejected appli-
+cants based on similar default tendencies. This differentiation allows for the implementation
+of distinct methodologies tailored to each cluster. (2) Isolation forests are then employed to
+identify Anomalies among the rejected applicants within each cluster, only retaining those
+of the highest quality. Additionally, to avoid introducing noise into subsequent modelling,
+rejected cases that are most similar to the accepted samples are also removed. (3) An Iter-
+ative relabelling mechanism incorporating the Label spreading and self-learning algorithm
+is applied to reclassify the ﬁltered rejects. (4) Finally, binary classiﬁers are utilised to esti-
+mate the default probability of the comprehensive relabelled dataset, including both ﬁltered
+rejected and accepted applications.
+The main contributions of this study are as follows. First, we develop a holistic and
+innovativeRIframeworkthatleveragesinformationfromspeciﬁcdatadistributionstoidentify
+valuable rejected applications, thereby strengthening the credit scoring model. To the best
+of our knowledge, we are the ﬁrst to conduct a ‘divide and conquer’ relabelling strategy
+for rejected applications via graph-based techniques, thus enhancing the model’s ability to
+accurately identify rejects. Second, through the application of a real-world commercial loan
+dataset, our RI framework demonstrates a signiﬁcant improvement in the performance of
+traditional credit scoring models, surpassing other well-established RI methods in default
+prediction. By implementing further ablation studies, we conﬁrm that each component of
+our RI framework, especially the isolation forests used for ﬁltering rejects, plays a vital role
+in improving prediction performance. Our proposed framework provides practical insights
+123
+
+Annals of Operations Research (2026) 361:383–412
+385
+for lenders, enabling lenders to reﬁne their credit scoring models and improve their lending
+decision-making processes.
+The rest of this paper is organised as follows. Section 2 reviews the related literature on
+RI in credit scoring modelling. In Sect. 3, we delineate the core methodologies employed in
+this study and articulate the proposed RI framework. Section 4 offers in-depth insights into
+the experimental design, while Sect. 5 presents the empirical results and associated analyses.
+Finally, Sect. 6 gives concluding remarks and potential directions for future research.
+2 Literature review
+An extensive body of literature explores the development, application, and evaluation of
+credit scoring systems in the consumer credit sector (Gunnarsson et al., 2021; Kriebel &
+Stitz, 2022; Kumar & Ravi, 2007; Lessmann et al., 2015). These systems allow lenders to
+estimate the default risk of applicants based on a set of explanatory variables that encompass
+traditionalﬁnancialdata,demographicdata,etc.,withalternativedatasuchastexts(Stevenson
+et al., 2021), images (Iyer et al., 2016) and digital footprints (Berg et al., 2020) gradually
+attracting increased attention (Chen et al., 2023). However, a signiﬁcant challenge arises
+from these models’ reliance on data samples that often omit rejected applicants, leading to
+sample selection bias that in turn results in a number of severe problems for credit scoring
+models (Mancisidor et al., 2020).
+In the context of credit scoring, sample selection bias is essentially treated as a missing
+data problem. As summarised by Banasik and Crook (2007), two main types of missing
+data mechanisms are relevant to credit scoring, namely missing not at random (MNAR) and
+missing at random (MAR).1 To illustrate, let’s deﬁne the outcome label of a loan as y ∈
+{0, 1}, where y  1 represents a defaulter and y  0 denotes a non-defaulter. An auxiliary
+variable, a ∈{0, 1}, indicates whether an applicant is accepted (a  1) or rejected (a  0)
+by the lender. Note that the outcome variable y is only observed when a  1. We also assume
+that the feature vector x is observed for each applicant. MNAR occurs when the probability
+of acceptance depends on the outcome label y, even when we condition on x. Formally,
+we have that P(a  1|x, y) ̸ P(a  1|x). This suggests that the acceptance decision
+may be based on some unobserved variables that are not captured in x but that inﬂuence
+the outcome y, for example, the ‘general impression’ that the loan ofﬁcer may have of the
+applicant (Feelders, 1999). Due to the difﬁculty caused by the unobserved variables, few
+empirical studies have investigated MNAR problems in the context of credit scoring (Bucker
+et al., 2013; Tian et al., 2018). Another type of missing data mechanism is MAR, which
+assumes the probability of acceptance solely depends on the characteristics of applicants
+(x) and speciﬁc criteria (e.g., a cut-off value), but not on y. This implies that P(a  1|x,
+y)  P(a  1|x). In other words, the probability of default, given a set of model variables,
+remains the same regardless of whether a loan applicant is accepted or rejected. In practice,
+several industry-speciﬁc factors suggest that missingness in credit risk assessment often leans
+towards MAR assumption. Credit scoring systems and reporting mechanisms used by lenders
+are typically standardised and rely heavily on structured, observable variables. These systems
+usually use quantiﬁable thresholds (e.g., minimum credit score, income level, or debt burden),
+1 Missing completely at random (MCAR) is considered another type of missing data mechanism. In this case,
+the observed label y is independent of both the value of y and the value of x (i.e. features). It suggests that loan
+applications are accepted or rejected completely at random, with no selection mechanism. However, as most
+lending institutions have their own acceptance procedures or formal section models, MCAR rarely occurs in
+actual lending practice.
+123
+
+386
+Annals of Operations Research (2026) 361:383–412
+which makes missing loan performance data primarily a function of known attributes rather
+than unobserved borrower characteristics. Moreover, many credit risk models rely on data
+collected from structured application forms and third-party credit bureau records. Missing
+values often arise from incomplete form submissions or data unavailability rather than being
+systematically associated with hidden borrower behaviour (i.e., they are less likely to be
+MNAR). Therefore, our study introduces a novel RI approach to consumer credit scoring
+under the assumption of MAR.
+Early RI studies used statistical techniques to mitigate the sample selection bias in credit
+scoring modelling, with the appropriateness of each method depending on the missing data
+mechanism (Banasik & Crook, 2010). For example, Hsia (1978) proposed a crude approach
+called ‘deﬁned as bads’ to assign ‘bad’ labels to all rejected cases for a short time. However,
+this approach does not consider potentially creditworthy applicants in rejects and intro-
+duces too much noise into subsequently generated credit scoring models. Augmentation, also
+referred to as re-weighting in practical applications, aims to redress the absence of rejected
+data by applying adjusted weights to accepted applicants and then using these weighted
+accepts to represent the through-the-door population (Hsia, 1978; Kang et al., 2021). How-
+ever, this method is often criticised because the strict loan approval process generally leads
+to a high rejection rate, resulting in fewer accepts that therefore cannot represent a more
+signiﬁcant number of rejects. To overcome the drawback of augmentation, Zeng and Zhao
+(2014) proposed fuzzy augmentation, which creates dual records for each rejected case: one
+labelled ‘bad’, weighted by the probability of default, and the other labelled ‘good’, weighted
+by the probability of non-default. In conjunction with the original acceptances weighted as
+one, these newly generated rejection records are subsequently used to formulate an improved
+credit scoring model. Extrapolation, proposed by Hand and Henley (1993), is a frequently-
+used RI method that uses a ﬁtted credit scoring model built on accepts to predict the default
+outcomes of rejects. Crook and Banasik (2004) ﬁrst examined the effectiveness of extrapo-
+lation and showed that extrapolation provides limited predictive performance improvement
+compared to acceptance-only-based models. Survival analysis is another popular credit scor-
+ing method used to address RI in earlier studies (Li et al., 2017). Notably, Sohn and Shin
+(2006) deﬁned that a rejected applicant should be accepted if the lower limit of the 90%
+conﬁdence interval for his ‘median life’ exceeds that of accepted applicants in their survival
+analysis model. Banasik and Crook (2010) integrated survival analysis with augmentation
+and examined how augmentation helps correct survival functions to attempt to address the
+RI issue. However, their empirical analyses suggest that survival analysis for RI negatively
+affects the predictive performance of credit scoring results. Considering the shortcomings of
+these early RI methods, researchers began to turn their attention to more effective algorithms.
+Given the breakthrough performance of machine learning models in various domains,
+researchers have also explored the potential of these advanced algorithms to solve the RI
+problem. Since the default status of rejected applicants is unknown, some studies suggest
+that semi-supervised models are more suitable for addressing RI issues (Kang et al., 2021;
+Kozodoi et al., 2020).2 In the RI ﬁeld, strong evidence shows that leveraging semi-supervised
+learning algorithms to infer the outcomes of rejected cases can signiﬁcantly enhance default
+prediction performance. Li et al. (2017) ﬁrst introduced a semi-supervised support vector
+machine (S3VM) approach to incorporate rejected data into the credit scoring modelling
+process and compared its performance with the industrial benchmarks of LR and support
+2 Semi-supervised learning is a machine learning paradigm that aims to label unlabelled data points using
+knowledge learned from a small number of labelled data points. The difﬁculty of obtaining labelled data in
+the real world has led to the widespread use of semi-supervised learning models in various ﬁelds, including
+machine translation (Li et al., 2022), text detection (Liu et al., 2020) and image classiﬁcation (Zhu et al., 2016).
+123
+
+Annals of Operations Research (2026) 361:383–412
+387
+vector machine (SVM). Following this work, Tian et al. (2018) devised a kernel-free fuzzy
+quadratic surface SVM that circumvents the necessity for kernel function selection in tradi-
+tional SVM, and Shen et al. (2022) proposed a safe S3VM that pays attention to the multiple
+candidate low-density separators to model both the accepted and rejected data simultaneously.
+Both Anderson (2019) and Mancisidor et al. (2020) developed semi-supervised Bayesian
+networks-based RI techniques, and showed that their models outperform other classical RI
+methods that require extrapolation. Kang et al. (2021) shed the ﬁrst light on utilising a
+semi-supervised graph-based model with oversampling techniques to tackle the RI problem
+when considering the imbalanced accepted data. These studies proved the effectiveness of
+semi-supervised learning algorithms in addressing the RI issue.
+However, previous RI studies mainly focus on establishing a single relabelling procedure
+that homogenously treats all rejected applicants, neglecting the unique default distributions
+and local characteristics of these heterogeneous groups. In this paper, we attempt to ﬁll these
+research gaps by proposing a comprehensive and adaptative RI framework that conducts
+ﬁner-grained relabelling for different rejected groups. We believe that this approach could
+provide important implications for broader ﬁnancial and decision-support systems.
+3 Methodology
+In this study, our proposed SAIL approach, structured into four stages, aims to identify
+local characteristics and default patterns inherent within diverse accepted and rejected
+populations.3 Speciﬁcally, we ﬁrst deploy spectral clustering to divide all instances into
+heterogeneous groups using the pre-processed rejects and the training subset extracted from
+the accepts. This allows us to apply customised models for each cluster, thereby (it is hoped)
+improving the accuracy and effectiveness of relabelling rejects in subsequent stages, as they
+can be adapted to speciﬁc group characteristics. Second, we use isolation forests to identify
+and remove anomalies within the rejects of each cluster, helping minimise the impact of out-
+liers or spurious data points on subsequent relabelling procedures. We also exclude rejects
+most similar to the accepted cases, as labelling such cases may potentially introduce noise
+and offer little new information for the scorecards (Kozodoi et al., 2020). Third, the ﬁltered
+rejects within each cluster are relabelled by an extended self-learning algorithm that itera-
+tively employs label spreading. The iterative nature can intuitively increase the accuracy of
+the relabelling process over the iterations, leveraging the strengths of label spreading (using
+the structure of the data) and self-learning (using the model’s conﬁdence in its predictions).
+In the ﬁnal classiﬁcation phase, we train supervised credit scoring models using the entire
+dataset of relabelled information and validate the model prediction results on the test set.
+Figure 1 provides an overview of our proposed RI-SAIL framework, and an in-depth expla-
+nation pertaining to each component of our approach will be provided in the ensuing sections.
+Since spectral clustering and label spreading are both grounded in graph theory, we provide
+a detailed description of key graph notations in “Appendix A” of the online supplementary
+materials.
+3 The source code for our proposed method is available at https://github.com/Zoey-Wu-ed/RejectInferenc
+eSAIL.
+123
+
+388
+Annals of Operations Research (2026) 361:383–412
+Fig. 1 Overview of the RI-SAIL framework. The ﬁgure illustrates the four stages of the RI-SAIL framework,
+starting from spectral clustering to iterative label spreading and concluding with predictive evaluation using
+classiﬁers
+3.1 Spectral clustering between accepts and rejects
+Given a set of data points x1, . . . , xn, spectral clustering aims to make the cases within the
+same group as similar as possible, while the instances between different groups should be as
+distinct as possible (Chen et al., 2012; Li et al., 2020). Unlike representing the relationship
+between all pairs of data points xi and x j in the form of similarity si j ≥0, spectral clustering
+uses the similarity graph G  (V , E) to show the data distribution (Von Luxburg, 2007).
+Thus, the unsupervised clustering problem can be reformulated into partitioning a graph G
+such that the edges between different groups have low weights wi j and the edges within the
+same group have high weights wi j. In light of the advantage of spectral clustering in that it
+does not make assumptions about the data shape and its superior performance on many tasks
+(Ng et al., 2001), we ﬁrst utilise spectral clustering to create groups of objects that include
+both accepts and rejects. Here, we deﬁne some notations and describe its detailed modelling
+process for our RI framework. YL  {y1, . . . , yl} is the actual set for repayment outcomes
+123
+
+Annals of Operations Research (2026) 361:383–412
+389
+of accepts, with yi  1 denoting a defaulter and yi  0 otherwise. The unknown labels of
+rejects are represented as YU  {yl+1, . . . , yl+u}, which need to be inferred in subsequent
+modelling process. We use X L+U  {x1, . . . , xl+u}, where each xi is a vector of features, and
+YL+U  {y1, . . . , yl+u} to denote the combined features and outcomes of both accepts and
+rejects. Depending on the way of constructing similarity graphs and graph Laplacian matrix,
+as described in Sect. 3.1, we can obtain several variants of spectral clustering. In this study,
+we choose to construct a k-nearest neighbour graph for spectral clustering, as recommended
+by Von Luxburg (2007).4 Algorithm 1 shows the main ideas of spectral clustering for solving
+the RI problem.
+Algorithm 1 Spectral clustering in SAIL framework
+Given the nature of clustering algorithms, the most critical hyperparameter for our spectral
+clustering is the number k∗clusters. Previous studies have proposed several methods to
+determine the optimal value of k∗. Following Scitovski and Šarlija (2014) and Li et al.
+(2020), we introduce the Calinski–Harabasz (CH) index to select the k∗from {2, 3, 4, 5, 6,
+7, 8, 9, 10, 11, 12} for our spectral clustering in SAIL. In Eq. (1), BSS is the between-cluster
+variation positively correlated with k∗, and WSS is the within-cluster variation showing a
+negative correlation with k∗. n denotes the data size. Intuitively, a higher CH index represents
+a more effective clustering result, and we can maximise it to ﬁnd the optimal k∗value.
+C H(k∗)  BSS(k∗)/(k∗−1)
+W SS(k∗)/(n−k∗) .
+(1)
+3.2 Anomalies detection for rejects
+Anomaly detection has been applied to address the RI problem in the studies of Tian et al.
+(2018), Xia (2019) and El Annas et al. (2023), demonstrating improved credit scoring perfor-
+mance (Aduenko et al., 2018). Thus, in the second stage of our proposed SAIL framework,
+we use the isolation forest technique to ﬁlter and remove certain rejected cases in each clus-
+ter before assigning labels. This ﬁltering serves two purposes. First, we aim to eliminate
+rejected cases that come from the most disparate part of the distribution compared to the
+accepts. Removing these outliers would reduce the risk of error propagation and noise since
+predictions of a model trained on accepts become less reliable when the distribution of cases
+to be predicted are very different from the training data. Second, we also exclude rejects
+4 Spectral clustering reduces dimensionality by projecting data onto a lower-dimensional space deﬁned by the
+eigenvectors of the Laplacian matrix, thus preserving essential structures while minimising noise that often
+presents in high-dimensional spaces.
+123
+
+390
+Annals of Operations Research (2026) 361:383–412
+that are most similar to accepted cases (see, Kozodoi et al. (2020); El Annas et al. (2023);
+Kozodoi et al. (2025). Including these cases would potentially provide little new information
+for a credit scoring model and might even reduce its prediction performance by introducing
+noise and redundant information. Therefore, it is important to remove markedly different
+and overly similar rejects to enhance the reliability of inferred labels and reduce noise in the
+subsequent modelling process.
+Anomalies in the data space usually have two quantitative properties: 1) they are the
+minority consisting of fewer cases, and 2) their features are very different from typical
+instances (Liu et al., 2008). Unlike most existing anomaly detection techniques used to
+construct a proﬁle of regular instances, isolation forest builds an ensemble of isolation trees
+to separate anomalies from the rest of the normal cases. An isolation tree t is a random binary
+tree where each node is either a leaf node without children or the parent of two sub-nodes
+
+tlef t, tright
+
+. For an attribute q, we divide each sample with the split value p: if the value
+of q is smaller than p, this sample is divided into tlef t; otherwise, it is divided into tright.
+After repeating such a process until the sample cannot be further divided, the nodes of this
+isolation tree are ﬁnalised, and this tree can be included in the isolation forest. Algorithm 2
+shows the detailed construction of an isolation forest used in our SAIL framework (Puggini
+& McLoone, 2018).
+Algorithm 2 Isolation forest in SAIL framework
+In the isolation tree, the path length h(x) of the instance x ∈X L+U is measured by the
+number of edges x traverses from the root node until the traversal is terminated. The smaller
+the path, the more likely the sample is an outlier. Thus, the path length can be used to derive
+the anomaly score for the isolation tree (Liu et al., 2008). Since an isolation forest consists of
+many isolation trees trained on different randomly sampled subsets X′ ∈X L+U, the anomaly
+score for x is calculated as the average normalised path length of all isolation trees.
+sa(x, l + u)  2−E(h(x))
+c(l+u)
+(2)
+In Eq. (2), E(h(x)) is the expectation of h(x) from a collection of isolation trees. c(l + u)
+equals 2H(l + u −1) −(2(l + u −1)/(l + u)) where H(i) is the i-th harmonic number and
+it can be estimated by ln(i) + 0.5772156649 (Euler’s constant). When sa approaches 1, then
+the x is probably an anomaly; if sa is much smaller than 0.5, then x is unlikely to be an
+anomaly. In our second stage, we construct an isolation forest using accepts for each cluster
+123
+
+Annals of Operations Research (2026) 361:383–412
+391
+and obtain the anomaly scores for rejects. The essential hyperparameter for isolation forest
+is the proportion of outliers in the input data, denoted by contamination, and we use 0.1 as
+suggested by (Liu et al., 2008). Then, we remove all rejects with anomaly scores below 0.2
+and those with scores above 0.5 from the subsequent modelling process (Mensi & Bicego,
+2021).
+3.3 Iterative label spreading for relabelling rejects
+After obtaining clusters with different default patterns, including accepts and ﬁltered rejects,
+we build an iterative relabelling mechanism to infer the outcomes of these rejects in the third
+stage of our SAIL framework. This mechanism involves two main algorithms: label spread-
+ing and self-learning. Label spreading is a graph-based semi-supervised learning algorithm
+proposed by Zhou et al. (2004) that proves effective in solving real-world problems with
+missing labels (Kang et al., 2021; Timsina et al., 2016; Wu et al., 2017). It is built on two
+prior consistency assumptions: (1) nearby points tend to have the same label, and (2) points
+on the same structure (e.g., a cluster) are likely to have the same labels. Considering the
+nature of our proposed method, in that it divides data into heterogeneous groups, we try to
+use label spreading to relabel our unknown rejects in each group. Besides, we note that most
+previous RI studies have used only the features of accepts to relabel rejected samples, ignor-
+ing the information that can be extracted from such rejects. To make use of the previously
+unused rejected information, we integrate label spreading into the self-learning framework
+to establish an iterative relabelling mechanism. Self-learning is a common semi-supervised
+learning method that enables the model to learn from itself and make improvements iter-
+atively (Maldonado & Paredes, 2010). Algorithms 3 and 4 demonstrate in detail the label
+spreading and the iterative relabelling mechanisms for our SAIL framework, respectively.
+Algorithm 3 Label spreading in SAIL framework
+Algorithm 3 shows that given the adjacency matrix W and the labels of accepts, the label
+spreading model can update the labels of rejects iteratively. One concern is that this process
+will involve massive calculation, but in fact, the inferred labels of rejects will eventually
+converge, a detailed proof can be found in Kang et al. (2021). For the hyperparameter opti-
+misation of label spreading, we use the grid search with ﬁvefold cross-validation to optimise
+the clapping factor α and the nearest neighbours k from {0.450, 0.475, 0.500, 0.525, 0.550}
+and {5, 7, 9, 11}, respectively.
+123
+
+392
+Annals of Operations Research (2026) 361:383–412
+Algorithm 4 Iterative relabelling mechanism in SAIL framework
+For the iterative relabelling mechanism shown in Algorithm 4, we ﬁrst use a speciﬁc label
+spreading model trained on accepted cases to predict the pseudo labels of ﬁltered rejects.
+Then, we sort all rejects by comparing their predicted probabilities of default and choose the
+most conﬁdent ones based on a predeﬁned threshold for subsequent relabelling. Afterwards,
+we add the relabelled rejects to the original accepts and repeat the above process until no
+rejected cases are left or the modelling stop condition has been satisﬁed. Note that since we
+have obtained different groups after the ﬁrst two stages of SAIL, in the third stage, we apply
+this iterative relabelling mechanism to each group based on its accepts and ﬁltered rejects,
+respectively. For the hyperparameters of the iterative relabelling mechanism, we adopted the
+threshold θ  0.5 suggested by Huang et al. (2007), and used p  0 and n  1 to incorporate
+as much information from the rejected samples as possible into the relabelling process.
+3.4 Binary classification for credit scoring
+Once ﬁltered rejects have been relabelled in each cluster, we merge all clusters and obtain
+a complete labelled dataset. To verify the effectiveness and superiority of the proposed RI
+framework for subsequent credit scoring modelling, we choose ﬁve machine learning models
+that are widely used in various ﬁnancial classiﬁcation tasks due to their prediction efﬁcacy
+(Katsafados et al., 2024; Wang et al., 2020; Wu & Li, 2021). These models include LR,
+extreme gradient boosting (XGB), LightGBM (LGBM), SVM and multilayer perceptron
+(MLP). A brief introduction to these models is available in Appendix B of the online sup-
+plementary materials.
+4 Experiment setup
+This section describes the data and variables, sample division strategy, hyperparameter opti-
+misation, evaluation models and performance metrics used in this study.
+123
+
+Annals of Operations Research (2026) 361:383–412
+393
+4.1 Data and variables
+In this study, a consumer loan dataset provided by a European commercial bank is employed
+to verify the applicability and effectiveness of our proposed RI approach. After excluding
+records with apparent errors, the dataset consists of 2102 rejected loans and 3600 accepted
+loans with durations ranging from 1 to 37 months, originating between February 2018 and
+February 2021.5 All the accepted loans are closed—3527 loans have been fully paid off at
+maturity or early, and 73 loans have been charged off.6 Default is deﬁned as 90 days past due
+over the 18 months of observation, in alignment with the Basel Accords deﬁnition (Steven-
+son et al., 2021). The dataset contains 24 standard credit scoring features for both accepts
+and rejects,7 though the repayment status is unavailable for rejected cases. Considering the
+regulations around the conﬁdentiality of data disclosure, we made some alterations here and
+renamed the continuous variables as VC and the dummy variables as VD. Table 1 shows a
+brief description and statistics for these variables.
+4.2 Sample division
+Complex models, such as XGB and MLP, often suffer from an overﬁtting problem when the
+in-sample performance is no longer sufﬁcient to indicate the actual predictive power of the
+model. Furthermore, we need to optimise a large set of relevant hyperparameters to ensure
+the model achieves optimal performance. Thus, in this study, we used the stratiﬁed random
+sampling method to select 60% of the accepted samples as the training set, and the remaining
+40% as the test set.8 To eliminate the effects of different data distributions and speed up the
+convergence process, all continuous features in training, test and rejected data are normalised
+by removing the mean of the training set and also scaled to unit variance using the standard
+deviation of the training set.
+Once the repayment outcomes of rejects have been inferred through our proposed SAIL
+framework, we conducted stratiﬁed ﬁvefold cross-validation9 on the combined dataset of the
+training set and the relabelled rejects to establish the credit scoring model. We then evaluated
+the model’s prediction performance on the test set. Figure 2 illustrates the entire sample
+division process employed in our study.
+5 The acceptance rate of our sample is approximately 63%, which reﬂects the bank’s general acceptance rate
+for this loan product during the sample period. This acceptance rate aligns with typical lending practices for
+products with relatively lower risk proﬁles, though we acknowledge that such rates may vary across institutions
+or product types.
+6 We note that the dataset is characterised by a severely imbalanced ratio of 1:48 (defaulter: non-defaulter).
+However, this is quite common among European banks. For example, according to the European Banking
+Authority, the average non-performing loan rate of European banks stood at 2.9% in 2019.
+7 While some existing RI studies utilise datasets from online P2P platforms like Lending Club, these provide
+limited information on rejected applicants compared to accepted ones.
+8 Due to the nature of stratiﬁed sampling, the ratios for the defaulters/non-defaulters in these two subsets are
+the same.
+9 The stratiﬁed k-fold cross-validation is an extension of the k-fold cross-validation technique used to maintain
+the same class ratio throughout the k folds as the ratio in the original dataset. Due to the imbalance nature of
+our accepted data, we choose to use the stratiﬁed ﬁvefold cross-validation to train our credit scoring models.
+123
+
+394
+Annals of Operations Research (2026) 361:383–412
+Table 1 Deﬁnitions and statistical information of the variables
+Variable
+Deﬁnition
+Accepts
+Rejects
+Continuous
+Mean ± SD
+Mean ± SD
+VC1
+Personal information
+7.45 ± 0.85
+6.93 ± 0.92
+VC2
+Personal information
+13.53 ± 6.75
+11.08 ± 6.57
+VC3
+Bureau information
+10.86 ± 3.40
+9.47 ± 3.79
+VC4
+Public information
+8.12 ± 2.36
+8.05 ± 2.26
+VC5
+Geographical information
+4.42 ± 2.98
+4.30 ± 2.86
+VC6
+Credit health information
+380.36 ± 70.60
+330.8 ± 98.51
+VC7
+Instalment to income ratio
+9.62 ± 79.74
+22.59 ± 22.60
+VC8
+Loan information
+2018.74 ± 0.79
+2018.94 ± 0.91
+VC9
+Loan information
+6.02 ± 3.14
+5.98 ± 3.39
+VC10
+Loan information
+27.05 ± 9.59
+24.70 ± 10.94
+Categorical
+Distribution (%)
+VD1
+Loan amount
+Yes (83.75), No (16.25)
+Yes (78.31), No (21.69)
+VD2
+Loan duration
+Yes (84.86), No (15.14)
+Yes (85.68), No (14.32)
+VD3
+Citizenship information
+Yes (93.17), No (6.83)
+Yes (89.82), No (10.18)
+VD4
+Financial information
+Yes (81.53), No (18.47)
+Yes (77.59), No (22.41)
+VD5
+Type of work
+Yes (94.50), No (5.50)
+Yes (92.86), No (7.14)
+VD6
+Personal information
+Yes (98.64), No (1.36)
+Yes (98.38), No (1.62)
+VD7
+Credit health information
+Yes (99.67), No (0.33)
+Yes (97.53), No (2.47)
+VD8
+Residence information
+Yes (99.97), No (0.03)
+Yes (99.81), No (0.19)
+VD9
+Financial information
+Yes (99.25), No (0.75)
+Yes (98.57), No (1.43)
+VD10
+Financial information
+Yes (96.61), No (3.39)
+Yes (91.01), No (8.99)
+VD11
+Financial information
+Yes (99.99), No (0.01)
+Yes (99.81), No (0.19)
+VD12
+Credit health information
+Yes (99.42), No (0.58)
+Yes (99.52), No (0.48)
+VD13
+Credit health information
+Yes (99.11), No (0.89)
+Yes (98.91), No (1.09)
+VD14
+Credit health information
+Yes (97.67), No (2.33)
+Yes (96.10), No (3.90)
+Fig. 2 Sample division strategy. This ﬁgure illustrates the use of stratiﬁed ﬁvefold cross-validation to develop
+and evaluate the credit scoring model
+123
+
+Annals of Operations Research (2026) 361:383–412
+395
+Table 2 Hyperparameter search
+spaces
+Base model
+Hyperparameter
+Parameter space
+LR
+The inverse of regularisation
+strength
+0.01, 0.1, 1, 2, 3
+XGB
+Learning rate
+0.01, 0.1
+Maximum depth
+2, 6, 8, 10
+Number of estimators
+10, 30, 50, 70
+L2 regularization term on
+weights
+10, 20
+LGBM
+Learning rate
+0.01, 0.1
+Maximum depth
+1, 2, 3, 6
+Number of estimators
+10, 30, 70, 90
+SVM
+Regularisation parameter
+0.1, 1, 2, 3, 4
+Balancing of positive and
+negative weights
+None,
+‘balanced’
+Kernel type
+‘rbf’, ‘poly’
+Kernel coefﬁcient
+‘scale’, ‘auto’
+MLP
+Number of neurons in the
+hidden layer
+5, 10, 25, 50
+Learning rate
+0.0001, 0.001,
+0.01
+4.3 Hyperparameter optimisation
+To ensure the effectiveness and comparability of our credit scoring models, we implemented
+the grid search method to select the optimal hyperparameters for each classiﬁer in this study
+(Kang et al., 2021; Shen et al., 2020; Stevenson et al., 2021). Given a pre-speciﬁed range
+of hyperparameters, the grid search method exhaustively examines all possible combina-
+tions of model parameters over the training set and compares the model’s stratiﬁed ﬁvefold
+cross-validation performance under each combination. Finally, the optimal combination of
+hyperparameters can be determined based on the best prediction performance. Table 2 shows
+the hyperparameter search space for the six machine learning methods used in our credit
+scoring modelling.
+4.4 Evaluation models
+To explore the effectiveness and robustness of our proposed SAIL framework, we compared
+its performance with ﬁve other classical and state-of-the-art RI techniques. The accept-only
+(Acpt-Only) model is the traditional credit scoring model that relies solely on information
+from the accepts group, including goods and bads, and does not include rejected data in its
+modelling. The augmentation (RI-AUG) model applies adjusted weights to accepts and uses
+these accepts to represent the through-the-door applicants. The fuzzy augmentation (RI-FUZ)
+model ﬁrst creates two records for each reject, one labelled ‘bad’ weighted by the probability
+of default, and the other labelled ‘good’ weighted by the probability of non-default. Then, a
+usual credit scoring model can be estimated using the combination of the relabelled rejects
+and the original accepts (with a weight of one). The extrapolation (RI-EXT) model ﬁrst
+123
+
+396
+Annals of Operations Research (2026) 361:383–412
+employs a credit scoring model trained using accepts to predict possible default outcomes of
+rejects and then incorporates the relabelled rejects into the subsequent credit scoring model.
+The self-learning (RI-SEL) model can be viewed as an iterative RI-EXT, whereby in each
+iteration, some of the most likely default and the least likely default rejects predicted by
+the credit scoring model trained using accepts are incorporated into the training set of the
+next iteration of the credit scoring model, and so on until all rejects have been relabelled.
+The RI-BSLS model ﬁrst uses the borderline-synthetic minority oversampling technique
+(SMOTE) to oversample the accepts and then predict the pseudo labels for rejects using the
+label spreading model. Then, a usual credit scoring model can be estimated.
+4.5 Performance metrics
+In this study, we consider three widely used metrics to evaluate the prediction quality of
+the credit scoring models: the area under the receiver operating characteristic (ROC) curve
+(AUC), the H-measure, and the Kolmogorov–Smirnov (KS) statistic (Gunnarsson et al.,
+2021; Katsafados et al., 2024; Kriebel & Stitz, 2022; Wu & Li, 2021). The ROC curve is
+a graphical representation of a classiﬁcation model’s predictive accuracy over a range of
+threshold values. The curve plots the classiﬁer’s true positive rate (i.e., sensitivity) on the
+vertical axis and the false positive rate (i.e., 1- speciﬁcity) on the horizontal axis, as the
+classiﬁcation threshold varies. The AUC represent the area under the ROC curve, ranging
+from 0 to 1, and is used to measure the classiﬁcation ability of a model to distinguish binary
+classes. Higher AUC scores imply better out-of-sample classiﬁcation power of the models.
+As a coherent alternative to AUC, the H-measure proposed by Hand (2009) is a preferred
+performance metric for an imbalanced dataset ranging from 0 to 1 for a random and perfect
+classiﬁer, respectively (Fitzpatrick & Mues, 2021; Lessmann et al., 2015). It overcomes the
+conceptual shortcomings of the AUC and speciﬁes a severity ratio as input, which allows us
+to examine the relative severity of misclassifying a negative class instance when compared
+to misclassifying a positive class instance. In this study, we use the default setting of the
+severity ratio, which equals the reciprocal of relative class frequency (Chen et al., 2024).
+The KS statistic measures the maximum vertical distance between the empirical cumulative
+distribution functions of the false positive and true positive rates. Similar to AUC and H-
+measure, the KS ranges from 0 to 1, and the higher the KS score, the better the model’s
+performance at distinguishing between the negative and positive classes.
+In most real-world cases, the labels of rejects are unknown, and the majority of RI studies
+evaluate the effectiveness of proposed methods by comparing a scoring model’s performance
+based on the accepted test set before and after adding the relabelled rejected cases into the
+training data (as detailed above). However, this approach has a limitation: the model’s per-
+formance is not evaluated on an unbiased representative sample that includes both accepts
+and rejects with actual labels (Banasik et al., 2003). To address this challenge, Kozodoi et al.
+(2020) proposed the kickout evaluation measure to reduce the dependence on actual labels
+of rejects in evaluations. They suggested that the kickout measure is a more appropriate eval-
+uation metric of RI methods than traditional evaluation approaches. To provide a robustness
+analysis, we further include the kickout measure to evaluate the performance of models in
+our study.
+The primary concept of the kickout measure is to compare the set of applications approved
+by a scoring model before and after implementing the RI method. Recall that we have data on
+the previously accepted X L and rejected cases XU. Here, we split X L into two subsets: Xtrain
+L
+and Xtest
+L
+. We assume M1 to be a credit scoring model trained on Xtrain
+L
+. We use M1 to predict
+123
+
+Annals of Operations Research (2026) 361:383–412
+397
+the probability of default for Xtest
+L
+and to select a pool of applicants A1 ⊂Xtest
+L
+that should
+be accepted by the model using the acceptance rate μ. Thus, A1 contains the (simulated)
+accepted applications prior to applying the RI method. The rejects cases of XU are also
+split into two subsets: Xtrain
+U
+and Xtest
+U . The former is labelled using a given RI method and
+combined with Xtrain
+L
+, while Xtest
+U
+is added to Xtest
+L
+. Then we train a new scoring model M2
+on the expended training sample Xtrain
+L
+and use it to predict and select applicants in Xtest
+L
+using the same acceptance rate μ. As both the training and test samples have changed, model
+M2 would accept a different set of applicants A2. By analysing the differences between A1
+and A2, we could identify the kicked-out cases—applicants included in A1 but excluded from
+A2.
+The kickout measure is deﬁned as:
+kickout 
+KB
+P(B) −
+KG
+1−P(B)
+SB
+P(B)
+(3)
+where K B is the number of defaulters (Bads) that were kicked out from the set of accepted
+cases after implementing the RI method, KG represents the number of kicked-out non-
+defaulter cases (Goods), SB is the number of Bads selected by the original model, and P
+(B) is the proportion of Bads in A1. The kickout measure ranges from -1 (indicating all
+Goods and no Bads are kicked out) to 1 (indicating all Bads and no Goods are kicked out)
+and is normalised by the proportion of Bads to reﬂect the difﬁculty of kicking out a Bad.
+Positive values of kickout indicate a beneﬁcial inﬂuence of the RI method, with higher values
+signalling enhanced the performance of the given technique. More detailed information on
+the kickout measure can be found in Kozodoi et al. (2020).
+To enhance the robustness and reliability of our ﬁndings, we conduct multiple experiment
+runs using ﬁve random seeds, averaging the AUC, H-measure, KS score, and kickout measure,
+and calculating their standard deviations.
+5 Empirical results
+In the ﬁrst step of our empirical analysis, we used spectral clustering to divide the merged data
+including both accepts and rejects into k∗clusters. Figure 3a illustrates that as the number of
+clusters increases from 2 to 12, the CH index reaches its peak value at k∗ 5, with a smaller
+secondary peak observed at k∗ 10.10 Thus, in this study, we choose k∗ 5 as the best
+value for our spectral clustering, as per Sect. 3.2.1. Further to this, we used the t-distributed
+stochastic neighbour embedding (t-SNE)11 method to visualise the data distributions before
+and after clustering in two-dimensional graphs in Fig. 4 (Li et al., 2022).
+Figure 4a–c present the data distribution of rejects, accepts and defaulters, respectively,
+and show that the majority of defaulters from among the accepts are concentrated in the lower-
+left part of the t-SNE two-dimensional data space, while only a few defaulters are located
+in the upper-right part. This may indicate that many defaulters in the lower-left part space
+share common traits or behaviours which could lead to their default status. Figure 4d shows
+10 Figure 3(b) also shows a signiﬁcant inﬂection point in the WSS curve when k*  5
+11 t-SNE is a widely used nonlinear dimensionality reduction statistical technique, and its main idea is to
+embed the high-dimensional data in a low-dimensional space, where nearby points and dissimilar objects
+model similar objects are modelled by distant points with high probability (Hinton & Roweis, 2002; Van der
+Maaten & Geoffrey, 2008).
+123
+
+398
+Annals of Operations Research (2026) 361:383–412
+Fig. 3 Optimal cluster number selection. a The CH index peaks at k∗ 5. b The WSS curve also shows an
+inﬂection point at k∗ 5, conﬁrming it as the optimal cluster number
+Fig. 4 t-SNE visualisations of data distributions for a rejects, b accepts, c defaulters within accepts, and
+d clustered groups. The visualisations highlight that most defaulters in accepts are concentrated in the lower-
+left of the t-SNE space, with spectral clustering effectively grouping data into clusters with varying default
+rates
+123
+
+Annals of Operations Research (2026) 361:383–412
+399
+Table 3 Default distributions for accepted data across ﬁve clusters
+Cluster
+Number of goods
+Number of bads
+Default rate (%)
+Number of rejects
+1
+28
+2
+6.67
+81
+2
+865
+31
+3.46
+767
+3
+865
+9
+1.03
+940
+4
+330
+2
+0.60
+275
+5
+28
+0
+0.00
+39
+Total
+2116
+44
+2.04
+2102
+the post-clustering results of our mixed data, and the corresponding default distributions of
+accepts in each cluster are shown in Table 3. Table 3 also shows that the initial default rate
+for the sampled accepted data is 2.04%, while the default rates for clusters 1 and 2 located
+in the lower-left part reach 6.67% and 3.46%, respectively. The remaining three clusters all
+exhibit lower default rates than the initial default rate. These ﬁndings suggest that spectral
+clustering can effectively separate accepted data into groups with varying default rates, and
+we assume that the lowest value of the default rate for rejects in each group is that for the
+accepts from within that group.
+Given the distinct distribution of defaulters among ﬁve clusters, in each cluster, we used
+an isolation forest to ﬁlter rejects and then applied the iterative relabelling mechanism to infer
+the default behaviour of the retained rejects. Once we obtain the merged data that includes
+accepts and relabelled rejects, we can evaluate our proposed SAIL framework’s predictive
+performance and robustness and compare it with the traditional credit scoring model (Acpt-
+Only) and other ﬁve benchmark RI techniques across the six base machine learning models.
+Table 4 shows our experimental results.12,13
+When comparing the predictive performance between our proposed SAIL framework and
+the traditional credit scoring model, we observe that RI-SAIL outperforms the Acpt-Only
+model consistently, achieving impressive test results across all classiﬁers and metrics. Taking
+the XGB classiﬁer as an example, the average AUC, H-measure and KS scores increase by
+0.058, 0.058, and 0.065, respectively, when using the RI-SAIL model compared to the Acpt-
+Only model. Furthermore, we ﬁnd that RI-SAIL presents signiﬁcant gains over Acpt-Only.
+These ﬁndings suggest that the proposed RI-SAIL model can mine useful information from
+rejects to improve the overall predictive performance of credit scoring models.
+Table 4 also shows that compared with other benchmark RI techniques, our proposed RI-
+SAIL model displays consistently superior performance in most metrics over all classiﬁers.
+12 To assess the robustness of our proposed RI framework under varying default rate conditions, we also
+conducted a quasi-experimental analysis by manipulating the conditional distribution p(y|X) in the test data.
+Speciﬁcally, we increased the default rate from the original 2% to 3%, 4%, and 5%, simulating different credit
+risk environments. The results presented in “Appendix C” of the online supplementary materials show that
+our model maintains superior performance across all tested scenarios, further supporting the applicability of
+the SAIL framework in real-world credit risk assessments.
+13 To further validate our ﬁndings, we also apply the SAIL framework to a random sample of 3,168 observa-
+tions (2,000 accepts and 1,168 rejects) from the Lending Club dataset, with the acceptance rate matching that
+of the data used in our initial empirical analysis. Similar sampling procedures and sample sizes have been used
+in studies by Li et al. (2017), Xia et al. (2018), and Xia (2019). The empirical results based on this new dataset
+are presented in “Appendix D” of the online supplementary materials. The results suggest that our proposed
+SAIL framework consistently outperforms the Acpt-Only model and other popular RI methods across all three
+metrics (i.e. AUC, H-measure, KS).
+123
+
+400
+Annals of Operations Research (2026) 361:383–412
+Table 4 Experimental results comparing RI-SAIL and other methods
+Metric
+Method
+Classiﬁers
+LR
+XGB
+LGBM
+SVM
+MLP
+Avg
+AUC
+Acpt-Only
+0.666
+0.630
+0.636
+0.683
+0.688
+0.661
+(0.002)
+(0.001)
+(0.006)
+(0.002)
+(0.013)
+RI-SAIL
+0.667
+0.688
+0.661
+0.692
+0.696
+0.681
+(0.000)
+(0.013)
+(0.025)
+(0.014)
+(0.012)
+RI-AUG
+0.654
+0.621
+0.647
+0.667
+0.664
+0.651
+(0.000)
+(0.004)
+(0.014)
+(0.016)
+(0.012)
+RI-FUZ
+0.666
+0.635
+0.628
+0.637
+0.522
+0.618
+(0.002)
+(0.003)
+(0.011)
+(0.012)
+(0.009)
+RI-EXT
+0.655
+0.650
+0.622
+0.670
+0.695
+0.658
+(0.000)
+(0.011)
+(0.009)
+(0.006)
+(0.024)
+RI-SEL
+0.653
+0.648
+0.622
+0.614
+0.628
+0.633
+(0.000)
+(0.011)
+(0.009)
+(0.016)
+(0.014)
+RI-BSLS
+0.658
+0.665
+0.641
+0.680
+0.663
+0.661
+(0.002)
+(0.008)
+(0.002)
+(0.000)
+(0.003)
+H-measure
+Acpt-Only
+0.146
+0.149
+0.124
+0.192
+0.173
+0.157
+(0.009)
+(0.005)
+(0.004)
+(0.013)
+(0.009)
+RI-SAIL
+0.161
+0.207
+0.181
+0.210
+0.196
+0.191
+(0.000)
+(0.017)
+(0.008)
+(0.004)
+(0.024)
+RI-AUG
+0.146
+0.171
+0.152
+0.176
+0.170
+0.163
+(0.000)
+(0.003)
+(0.027)
+(0.015)
+(0.015)
+RI-FUZ
+0.146
+0.141
+0.128
+0.109
+0.028
+0.110
+(0.009)
+(0.007)
+(0.013)
+(0.013)
+(0.008)
+RI-EXT
+0.170
+0.133
+0.102
+0.155
+0.202
+0.152
+(0.000)
+(0.026)
+(0.010)
+(0.002)
+(0.035)
+RI-SEL
+0.169
+0.133
+0.101
+0.082
+0.104
+0.118
+(0.000)
+(0.025)
+(0.011)
+(0.008)
+(0.015)
+RI-BSLS
+0.136
+0.137
+0.124
+0.165
+0.143
+0.141
+(0.004)
+(0.005)
+(0.002)
+(0.000)
+(0.014)
+KS
+Acpt-Only
+0.276
+0.278
+0.269
+0.376
+0.327
+0.305
+(0.018)
+(0.016)
+(0.007)
+(0.027)
+(0.023)
+RI-SAIL
+0.301
+0.343
+0.327
+0.380
+0.357
+0.342
+(0.000)
+(0.013)
+(0.015)
+(0.009)
+(0.041)
+RI-AUG
+0.278
+0.264
+0.294
+0.319
+0.320
+0.295
+(0.000)
+(0.001)
+(0.021)
+(0.046)
+(0.021)
+RI-FUZ
+0.276
+0.269
+0.274
+0.321
+0.068
+0.242
+(0.018)
+(0.010)
+(0.024)
+(0.028)
+(0.015)
+123
+
+Annals of Operations Research (2026) 361:383–412
+401
+Table 4 (continued)
+Metric
+Method
+Classiﬁers
+LR
+XGB
+LGBM
+SVM
+MLP
+Avg
+RI-EXT
+0.271
+0.302
+0.242
+0.352
+0.372
+0.308
+(0.000)
+(0.028)
+(0.016)
+(0.019)
+(0.061)
+RI-SEL
+0.270
+0.301
+0.241
+0.244
+0.257
+0.263
+(0.000)
+(0.026)
+(0.016)
+(0.008)
+(0.030)
+RI-BSLS
+0.263
+0.301
+0.269
+0.341
+0.296
+0.294
+(0.003)
+(0.022)
+(0.017)
+(0.000)
+(0.010)
+This table presents the average values and standard deviations of the AUC, H-measure, and KS statistics for
+default prediction of accepted applicants based on seven methods: Acpt-Only, RI-SAIL, RI-AUG, RI-FUZ,
+RI-EXT, RI-SEL and RI-BSLS. Acpt-Only is the traditional credit scoring model trained only on the accepts.
+RI-SAIL is our proposed method. RI-AUG, RI-FUZ, RI-EXT, RI-SEL and RI-BSLS are ﬁve popular baseline
+RI methods introduced in Sect. 4.4. The third to seventh columns list the results of ﬁve classiﬁers: LR, XGB,
+LGBM, SVM and MLP. The eighth column displays the average results of all classiﬁers for each method. The
+best performance in terms of each evaluation metric for each model is in boldface
+Considering the AUC results, RI-SAIL demonstrates robust performance across all classi-
+ﬁers, with the MLP achieving the highest AUC of 0.696. When it comes to H-measure and
+KS scores, we ﬁnd that although RI-SAIL slightly underperforms RI-EXT, the difference
+between the absolute values is relatively small. As expected, the average results for all clas-
+siﬁers using RI-SAIL over the three metrics signiﬁcantly surpass those of other RI methods.
+Besides, some of the more classical RI methods, such as RI-FUZ and RI-SEL, show weak
+performance in most metrics and signiﬁcantly underperform the baseline Acpt-Only model.
+These results are consistent with the ﬁndings of Chen et al. (2012) and Li et al. (2020),
+which also demonstrate that these earlier RI methods introduce harmful noise by taking all
+rejects into the modelling process. It is worth noting that although RI-BSLS also uses label
+spreading to relabel rejects, it does not signiﬁcantly outperform other benchmark RI meth-
+ods. This is likely due to the fact that RI-BSLS oversamples the defaulters in accepts before
+relabelling the rejects, thus introducing excessive noise. Overall, these ﬁndings suggest that
+our proposed RI-SAIL framework shows satisfactory performance and better generalisation
+potential compared to other RI approaches when dealing with the sample selection bias
+problem.
+Besides, we further investigated the performance of our proposed method RI-SAIL at
+varying rejection ratios to provide a robustness analysis. The original rejection ratio in our
+dataset is 36.86% and we constructed three alternative datasets with rejection ratios of 18.43%
+(half of the original), 27.65% (75% of the original), and 50%. To avoid overloading the paper,
+we present the results for the 18.43% rejection ratio in Table 5, while the other results are
+provided in “Appendix E” of the online supplementary materials. Overall, these experimental
+results across different rejection ratios are consistent with our initial ﬁndings that RI-SAIL
+eitherperformscomparablyoroutperformsthebenchmarkRItechniquesacrossmostmetrics.
+ThisconsistencyhighlightsRI-SAIL’sadaptabilityanditspotentialapplicabilityinreal-world
+scenarios, where rejection ratios may vary due to operational or regulatory requirements.
+Moreover, we expanded our analysis by incorporating the kickout measure to evaluate
+the effectiveness of our proposed RI-SAIL framework relative to other RI methods (Kozodoi
+et al., 2020). Table 6 shows the kickout measure results based on the original rejection ratio,
+123
+
+402
+Annals of Operations Research (2026) 361:383–412
+Table 5 Experimental results comparing RI-SAIL and other methods (rejection rate  18.43%, obs  4414)
+Metric
+Method
+Classiﬁers
+LR
+XGB
+LGBM
+SVM
+MLP
+Avg
+AUC
+Acpt-Only
+0.666
+0.630
+0.636
+0.683
+0.688
+0.661
+(0.002)
+(0.001)
+(0.006)
+(0.002)
+(0.013)
+RI-SAIL
+0.662
+0.638
+0.639
+0.686
+0.703
+0.666
+(0.000)
+(0.021)
+(0.011)
+(0.002)
+(0.000)
+RI-AUG
+0.659
+0.645
+0.654
+0.668
+0.672
+0.659
+(0.002)
+(0.024)
+(0.012)
+(0.015)
+(0.007)
+RI-FUZ
+0.665
+0.638
+0.634
+0.667
+0.508
+0.622
+(0.000)
+(0.004)
+(0.007)
+(0.037)
+(0.000)
+RI-EXT
+0.661
+0.642
+0.648
+0.674
+0.699
+0.665
+(0.000)
+(0.008)
+(0.011)
+(0.021)
+(0.007)
+RI-SEL
+0.661
+0.642
+0.648
+0.639
+0.657
+0.649
+(0.000)
+(0.008)
+(0.011)
+(0.013)
+(0.000)
+RI-BSLS
+0.655
+0.635
+0.649
+0.686
+0.669
+0.659
+(0.002)
+(0.005)
+(0.000)
+(0.005)
+(0.000)
+H-measure
+Acpt-Only
+0.146
+0.149
+0.124
+0.192
+0.173
+0.157
+(0.009)
+(0.005)
+(0.004)
+(0.013)
+(0.009)
+RI-SAIL
+0.154
+0.162
+0.116
+0.208
+0.197
+0.167
+(0.000)
+(0.021)
+(0.009)
+(0.015)
+(0.000)
+RI-AUG
+0.149
+0.158
+0.145
+0.177
+0.170
+0.160
+(0.001)
+(0.026)
+(0.023)
+(0.026)
+(0.013)
+RI-FUZ
+0.144
+0.145
+0.139
+0.160
+0.034
+0.124
+(0.004)
+(0.004)
+(0.009)
+(0.020)
+(0.000)
+RI-EXT
+0.159
+0.158
+0.114
+0.148
+0.179
+0.151
+(0.000)
+(0.008)
+(0.019)
+(0.020)
+(0.015)
+RI-SEL
+0.159
+0.158
+0.114
+0.095
+0.120
+0.129
+(0.000)
+(0.008)
+(0.019)
+(0.021)
+(0.000)
+RI-BSLS
+0.144
+0.134
+0.134
+0.157
+0.141
+0.142
+(0.006)
+(0.001)
+(0.000)
+(0.003)
+(0.000)
+KS
+Acpt-Only
+0.276
+0.278
+0.269
+0.376
+0.327
+0.305
+(0.018)
+(0.016)
+(0.007)
+(0.027)
+(0.023)
+RI-SAIL
+0.268
+0.320
+0.262
+0.385
+0.371
+0.321
+(0.000)
+(0.029)
+(0.024)
+(0.020)
+(0.000)
+RI-AUG
+0.278
+0.265
+0.280
+0.336
+0.323
+0.296
+(0.007)
+(0.052)
+(0.013)
+(0.056)
+(0.009)
+RI-FUZ
+0.270
+0.272
+0.298
+0.326
+0.110
+0.255
+(0.001)
+(0.003)
+(0.019)
+(0.051)
+(0.000)
+123
+
+Annals of Operations Research (2026) 361:383–412
+403
+Table 5 (continued)
+Metric
+Method
+Classiﬁers
+LR
+XGB
+LGBM
+SVM
+MLP
+Avg
+RI-EXT
+0.280
+0.322
+0.277
+0.337
+0.370
+0.317
+(0.000)
+(0.025)
+(0.031)
+(0.041)
+(0.017)
+RI-SEL
+0.280
+0.322
+0.277
+0.264
+0.310
+0.290
+(0.000)
+(0.025)
+(0.031)
+(0.006)
+(0.000)
+RI-BSLS
+0.266
+0.263
+0.294
+0.337
+0.302
+0.292
+(0.004)
+(0.015)
+(0.000)
+(0.009)
+(0.000)
+This table presents the average values and standard deviations of the AUC, H-measure, and KS statistics for
+default prediction of accepted applicants based on seven methods: Acpt-Only, RI-SAIL, RI-AUG, RI-FUZ,
+RI-EXT, RI-SEL and RI-BSLS. Acpt-Only is the traditional credit scoring model trained only on the accepts.
+RI-SAIL is our proposed method. RI-AUG, RI-FUZ, RI-EXT, RI-SEL and RI-BSLS are ﬁve popular baseline
+RI methods introduced in Sect. 4.4. The third to seventh columns list the results of ﬁve classiﬁers: LR, XGB,
+LGBM, SVM and MLP. The eighth column displays the average results of all classiﬁers for each method. The
+best performance in terms of each evaluation metric for each model is in boldface
+Table 6 Experimental results comparing RI-SAIL and other methods (kickout measure)
+Model
+LR
+XGB
+LGBM
+SVM
+MLP
+Avg
+RI-SAIL
+0.001
+−0.055
+0.072
+0.006
+0.018
+0.008
+(0.055)
+(0.051)
+(0.086)
+(0.045)
+(0.091)
+RI-AUG
+−0.007
+−0.040
+0.046
+0.027
+0.021
+0.009
+(0.005)
+(0.016)
+(0.106)
+(0.035)
+(0.109)
+RI-FUZ
+0.002
+−0.184
+−0.175
+−0.046
+−0.140
+−0.109
+(0.010)
+(0.005)
+(0.028)
+(0.039)
+(0.048)
+RI-EXT
+−0.071
+−0.091
+0.017
+0.051
+0.077
+−0.003
+(0.011)
+(0.007)
+(0.091)
+(0.061)
+(0.136)
+RI-SEL
+−0.069
+−0.046
+−0.009
+0.026
+0.025
+−0.015
+(0.012)
+(0.064)
+(0.058)
+(0.013)
+(0.089)
+RI-BSLS
+−0.026
+0.042
+−0.011
+−0.012
+0.041
+0.007
+(0.008)
+(0.038)
+(0.053)
+(0.071)
+(0.022)
+This table presents the average values and standard deviations of the kickout measure based on six RI methods:
+RI-SAIL, RI-AUG, RI-FUZ, RI-EXT, RI-SEL and RI-BSLS. RI-SAIL is our proposed method. RI-AUG, RI-
+FUZ, RI-EXT, RI-SEL and RI-BSLS are ﬁve popular baseline RI methods introduced in Sect. 4.4. The second
+to sixth columns list the results of ﬁve classiﬁers: LR, XGB, LGBM, SVM and MLP. The seventh column
+displays the average results of all classiﬁers for each method. The best performance in terms of each evaluation
+metric for each model is in boldface
+which demonstrates variability in performance across different RI methods, with no single
+method consistently outperforming the others across classiﬁers. These ﬁndings are not fully
+consistent with our previous results. When focusing on the average kickout measures, RI-
+AUG emerges as the most effective (0.009), followed closely by our RI-SAIL method (0.008).
+Notably, RI-SAIL demonstrates strong performance with LGBM (0.072) and LR (0.001), and
+its overall averages indicate reliable performance in speciﬁc contexts. Furthermore, RI-SAIL
+123
+
+404
+Annals of Operations Research (2026) 361:383–412
+demonstrates greater stability in its outcomes compared to other RI methods, as highlighted
+by its fewer negative values. In summary, while we lack an unbiased dataset to fully validate
+the accuracy of the kickout measure for evaluating various RI methods, the results in Table 6
+bolster our conﬁdence in the conclusion drawn from our primary analysis. Speciﬁcally, our
+RI-SAIL framework demonstrates satisfactory performance and potential for generalisation
+compared to other RI approaches in addressing the sample selection bias problem for credit
+scoring.
+To provide a more comprehensive assessment of our proposed method in addressing
+the RI problem, we focused on three key components from the SAIL framework: spectral
+clustering, anomaly detection using isolation forest, and self-learning, and we employed
+ablation study to explore their usefulness in enhancing our default prediction, respectively.
+The ablation study used here consists of a set of experiments in which components of the
+machine learning system (our SAIL framework) are removed to measure the impact of each
+of these components on overall system performance. To intuitively illustrate the procedure of
+our ablation study, we simplify the ﬂowchart of our SAIL framework presented in Fig. 1 and
+show the experimental ﬂows of these ablation studies in Fig. 5. The grey and striped blocks
+Fig. 5 Flowcharts of a ablation study 1, b ablation study 2, c ablation study 3, d ablation study 4. This ﬁgure
+illustrates the experimental ﬂows of four ablation studies (A1–A4) used to assess the impact of different
+components of the SAIL framework on default prediction. The grey and striped blocks indicate the parts of
+the process omitted in each study
+123
+
+Annals of Operations Research (2026) 361:383–412
+405
+of the ﬁgure are the parts of the modelling process that are not executed in each experiment.
+Take Fig. 5c as an example: we do not implement the self-learning algorithm in the relabelling
+mechanism but only use label spreading to relabel rejects, by which elimination we aim to
+highlight the usefulness of self-learning in SAIL to improve prediction results. In subsequent
+analyses, we used A1 to A4 to represent ablation study 1 to ablation study 4, respectively,
+with their experimental results shown in Table 7.
+Across all ﬁve classiﬁers, we observe that RI-SAIL consistently outperforms its variants in
+the ablation study, achieving notable results on AUC, H-measure, and KS statistics. As to the
+average results of all the classiﬁers, we ﬁnd that RI-SAIL outperforms its best variant in the
+ablation study by 0.008, 0.026, and 0.010, respectively for AUC, H-measure, and KS scores.
+These results demonstrate that each SAIL component plays a signiﬁcant role in enhancing
+the model’s predictive performance. Furthermore, when we explore the capabilities of our
+model variants, we ﬁnd that A3 shows the best performance and A1 the second best. Although
+these two variants used without self-learning and spectral clustering can achieve good scores
+on their own, the former loses the advantage of the accurate use of rejects information, and
+the latter loses the advantage of speciﬁc modelling strategies for different data distributions.
+Among the variants, we identify that A4 exhibits poor performance due to the fact that it loses
+support from both spectral clustering and isolation forests. When we compare and analyse
+the results of A1 and A4 together, we ﬁnd that isolation forests for ﬁltering rejects contribute
+the most to the SAIL framework, as removing the isolation forests signiﬁcantly decreases the
+model’s performance. This result is consistent with the ﬁndings of Xia (2019), demonstrating
+the necessity of ﬁltering rejects prior to the relabelling process.
+Having highlighted these results, we conducted the Friedman and post-hoc Nemenyi
+tests on the prediction performance of different RI approaches considering three evaluation
+metrics (AUC, H-measure, and KS) (Kang et al., 2021; Shen et al., 2020). Table 8 presents
+the Friedman test results for our proposed RI-SAIL with its four variants in the ablation study
+and six other benchmark RI models. The results show that the p-values for all metrics are
+less than 0.050, and the p-value for AUC is even close to 0.000. These ﬁndings suggest that
+we reject the null hypothesis that all credit scoring models perform identically. These models
+are signiﬁcantly different at the 1% signiﬁcance level in terms of the AUC and KS statistic
+and at the 5% signiﬁcance level in terms of the H-measure.
+We then performed the post-hoc Nemenyi test to further explore the differences between
+our RI-SAIL and the other ten methods on the three metrics. Figure 6 presents the critical
+distance (CD) diagrams of three Nemenyi tests. In a CD ﬁgure, if the same horizontal line
+connects different models, these models are not signiﬁcantly different at the 5% signiﬁcance
+level. As shown in Fig. 6, the RI-SAIL achieves the best performance among all ﬁgures and
+outperforms the RI-SEL, RI-FUZ and RI-SAIL-A4 methods across most metrics. Note that
+even though the scores of RI-SAIL are not signiﬁcantly different from those of RI-EXT,
+RI-BSLS and RI-AUG in most cases, a considerable improvement in using RI-SAIL in the
+evaluation performance can reduce losses from potential defaulters. Interestingly, we also
+observed that our model variants in the ablation study such as RI-SAIL-A1 and RI-SAIL-A3
+already outperform some benchmark RI approaches, further demonstrating the superiority
+of our proposed framework in solving the RI problem. Consequently, we believe that using
+the proposed SAIL framework can signiﬁcantly improve prediction results and thus beneﬁt
+the ﬁeld of RI.
+123
+
+406
+Annals of Operations Research (2026) 361:383–412
+Table 7 Experimental results comparing RI-SAIL and its variants for ablation study
+Metric
+Method
+Classiﬁers
+LR
+XGB
+LGBM
+SVM
+MLP
+Avg
+AUC
+RI-SAIL
+0.667
+0.688
+0.661
+0.692
+0.696
+0.681
+(0.000)
+(0.013)
+(0.025)
+(0.014)
+(0.012)
+A1
+0.660
+0.641
+0.677
+0.679
+0.675
+0.667
+(0.004)
+(0.007)
+(0.005)
+(0.000)
+(0.007)
+A2
+0.616
+0.669
+0.646
+0.655
+0.640
+0.645
+(0.000)
+(0.003)
+(0.000)
+(0.001)
+(0.020)
+A3
+0.659
+0.675
+0.655
+0.690
+0.686
+0.673
+(0.000)
+(0.016)
+(0.000)
+(0.000)
+(0.020)
+A4
+0.601
+0.657
+0.650
+0.645
+0.623
+0.635
+(0.001)
+(0.027)
+(0.010)
+(0.001)
+(0.010)
+H-measure
+RI-SAIL
+0.161
+0.207
+0.181
+0.210
+0.196
+0.191
+0.000)
+(0.017)
+(0.008)
+(0.004)
+(0.024)
+A1
+0.137
+0.120
+0.149
+0.204
+0.141
+0.150
+0.011)
+(0.003)
+(0.014)
+(0.000)
+(0.012)
+A2
+0.074
+0.157
+0.128
+0.134
+0.146
+0.127
+0.000)
+(0.011)
+(0.000)
+(0.003)
+(0.017)
+A3
+0.166
+0.164
+0.128
+0.211
+0.158
+0.165
+0.000)
+(0.013)
+(0.000)
+(0.014)
+(0.015)
+A4
+0.068
+0.140
+0.117
+0.125
+0.094
+0.109
+0.006)
+(0.038)
+(0.008)
+(0.002)
+(0.012)
+KS
+RI-SAIL
+0.301
+0.343
+0.327
+0.380
+0.357
+0.341
+(0.000)
+(0.013)
+(0.015)
+(0.009)
+(0.041)
+A1
+0.297
+0.236
+0.309
+0.374
+0.322
+0.308
+(0.024)
+(0.012)
+(0.026)
+(0.000)
+(0.015)
+A2
+0.207
+0.333
+0.299
+0.320
+0.340
+0.300
+(0.000)
+(0.019)
+(0.000)
+(0.004)
+(0.045)
+A3
+0.298
+0.335
+0.302
+0.385
+0.334
+0.331
+(0.000)
+(0.017)
+(0.000)
+(0.015)
+(0.026)
+A4
+0.212
+0.313
+0.295
+0.302
+0.251
+0.275
+(0.005)
+(0.070)
+(0.022)
+(0.002)
+(0.014)
+This table presents the average values and standard deviations of the AUC, H-measure, and KS statistics
+for predicting the default risk of accepted applicants based on RI-SAIL and its variants for ablation study
+including A1, A2, A3, and A4. The third to seventh columns list the results of ﬁve classiﬁers: LR, XGB,
+LGBM, SVM and MLP. The eighth column displays the average results of all classiﬁers for each method. The
+best performance in terms of each evaluation metric for each model is in boldface
+123
+
+Annals of Operations Research (2026) 361:383–412
+407
+Table 8 Friedman’s test results
+Metric
+N
+Chi-Square
+df
+p-values
+AUC
+11
+31.838
+10
+0.000***
+H-measure
+11
+23.174
+10
+0.010**
+KS
+11
+25.260
+10
+0.005***
+***p < 1%; **p < 5%; *p < 10%
+Fig. 6 CD diagram comparing results of Nemenyi tests on a AUC, b H-measure, c KS. The RI-SAIL method
+demonstrates the best overall performance, outperforming several benchmark methods
+123
+
+408
+Annals of Operations Research (2026) 361:383–412
+6 Conclusions
+In this paper, we endeavoured to address the RI issue and proposed a graph-based semi-
+supervised RI framework that employs the ‘divide and conquer’ strategy to conduct
+ﬁner-grained relabelling for different rejected groups. Unlike previous RI studies, our method
+focuses on building targeted iterative relabelling mechanisms for the unique default distribu-
+tions and local characteristics of heterogeneous groups. The experimental results show that
+our proposed RI framework achieves signiﬁcantly superior prediction results compared to the
+traditional credit scoring model trained on accepted data only. Our method also outperforms
+many of the classical and machine learning RI approaches used in credit scoring over several
+classiﬁers and evaluation metrics. Moreover, we conduct ablation studies to demonstrate the
+usefulness of each component in our RI framework; in particular, the isolation forest utilised
+for ﬁltering rejects derives the most salient gains. Two non-parametric tests further support
+these ﬁndings.
+Our research not only contributes to the growing body of literature focused on solving
+the RI issue in credit scoring modelling but also has far-reaching managerial insights. As
+credit and ﬁnancial institutions continue to seek growth and competitive advantage, this work
+highlights the importance of understanding the internal distribution of previously rejected
+credit application cases. This insight can lead to more informed decision-making for ﬁnancial
+institutions, ensuring that potential creditworthy individuals or entities are not overlooked
+due to a one-size-ﬁts-all approach. Financial institutions could also offer customised ﬁnancial
+solutions catering to differentgroups, which would notonly enhance customer satisfaction but
+also lead to improved ﬁnancial performance for the institution itself. As such, our proposed
+method could be considered a forward-looking decision-making tool and complementary
+methodology for ﬁnancial institutions in many key areas, including (but not limited to)
+improving the credit approval process, assisting in the development of internal credit scoring
+systems, identifying customer characteristics, and assessing proﬁt and loss balances.
+This work inevitably has certain limitations, which also offers avenues for future research.
+First, our current SAIL framework is speciﬁcally designed to address the RI challenge under
+the assumption of MAR. In the context of credit risk assessment, the MAR assumption is
+often justiﬁable due to standardised application and veriﬁcation procedures, reliance on third-
+party data sources, and the automated data-driven approval processes commonly adopted in
+FinTech lending. However, in practice, some lending decisions may be inﬂuenced by auxiliary
+characteristics that are not explicitly captured in the scorecard but still affect the outcome.
+This is particularly relevant in certain traditional lending settings, where manual overrides and
+subjective judgments are more prevalent, potentially introducing omitted variable bias and
+leading to MNAR mechanisms. Therefore, future research could explore adaptations of the
+SAIL framework to better accommodate MNAR scenarios. Second, our empirical analysis is
+constrained by a relatively small dataset; a larger dataset with comprehensive variables would
+support further validation. Furthermore, as our empirical analysis is based on a relatively
+low-dimensional dataset, the iterative relabelling mechanism in the SAIL framework may
+be less effective for high-dimensional data. Future research could explore the adaptability of
+our proposed framework in high-dimensional settings. Finally, since our iterative relabelling
+mechanism involves signiﬁcant computational costs, more efﬁcient methods for improving
+the prediction performance could be explored. Considering the potential of graph-based
+algorithms, future work could explore more advanced models to reﬁne the RI process in
+credit scoring further.
+123
+
+Annals of Operations Research (2026) 361:383–412
+409
+Supplementary Information The online version contains supplementary material available at https://doi.org/
+10.1007/s10479-025-06621-9.
+Acknowledgements The authors would like to express their sincere gratitude to the associate editor and
+two anonymous reviewers for their constructive feedback, which helped to improve the quality of this paper
+signiﬁcantly. We thank Edward Altman, Galina Andreeva, Bart Baesens, Anthony Bellotti, Cristián Bravo,
+Raffaella Calabrese, Yi Cao, Jonathan Crook, Quirini Lorenzo, Labanca Francesca, Belen Martin-Barragan,
+and conference and seminar participants at 2nd Credit Scoring and Credit Rating Conference, 32nd Euro-
+pean Conference on Operational Research, 15th International Risk Management Conference, Northwest A&F
+University and Nanjing Agricultural University for their helpful comments.
+Declarations
+Conﬂict of interest The authors declare that they have no known competing ﬁnancial interests or personal
+relationships that could have appeared to inﬂuence the work reported in this paper.
+Open Access
+This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Aduenko, A. A., Motrenko, A. P., & Strijov, V. V. (2018). Object selection in credit scoring using covariance
+matrix of parameters estimations. Annals of Operations Research, 260(1–2), 3–21. https://doi.org/10.
+1007/s10479-017-2417-3
+Anderson, B. (2019). Using Bayesian networks to perform reject inference. Expert Systems with Applications,
+137, 349–356. https://doi.org/10.1016/j.eswa.2019.07.011
+Anderson, B., Newman, M. A., Grim Ii, P. A., & Hardin, J. M. (2023). A Monte Carlo simulation framework
+for reject inference. Journal of the Operational Research Society, 74(4), 1133–1149. https://doi.org/10.
+1080/01605682.2022.2057819
+Banasik, J., & Crook, J. (2007). Reject inference, augmentation, and sample selection. European Journal of
+Operational Research, 183(3), 1582–1594. https://doi.org/10.1016/j.ejor.2006.06.072
+Banasik, J., & Crook, J. (2010). Reject Inference in survival analysis by augmentation. Journal of the Opera-
+tional Research Society, 61(3), 473–485.
+Banasik, J., Crook, J., & Thomas, L. (2003). Sample selection bias in credit scoring models. Journal of the
+Operational Research Society, 54(8), 822–832. https://doi.org/10.1057/palgrave.jors.2601578
+Bellotti, T., & Crook, J. (2009). Support vector machines for credit scoring and discovery of signiﬁcant features.
+Expert Systems with Applications, 36(2), 3302–3308. https://doi.org/10.1016/j.eswa.2008.01.005
+Berg, T., Burg, V., Gombovi´c, A., & Puri, M. (2020). On the rise of ﬁntechs: Credit scoring using digital
+footprints. The Review of Financial Studies, 33(7), 2845–2897. https://doi.org/10.1093/rfs/hhz099
+Bücker, M., van Kampen, M., & Krämer, W. (2013). Reject inference in consumer credit scoring with non-
+ignorable missing data. Journal of Banking and Finance, 37(3), 1040–1045. https://doi.org/10.1016/j.jb
+ankﬁn.2012.11.002
+Chen, B., Wu, Z., & Zhao, R. (2023). From ﬁction to fact: The growing role of generative AI in business and
+ﬁnance. Journal of Chinese Economic and Business Studies. https://doi.org/10.2139/ssrn.4528225
+Chen, T., & Guestrin, C. (2016). XGBoost: A scalable tree boosting system. In Proceedings of the 22nd ACM
+SIGKDD international conference on knowledge discovery and data mining, (pp. 785–794). https://doi.
+org/10.1145/2939672.2939785
+Chen, W., Liu, Y., Xiang, G., Liu, Y., & Wang, K. (2012). A three-stage data mining model for reject inference.
+In 2012 ﬁfth international conference on business intelligence and ﬁnancial engineering, (pp. 34–38).
+https://doi.org/10.1109/BIFE.2012.15
+123
+
+410
+Annals of Operations Research (2026) 361:383–412
+Chen, Y., Calabrese, R., & Martin-Barragan, B. (2024). Interpretable machine learning for imbalanced credit
+scoring datasets. European Journal of Operational Research, 312(1), 357–372. https://doi.org/10.1016/
+j.ejor.2023.06.036
+Crook, J., & Banasik, J. (2004). Does reject inference really improve the performance of application scoring
+models? Journal of Banking and Finance, 28(4), 857–874.
+El Annas, M., Benyacoub, B., & Ouzineb, M. (2023). Semi-supervised adapted HMMs for P2P credit scoring
+systems with reject inference. Computational Statistics, 38(1), 149–169. https://doi.org/10.1007/s00180-
+022-01220-9
+Feelders, A. J. (1999). Credit scoring and reject inference with mixture models. International Journal of
+Intelligent Systems in Accounting, Finance and Management, 8(4), 271–279. https://doi.org/10.1002/(SI
+CI)1099-1174(199912)8:4%3c271::AID-ISAF170%3e3.0.CO;2-P
+Fitzpatrick, T., & Mues, C. (2021). How can lenders prosper? Comparing machine learning approaches to
+identify proﬁtable peer-to-peer loan investments. European Journal of Operational Research, 294(2),
+711–722. https://doi.org/10.1016/j.ejor.2021.01.047
+Gunnarsson, B. R., van den Broucke, S., Baesens, B., Óskarsdóttir, M., & Lemahieu, W. (2021). Deep learning
+for credit scoring: Do or don’t? European Journal of Operational Research, 295(1), 292–305. https://
+doi.org/10.1016/j.ejor.2021.03.006
+Hand, D. J. (2009). Measuring classiﬁer performance: A coherent alternative to the area under the ROC curve.
+Machine Learning, 77(1), 103–123. https://doi.org/10.1007/s10994-009-5119-5
+Hand, D. J., & Adams, N. M. (2014). Selection bias in credit scorecard evaluation. Journal of the Operational
+Research Society, 65(3), 408–415. https://doi.org/10.1057/jors.2013.55
+Hand,D.J.,&Henley,W.E.(1993).Canrejectinferenceeverwork?IMAJournalofManagementMathematics,
+5(1), 45–55. https://doi.org/10.1093/imaman/5.1.45
+Hinton,G.E.,&Roweis,S.T.(2002).Stochasticneighborembedding.NeuralInformationProcessingSystems,
+15, 8.
+Hjort, A., Scheel, I., Sommervoll, D. E., & Pensar, J. (2024). Locally interpretable tree boosting: An application
+to house price prediction. Decision Support Systems, 178, Article 114106. https://doi.org/10.1016/j.dss.
+2023.114106
+Hsia, D. C. (1978). Credit scoring and the equal credit opportunity act. The Hastings Law Journal, 30, 79.
+Huang, C.-L., Chen, M.-C., & Wang, C.-J. (2007). Credit scoring with a data mining approach based on
+support vector machines. Expert Systems with Applications, 33(4), 847–856. https://doi.org/10.1016/j.
+eswa.2006.07.007
+Iyer, R., Khwaja, A. I., Luttmer, E. F. P., & Shue, K. (2016). Screening peers softly: Inferring the quality of
+small borrowers. Management Science, 62(6), 1554–1577. https://doi.org/10.1287/mnsc.2015.2181
+Kang, Y., Jia, N., Cui, R., & Deng, J. (2021). A graph-based semi-supervised reject inference framework
+considering imbalanced data distribution for consumer credit scoring. Applied Soft Computing, 105,
+Article 107259. https://doi.org/10.1016/j.asoc.2021.107259
+Katsafados, A. G., Leledakis, G. N., Pyrgiotakis, E. G., Androutsopoulos, I., & Fergadiotis, M. (2024). Machine
+learning in bank merger prediction: A text-based approach. European Journal of Operational Research,
+312(2), 783–797. https://doi.org/10.1016/j.ejor.2023.07.039
+Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., & Liu, T.-Y. (2017). LightGBM: A
+highly efﬁcient gradient boosting decision tree. Advances in Neural Information Processing Systems,
+3146–3154.
+Kozodoi, N., Katsas, P., Lessmann, S., Moreira-Matias, L., & Papakonstantinou, K. (2020). Shallow self-
+Learning for reject inference in credit scoring. In Machine Learning and Knowledge Discovery in
+Databases: European Conference, ECML PKDD, 2019, 516–532. https://doi.org/10.1007/978-3-030-
+46133-1_31
+Kozodoi, N., Lessmann, S., Alamgir, M., Moreira-Matias, L., & Papakonstantinou, K. (2025). Fighting
+sampling bias: A framework for training and evaluating credit scoring models. European Journal of
+Operational Research.
+Kriebel, J., & Stitz, L. (2022). Credit default prediction from user-generated text in peer-to-peer lending using
+deep learning. European Journal of Operational Research, 302(1), 309–323. https://doi.org/10.1016/j.
+ejor.2021.12.024
+Kumar, B. S., & Ravi, V. (2016). A survey of the applications of text mining in ﬁnancial domain. Knowledge-
+Based Systems, 114, 128–147. https://doi.org/10.1016/j.knosys.2016.10.003
+Kumar, P., & Ravi, V. (2007). Bankruptcy prediction in banks and ﬁrms via statistical and intelligent tech-
+niques—A review. European Journal of Operational Research, 180(1), 1–28. https://doi.org/10.1016/j.
+ejor.2006.08.043
+123
+
+Annals of Operations Research (2026) 361:383–412
+411
+Lessmann, S., Baesens, B., Seow, H.-V., & Thomas, L. C. (2015). Benchmarking state-of-the-art classiﬁcation
+algorithms for credit scoring: An update of research. European Journal of Operational Research, 247(1),
+124–136. https://doi.org/10.1016/j.ejor.2015.05.030
+Li, Y., Liu, F., Collier, N., Korhonen, A., & Vuli´c, I. (2022). Improving word translation via two-stage
+contrastive learning. In Proceedings of the 60th annual meeting of the association for computational
+linguistics, 1, 4353–4374. http://arxiv.org/abs/2203.08307
+Li, Z., Hu, X., Li, K., Zhou, F., & Shen, F. (2020). Inferring the outcomes of rejected loans: An application
+of semisupervised clustering. Journal of the Royal Statistical Society: Series A (Statistics in Society),
+183(2), 631–654. https://doi.org/10.1111/rssa.12534
+Li, Z., Tian, Y., Li, K., Zhou, F., & Yang, W. (2017). Reject inference in credit scoring using semi-supervised
+support vector machines. Expert Systems with Applications, 74, 105–114. https://doi.org/10.1016/j.eswa.
+2017.01.011
+Liu, F. T., Ting, K. M., & Zhou, Z.-H. (2008). Isolation forest. Eighth IEEE International Conference on Data
+Mining, 2008, 413–422. https://doi.org/10.1109/ICDM.2008.17
+Liu, J., Zhong, Q., Yuan, Y., Su, H., & Du, B. (2020). SemiText: Scene text detection with semi-supervised
+learning. Neurocomputing, 407, 343–353. https://doi.org/10.1016/j.neucom.2020.05.059
+Liu, Y., Li, Y., Zhu, Y., Pan, J., & Huang, Q. (2024). An empirical analysis on whether China’s infrastructure
+lending is a debt trap for Africa. Journal of Chinese Economic and Business Studies, 22(3), 379–408.
+https://doi.org/10.1080/14765284.2024.2311680
+Lu, Y., Yang, L., Shi, B., Li, J., & Abedin, M. Z. (2022). A novel framework of credit risk feature selection for
+SMEs during industry 4.0. Annals of Operations Research. https://doi.org/10.1007/s10479-022-04849-3
+Mahbobi, M., Kimiagari, S., & Vasudevan, M. (2023). Credit risk classiﬁcation: An integrated predictive
+accuracy algorithm using artiﬁcial and deep neural networks. Annals of Operations Research, 330(1–2),
+609–637. https://doi.org/10.1007/s10479-021-04114-z
+Maldonado, S., & Paredes, G. (2010). A semi-supervised approach for reject inference in credit scoring using
+SVMs. In P. Perner (Ed.), Advances in data mining. Applications and theoretical aspects (Vol. 6171,
+pp. 558–571). Springer Berlin Heidelberg. https://doi.org/10.1007/978-3-642-14400-4_43
+Mancisidor, R. A., Kampffmeyer, M., Aas, K., & Jenssen, R. (2020). Deep generative models for reject
+inference in credit scoring. Knowledge-Based Systems, 196, Article 105758. https://doi.org/10.1016/j.kn
+osys.2020.105758
+Marshall, A., Tang, L., & Milne, A. (2010). Variable reduction, sample selection bias and bank retail credit
+scoring. Journal of Empirical Finance, 17(3), 501–512. https://doi.org/10.1016/j.jempﬁn.2009.12.003
+Martin, D. (1977). Early warning of bank failure. Journal of Banking and Finance, 1(3), 249–276. https://doi.
+org/10.1016/0378-4266(77)90022-X
+Mensi, A., & Bicego, M. (2021). Enhanced anomaly scores for isolation forests. Pattern Recognition, 120,
+Article 108115. https://doi.org/10.1016/j.patcog.2021.108115
+Mohar, B. (1997). Some applications of Laplace eigenvalues of graphs. In G. Hahn & G. Sabidussi (Eds.),
+Graph Symmetry (pp. 225–275). Springer Netherlands. https://doi.org/10.1007/978-94-015-8937-6_6
+Mohar, B., Alavi, E. Y., Chartrand, G., Oellermann, O. R., & Schwenk, A. J. (1991). The Laplcacian spectrum
+of graphs. Graph Theory, Combinatorics, and Applications, 2(12), 871–898.
+Ng, A. Y., Jordan, M. I., & Weiss, Y. (2001). On spectral clustering: Analysis and an algorithm. Advances in
+Neural Information Processing Systems, 14.
+Puggini, L., & McLoone, S. (2018). An enhanced variable selection and Isolation Forest based methodology
+for anomaly detection with OES data. Engineering Applications of Artiﬁcial Intelligence, 67, 126–135.
+https://doi.org/10.1016/j.engappai.2017.09.021
+Scitovski, S., & Šarlija, N. (2014). Cluster analysis in retail segmentation for credit scoring. Croatian Opera-
+tional Research Review, 5, 235–245.
+Shen, F., Yang, Z., Zhao, X., & Lan, D. (2022). Reject inference in credit scoring using a three-way decision
+and safe semi-supervised support vector machine. Information Sciences, 606, 614–627. https://doi.org/
+10.1016/j.ins.2022.05.067
+Shen, F., Zhao, X., & Kou, G. (2020). Three-stage reject inference learning framework for credit scoring using
+unsupervised transfer learning and three-way decision theory. Decision Support Systems, 137, Article
+113366. https://doi.org/10.1016/j.dss.2020.113366
+Shi, B., Bai, C., & Dong, Y. (2024). A big data analytics method for assessing creditworthiness of SMEs: Fuzzy
+equiﬁnality relationships analysis. Annals of Operations Research. https://doi.org/10.1007/s10479-024-
+06054-w
+Sohn, S. Y., & Shin, H. W. (2006). Reject inference in credit operations based on survival analysis. Expert
+Systems with Applications, 31(1), 26–29. https://doi.org/10.1016/j.eswa.2005.09.001
+123
+
+412
+Annals of Operations Research (2026) 361:383–412
+Stevenson, M., Mues, C., & Bravo, C. (2021). The value of text for small business default prediction: A
+deep learning approach. European Journal of Operational Research, 295(2), 758–771. https://doi.org/
+10.1016/j.ejor.2021.03.008
+Tian, Y., Yong, Z., & Luo, J. (2018). A new approach for reject inference in credit scoring using kernel-free
+fuzzy quadratic surface support vector machines. Applied Soft Computing, 73, 96–105. https://doi.org/
+10.1016/j.asoc.2018.08.021
+Timsina, P., Liu, J., El-Gayar, O., & Shang, Y. (2016). Using semi-supervised learning for the creation of
+medical systematic review: An exploratory analysis. In 2016 49th Hawaii international conference on
+system sciences (HICSS), 1195–1203. https://doi.org/10.1109/HICSS.2016.151
+Van der Maaten, L., & Geoffrey, H. (2008). Visualizing data using t-SNE. Journal of Machine Learning
+Research, 9, 2579–2605.
+Vapnik, V. (1998). Statistical learning theory (1st ed.). Wiley.
+Verstraeten, G., & Van den Poel, D. (2005). The impact of sample bias on consumer credit scoring performance
+and proﬁtability. The Journal of the Operational Research Society, 56(8), 981–992. https://doi.org/10.
+1057/palgrave.jors.2601920
+Von Luxburg, U. (2007). A tutorial on spectral clustering. Statistics and Computing, 17(4), 395–416. https://
+doi.org/10.1007/s11222-007-9033-z
+Wang, Z., Jiang, C., Zhao, H., & Ding, Y. (2020). Mining semantic soft factors for credit risk evaluation in
+peer-to-peer lending. Journal of Management Information Systems, 37(1), 282–308. https://doi.org/10.
+1080/07421222.2019.1705513
+Wu, H., Tong, L., & Wang, M. D. (2017). Improving multi-class classiﬁcation for endomicroscopic images by
+semi-supervised learning. 2017 IEEE EMBS international conference on biomedical & health informatics
+(BHI), 5–8. https://doi.org/10.1109/BHI.2017.7897191
+Wu, Z., & Li, Z. (2021). Customer churn prediction for commercial banks using customer-value-weighted
+machine learning models. Journal of Credit Risk, 17(4), 15–42. https://doi.org/10.21314/JCR.2021.011
+Xia, Y. (2019). A novel reject inference model using outlier detection and gradient boosting technique in
+peer-to-peer lending. IEEE Access, 7, 92893–92907. https://doi.org/10.1109/ACCESS.2019.2927602
+Xia, Y., Liu, C., Li, Y., & Liu, N. (2017). A boosted decision tree approach using Bayesian hyper-parameter
+optimization for credit scoring. Expert Systems with Applications, 78, 225–241. https://doi.org/10.1016/
+j.eswa.2017.02.017
+Xia, Y., Yang, X., & Zhang, Y. (2018). A rejection inference technique based on contrastive pessimistic
+likelihood estimation for P2P lending. Electronic Commerce Research and Applications, 30, 111–124.
+https://doi.org/10.1016/j.elerap.2018.05.011
+Zeng, G., & Zhao, Q. (2014). A rule of thumb for reject inference in credit scoring. Mathematical Finance
+Letters, 2, 13.
+Zhou, D., Bousquet, O., Lal, T. N., Weston, J., & Schölkopf, B. (2004). Learning with local and global
+consistency. Advances in Neural Information Processing Systems, 321–328.
+Zhu, S., Sun, X., & Jin, D. (2016). Multi-view semi-supervised learning for image classiﬁcation. Neurocom-
+puting, 208, 136–142. https://doi.org/10.1016/j.neucom.2016.02.072
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

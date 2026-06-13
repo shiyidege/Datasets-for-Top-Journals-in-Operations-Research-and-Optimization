@@ -1,0 +1,2679 @@
+TITLE: Stochastic Approximation of Symmetric Nash Equilibria in Queueing Games
+JOURNAL: Operations_Research
+YEAR: 2023
+DOI: https://doi.org/10.1287/opre.2021.0306
+---
+
+Stochastic Approximation of Symmetric Nash Equilibria in
+Queueing Games∗
+Liron Ravner1 and Ran I. Snitkovsky2
+1Department of Statistics, University of Haifa
+2Coller School of Management, Tel Aviv University
+August 30, 2023
+Abstract
+We suggest a novel stochastic-approximation algorithm to compute a symmetric Nash-
+equilibrium strategy in a general queueing game with a finite action space.
+The algorithm
+involves a single simulation of the queueing process with dynamic updating of the strategy at
+regeneration times. Under mild assumptions on the utility function and on the regenerative
+structure of the queueing process, the algorithm converges to a symmetric equilibrium strategy
+almost surely. This yields a powerful tool that can be used to approximate equilibrium strategies
+in a broad range of strategic queueing models in which direct analysis is impracticable.
+Keywords: Simulation; Queues; Noncooperative Games; Queue Approximations
+1
+Introduction
+This paper presents a simulation-based algorithm that computes, or learns, a symmetric Nash equi-
+librium in a general class of queueing games. Our purpose is to suggest a robust, easy-to-implement
+equilibrium approximation scheme, mainly targeted at queueing games in which identifying equi-
+librium strategies is difficult to pursue analytically. In particular, we consider service systems to
+which rational customers arrive according to a renewal process, each chooses between finitely many
+actions with the goal of maximizing their expected utility. Customers in our model assume that the
+system operates in a steady state, however, their assessment of the utility depends on other cus-
+tomers’ actions, giving rise to a game-theoretic equilibrium problem: Identifying a behavior profile
+that prescribes an optimal play for customers, such that the induced steady state is consistent with
+each customer’s belief regarding the behavior of the others.
+Though the initiation of the literature about strategic customer behavior in queues is often
+accredited to Naor [61], the most basic, yet non-degenerated queueing game was first introduced
+by Edelson and Hildebrand [27], and was coined the unobservable M/M/1 model. It discusses a
+single-server queue were customer utility decreases linearly with the waiting time, and customers
+need to decide whether to join the queue or balk, without observing the system state. Since then,
+various different queueing games have been studied in the literature, to model the behavior of callers
+in call centers, users of communication networks, passengers in a transportation system, and more
+(see overviews and exhaustive surveys in [38] and [35]).
+∗To appear in Operations Research.
+1
+arXiv:2104.13949v5 [math.PR] 29 Aug 2023
+
+Traditionally, this literature distinguishes between ‘unobservable’ and ‘observable’ models, al-
+though this conceptual distinction is rather obscure. By unobservable, one usually means that the
+strategy of a customer cannot rely on any state information but the premise that this state is drawn
+from the stationary distribution. Conversely, observable (and partially observable) models are com-
+monly used to describe games in which customers are endowed with information about the state
+to which they arrive, hence, making their actions state dependent. In that sense, the observable
+framework arguably allows a richer description of customer behavior, although technically, many
+observable queueing games discussed in the literature can be reframed as unobservable models via
+a suitable modification of the action set.
+In most queueing games, observable or unobservable, customer expected utility (ex ante) is a
+function of their own strategy, in which the expectation is with respect to the stationary distribu-
+tion arising from the cumulative behavior of all players. When customers are homogeneous, the
+conventional solution concept is the symmetric Nash equilibrium. Characterizing a symmetric Nash
+equilibrium means finding a fixed point of the best-response function, which is the function that
+maps a strategy profile to the best strategy to play against it.
+Unlike the Markovian setting in [27], for non-elementary queueing models, the stationary state
+distribution and the resulting customer expected utility rarely admit closed form expressions. Think,
+for example, of a GI/G/1 queue, with customer utility depending on their delay. In this example,
+as well as in many others, there is no explicit formula for the expected sojourn time of a customer
+(let alone its distribution), hence, approaching an equilibrium solution with only analytic tools is
+intractable. Tackling such problems often brings the need for sophisticated numeric calculation and
+simulation schemes.
+We present a stochastic-approximation (SA) algorithm that converges to an equilibrium solution
+for a general class of models. Specifically, the algorithm involves simulating the queueing process,
+and based on the realizations, updating the strategy at carefully chosen regeneration times. The
+update relies on estimating the deviation of the strategy from its best response, using a smoothing
+transformation of the best-response correspondence. Under mild regularity assumptions it is shown
+that the algorithm converges almost surely to a Nash equilibrium as the simulation length goes to
+infinity. The convergence conditions are verified for several examples, and numerical results are
+presented.
+Simulation is a very popular technique among queueing theorists and practitioners as a tool to
+approximate the performance of a model that cannot be approached analytically. The literature
+studying the theory and applications of simulation methods for queueing networks is extensive
+(see [7] for a comprehensive overview), and algorithms can efficiently learn the performance of quite
+intricate networks, given the set of primitives. However, in the strategic queueing domain, simulation
+is hardly ever used, primarily due to the difficulties that arise in the equilibrium search process:
+In queueing games, the strategy profile governs the dynamics of the underlying system. Thus, to
+identify its best response (or an approximation thereof), the strategy should be fed to the simulator
+up front.
+For a strategy given a priori, simulation can be used to verify, with high certainty,
+whether this strategy approximately meets the equilibrium criterion.
+But when an equilibrium
+strategy is to be found, with no simple solution at hand, this will require traversing through the set
+of possible strategies, and performing a separate simulation at each iteration to check each strategy.
+This procedure can be tedious and even impractical, especially when the simulation time at each
+iteration is exceedingly long. Moreover, the outcome of each iteration is subject to uncertainty, and
+so, if not carefully implemented, such a process is not guaranteed to converge at all, or perhaps
+worse – converge to an undesired limit.
+It is possible that for these reasons the literature of strategic queueing is often limited to stylized
+models, of which performance measures can be easily expressed. In their own right, stylized models
+2
+
+play an important role in understanding the theoretical properties of queueing games. Yet, for
+the purpose of departing from a merely theoretical framework, it is crucial to have the ability to
+compute the equilibrium outcome in elaborate systems as well.
+We introduce a novel simulation scheme that jointly learns the system’s statistical character-
+istics and customer best-response dynamics, such that the process efficiently converges to a Nash
+equilibrium. Our framework allows for customer strategies to depend on state information, thus,
+it is applicable for a wide range of models. Still, the key results and intuition supporting these
+results are more easily conveyed using the so-called ‘unobservable’ class of models. We first discuss
+our method in the context of unobservable queueing games, and later complement the discussion
+by suggesting a refinement for observable models as well. We further discuss several practical and
+theoretical aspects of implementation, such as rate of convergence.
+Our method relies on the SA algorithm commonly known as the Robbins-Monro algorithm [64], a
+fundamental building block underpinning various stochastic optimization techniques, among which
+is the renowned Stochastic Gradient Descent method. However, as opposed to standard optimization
+problems, we do not seek the root of a gradient. In our framework, the equilibrium condition needs
+to satisfy an indifference principle between randomly chosen actions. Under regularity conditions,
+an equilibrium is found by the SA algorithm in the limit with probability one. In other words, a long
+enough (single) simulation is guaranteed to converge to an equilibrium strategy. This idea draws
+inspiration from our understanding of how equilibrium emerges in real world systems: customers
+adapt their strategy based on observing past empirical performance of the system, and eventually
+converge to an equilibrium.
+1.1
+A motivating example – Two unobservable GI/G/1 queues in parallel
+The main purpose of the paper is to describe a general approximation technique for a broad range
+of applications, and therefore the fundamental queueing game formulated in Section 2, and its
+extension in Section 5, are relatively abstract. Yet, to demonstrate the competency of our method
+we first look at a special setup that is easily explained on one hand, but is analytically intractable
+on the other hand.
+Consider a network, termed the system, consisting of two FCFS queues (stations), indexed by
+m ∈{1, 2}, with dedicated servers working in parallel, one for each queue. Service times at station
+m = 1, 2 are independent and follow a general light-tailed distribution Fm with mean 1/µm, such
+that w.l.o.g. 1/µ1 ≥1/µ2. Potential customers arrive at the system according to a renewal process
+with inter-arrival time distribution H and mean 1/λ. The state of the system at an arbitrary point
+in time is characterized by a vector X = (X[1], X[2]), with X[m] being the workload at station m.
+Upon arrival, potential customers make decisions based on a prior belief regarding the mean
+waiting time at each queue (e.g., relying on historic observations), yet, they cannot observe the
+current system state. Each customer strategically chooses one of three possible actions: (1) Join
+station 1; (2) Join station 2; or (3) Balk. Respectively, we denote the set of actions for a customer
+by A = {1, 2, 3}. A strategy p = (p1, p2, p3) ∈∆(A) is a distribution over the action set with pi
+being the probability of taking action i ∈A. We assume the utility from joining is linear in the
+waiting time: Following the conventional notation of [38], let R > 0 denote the customer reward
+for service and C > 0 be the customer waiting-time cost. When a customer finds the system at
+state X and joins queue m ∈{1, 2}, their utility is given by vm = R −C · (X[m] + Ym), where
+Ym ∼Fm is a r.v. representing the customer’s service time at server m. The utility from balking,
+v3, is normalized to 0.
+Customers assume when they arrive, that the state X admits its stationary distribution (embed-
+ded at arrival instants), which is determined by the population strategy p. To avoid diverting the
+3
+
+discussion towards issues of stability, we assume that λ < µ1, implying that X indeed admits a sta-
+tionary distribution for every p. A detailed discussion of the stability conditions for generalizations
+of this model can be found in Section 4.1.
+Equilibrium strategy.
+We are interested in characterizing an equilibrium strategy pe =
+(pe
+1, pe
+2, pe
+3) ∈∆(A), such that under the stationary state distribution induced by pe, each customer’s
+choice is utility maximizing in expectation. In other words, pe is a strategy such that for each i ∈A
+pe
+i > 0 ⇒i ∈arg max
+j∈A
+E[vj],
+where the expectation is taken jointly w.r.t the random variables Y1, Y2, and the stationary system
+state at arrival instants, X, induced by the strategy pe. The following lemma, whose proof follows
+standard arguments (see Section C.1 in the appendix), establishes existence and uniqueness of the
+equilibrium strategy in focus.
+Lemma 1. Assume the inter-arrival distribution H is continuous. For any pair of distributions
+(F1, F2) and parameters R and C, there exists a unique symmetric Nash equilibrium strategy pe.
+However, except for some special cases, an explicit characterization of this equilibrium strategy
+is not available, because the values of E[v1] and E[v2] given strategy p are inaccessible. Whether
+a strategy p = (p1, p2, p3) ∈∆(A) satisfies the equilibrium condition is a question that cannot be
+answered accurately, but rather approximately, based on one’s ability to approximate E[v1] and E[v2]
+for the underlying strategy p. For example, one can determine whether p satisfies an ϵ-equilibrium
+condition, with ϵ depending on the ability to bound the approximation error for E[vj].
+Stochastic approximation. For a given strategy p, assume a customer arrives at the system
+when both queues are empty. Then we can consider this moment of arrival as an instant of system
+regeneration. Our method relies on simulating regeneration cycles, i.e., simulating the queueing
+process between two successive instants of system regeneration. During each cycle we assume that
+the customer strategy p is fixed, and keep track of the system state at every arrival instant. Let the
+r.v. L denote the number of arrivals during a cycle (including the arrival that initiates the cycle).
+Using discrete-event simulation, we generate a single cycle consisting of L ≥1 samples of the system
+state, X1, . . . , XL, with Xj = (X[1]
+j , X[2]
+j ), and combine them together by defining
+G =
+
+
+
+
+
+
+
+
+G1
+G2
+G3
+
+
+
+
+
+
+
+
+=
+L
+X
+j=1
+
+
+
+
+
+
+
+
+R −C · (X[1]
+j
++ 1/µ1)
+R −C · (X[2]
+j
++ 1/µ2)
+0
+
+
+
+
+
+
+
+
+.
+In words, we sum up the (conditional) expected utility over all arriving customers of that cycle, for
+each action they could have taken, had they observed the system state upon arrival. The motivation
+for the construction of G above is that for any p, the term Gi/E[L], i ∈{1, 2, 3}, can be regarded
+as an unbiased point estimator for E[vi]. Yet the values E[L] and E[vi] themselves are assumed
+unknown, and obviously are not given as inputs to the algorithm.
+This particular form of the
+estimator G is tailored to correct for the length bias that often arises when estimating performance
+measures of a stochastic processes from random samples.
+An application of our SA algorithm works as follows: Setting an arbitrary initial strategy p(1),
+at each iteration n = 1, 2, . . . , we construct an estimator G(n) assuming the strategy p(n) is fixed.
+Given a constant γ0 > 0, we then apply the following update rule:
+p(n+1) = π∆
+
+p(n) + γ0
+n G(n)
+,
+4
+
+where π∆denotes the projection onto the standard (2-)simplex. In Section 3.2 of the paper we
+prove that under mild regularity of the primitives the proposed scheme converges (almost surely) to
+the true equilibrium, p(n) →as pe. The parameter γ0 is measured in the reciprocal of utility units,
+and clearly, the choice of its value will impact the performance of the algorithm, but we defer the
+discussion of this issue to later sections.
+Simulation results. Below are results from a simulation, in which F1 is Beta(10, 10) + 0.5,
+F2 is Bernoulli(0.1) · 10, and inter-arrivals are distributed according to Gamma(0.1, 11), implying
+altogether that λ = 10/11 < µ1 = µ2 = 1. The reward and cost parameters are given by R = 5
+and C = 1.
+To set up the simulation we initialize p(1) = (1/3, 1/3, 1/3) and γ0=0.1, and run
+the algorithm for N = 106 iterations.
+The convergence of the sequence {p(n)} is depicted in
+Figure 1.
+After terminating at iteration N = 106, the algorithm produces an output p(N) =
+(0.525, 0.330, 0.145).
+We note that the coefficient of variation of F2 is significantly higher than
+that of F1 (3 compared to 0.11), and generally speaking, higher service-time variation leads to
+longer waiting time and in turn to smaller utility. Thus, it is expected that in equilibrium, the
+negative impact of the higher variance in Server 2 will be effectively balanced by less arrivals,
+namely, that pe
+1 > pe
+2. A short numerical study described in Appendix A suggests that with high
+certainty (>99%), our approximated solution p(N) satisfies the criterion for an ϵ-approximate Nash
+equilibrium ([24]) for ϵ ≤0.028.
+Figure 1: A stacked-area plot showing the convergence of the SA algorithm as n →∞.
+The
+coordinates of p(n) = (p(n)
+1 , p(n)
+2 , p(n)
+3 ) are plotted vs. n on a square-root scale. The blue curve
+depicts p(n)
+1 , and the green curve depicts p(n)
+1
++ p(n)
+2 . Thus, the blue, green and orange shaded areas
+correspond with p(n)
+1 , p(n)
+2 , and p(n)
+3 , respectively.
+1.2
+Outline and main results
+As discussed, our main result is the derivation of a simulation-based approximation technique to
+compute equilibria. The method is robust in the sense that it can be applied to a wide range of
+strategic queueing models. Below we summarize the organization of the paper and its results:
+Theoretical results. In Section 2 we introduce a unified framework for unobservable queueing
+games with homogeneous customers and finitely many actions. As a byproduct we derive sufficient
+5
+
+conditions for the existence of a symmetric Nash equilibrium in this class of games (Lemma 3),
+which we show how to reduce down to a fixed-point problem of a real continuous function. This
+naturally yields an iterative (deterministic) mechanism to approximate equilibrium solutions, had
+customer stationary utility been known. In Section 3 we explain how this stationary utility can
+be estimated based on samples drawn from simulated regeneration cycles. The proposed estimator
+serves in place of the unknown original utility, in combination with the iterative fixed-point scheme
+from Section 2, to form the SA algorithm. The SA algorithm is shown, in Theorem 5, to converge
+almost surely to an equilibrium under mild regularity conditions. Our main convergence result is
+accompanied with a thorough discussion of the assumptions and convergence-rate results in Sections
+3.3 and 3.4. In Section 5 we then extend the method to account for state-dependent strategies in
+order to deal with observable models.
+Examples and implementation. All along Sections 2 and 3 we use the canonical unobservable
+M/G/1 queue as an instructive tool to exemplify and generate intuition from the general model.
+In Section 4 we discuss relevant applications, namely multiple GI/G/1 queues in parallel (Section
+4.1), and selective routing between queues with different buffer capacity (Section 4.2). We verify
+the sufficient convergence conditions for these applications, and use them to present refinements
+for run-time improvement. In Section 5 we discuss the observable GI/G/1 model as an example of
+observable queueing games and provide results from numeric experiments.
+1.3
+Related literature
+Fundamentals of queueing games. The game of joining or balking from an unobservable queue
+was first introduced by Edelson and Hildebrand [27]. They consider an M/M/1 queue with strategic
+customers wishing to maximize a utility function comprised of a fixed reward and a linear cost for
+waiting. As a simple formula is readily available for the expected waiting time in an M/M/1 queue,
+the equilibrium joining probability can be computed explicitly. This model easily extends to general
+service times [9]. Numerous other queueing games have been studied over the years and we refer
+interested readers to the books by Hassin and Haviv [38] and Hassin [35] for complete overview
+and surveys. Recently, Haviv and Oz [43] suggested a unified approach to formulate unobservable
+queueing games by analyzing the interactions between the (random) set of customers who visit
+the system during the same busy period. Their formulation is related to our work in that our SA
+algorithm updates the strategy in between busy periods. Broadly speaking, both works rely on
+the understanding that, given the strategy, all the statistical properties of the underlying queueing
+process are encapsulated in a single regeneration cycle.
+Stochastic optimization in queueing systems. A comprehensive overview of the theory
+of stochastic approximations, which was initiated by the seminal work of Robbins and Monro [64],
+can be found in Kushner and Yin [50] and in Borkar [13]. An adaptation of the Robbins-Monro
+algorithm for the purpose of optimization was first presented by Kiefer and Wolfowitz [49], who
+laid the groundwork for the rapid development of stochastic optimization techniques. Among their
+notably wide range of applications, these techniques have been applied to problems of optimizing
+the steady-state performance of queueing systems, to which we give emphasis next.
+The computation of an optimal service rate for a single-server queue using stochastic approx-
+imations was initially studied by Suri and Zazanis [70] where the gradient estimation problem is
+addressed via the method of Infinite Perturbation Analysis. Empirical experiments for the M/M/1
+queue (building on the machinery developed in [70]) were carried by Suri and Leung [71]. Fu [28]
+later extended this theory to the GI/G/1 queue, exploiting the regenerative structure underlying
+it. Further convergence properties are given for the GI/G/1 model in L’Ecuyer and Glynn [51],
+for different estimators of the gradient such as finite-difference and likelihood-ratio estimators. A
+6
+
+numerical study of the techniques discussed in [51] for the M/M/1 case can be found in L’Ecuyer
+et. al [52]. A review of optimization techniques using simulation, including applications to GI/G/1
+queues, is provided by Fu [29], and a unified framework for stochastic optimization of the steady-
+state performance in regenerative systems is established in Andradóttir [5]. In all these settings
+the objective function is continuously differentiable in the parameter and the focus is on estimating
+the gradient towards the ultimate goal of computing its root. Our setting is different in that we do
+not focus on optimizing a given objective, but rather on identifying Nash equilibrium solutions – a
+problem that is not dealt with in this line of literature.
+Recently, Chen et. al [19] proposed an SA algorithm for jointly optimizing price and capac-
+ity in a GI/G/1 queue, and formulated conditions for convergence to the optimal solution. Chen
+et. al [19] further perform thorough analysis of the regret, drawing connections between stochastic
+approximations and reinforcement learning in the context of revenue management in queues. Re-
+inforcement learning has been employed in recent studies to approach optimal control policies as a
+means of optimizing steady-state performance in queueing networks, by Liu et. al [54] and by Dai
+and Gluzman [22].
+Simulation and learning in queueing games. Stochastic approximation and adaptive sim-
+ulation algorithms have been discussed in different branches of Game Theory. In particualr, some
+SA schemes were shown to converge to Nash equilibrium in certain classes of stochastic games with
+repeated interaction and decision making (see, for example, [10], and [13, Ch. 10.4]). However, in the
+area of strategic queueing, literature involving simulation-based methods to approach equilibrium
+solutions is rather scarce. Altman and Shimkin [3] explicitly analyze an observable processor-sharing
+queue with strategic customers, exponential services, and linear waiting cost. They suggest an ad-
+hoc simulation-based learning algorithm, to demonstrate the convergence of customers’ iterative
+decision-making process to a symmetric Nash equilibrium. This was extended to a model with
+heterogeneous customers in Ben Shahar et al. [11]. Buche and Kushner [14] verify convergence of
+the algorithm presented in [3] to a Nash equilibrium and explain how it extends to non-linear cost
+functions. In the context of customers strategically timing their arrivals to a transient queueing
+processes, Sakuma et. al [67] construct a heuristic dynamic algorithm to approximate the Nash
+equilibrium arrival strategy. We note, however, that the framework of strategic arrival scheduling
+in queues is significantly different than ours – in the former, the focus is on transient queueing
+processes, and additionally, customer action space is usually assumed continuous (see more details
+in [44]).
+Indirectly related to our work is the study of best-response dynamics; iterative updating of
+strategies by maximizing utility given the strategy in the previous iteration. Best-response algo-
+rithms are known to converge in some queueing games, such as S-modular games as defined by Yao
+[79]. For example, the S-modular framework was applied to a problem of decentralized control of
+a wireless network by Altman and Altman [2]. However, in most settings the known conditions
+required for convergence of best-response dynamics are not satisfied, and typically cannot even be
+tested due to the intractability of the stationary performance measures of the system.
+Potential applications. In the queueing game we introduce, customers are modeled as short-
+lived entities who arrive according to a renewal process to a general, regenerative system, and choose
+one out of finitely many actions, with the objective of maximizing their utility. Ever since Naor’s [61]
+seminal work, this modeling structure has been accepted as a standard approach to study customer
+behavior in service systems, and has been applied widely in the operations-management literature.
+While in [61] the existence of a dominant strategy deems the equilibrium analysis trivial, here we
+focus our attention on cases where the equilibrium search problem is non-degenerated. Below is a
+noninclusive list of few representative examples of such models.
+Among the classical problem themes in the study of strategic queueing are join-or-balk decisions
+7
+
+in observable and unobservable queues [27, 16, 26, 32, 48]; decentralized selective routing in queueing
+networks [9, 34, 63, 39]; paying to reduce wait via priority or premium service classes [1, 36, 74, 21];
+and provision and acquisition of information in queues [33, 77, 41, 40, 42]. Concrete applications that
+motivate the study of such models traditionally include communication and computer information
+services [59, 3, 56, 47] and transportation networks [58, 57]. Some very recent business applications
+that are increasingly emerging in this line of literature also extend across ride-sharing platforms
+[72, 46, 45, 17]; food delivery and curbside pickup in restaurants [18, 69]; as well as omnichannel
+services [8, 65, 31, 17].
+In many of these papers, solving for customer equilibrium is a preliminary, yet a crucial step
+towards answering questions concerning pricing, policy selection, capacity planning and the like.
+Due to the intricacy of the equilibrium problem, the majority of these examples aim to capture
+the main characteristics of the equilibrium behavior through parsimonious models, on which direct
+analysis can be carried out. Two exceptions here are [77], who adopt a mean-field approach, and
+[56] who resort to heavy-traffic approximations (in the Halfin-Whitt regime). In [56], the authors
+further highlight the need for exhaustive simulations in tackling the pre-limit analog of their model.
+The framework we study is fairly general, covers both observable and unobservable games, and is
+easily extended to multiple (finitely many) customer types (see, e.g., Appendix F). It is rich enough
+to capture the customer-behavior model employed in the examples listed above (with the restriction
+to finite heterogeneity types when considered). Thus, our results potentially offer a useful method to
+approach many of these examples’ variants and extensions that are not amenable to direct analysis.
+1.4
+Notation
+In the paper, the domain of interest over which we define our problem is Rk, k > 1. Thus, we
+designate vectors in Rk by bold letters, and so we do for functions whose image is in Rk. We denote
+by ei, i = 1, . . . , k, the standard-basis unit vector with 1 in its i-th coordinate, and denote by e the
+all-1 k-dimensional vector. By default, we define vectors as column vectors and use ′ to denote their
+transpose. The non-negative real half line is denoted by R+. Given a function g with a domain
+in R we denote its limit from the left at t by g(t−) = lims↑t g(s). For a real vector space, ∥· ∥is
+used by default to refer to the L2-norm, and for p ∈[1, ∞) ∪{∞}, ∥· ∥p denotes the Lp-norm. We
+further use ∥·∥0 to denote the L0-“norm”, i.e., the number of non-zero elements. For any non-empty
+set S and a point x both defined in a real vector space we denote by πS(x) the projection of x
+onto S, namely, πS(x) = arg miny∈S ∥x −y∥. With a slight abuse of notation, when πS(x) is a
+singleton we will refer to it as a point in S. For k being the dimension of the problem, we denote
+by ∆the (k −1)-simplex (i.e., the unit simplex with k vertices), and its relative interior by ∆o;
+∆o = {x + θy | x, y ∈∆, 0 < θ < 1}. Given a probability space we denote by 1(A) the r.v.
+representing the indicator of an event A. For a random variable X, σ(X) is the σ-algebra generated
+by X. The symbols →as , →P and →d indicate convergence of a sequence of random variables
+almost surely, in probability, and in distribution, respectively. Almost-sure convergence of a random
+sequence Xn to a set S, denoted by Xn →as S, implies that infx∈S ∥Xn −x∥→as 0 as n →∞.
+When comparing random variables, ≤st symbolizes inequality in first-order stochastic dominance.
+2
+Model and preliminaries
+We begin by introducing a general formulation of an unobservable queueing game. By unobservable,
+we mean that each customer commits to a specific action (which is possibly chosen randomly)
+prior to observing any information about the system’s state. However, we treat the concept of
+an action here in rather general abstraction, which allows us to cover many observable models
+8
+
+as well (see discussion in 3.5).
+Later, in Section 5, we will allow customers to rely on state-
+information in their decisions, thereby extending our current formulation, providing a more refined
+treatment of observable queueing games. To ease the exposition, we assume throughout the paper
+that customers are homogeneous, however the general methods can be generalized to deal with
+finitely many heterogeneity types of customers through only incremental changes. An instructive
+example of a model with multiple types of customers is given in Appendix F.
+The model. Consider a service system in which the state at time t represents some (possibly
+multi-dimensional) buffer content, taking values in a state space X ⊂Rd
++. Potential customers
+arrive at the system according to a renewal process with inter-arrivals {An}n≥1 (i.e., An are iid),
+where we interpret An as the time between the arrivals of the (n −1)-st and the n-th customers.
+The arrival epoch of the n-th customer, n ≥1, is therefore given by Tn = Pn
+i=1 Ai.
+Every arriving customer chooses one out of k ≥2 possible actions, with the action set denoted
+by A = {a1, . . . , ak}. Thus, the (k −1)-simplex ∆represents the set of possible strategies (namely,
+distributions over A). Given a strategy p ∈∆, we denote its i-th coordinate by pi which is the
+probability assigned to action ai.
+We denote by {X(t; p)}t≥0 the stochastic process representing the state of the system at time
+t when the strategy employed by customers is p. By convention, {X(t; p)}t≥0 is assumed to be
+right-continuous with left-hand limits. The evolution of X(t; p) depends on the strategy p played
+by the customers, however, in the general setup we suppress the specifics of how new arrivals and
+their corresponding actions change the state of the buffer content because that depends on the
+specific application.
+Example 1. To generate intuition, one can think of the canonical Unobservable M/G/1 queue (see
+[9]), in which customers choose whether or not to join a single-server queue, thus k = 2.
+For
+concreteness, we assume that λ < µ, where λ is the Poisson arrival rate and 1/µ is the mean
+service time. In this example, a strategy is characterized by p = (p1, p2) = (p, 1 −p) ∈∆for some
+p ∈[0, 1], prescribing the joining and balking probabilities, p and 1 −p, respectively. The content
+process X(t; p) corresponds to the workload (or virtual waiting time), hence when a customer arrives
+at the system, with probability p they join the queue and add a random job size (with mean 1/µ) to
+the workload.
+⋄
+Let Xn(p) = X(Tn−; p) denote the system state just before the n-th arrival given that customers
+adopt the strategy p, and further assume that X1(p) = 0d. In other words the system starts empty,
+so that the first customer arrives (at time T1) to an empty system. The strategy p ∈∆defines a
+probability measure Pp for {Xn(p)}n≥1. Expectation with respect to the measure Pp is denoted
+by Ep. Define the cycle-length r.v. L(p) = inf{n ≥1 | Xn+1(p) = 0d}. With the assumption
+X1(p) = 0d, L(p) is a r.v. describing the number of arrivals during a typical regenerative cycle,
+provided customers play according to p. Note that separate cycle lengths are iid, that is, for any
+n1, n2, . . . satisfying Xni(p) = 0d, i = 1, 2, . . . , the sequence inf{n ≥1 | Xni+n+1(p) = 0d} for
+i = 1, 2, . . . consists of iid random variables. Let ℓ(p) = EpL(p) denote the mean cycle length when
+the strategy is given by p, and let ℓr(p) = EpLr(p) denote its r-th moment. By embedding our
+system at arrival epochs we impose that L(p) ≥1 with probability 1, therefore ℓ(p) ≥1 for every
+p ∈∆.
+Considering the strategy p as given, it is known that if the first moment of the cycle length
+is finite, i.e., if ℓ(p) < ∞, then {Xn(p)}n≥1 is positive Harris recurrent; for further details see [6,
+Ch. VI]. This implies Xn(p) →d X(p) as n →∞, where X(p) is a random variable corresponding
+to the stationary distribution at arrival times. Note that X(p) may be different from the stationary,
+time-averaged distribution of X(t; p). The conditions for convergence of the algorithm presented
+9
+
+below demand that the cycle length has a finite second moment, implying that its first moment,
+ℓ(p), is also finite.
+The utility of a customer depends on the system state at the time of their arrival, their chosen
+action ai and possibly some random outcome. Formally, given a realization of the state x ∈X and
+a realization of the random outcome y, we let vi(x, y), i = 1, . . . , k denote the value associated with
+action ai. We define
+v(x, y) =
+ v1(x, y), . . . , vk(x, y)
+
+.
+(1)
+The function v is considered a model’s primitive. Note that the random outcome may depend
+on the action chosen, in which case y can be modeled as a vector y ∈Rk with each coordinate
+corresponding to an action ai ∈A. The dimension of y is in fact irrelevant to our analysis and
+for the sake of simplicity y can be thought of as single valued. The function v, as well as the
+distribution of the random outcome, are allowed to depend on the strategy p, but for brevity we
+suppress this dependence in the notation.
+Our general interest is in treating the state and the random outcome as (possibly dependent)
+random variables, say X and Y . The value vector v(X, Y ) then constitutes a k-dimensional random
+variable. We introduce the vector of expected stationary values as
+u(p) = Ep
+
+v
+ X(p), Y
+
+,
+(2)
+where we recall that X(p) is the random stationary state given p. We assume throughout that
+a stationary distribution exists for every p ∈∆, and furthermore that the function v(X, Y ) is
+integrable with respect to the measure corresponding to that stationary distribution. This ensures
+that u(p) is well defined given p, thus, it describes a function u : ∆→Rk; For each i, ui(p) takes the
+interpretation of the mean utility of some “controlled” customer who arrives at a stationary system
+and is told to play ai. To clarify, we highlight that u(p) does not represent the (single-valued)
+average utility obtained when customers employ the strategy p – the latter can be expressed as
+u(p)′p.
+Example 1. (Continued) Consider once again the example of the unobservable M/G/1, with arrival
+and service rates λ and µ, respectively, satisfying λ < µ.
+As explained, a strategy is given by
+p = (p, 1 −p) where p ∈[0, 1] depicts the joining probability, thus, we interpret X(p) as the
+stationary virtual workload at arrival epochs associated with customers joining at rate pλ, and Y
+is the service time of a tagged arrival. The possible actions are joining (a1) or balking (a2), hence
+v1(x, y) = R −C · (x + y) for R and C being the reward from service and cost for unit of delay, and
+v2(x, y) = 0. In addition, letting w(·) denote the mean virtual workload in the system as a function
+of the arrival rate, we have Ep[X(p)] = w(pλ) and therefore u(p) = (R −C · (w(pλ) + µ−1), 0). ⋄
+As in Example 1, it is oftentimes the case that Y and X(p) are independent. However, in
+general the distribution of Y may depend on the observed state, x, as well as on the strategy of
+others, p. One classic example is a processor-sharing system in which the waiting time depends on
+the strategy of future arrivals (see [3]).
+Equilibrium strategy. Next, we define an equilibrium, the desired solution concept at the
+center of attention in this work.
+Definition 1. The best-response set for a strategy p ∈∆is the set
+BR(p) = arg max
+q∈∆
+u(p)′q.
+10
+
+For a strategy p ∈∆, each of the elements of BR(p) is commonly termed a best-response
+strategy (or best response in short) for p. Thus, p is a symmetric equilibrium if it is a best response
+to itself, or synonymously, if it is a fixed point of BR, when the latter is viewed as a set-valued
+map, BR : ∆→2∆. Hence,
+Definition 2. A Symmetric Nash Equilibrium strategy is a strategy p ∈∆such that
+p ∈BR(p) = arg max
+q∈∆
+u(p)′q.
+Nonetheless, describing an equilibrium as a fixed point of the best-response function BR does not
+yield any simple method to compute it in general. This is because BR is a set-valued mapping in
+a continuous space, and is naturally hard to work with. Moreover, even if BR is a singleton almost
+everywhere in the domain ∆and continuous at every such point, it is often the case that the fixed
+point pe ∈BR(pe) is a point of jump discontinuity, in the sense that the limits approaching pe
+from different directions do not agree.
+Example 1. (Continued) In the unobservable M/G/1, recall that a strategy is given by p = (p, 1−p)
+with p ∈[0, 1] and that Ep[X(p)] = w(pλ) which is the mean virtual workload when the arrival rate
+is pλ. Suppose that R, C and µ are such that 0 < R/C −1/µ < w(λ). Then there exists a unique
+equilibrium joining probability pe ∈(0, 1), which is characterized by the unique solution to the
+equation R −C · (w(peλ) + 1/µ) = 0, and the corresponding equilibrium strategy is pe = (pe, 1 −pe).
+The best-response function (plotted in Figure 2) for a strategy p = (p, 1 −p) takes the form:
+BR(p) =
+
+
+
+
+
+e1
+if p < pe;
+∆
+if p = pe;
+e2
+if p > pe.
+Denoting ˜e = e1 −e2, it can be seen that for any ϵ > 0,
+∥BR(pe + ϵ˜e) −BR(pe −ϵ˜e)∥= ∥e1 −e2∥= ∥˜e∥=
+√
+2.
+⋄
+Example 1 shows that the set-valued mapping BR in general is not lower-hemicontiuous. Thus,
+even in the fundamental unobservable M/G/1 setting, it is not obvious how to approach the equilib-
+rium strategy based on fixed-point iterations. To overcome this difficulty, we define next a modified
+version of the best-response function, which is a vector-valued function, f : ∆→∆, expressed as:
+f(p) = π∆
+ p + u(p)
+
+,
+(3)
+recalling that π∆(x) denotes the projection of x ∈Rk onto the simplex ∆. This vector-valued
+function can replace the raw definition of BR for our purpose, and in addition, under appropriate
+conditions on the primitives, also possesses desirable attributes like continuity and smoothness.
+The intuition behind the definition of f is that f(p) maps p to a strategy obtained by deviating
+from p in the direction of one of its (actual) best responses. This can be noticed observing that
+p + u(p) is the unique solution of the following (convex) optimization problem:
+max
+q∈Rk
+
+u(p)′q −1
+2∥p −q∥2
+
+.
+11
+
+Whenever the best response for p is not unique, f(p) “pushes” p in the direction of the best response
+that is the closest to p in the standard euclidean sense (note that the projection of p onto BR(p)
+is unique because the latter is a convex polyhedron in Rk). It is intuitive therefore that a strategy
+p is a symmetric equilibrium if and only if it is a fixed point of f. This statement is rigorously
+formulated in the next lemma, whose proof appears in Appendix B.1:
+Lemma 2. A strategy p ∈∆is a Symmetric Nash Equilibrium, i.e., p ∈BR(p), if and only if it
+satisfies p = f(p).
+p
+45◦
+0
+1
+0
+1
+pe
+first component
+of BR(p)
+first component
+of f(p)
+Figure 2: The first component of the best-response function BR(p) (red), and the first component
+of the best-response surrogate f(p) (blue), for the unobservable M/G/1 model. At pe customers
+are indifferent between joining and balking, thus, every joining probability p ∈[0, 1] constitutes
+a best-response strategy, (p, 1 −p) ∈BR(pe). The red curve’s left and right limits at pe do not
+coincide. The blue curve is a single-valued continuous function over [0, 1] and is smooth at pe.
+In Figure 2, both the best-response function, BR, and its surrogate, f, are illustrated for the
+unobservable M/G/1 model of Example 1.
+It can be seen that both functions admit a unique
+fixed point at the equilibrium strategy.
+However, BR is discontinuous (in the sense of lower-
+hemicontinuity) at that point, while f(p) is indeed continuous.
+Remark 1. The result of Lemma 2 would still prevail if we extended our definition of f(p) to
+π∆
+ p + h(p)u(p)
+
+, for any positive real function h : ∆→R. In using our suggested equilibrium-
+approximation scheme, it is useful to choose a function h that is bounded away from 0.
+Iterative equilibrium-approximation scheme. Equipped with Lemma 2 we focus our in-
+terest on characterizing a solution to p = f(p). To ensure that such a fixed point exists, we assume
+that u is continuous, in which case we have, as an implication of the maximum theorem, that f is
+continuous as well. We can then state the following lemma.
+Lemma 3. Assume that u(p) is continuous for all p ∈∆. Then a symmetric equilibrium strategy
+pe ∈∆exists, and this strategy satisfies pe = f(pe).
+Lemma 3 follows directly from Lemma 2 and the continuity of f by applying Brouwer’s fixed-
+point theorem. As a consequence of Lemma 3, when u(p) is accessible and can be evaluated directly,
+12
+
+then a simple fixed-point iteration algorithm can be used to approximate an equilibrium; To this
+end, we think of u(p) as the vector that determines the direction of the step at each iteration, giving
+rise to the following (deterministic) adaptive-iteration scheme:
+p(n+1) = π∆
+
+p(n) + γnu(p(n))
+
+,
+(4)
+where {γn}n≥1 is a positive sequence called the step-size sequence, and satisfies P∞
+n=1 γn = ∞(in ap-
+plications, the requirement γn →0 is further imposed for regulation). Assuming u(·) is continuous,
+any limit of the sequence in (4) corresponds to an equilibrium strategy. Yet, the latter statement
+alone does not make any conclusion about whether or not convergence takes place, and in some cases
+the iterate may indeed end up oscillating between non-equilibrium strategies. Further regulating
+assumptions on u(·) are needed (for example, Assumption A3 below) to guarantee convergence of
+the algorithm. General conditions under which (4) converges is a rather technical issue that exceeds
+the scope of our discussion here; some relevant information is provided in Appendix B.2.
+Remark 2. Consider a point p ∈∆, and let γ > 0 be an arbitrary step size. Define
+γz = π∆(p + γu(p)) −(p + γu(p)),
+which is the shortest vector needed to bring p + γu(p) back into ∆. Starting at p, applying one
+iteration of (4) with the step size γ results in the updated iterate p + γu(p) + γz. Thus, p is a fixed
+point for (4) if (and only if) z = −u(p), namely, the shortest trajectory from p + γu(p) back to the
+simplex has to be along the opposite direction of u(p).
+When p ∈∆o, i.e., p is in the (relative)
+interior of ∆, the latter condition means that u(p) has to be orthogonal to the hyperplane spanned
+by ∆. In other words, all entries of u(p) have to be equal. This observation falls in line with the
+well-known indifference principle: If p is a strategy such that when customers play p, an individual
+customer is indifferent to choosing any action in A, then p induces equilibrium. The latter argument
+and its intuitive interpretation can be extended to any strategy p = (p1, . . . , pk) that lies in a facet
+of ∆, with its corresponding subset of supported actions, {ai ∈A | i s.t. pi > 0}.
+Clearly, the deterministic algorithm just described is only useful when the utility function u(p)
+can be computed. In many settings, however, the entries of u(p) may not be given in closed form,
+and even numerical approximations can be difficult to obtain. Therefore we devise a method of
+approaching the desired equilibrium using an SA algorithm.
+3
+Simulation and stochastic approximation
+The stochastic approximation procedure is based on the Robbins-Monro algorithm, which aims
+to mimic the deterministic fixed-point iteration of (4), replacing the progression direction u(p)
+with a noisy estimator based on a realization of the queueing process. However, estimating u(p)
+naively by taking a sample average over a (finitely long) simulation path, often results in a biased
+estimator. Using such biased estimators in the SA scheme, one risks the algorithm will converge
+to an undesirable limit. In light of Remark 1, we thus replace u(p) in (4) with g(p) = ℓ(p)u(p),
+which we can easily estimate, without bias, based on realizations of regeneration cycles. A typical
+iteration of the SA algorithm then runs as follows. At iteration n, assume that the strategy is p(n),
+and that we are provided with an estimator G(n) for g(p(n)). Recall that γn is the n-th step size.
+The update at the next iteration of the SA scheme is done by
+p(n+1) = π∆
+
+p(n) + γnG(n)
+, n ≥1,
+(5)
+13
+
+where p(1) ∈∆is an arbitrary initial strategy. If G(n) is unbiased for g(p(n)), then under mild
+regularity conditions the algorithm will converge to a fixed point of f (see Theorem 5), i.e., to a
+Nash equilibrium. The remainder of this section is dedicated to the construction of an unbiased
+estimator and to presenting the necessary assumptions and steps for our main convergence result.
+3.1
+Unbiased estimator
+Assume that the strategy p is given. To avoid using cumbersome notation we suppress in some
+places the dependency on p, however all the distributions of the random variables to be defined next
+should be regarded as functions of p. To construct the estimator, we simulate a single regenerative
+cycle starting with the arrival of a customer at an empty system; X1(p) = 0d.
+As before, we
+denote by L = inf{n ≥1 | Xn+1(p) = 0} the number of arrivals during that cycle. For each
+arrival j = 1, . . . , L, let Xj be the state and Yj be the corresponding random outcome. For the
+j-th customer, the vector v(Xj, Yj) as defined in (1) reflects the potential utility that each action
+will yield to that customer. We clarify that calculating v(Xj, Yj) for each customer j requires to
+assess their realized value for every action in A as if they chose it, yet in the simulation process,
+the action taken by the j-th customer is fully governed by p.
+Denote the expectation of the utility conditional on observing state X by
+v(X) = EY
+
+v
+ X, Y
+  X
+
+.
+(6)
+Throughout the paper we assume, for all p ∈∆, that v is integrable with respect to the dis-
+tribution of X(p).
+Then the vector of expected stationary utilities, u(p), can be written as
+u(p) = Ep
+
+v(X(p))
+
+. Define
+G =
+L
+X
+j=1
+v(Xj).
+(7)
+The following lemma, which is a direct result of a classical formula of regenerative processes (see,
+for example, [20, Prop. A.3]), states that G is an unbiased estimator for g(p).
+Lemma 4. Suppose that ℓ2(p) < ∞for all p ∈∆, then
+EpG = ℓ(p)u(p) = g(p).
+(8)
+Lemma 4 explains the rational behind the choice of an estimate for g(p) over an estimate for
+u(p). As discussed, one may attempt to estimate u(p) directly, for example by considering the
+naive estimator
+Z = 1
+L
+L
+X
+j=1
+v(Xj),
+however, such an estimator is generally biased. To see why, we provide an example.
+Example 1. (Continued) Recall the unobservable M/G/1 model with service rate µ, reward R, and
+delay cost C, where we use p = (p, 1−p) to denote a strategy and Xj to describe the virtual workload
+at the j-th arrival, so that Ep[X(p)] = w(pλ) is the mean virtual workload when the arrival rate
+is pλ. In particular, the estimator Z when constructed from a single regeneration cycle (i.e., one
+busy period) is a 2-dimensional vector, Z = (R −C · ( ¯X + 1/µ), 0), where ¯X = (1/L) PL
+j=1 Xj is
+the average workload at arrival instants over all customers of that cycle. It is known that ¯X is a
+biased estimator of w(pλ), i.e., that Ep[ ¯X] ̸= w(pλ) (see, for example, [20]), and so, Z is biased
+for u(p). The fact that ¯X is biased can be explained as a ramification of the well-known length
+14
+
+bias: The average virtual workload over long busy periods will naturally tend to be larger than that
+over short busy periods. Yet, during a long busy period more customers will typically arrive at the
+system than in a short one. By averaging the sampled workloads one erroneously normalizes the
+length of the busy period, and as a result, gives disproportional importance to short busy periods in
+the estimation, resulting in an underestimate of the mean workload. By contrast, the estimator G
+presented above, for the unobservable M/G/1 model takes the form
+G =
+L
+X
+j=1
+v(Xj) =
+L
+X
+j=1
+
+
+
+
+R −C · (Xj + 1/µ)
+0
+
+
+
+.
+This estimator is indeed unbiased for g(p), and in particular, Ep
+PL
+j=1 Xj
+
+= ℓ(p)w(λp).
+⋄
+It is important to point out the difference between using the realized value vector for customer
+j, v(Xj, Yj), and using the conditional expectation v(Xj), as prescribed in (7). The latter has two
+main advantages. Firstly, using the expected value instead of the realization reduces the variance of
+the estimator. Secondly, v is merely a function of the state, and hence is more convenient to work
+with. Yet, in some settings it may not be trivial to express this function explicitly.
+In principle, one can directly use v(Xj, Yj) in Equation (7) instead of v(Xj). However, since
+v(Xj, Yj) is a function of both the observed state Xj and the random outcome Yj, in order to apply
+the result of Lemma 4, one must make assumptions about the dependence between Xj and Yj. For
+example, the following assumption is sufficient: At the j-th arrival with the observed state xj, the
+random outcome conditioned on the state observed, Yj | Xj = xj, should be independent of Xj′
+and Yj′ for all j′ ̸= j. This assumption may not hold in systems with elaborate service policies such
+as priority queues or processor sharing: For instance, in processor sharing, the waiting of the j-th
+arriving customer indeed depends on the service demand (as well as the action) of later-arriving
+customers. Furthermore, the value v(Xj, Yj) is not a byproduct of a single busy period simulation
+because it must be computed for every possible action of a customer, including those not taken in the
+realization of the simulation. A possible solution is, for each j = 1 . . . , L, to obtain an independent
+sample of v(xj, Yj) using subordinate simulations, independently of the main simulation path. To
+generate a sample of any component vi(xj, Yj) of the vector v(xj, Yj), one can run an independent
+subordinate simulation that starts with the arrival of a customer at state xj who takes action ai,
+and terminates when the utility of that customer is realized. When possible, the same subordinate
+simulation can be used to evaluate as many components of the vector v(xj, Yj) as needed, as long
+as this is done independently of the main simulation path.
+3.2
+Convergence and main result
+In the approximation process, given a strategy p, we make use of the estimator G at each iteration
+of the algorithm as a “proxy” for the true value g(p). Following the framework of [50, Ch. 5] we
+present conditions for this algorithm to converge almost surely to a set of equilibrium points. In
+particular, we assume that the variance of the unbiased estimator G is finite for any strategy p. This
+is combined together with the assumptions required for existence of an equilibrium, as discussed
+in Section 2, to obtain the convergence result described in Theorem 5. The proof of that theorem
+appears in Appendix B.2.
+To state our assumptions, we first introduce the hyperplane H = {x ∈Rk | e′x = 0} which is a
+(k −1)-dimensional subspace of Rk, parallel to ∆. We further note that the orthogonal projection
+15
+
+onto H, πH : Rk →H, is a linear transformation, and can be represented by a symmetric matrix
+H ∈Rk×k, namely, πH(x) = Hx.
+Assumption A1. The second moment of the cycle length L(p) is bounded for every strategy;
+ℓ2(p) < ∞for all p ∈∆.
+Assumption A2. The second moment of the estimator G is uniformly bounded on ∆;
+supp∈∆Ep∥G∥2 < ∞.
+Assumption A3. The projected utility function Hu(·) is continuous, and there exists a differen-
+tiable function u∗: ∆→R such that −Hu(p) is the gradient of u∗at p, i.e., −Hu(p) = ∇u∗(p).
+Assumption A4. The step-size sequence {γn}n≥1 satisfies
+∞
+X
+n=1
+γn = ∞,
+∞
+X
+n=1
+γ2
+n < ∞,
+(9)
+Theorem 5. Suppose Assumptions A1–A4 are satisfied. As n →∞, p(n) →as Se, where Se ⊆∆
+is a set of equilibrium strategies, namely, f(p) = p for every p ∈Se.
+Corollary 6. Under the conditions of Theorem 5, if the set of equilibrium strategies is finite, then
+as n →∞, p(n) →as pe, where pe is an equilibrium.
+3.3
+Discussion of assumptions
+Assumption A1 is required for positive recurrence of the underlying regenerative process, which in
+turn ensures the existence of a stationary distribution for any strategy. The step-size condition of
+Assumption A4 is standard and enables the application of the law of large numbers for martingale
+differences, which underlies the convergence result in Theorem 5.
+Assumptions A2–A3 impose
+regularity conditions on the utility function which are specific to the framework of queueing games,
+and therefore deserve more attention, as discussed below.
+A straightforward generalization of Lemma 3 shows that the continuity of Hu(·) implies that
+an equilibrium exits, in accordance with the first part of Assumption A3. The second part of the
+assumption, which relates to the existence of some potential function u∗, states, in different words,
+that Hu(·) should be a conservative vector field on ∆. Still, the function u∗need not be specified.
+Its existence prevents the iterate from circulating a perpetual loop of off-equilibrium strategies. Im-
+portantly, without this assumption there is no guarantee that the deterministic algorithm converges
+to an equilibrium, even when u(p) is explicitly given. For a continuous utility u(·), Assumption A3
+holds, for example, when k = 2, or alternatively when k > 2 and u itself is a conservative vector
+field on ∆(see Remark 5 in Appendix B.2). Further elaboration on Assumption A3 is provided in
+Appendix B.2.
+Assumption A2 imposes that the variance of the estimator G is finite. Finite variance of the
+increments is quite a common assumption in the framework of stochastic approximation. However,
+verifying it for specific queueing games with only limited knowledge about the stationary distribution
+can be challenging. In this paper we provide specific examples in which we rely on queueing-analytic
+tools to verify this assumption. Example 1 below provides an analogous condition to Assumption
+A2 for the unobservable M/G/1 queue, which is formulated in terms of moments of the service-time
+distribution.
+16
+
+Example 1. (Continued) Consider once more the unobservable M/G/1 model described in Sections
+2 and 3: Denote the generic service time random variable by Y with EY = 1/µ. As before, we
+assume that λ < µ. We further assume EY 4 < ∞, which clearly implies EY 2 < ∞. In this case
+Assumptions A1 and A3 can be verified by applying known properties, which is done in Section 4.1.
+In the particular unobservable M/G/1 model, EY 4 < ∞is also a necessary condition for Assumption
+A2; Recall that G1 = PL
+i=1(R−C(Xi+1/µ)), where Xi is the virtual workload observed by customer
+i. Hence, G1 is an affine transformation of the sum of waiting times during a busy period. An
+explicit formula of the variance of the cumulative workload during a busy period was given in [23] as
+a function of λ and EY r for r = 1, 2, 3, 4. Therefore, for the strategy p = e1 (all customers join),
+if λ < µ and EY 4 < ∞, then
+Ee1∥G∥2 = Ee1
+
+L
+X
+j=1
+v(Xj(e1))
+
+2
+< ∞.
+Furthermore, by standard coupling arguments it can be verified that for every strategy p ∈∆,
+Ep∥G∥2 ≤Ee1∥G∥2.
+We conclude that λ < µ together with EY 4 < ∞form a necessary and sufficient condition for
+Assumption A2. Theorem 5 then implies that under these conditions the SA algorithm converges
+almost surely to the unique equilibrium.
+⋄
+The conditions in Assumptions A1–A3 are imposed on all strategies in the simplex. However, any
+strategy in ∆for which the system is not stable, in general, refutes the assumptions. This issue can
+be alleviated in some cases using a small modification of the algorithm. If there exists a known closed
+convex set of strategies S ⊆∆that contains an equilibrium, and conditions A1–A2 are satisfied
+for all p ∈S, then the projection πS can be used in (5) and all our results carry over. In practice,
+such a set can often be found because stability conditions are known for many models even without
+explicit derivation of the stationary distribution. In absence of a-priori knowledge of the stability
+region, the algorithm has to be modified to incorporate ‘stability-enforcing’ dynamics. Appendix D
+presents a heuristic modification of the algorithm that terminates a busy cycle if its length exceeds
+a threshold.
+Of course, this introduces a bias in the estimation step.
+To eliminate this bias,
+the termination threshold is increased gradually, with the goal of making the bias asymptotically
+negligible once the algorithm is absorbed in the stability region.
+That said, we acknowledge that the task of detecting stability regions using simulation is chal-
+lenging. In fact, the problem of determining whether a queueing system is stable under a general
+schedueling policy was shown in [30] to be undecidable even in a simple system configuration. A
+simulated-annealing method to identify stability regions in some practical setups is suggested in
+[55]. Some ad-hoc solutions have been discussed in recent papers that involve learning and control
+algorithms for queueing systems (see [22] and [19]).
+3.4
+Rate of convergence and approximate equilibrium
+An important question from a practical standpoint is how many iterations are needed to obtain
+a ‘good’ approximation. This question has been the subject of interest for a large body of works
+in the literature of stochastic gradient-descent algorithms, where it is often implied by appropriate
+conditions on the primitives that the iterate p(n) converges (almost surely) to a unique point pe.
+Then, the above question is addressed via studying different notions of convergence of the scaled
+approximation error, (p(n) −pe)/√γn. For a specific choice of the step-size sequence {γn}n≥1, [62]
+17
+
+established L2-convergence of the scaled error, by imposing strong convexity and smoothness on
+the potential function u∗. Under these assumptions, the equilibrium exists uniquely (as it is the
+minimum point of u∗), and the vector −Hu is the gradient for which we have noisy observations. In
+what follows we leverage this framework to bound our algorithm’s equilibrium-approximation error
+with high probability.
+Rather than studying the scaled error per se, we find it more meaningful in our setup to un-
+derstand, given the iteration index n, how “close" the strategy p(n) is to meeting the equilibrium
+condition. We therefore adopt the concept of ϵ-approximate Nash equilibrium (see [24]). Recall that
+a strategy p is a (symmetric) ϵ-approximate Nash equilibrium, or an ϵ-equilibrium for short, if no
+deviation from this strategy can increase a customer’s expected utility by more than ϵ:
+u(p)′p ≥max
+q∈∆u(p)′q −ϵ.
+(10)
+Proposition 7 below relates the convergence of the scaled errors to ϵ-equilibria. The proof is provided
+in Appendix B.3.
+Proposition 7. Suppose that Assumptions A1–A3 hold. Suppose also that u is (locally) Lipschitz
+on ∆, and that u∗in A3 is strongly convex on ∆, i.e., there exists a constant C > 0 such that
+u∗(p) ≥u∗(q) + Hu(q)′(p −q) + C
+2 ∥p −q∥2, ∀p, q ∈∆.
+(11)
+Let γn = η/n, where η > 1/(2C). Then there exists a constant M, such that for all n ≥1 and
+δ ∈(0, 1),
+P
+
+u(p(n))′p(n) ≥max
+q∈∆u(p(n))′q −
+√
+n−δ
+
+≥1 −M · nδ−1;
+(12)
+that is, for all n and δ ∈(0, 1), the n-th iterate p(n) is a
+√
+n−δ-equilibrium with probability (at least)
+1 −M · nδ−1.
+Notice that the choice of the step size γn = η/n in Proposition 7 satisfies A4. Following [62],
+under the conditions of Proposition 7, this choice of γn implies that E∥p(n) −pe∥2 = o(1/n).
+Proposition 7 shows this also yields an ϵn-equilibrium with high probability (1 −o(nδ−1)), where
+ϵn =
+√
+n−δ. For example, with δ = 1/2, the result ensures that an ϵ-equilibrium is reached, with
+1 −o(ϵ2) certainty, after ϵ−4 iterations.
+There are various other conditions in the literature for convergence of the scaled error, including
+almost-sure convergence rates (e.g., [68] for unconstrained stochastic optimization) and weak con-
+vergence to the normal distribution (e.g., [13, Ch. 8.4]). All of these results require assumptions on
+the utility vector u and the penitential function u∗that ensure the algorithm is “well behaved”, so
+to speak, in the neighborhood of equilibrium points. In Proposition 7, these assumptions take the
+form of (11) and the corresponding step-size constant η > 1/(2C). Though in applications these
+conditions can be hard to verify, our result sheds light on the obtainable rates when some limited
+structure of the stationary expected utility is available. For a detailed discussion of the convergence
+rate for constrained and unconstrained stochastic-approximation algorithms, see [15] and [50].
+3.5
+Accounting for observable information in customer’s decisions
+In the context of queueing games, it is natural to think of an ‘action’ as representing a possible ter-
+minal outcome of the customer’s decision, e.g., ‘join’ or ‘balk’, as described in Example 1. However,
+in our framework, the term ‘action’ is in fact synonymous with ‘pure strategy’ (this interpretation
+18
+
+slightly deviates from the terminology used in extensive-form games, see [60, Ch. 3]). Thus, an ele-
+ment in A can potentially represent a comprehensive decision rule, prescribing what to do at each
+possible event, with respect to the information available to the customer during their sojourn in the
+system. For instance, assuming customers observe the queue length, a pure strategy can prescribe
+joining at some queue-lengths while balking at others. It can further capture the evolution of the
+system state after the arrival, e.g., for x ∈{1, 2, 3}, specify whether to abandon the queue after x
+minutes if the queue length did not decrease.
+One way to account for observable information in the customer decision-making process is to
+extend the action space, i.e., the set of possible pure strategies, to encompass all possible decision
+rules. Note that the information can also pertain to individual customer features, and not necessarily
+the system state. In Appendix F we implement this approach in a game with two customer types.
+Below we explain through a brief example how to amend the action set when state information is
+available upon arrival.
+Consider an observable GI/G/1/N queue: Each customer observes the number n of customers
+in the queue, and assuming it is not full (0 ≤n ≤N −1), they choose whether to join or balk. Then
+a pure strategy is an element in {0, 1}N determining which queue lengths to join, and we associate
+it with a single action in the (finite) set A.
+Observable queueing games with finitely many pure strategies are covered by the formulation in
+Section 2 and hence our results are applicable to such games. However it can be noticed, particularly
+in the example above, that the dimension of the strategy space grows exponentially with the number
+of signals potentially observed. When the number of signals is large, this approach may not be
+practical. In Section 5 we discuss an extension of the algorithm that traverses a strategy space
+whose dimension grows proportionally (as opposed to exponentially) in the number of signals.
+4
+Applications, implementation and refinements
+This section presents two applications of the SA algorithm. The first, discussed in Section 4.1, is
+a general game of choosing a queue from a pool of parallel single-server queues, or balking from
+the system altogether.
+This model, inspired by [9], generalizes the canonical M/G/1 model of
+Example 1 and also the motivating example of two parallel queues in Section 1.1.
+The second
+example, in Section 4.2 is a generalization of the model introduced in [39], considering a system
+comprised of two parallel servers; one with an infinite buffer queue and one with no queueing buffer,
+and customers have the option to probe (sense) the no-buffer server at a cost before joining the
+infinite buffer queue. For both applications the sufficient convergence conditions of Theorem 5 are
+verified in detail, and some numerical results are reported. The related proofs appear in Appendix
+B. Based on the second example we introduce and illustrate two practical refinement techniques of
+the algorithm, one that reduces the variance of the estimator and one that dynamically chooses the
+step size.
+4.1
+Unobservable GI/G/1 queues in parallel
+The main purpose of the section is to rigorously verify Assumptions A1–A3, which imply the con-
+vergence of the SA algorithm, in the queueing game described below. The proof of Proposition 8
+is provided in Appendix C.2 and relies on a coupling construction, which we believe can be found
+useful in verifying the assumptions for further generalizations and variations of the model here.
+For some integer k > 1, consider a system of k −1 parallel GI/G/1 queues where customers
+can choose which queue to join, with the possibility of balking, i.e., not joining any queue at all.
+Arrivals to the system are generated according to a renewal process with a continuous inter-arrival
+19
+
+distribution H and mean 1/λ. Each arriving customer chooses, without observing the system state,
+whether at all to join a queue, and if so, which of the k −1 queues to join. Denote the generic
+service time variable in station m ∈{1, . . . , k −1} by Ym ∼Fm, and its mean by 1/µm. A strategy
+p = (p1, . . . , pk) ∈∆, for each m ∈{1, . . . , k −1} expresses the probability pm of joining queue m,
+with pk being the probability of balking. Arriving at a realization of the state x = (x[1], . . . , x[k−1]),
+the net value for a customer joining queue m = 1, . . . , k −1, is given by vm(x, ym) = νm(x[m] + ym),
+where ym is a realization of Ym. The value from balking is normalized to zero; vk(x) = 0.
+Clearly, this is a generalization of the motivating example presented in Section 1.1 and the unob-
+servable M/G/1 model discussed in Example 1. The next proposition presents sufficient conditions
+for convergence of the SA algorithm to a Nash equilibrium.
+Proposition 8. Assume that for every m ∈{1, , . . . , k −1}: (i) λ < µm; (ii) E[Y 4
+m] < ∞; and
+(iii) the function νm : R+ →R is Lipschitz continuous. Then for any initial strategy p(1) ∈∆and
+step-size sequence {γn}n≥1 satisfying Assumption A4, the SA algorithm defined in (5) converges
+almost surely to a set of equilibrium strategies, in the sense of Theorem 5.
+4.2
+Selective routing in queues with different buffer capacities
+Consider a queueing network comprised of two servers, Server 1 that has no waiting room, and
+Server 2 that offers unlimited queuing capacity. Customers arrive at the system following a Poisson
+process with rate λ, with iid service-length requirements distributed according to F. Let Y ∼F
+represent some arbitrary service duration, and let E[Y ] = 1/µ.
+Upon arrival a customer cannot observe the system’s state, and is given the option to sense,
+that is, to make a costly attempt to obtain service by Server 1, at a fixed cost cs. A customer
+that chooses to sense and finds Server 1 idle, immediately commences service, otherwise they are
+instantaneously sent to the end of the infinite-capacity queue and waits to be served by Server 2.
+The sensing option is offered only upon the customer’s arrival, and the cost is incurred regardless
+of whether Server 1 is found idling or not. Customers who do not choose the sensing option do not
+incur a sensing cost and are sent directly to the end of the queue served by Server 2. All customers
+queueing for Server 2 incur a linear waiting cost at rate cw per unit time.
+Let A = {a1, a2}, where a1 and a2 represent the actions “sense” and “not sense” respectively. A
+strategy in this game is given by p = (p, 1 −p), where p > 0 is the probability of choosing a1. It is
+shown in [39] that when customers’ service demand is exponentially distributed, the game admits a
+unique equilibrium strategy which can be efficiently approximated. Yet even for the special case of
+exponential services, a simple expression for the equilibrium strategy is not available, because the
+solution in [39] for the stationary distribution given a strategy p makes use of Cardano’s formula. It
+is worth mentioning in this context that in general, the queue served by Server 2 cannot be treated
+as a standard M/G/1, because the effective arrival process to Server 2 is not renewal, as it depends
+on the state of Server 1.
+To approach the equilibrium using simulation we define the state as a pair X = (X[1], X[2])
+where each component X[m] stands for the workload at Server m ∈{1, 2}. Given a realization
+x = (x[1], x[2]) of X, the components of the vector function v(x) take the form
+v1(x) = −cs −cw · 1(x[1] > 0) · x[2],
+v2(x) = −cw · x[2].
+Proposition 9. Assume the service-time distribution F is chosen such that (i) λ < µ; (ii) E[Y 4] <
+∞; and (iii) u(p) is continuous in p ∈∆. Then for any initial strategy p(1) ∈∆and step-size
+20
+
+sequence {γn}n≥1 satisfying Assumption A4, the SA algorithm defined in (5) converges almost surely
+to a set of equilibrium strategies, in the sense of Theorem 5.
+The simplicity of the model here sets up a convenient platform to demonstrate some practical
+heuristics that can enhance the algorithm’s performance, which is what we focus on next.
+4.3
+Variance reduction using control variates
+The variance reduction technique discussed here is a fundamental control-variate method based on
+[66], that exploits our knowledge of the strategy p at the beginning of each iteration, as well as
+some model parameters used to construct the simulation. Adapted to our framework, the goal is to
+modify the estimator G in a way that does not introduce bias, but reduces its generalized variance.
+The underlying principle is the following: Suppose one can characterize an l-dimensional random
+vector C, referred to as the control vector, with zero mean (entrywise), such that it is also strongly
+correlated with G. Then an appropriate matrix of control coefficients Ψ ∈Rl×k can be found, for
+which the new estimator G −Ψ′C is unbiased for the original unknown quantity, but has smaller
+generalized variance than that of G. Mathematically, this means that we would like to choose Ψ
+such that G −Ψ′C satisfies
+Ep[G −Ψ′C] = Ep[G] = g(p),
+and
+det(Varp[G −Ψ′C]) < det(Varp[G]).
+Observe that unbiasedness is obtained irrespective of the choice of Ψ. It is shown in [66] that the
+optimal choice for Ψ (in terms of minimal variance) is given by Ψ∗= ΣGCΣ−1
+CC, where ΣCC =
+Varp[C] is the variance-covariance matrix of the control vector C, and ΣGC = Covp(G, C) is the
+cross-covariance matrix of G with C.
+In most practical applications, both ΣCC and ΣGC are
+unknown, and so Ψ∗has to be estimated from the data. Moreover, in the setting here the optimal
+Ψ∗varies with the strategy p. Luckily, our numerical results show that significant variance reduction
+is obtained even when using a rough approximation of Ψ∗which is based on naive sampling. Our
+guiding intuition is that as the iteration index n increases, the change in the strategy p(n) becomes
+smaller. Given a constant strategy, it is known that the estimator for Ψ∗constructed from the
+sample covariance and cross-covariance matrices is likelihood maximizing (see [4], Section 4.3.1).
+At iteration n > 1, let G(n) be the estimator defined in (7), and C(n) be the control vector. We
+use a naive choice for the matrix of control coefficients ˆΨ(n) by defining (note that C(1), . . . C(n)
+have mean zero):
+ˆΣ(n)
+CC =
+1
+n −1
+n
+X
+m=1
+C(m) C(m) ′ ,
+ˆΣ(n)
+GC =
+1
+n −1
+n
+X
+m=1
+G(m) C(m) ′ , and
+ˆΨ(n) = ˆΣ(n)
+GC
+−1 ˆΣ(n)
+CC.
+Thus, at every iteration n > 1 we replace G(n) in Equation (5) by G(n) −ˆΨ(n) ′ C(n).
+Example 2. Consider the model presented in Section 4.2.
+We choose a 3-dimensional control
+vector C = (C1, C2, C3). As prescribed in Section 3.2, given a strategy p = (p, 1−p), we generate L
+observations X1, . . . , XL based on a single regeneration cycle, and construct the original estimator
+G = PL
+j=1 v(Xj) introduced in (7). Let D1, . . . , DL, be a sequence of sensing indicators, namely
+for j = 1, . . . , L, Dj ∼Bernoulli(p) is the indicator of the event “the j-th customer chooses action
+a1 (sense)”. Let Yj be the service demand of that j-th customer. Our control vector of choice, C, is
+21
+
+given by:
+C =
+
+
+
+
+
+
+
+
+C1
+C2
+C3
+
+
+
+
+
+
+
+
+=
+L
+X
+j=1
+
+
+
+
+
+
+
+
+Dj −p
+Yj −1/µ
+1(X[1]
+j
+> 0) −
+λp
+µ+λp
+
+
+
+
+
+
+
+
+.
+Because the underlying process is regenerative, we have for every p,
+Ep[C] = ℓ(p) ·
+
+
+
+
+
+
+
+
+Ep[D] −p
+Ep[Y ] −1/µ
+Ep[1(X[1] > 0)] −
+λp
+µ+λp
+
+
+
+
+
+
+
+
+= 0,
+where D ∼Bernoulli(p) is the sensing indicator of an arbitrary customer, Y ∼F is an arbitrary
+service demand, and X = (X[1], X[2]) is the stationary system state, given strategy p = (p, 1 −p).
+It is therefore immediate that Ep[D] = p and Ep[Y ] = 1/µ, and because Server 1 can essentially
+be modeled as an M/G/1/1 loss-system with arrival rate λp and service rate µ, we also have in
+stationarity that Ep[1(X[1] > 0)] =
+λp
+µ+λp. This specific choice of the control vector C is led by the
+understanding that customers’ actions, their realized service demand, as well as the state of Server
+1 observed by the different customers during the simulated cycle, are all affecting the utility sum G
+in that cycle.
+⋄
+Figure 3 depicts the performance of the algorithm incorporating control variates and dynamic
+step sizes (described below) for the model described in Section 4.2. Further information about the
+efficiency and selection of control coefficients for the method of control variates in vectored-output
+simulations can be found in [66] and [78].
+4.4
+Dynamic step size selection
+Next we consider the selection of the step-size sequence, {γn}n≥1. Our main idea underlying the
+SA algorithm is that instead of estimating u(p), to which unbiased estimators in general are not
+known, one can estimate ℓ(p)u(p) with no bias, based on a single regeneration cycle, and use this
+estimator to determine the progression of the algorithm. Yet, as noted in Remark 1, the function
+ℓ(p) chosen is not exclusive; If h : ∆→R+ is a real continuous function such that h(p) ≥a for
+some constant a > 0, and in addition if one is endowed with a finite-variance unbiased estimator
+for h(p)u(p), then this estimator can be used instead of the one suggested in Section 3, and the
+convergence result in Theorem 5 carries over. The exact form of h(p) need not be expressed or
+specified, neither should it be introduced as input to the algorithm.
+In theory, if ℓ(p) can be computed, then the estimator G/ℓ(p) can be taken to directly estimate
+u(p) without bias. This is essentially equivalent to dynamically choosing the step size at iteration
+n to be γn/ℓ(p(n)) instead of the original γn. The dynamic choice of strategy-dependent step size
+has the advantage of “neutralizing”, in some sense, the unwanted impact of the cycle lengths on the
+algorithm’s progression. Of course, in applications, exact knowledge of ℓ(p) is an unrealistically
+strong requirement. However, even a coarse approximation ˜ℓ(p) ≈ℓ(p) can impose a similar neu-
+tralizing effect, leading to substantial efficiency improvement. Thus, instead of using the estimator
+G to estimate ℓ(p)u(p), given an approximation ˜ℓ(p) we can use the estimator G/˜ℓ(p) to estimate
+22
+
+(ℓ(p)/˜ℓ(p))u(p), or equivalently, divide the step size by ˜ℓ(p). We believe this method to be effec-
+tive especially in heavily loaded systems, in which the mean cycle length is typically large, and in
+addition, many approximation techniques tend to become more accurate under this regime.
+Remark 3. Natural approximations for ℓ(p) can be derived from available approximations for mean
+busy periods in queues. For instance, many approximations, in addition to some special-case exact
+expressions, are available for the mean busy period in the GI/G/1 queue (see, for instance, [12]).
+The length of an arbitrary regeneration cycle L of a GI/G/1 can be interpreted as the number of
+service completions during the corresponding busy period B. Thus, the relation between L and B is
+expressed by B = PL
+j=1 Yj, where Y1, . . . , YL are the service lengths during the cycle. This relation
+implies E[L] = E[B]/E[Y ], where Y is the length of an arbitrary service.
+Example 2. (Continued) In the model of Section 4.2, a back-of-the-envelope approximation for ℓ(p)
+is obtained by (erroneously) treating the two nodes, Server 1 and 2, as two independent Markovian
+systems with service rate µ in both systems. Thus, given p = (p, 1 −p), we have one M/M/1/1
+system with arrival rate λ[1] = pλ, and another independent M/M/1 system with arrival rate λ[2] =
+λ·(1−p+λ[1]/(λ[1]+µ)). The stationary probability of finding each server idling is π[1]
+0 = µ/(µ+λ[1])
+in the M/M/1/1 system and π[2]
+0 = 1 −λ[2]/µ in the M/M/1 system, and by independence the joint
+distribution of the events is π[1]
+0 π[2]
+0 . By the PASTA principle, this coincides with the probability
+that a customer finds both servers idle upon arrival, therefore the mean number of arrivals between
+two subsequent such incidents is given by ˜ℓ(p) = 1/(π[1]
+0 π[2]
+0 ), and we shall use this quantity to
+approximate the true mean cycle length ℓ(p).
+⋄
+In the following numerical example, we employ variance reduction and dynamic step-size se-
+lection on the model described in Section 4.2.
+Services are exponentially distributed, µ and
+cw are normalized to 1, λ = 0.99 and cs = 5.
+The initial strategy for the SA algorithm is
+p(1) = (1/2, 1/2).
+In Figure 3 we compare, over the first N = 5 × 104 iterations, the perfor-
+mance of the crude implementation of the algorithm with that of the refined version.
+For the
+sequence of strategies, {p(n)}n≥1 = {(p(n), 1 −p(n))}n≥1, the figure depicts the convergence of the
+sequence p(n) to the (unique) equilibrium probability pe, that corresponds with the unique equilib-
+rium strategy pe = (pe, 1 −pe). The estimator used at iteration n in the refined version (orange)
+is G(n) −ˆΨ(n) ′ C(n), and the step size at iteration n is (1/n)˜ℓ(p(n)). In the crude version (blue),
+we keep our original estimator G(n), with comparable, non-dynamic step size given by (1/n)˜ℓ(p(1))
+for each n. For reference, we plot the correct equilibrium (red dashed horizontal line), which, for
+exponential services can be approached numerically up to any arbitrary precision level using the
+machinery developed in [39].
+23
+
+Figure 3: Convergence of the SA algorithm as n →∞. The first coordinate of p(n) = (p(n), 1−p(n)),
+i.e., the sensing probability at stage n, is plotted vs. n. The blue curve corresponds to the crude
+algorithm’s progression, and the orange corresponds to the refined version. The red dashed line
+depicts the correct equilibrium sensing probability, pe, computed numerically in 8-digit precision.
+5
+Games with state information
+In this section, we explain how to amend our SA algorithm to cope with so-called observable models.
+More precisely, we assume that customers, at the moment they arrive to the system and make their
+decision, have access to an information signal, which is a function of the system state. Unlike the
+approach described in 3.5, the one we take here does not suffer from the same issue of dimensionality.
+From a mathematical perspective, the previous formulation described in Section 2 can be seen
+as a special case of the model below when the function mapping states to signals is constant (i.e.,
+non-informative).
+Although, from a nomenclature perspective, this understanding is somewhat
+inconsistent with how the terms ’observable’ and ’unobservable’ are used in the literature to describe
+two disjoint classes of games. In what follows, we treat a strategy as a function from signals to
+(mixed) actions, and so, the dimension of our problem grows proportionally to the number of possible
+signals. Thus, to enable a direct implementation of our framework, we assume throughout that the
+number of possible signals is finite (if the actual information space is continuous then a suitable
+discretization of the information set is required).
+The new formulation suggests a practical method for the computation of equilibrium strategies
+in the observable GI/G/1 queue, a generalization of Naor’s [61] model, which we use as a guiding
+example in this section. The special case with Poisson arrivals, which itself is a generalization of
+[61], was thoroughly studied in [48].
+5.1
+Model description
+As before, we assume a renewal sequence of customer arrivals {An}n≥1, each customer chooses
+an action from the set A = {a1, . . . , ak}.
+The state of the system at any moment in time is
+represented by a vector x of buffer contents in the state space X ⊂Rd
++, in which 0d ∈X is an
+element. Upon arrival, a customer is provided with an information signal which depends on the
+24
+
+state at which they arrive. Let I be a countable set of information signals, thus, arriving at state
+x ∈X, a customer receives information ψ(x), where ψ : X →I is a mapping from states to signals.
+We therefore reintroduce the concept of a strategy, now taking the interpretation of a behavioral
+strategy, i.e., a mapping p : I →∆from signals to distributions over actions. We denote by P the
+set of possible strategies. Hence, given p ∈P, a customer who arrives at state x ∈X will choose
+their action according to the distribution p(ψ(x)) =
+ p1(ψ(x)), . . . , pk(ψ(x))
+
+∈∆, which assigns a
+probability pj(ψ(x)) for each action aj ∈A. Consistent with the previous sections, we assume each
+strategy p ∈P gives rise to a regenerative system-state process {Xn(p)}n≥1 embedded at arrival
+instants, with 0d being a regenerative state and X1(p) = 0d. Thus, given p ∈P, the stationary
+state X(p), the cycle length L(p), and the r-th moment of the cycle length ℓr(p), all follow the
+definitions introduced in Section 2. Consistent with Sections 2 and 3, when facing state x ∈X
+(hence a signal ψ(x) is observed) and a realization y of a random outcome Y , the value vector is
+v(x, y) =
+ v1(x, y), . . . , vk(x, y)
+
+, and we let v(X) = EY
+
+v
+ X, Y
+  X
+
+.
+Assuming the state is drawn from the stationary distribution induced by p, the signal observed
+is given by the r.v. ψ(X(p)) supported on I. We denote the (point) probability function of ψ(X(p))
+by ξp(s) = Pp(ψ(X(p)) = s) and its support by I(p) = {s ∈I s.t. ξp(s) > 0}. For conciseness, we
+ignore any irrelevant signals, i.e., we assume I = S
+p∈P I(p).
+For any signal s ∈I(p) we define, analogous to (2), the (k-dimensional) conditional expected
+value vector as
+u(p | s) = Ep
+
+v
+ X(p), Y
+  ψ(X(p)) = s
+
+=
+Ep
+
+v
+ X(p), Y
+
+· 1(ψ(X(p)) = s)
+
+ξp(s)
+.
+(13)
+For completeness, when s /∈I(p) we let u(p | s) = 0. Finally, the best response set for a strategy
+p is given by
+BR(p) = arg max
+q∈P
+X
+s∈I(p)
+ξp(s) · u(p | s)′q(s),
+(14)
+and similarly to Definition 2, we have that p is a symmetric Nash equilibrium if p ∈BR(p). The
+objective in the optimization problem of (14) can be thought of as the ex-ante expected utility
+(prior to receiving state information) of a customer who plays q, when all other customers play p.
+It can be further seen that the optimization problem is separable, in the sense that it can be solved
+independently for every s ∈I(p). In other words, to constitute a best response, a strategy has to
+prescribe an optimal play, separately, under any information signal observed.
+5.2
+Simulation and stochastic approximation
+Again, we construct our utility estimator by simulating a single regenerative cycle starting at the
+arrival of a customer to state 0d, with Xj, j = 1, . . . , L, being the state at the j-th arrival in that
+cycle, and L being the cycle length. To apply the SA algorithm we construct an estimator for every
+s ∈I defined by
+G(s) =
+L
+X
+j=1
+v(Xj) · 1(ψ(Xj) = s).
+Assuming ℓ2(p) < ∞, an immediate extension of Lemma 4 yields, for all s ∈I,
+Ep[G(s)] = ℓ(p) · ξp(s) · u(p | s).
+(15)
+Note that if s /∈I(p), then ξp(s) = 0, and equality in (15) trivially holds as we have that G(s) = 0
+with probability 1.
+25
+
+In the case with state information, our algorithm constructs at each iteration a point estimate
+G(s) for every s ∈I. Thus, for practical reasons we make the assumption hereafter that I is a
+finite set. In many applications, a trivial bound on |I| can be derived, as demonstrated in Example
+3 below. In other applications, different heuristics can be applied to cap the number of signals,
+with arguably “minimal” effect on the best-response function, however such considerations exceed
+the scope of the this paper.
+The progression of the SA algorithm is similar to the one described in the previous sections:
+Let the step-size sequence be {γn}n≥1 and the initial strategy be p(1) ∈P. At iteration n, with a
+corresponding strategy p(n), we use one regeneration cycle to construct |I| estimators, {G(n)(s)}s∈I.
+The update at the next iteration for every s ∈I is done by
+p(n+1)(s) = π∆
+
+p(n)(s) + γnG(n)(s)
+
+, n ≥0,
+(16)
+The following assumptions are sufficient for the convergence of the algorithm to an equilibrium
+strategy:
+Assumption B1. The second moment of the cycle length L(p) is bounded for every strategy;
+ℓ2(p) < ∞for all p ∈P.
+Assumption B2. The second moment of the estimator G(s) is uniformly bounded on P;
+supp∈S Ep∥G(s)∥2 < ∞for all s ∈I.
+Assumption B3. For all s ∈I, ξp(s) · Hu(p | s) is continuous with respect to p, and there exists
+a function u∗: P →R such that for all s ∈I, −ξp(s) · Hu(p | s) = ∇p(s)u∗.
+Theorem 10 introduces the key result of the section, which is a generalization of Theorem 5:
+Theorem 10. Suppose Assumptions B1–B3 and A4 are satisfied. As n →∞, p(n) →as Se, where
+Se ⊆P is a set of equilibrium strategies, namely, p ∈BR(p) for every p ∈Se.
+The proof of Theorem 10 is similar to that of Theorem 5, after introducing a suitable surrogate
+best-response function, analogous to the one defined in Equation (3). This is described in further
+elaboration in Appendix E. Noticeably, Theorem 10 also implies that an equilibrium strategy exists.
+In fact, if one only cares to prove that an equilibrium strategy exists, then only the continuity of
+ξp(s) · Hu(p | s) is needed (see Appendix E).
+As in Section 3.4, the existence of a potential function u∗, as referred to in Assumption B3,
+ensures that (with probability 1) in the limit, the iterate will not oscillate between non-equilibrium
+points. In the absence of Assumption B3, even a non-stochastic variant of the algorithm can exhibit
+such undesirable oscillations in the limit.
+Although the implementation of the algorithm does
+not require u∗to be specified, verifying Assumption B3 can be difficult in practical settings. It
+is nevertheless the case that if the limit limn→∞p(n) exists then it must satisfy the equilibrium
+condition, regardless of whether Assumption B3 holds or not.
+Example 3. Consider a first-come first-served GI/G/1 queue with observable queue lengths: The
+state x = (x[1], x[2], . . . ) is a vector of residual service times, where x[i] is the residual service of the
+i-th customer in line, which, for i = 1, is that of the one in service. For simplicity, we assume here
+that service times are strictly positive iid random variables with mean 1/µ < ∞. Customer utility
+when joining the queue is linear in the waiting time, and is equal to zero when balking. Formally,
+v(x, y) = (v1(x, y), v2(x, y)) = (R −C · (y + ∥x∥1), 0) for positive constants R, C > 0, implying that
+for a random state X, v(X) = (R −C · (1/µ + ∥X∥1), 0).
+26
+
+The information available to a customer arriving at state x is the number of jobs in the system,
+∥x∥0 = |{i s.t. x[i] > 0}|. Importantly, following the FCFS assumption, any customer not in service
+has an expected residual service time of 1/µ. Hence, from an arriving customer’s standpoint, the
+(state-dependent) utility function v can be further simplified into v(X) = (R−C·(∥X∥0/µ+X[1]), 0).
+It is therefore immediate that when ∥x∥0 ≥Rµ/C, an arriving customer strictly prefers balking over
+joining. By defining K = ⌊Rµ/C⌋we can thus assume that customers balk when observing K + 1
+(or more) customers in queue, and we restrict attention to decision epochs, which are the arrival
+instants of customers to states in X = {x s.t. ∥x∥0 ≤K}. This implies that at decision epochs, the
+state-information function ψ(x) = ∥x∥0 defines a finite set of possible information signals (queue
+lengths), I = {0, . . . , K}.
+A strategy p is a mapping from I to the two-dimensional simplex,
+p(s) = (p(s), 1 −p(s)) ∈∆, with p(s) ∈[0, 1] being the probability of joining when s ∈I customers
+are observed. Hence, ξp(s) is the stationary probability of observing s ∈I customers in queue at a
+decision epoch, provided all customers play according to p.
+Given p, the dynamics of the process imply that if customers balk with probability 1 at queue
+length s, i.e., if p(s) = 0, then any queue length ˜s > s is transient. Put formally, we have for all
+p ∈P, I(p) = {s ∈I s.t ∀˜s < s, p(˜s) > 0}. An equilibrium, adapted to this example, is a strategy
+p ∈P such that for all s ∈I(p), if u1(p | s) > 0 then p(s) = 1, and if u1(p | s) < 0 then p(s) = 0.
+We note that if p is an equilibrium, there could be at most one s ∈I(p) satisfying u1(p | s) < 0,
+which also constitutes a threshold on the length of the queue (as long as customers play according
+to p).
+Figure 4 depicts a simulation in which we set C = 1 and R = 1.7, implying that K = 1 and
+I = {0, 1}. Thus, every customer that observes two (or more) other customers automatically balks.
+In both panels, interarrival times are exponentially distributed with mean 1, which is equal to the
+mean service time, yet the service distribution varies between the two panels. In panel (a), services
+are exponentially distributed, hence it is a particular case of Naor’s observable M/M/1 model ([61])
+in which the unique equilibrium, {pe(s)}s∈{0,1} = {(pe(s), 1 −pe(s))}s∈{0,1} is easily found, with
+pe(0) = 1 and pe(1) = 0, i.e., join if and only if the system is empty. In panel (b), services are
+uniformly distributed over [0, 2]. We note that the uniform distribution is of a decreasing mean
+residual lifetime, and by Proposition 3.1 in Kerner ([48]) the equilibrium exists uniquely. In both
+experiments we run the simulation for N = 105 iterations of the algorithm, with γn = 2/n and initial
+strategy p(1)(s) = (1/2, 1/2) for all s ∈{0, 1}. Interestingly, in the right panel, the equilibrium to
+which the algorithm converges is of a randomized threshold type; when a customer observes another
+customer in service, they join with probability p(N)(1) ≈0.37, in accordance with the analysis and
+intuition provided in [48].
+27
+
+(a) exponential service
+(b) uniform service
+Figure 4: The convergence of the SA algorithm as n →∞. The joining probability p(n)(s) is plotted
+vs. n on a square-root scale, for s = 0, 1. In both panels, the blue curve depicts p(n)(0) and the
+green curve depicts p(n)(1).
+Remark 4. It is possible that some information signals are transient under some strategies but
+recurrent under different strategies. For instance, in the observable GI/G/1 queue, any strategy
+p(s) = (p(s), 1 −p(s)) with s ∈I(p) such that p(s) = 0 (meaning customers balk when observing
+queue length s), imply that the probability of observing a queue longer than s is zero, i.e., for all
+s0 > s, s0 /∈I(p). As a matter of fact, the equilibrium condition p ∈BR(p) does not impose any
+restriction on customer decisions in the (null) event they receive a zero-probability signal. Hassin
+and Haviv [37] introduce an adaptation of the concept of sub-game perfect Nash equilibria to queueing
+games, which is a refinement of the equilibrium concept, adding the requirement that customers play
+optimally also when arriving to transient states. In our setup, convergence to a sub-game perfect
+equilibrium cannot be guaranteed: Assuming the algorithm converges to an equilibrium pe with
+s0 /∈I(pe), the s0-th (vector) component of the strategy will be updated, if at all, only finitely often;
+the tail of the sequence {p(n)(s0)}n≥0 is a constant vector (almost surely); and the limiting strategy
+pe is possibly suboptimal at s0.
+6
+Concluding remarks
+This work introduces a robust stochastic-approximation algorithm that computes symmetric Nash
+equilibria in a general class of queueing games. The method involves simulating the system once
+and updating the strategy at regeneration times using the Robbins-Monro algorithm. As opposed
+to classical stochastic-optimization settings, a Nash equilibrium of a game with a discrete action
+space is not given by a first-order gradient condition. Therefore, an equivalent condition for a Nash
+equilibrium is formulated based on the root of a continuous function. This enables the construction
+of an iterative fixed-point method resembling those used in stochastic approximation. Results from
+renewal theory are used in order to construct an unbiased estimator of the total utility observed
+during a regeneration period. Verifiable conditions for almost-sure convergence of the algorithm are
+further provided. The method is shown to be useful for various interesting applications.
+We suspect that the suggested algorithm may be further used in order to find a socially optimal
+strategy, by considering the social cost of deviation instead of the individual optimality condition
+(see Haviv and Oz [43]). Loosely speaking, the concept of social cost of deviation basically allows
+one to reformulate the problem of identifying socially optimal strategies as a problem of finding
+28
+
+equilibrium strategies in a game, and therefore deploy the SA algorithm to approximate these
+strategies.
+The framework developed here can be extended and improved in several ways, in particular,
+by introducing more accurate estimators for the utility function. A direct extension is to update
+the strategy after multiple regeneration cycles. Having several observations of regeneration cycles
+will reduce the variance of the estimator and will improve the accuracy of the iteration steps. Of
+course, this method entails an inherent trade-off because the algorithm can potentially “waste time”
+on simulating the process for strategies that are far off from the correct solution. Thus, a suitable
+dynamic choice of the simulation length at each iteration should be implemented.
+The regeneration cycle approach comes along with both theoretical and practical advantages –
+its implementation is straightforward and the estimator for g(p(n)) is independent and unbiased.
+In this setting, the theory of stochastic approximations provides verifiable sufficient conditions for
+almost-sure convergence of the algorithm. An interesting future research direction is to explore the
+applicability of the SA framework to a more flexible iterative scheme that updates the strategy at
+every arrival and not just at regeneration times. This can be seen as a reinforcement-learning ap-
+proach, although the resulting process is clearly not Markov. Implementation of such an algorithm
+should be just as easy, but theoretical analysis is much more involved. In particular, the estimation
+step is biased and is not independent of previous iterations. The theory on SA algorithms with corre-
+lated noise may be useful for constructing meaningful convergence conditions in this setting (see [50,
+Ch. 6]). This modification is appealing because it has the potential of coping with strategies that
+drive the system out of the stability region. Proving that such a scheme of simple sequential inter-
+actions among agents eventually converges to an equilibrium will further strengthen the plausibility
+of equilibrium emergence in realistic systems and highlight the importance of studying equilibrium
+analysis in queues.
+Acknowledgements
+The authors are grateful to Refael Hassin and Moshe Haviv for their advice and comments on the
+paper, as well as to Jim Dai and Binyamin Oz for several fruitful discussions. The authors would
+also like to thank the editors and reviewers for their detailed and helpful feedback. This research
+was supported in part by the Shenzhen Research Institute for Big Data International Postdoctoral
+Fellowship.
+Authors
+Ran I. Snitkovsky is an Assistant Professor at the Coller School of Management, Tel Aviv Uni-
+versity. He received his PhD in Operations Research in 2020 from the School of Mathematical
+Sciences, Tel Aviv University. He was a short-term visiting scholar at Tuck School of Business, and
+a postdoctoral fellow at Columbia Business School and Shenzhen Research Institute of Big Data,
+CUHK Shenzhen. His research revolves around the modeling and methodology of strategic, social,
+and behavioral interactions in congestion-prone systems, with a strong emphasis on economic and
+managerial insights. Contact details: ran@tauex.tau.ac.il, Coller School of Management, Tel Aviv
+University, Tel Aviv 6997801, Israel.
+Liron Ravner is a Senior Lecturer at the Department of Statisitcs, University of Haifa.
+He
+received his PhD in Statistics in the Hebrew Univsrsity of Jerusalem.
+His research interests
+focus on the intersection of Applied Probability, Statistics and Game Theory.
+Contact de-
+tails: lravner@stat.haifa.ac.il, Department of Statistics, University of Haifa, Mount Carmel, Haifa
+29
+
+3498838, Israel.
+References
+[1] I. Adiri and U. Yechiali (1974). Optimal priority-purchasing and pricing decisions in nonmonopoly
+and monopoly queues. Operations Research, 22(5): 1051–1066.
+[2] E. Altman and Z. Altman (2003). S-modular games and power control in wireless networks. IEEE
+Transactions on Automatic Control, 48(5):839–842.
+[3] E. Altman and N. Shimkin (1998). Individual equilibrium and learning in processor sharing systems.
+Operations Research, 46(6):776–784.
+[4] T. W. Anderson (1962). An introduction to multivariate statistical analysis, 3rd edition. Wiley, New
+York.
+[5] S. Andradóttir (1996). Optimization of the transient and steady-state behavior of discrete event
+systems. Management Science, 42(5):717–737.
+[6] S. Asmussen (2003). Applied Probability and Queues, 2nd edition. Springer, New York.
+[7] S. Asmussen and P. W. Glynn (2007). Stochastic simulation: algorithms and analysis, Springer
+Science & Business Media.
+[8] O. Baron, X. Chen and Y. Li (2022). Omnichannel services: The false premise and operational
+remedies. Management Science.
+[9] C.E. Bell and S. Jr. Stidham (1983). Individual versus social optimization in the allocation of
+customers to alternative servers. Management Science, 29(7): 831–839.
+[10] M. Benaïm and M. W. Hirsch (1999). Stochastic approximation algorithms with constant step size
+whose average is cooperative. Annals of Applied Probability, 9(1): 216–241.
+[11] I. Ben-Shahar, A. Orda and N. Shimkin. (2000). Dynamic service sharing with heterogeneous
+preferences. Queueing Systems, 35(1):83–103.
+[12] D. J. Bertsimas, D. Nakazato. (1992). Transient and busy period analysis of the GI/G/1 queue:
+the method of stages. Queueing Systems, 10(3): 153–184.
+[13] V.S. Borkar (2008). Stochastic approximation: a dynamical systems viewpoint, Cambridge University
+Press.
+[14] R. Buche and H. J. Kushner (2000). Stochastic approximation and user adaptation in a competitive
+resource sharing system. IEEE Transactions on Automatic Control, 45(5):844–853.
+[15] R. Buche and H. J. Kushner (2002). Rate of convergence for constrained stochastic approximation
+algorithms. SIAM journal on control and optimization, 40(4):1011–1041.
+[16] A. Burnetas and A. Economou (2007). Equilibrium customer strategies in a single server Marko-
+vian queue with setup times. Queueing Systems, 56(3): 213–228.
+[17] F. Castro, P. Frazier, H. Ma, H. Nazerzadeh and C. Yan (2020). Matching Queues, Flexibility
+and Incentives. Available at SSRN, https://ssrn.com/abstract=3627920
+[18] M. Chen, M. Hu and J. Wang (2022).
+Food delivery service and restaurant: Friend or foe?
+Management Science.
+[19] X. Chen, Y. Liu and G. Hong (2020). An online learning approach to dynamic pricing and capacity
+sizing in service systems. arXiv preprint, arXiv:2009.02911.
+[20] M. A. Crane and D.L. Iglehart (1975). Simulating stable stochastic systems: III. Regenerative
+processes and discrete-event simulations. Operations Research, 23(1):33–45.
+30
+
+[21] S. Cui, Z. Wang and L. Yang (2020). The economics of line-sitting. Management Science, 66(1):
+227–242.
+[22] J. G. Dai and M. Gluzman (2021). Queueing Network Controls via Deep Reinforcement Learning.
+Stochastic Systems.
+[23] D. J. Daley and D.R. Jacobs (1969). The total waiting time in a busy period of a stable single-
+server queue, II. Journal of Applied Probability, 6(3):565–572.
+[24] C. Daskalakis, A. Mehta and C. Papadimitriou (2009). TA note on approximate Nash equilibria.
+Theoretical Computer Science, 410(17):1581–1588.
+[25] De Meyer, A., and J. L. Teugels (1980). On the asymptotic behaviour of the distributions of the
+busy period and service time in M/G/1. Journal of Applied Probability, 17(3): 802–813.
+[26] L.G. Debo, L.B. Toktay and L.N. Van Wassenhove (2008). Queuing for expert services. Man-
+agement Science, 54(8): 1497–1512.
+[27] N. M. Edelson and D. K. Hildebrand (1975). Congestion tolls for poisson queuing processes.
+Econometrica, 43(1), 81–92.
+[28] M. C. Fu (1990). Convergence of a stochastic approximation algorithm for the GI/G/1 queue using
+infinitesimal perturbation analysis. Journal of Optimization Theory and Applications, 65(1):149–160.
+[29] M. C. Fu (1994). Optimization via simulation: A review. Annals of Operations research, 53(1):199–
+247.
+[30] D. Gamarnik (2002). On deciding stability of constrained homogeneous random walks and queueing
+systems. Mathematics of Operations Research, 27(2):272–293.
+[31] A. Gosh, A. Bassamboo and M. Larviere (2020). The Queue Behind the Curtain: Information
+Disclosure in Omnichannel Services. Available at SSRN, https://ssrn.com/abstract=3730482
+[32] P. Guo and R. Hassin (2001). Strategic behavior and social optimization in Markovian vacation
+queues. Operations research, 59(4): 986–997.
+[33] P. Guo and P. Zipkin (2007). Analysis and comparison of queues with different levels of delay
+information. Management Science, 53(6): 962–970.
+[34] R. Hassin (1996). On the advantage of being the first server. Management Science, 42(4): 618–623.
+[35] R. Hassin. (2016). Rational Queueing, CRC Press.
+[36] R. Hassin and M. Haviv (1997). Equilibrium threshold strategies: The case of queues with priorities.
+Operations Research, 45(6): 966–973.
+[37] R. Hassin and M. Haviv. (2002). Nash equilibrium and subgame perfection in observable queues.
+Annals of Operations Research, 113(1):15–26.
+[38] R. Hassin and M. Haviv. (2003). To Queue or Not to Queue: Equilibrium Behavior in Queueing
+Systems, Springer.
+[39] R. Hassin and R.I. Snitkovsky (2017). Strategic customer behavior in a queueing system with a
+loss subsystem. Queueing Systems, 86(3):361–387.
+[40] R. Hassin and R.I. Snitkovsky (2021). On the Supermarket Game with finitely many servers.
+Working paper.
+[41] R. Hassin and R. Roet-Green (2017). The impact of inspection cost on equilibrium, revenue, and
+social welfare in a single-server queue. Operations Research, 65(3): 804–820.
+[42] R. Hassin and R. Roet-Green (2021). On Queue-Length Information when Customers Travel to
+a Queue. Manufacturing & Service Operations Management, 23(4): 989–1004.
+[43] M. Haviv and B. Oz (2021). A busy period approach to some queueing games. Queueing Systems,
+97(3):261–77.
+31
+
+[44] M. Haviv and L. Ravner (2021). A survey of queueing systems with strategic timing of arrivals.
+Queueing Systems, 99(1), 163–198.
+[45] M. Hu, J. Wang and H. Wen (2020). Share or solo? Individual and social choices in ride-hailing.
+Available at SSRN, https://ssrn.com/abstract=3675050
+[46] J. Jacob and R. Roet-Green (2021).
+Ride solo or pool: Designing price-service menus for a
+ride-sharing platform. European Journal of Operational Research, 295(3): 1008–1024.
+[47] K. Jagannathan, I. Menache, E. Modiano and G. Zussman (2012). Non-cooperative spectrum
+access—The dedicated vs. free spectrum choice. IEEE Journal on Selected Areas in Communications,
+30(11): 2251–2261.
+[48] Y. Kerner (2011). Equilibrium joining probabilities for an M/G/1 queue. Games and Economic
+Behavior, 71(2):521–526.
+[49] J. Kiefer and J. Wolfowitz (1952). Stochastic estimation of the maximum of a regression function.
+The Annals of Mathematical Statistics, 23(3):462–466.
+[50] H. Kushner and G. G. Yin (2003). Stochastic approximation and recursive algorithms and applica-
+tions. Springer Science & Business Media.
+[51] P. L’Ecuyer and P. W. Glynn (1994). Stochastic optimization by simulation: Convergence proofs
+for the GI/G/1 queue in steady-state. Management Science, 40(11):1562–1578.
+[52] P. L’Ecuyer, N. Giroux and P. W. Glynn (1994). Stochastic optimization by simulation: Nu-
+merical experiments with the M/M/1 queue in steady-state. Management Science, 40(10):1245–1261.
+[53] C. Le Van, J. Stachurski (2007). Parametric continuity of stationary distributions. Economic
+Theory, 33(2):333–348.
+[54] B. Liu, Q. Xie and E. Modiano (2019). Reinforcement learning for optimal control of queueing sys-
+tems. 2019 57th Annual Allerton Conference on Communication, Control, and Computing (Allerton),
+663–670. IEEE
+[55] M. Mandjes, B. Patch, and N. S. Walton. (2019). Detecting Markov chain instability: a monte
+carlo approach. Stochastic Systems, 7(2):289–314.
+[56] C. Maglaras and A. Zeevi (2003). Pricing and capacity sizing for systems with shared resources:
+Approximate solutions and scaling relations. Management Science, 49(8): 1018–1038.
+[57] A. Manou, P.G. Canbolat and F. Karaesmen (2017). Pricing in a transportation station with
+strategic customers. Production and Operations Management, 26(9): 1632–1645.
+[58] A. Manou, A. Economou and F. Karaesmen (2014). Strategic customers in a transportation
+station: when is it optimal to wait?. Operations Research, 62(4): 910–925.
+[59] H. Mendelson (1985). Pricing computer services: Queueing effects. Communications of the ACM,
+28(3): 312–321.
+[60] M. Maschler, E. Solan and S. Zamir. (2013). Game Theory, Cambridge University Press.
+[61] P. Naor. (1969). The regulation of queue size by levying tolls. Econometrica, 37(1):15–24.
+[62] A. Nemirovski, A. Juditsky, G. Lan and A. Shapiro (2009). Robust stochastic approximation
+approach to stochastic programming. SIAM Journal on optimization, 19(4):1574–1609. 37(1):15–24.
+[63] A. K. Parlaktürk and S. Kumar (2004). Self-interested routing in queueing networks. Management
+Science, 50(7): 949–966.
+[64] H. Robbins and S. Monro (1951). A stochastic approximation method. The Annals of Mathematical
+Statistics, Sep: 400–407.
+[65] R. Roet-Green and Y. Yuan (2020). Information visibility in omnichannel queues. Available at
+SSRN, https://ssrn.com/abstract=3485810
+32
+
+[66] R. Y. Rubinstein and R. Marcus (1985). Efficiency of multivariate control variates in Monte Carlo
+simulation. Operations Research, 33(3): 661–677.
+[67] Y. Sakuma, H. Masuyama and E. Fukuda (2020). A discrete-time single-server Poisson queueing
+game: Equilibria simulated by an agent-based model.
+European Journal of Operational Research,
+283(1): 253–264.
+[68] O. Sebbouh,R. M. Gower and A. Defazio (2021). Almost sure convergence rates for stochastic
+gradient descent and stochastic heavy ball. 2021 Conference on Learning Theory, 3935–3971, PMLR.
+[69] K. Sun, Y. Liu and L. Yang (2020). Order Ahead for Pickup: Promise or Peril?. Available at
+SSRN, https://ssrn.com/abstract=3673617
+[70] R. Suri and M. A. Zazanis (1988).
+Perturbation analysis gives strongly consistent sensitivity
+estimates for the M/G/1 queue. Management Science, 34(1): 39–64.
+[71] R. Suri and Y. T. Leung (1989). Single run optimization of discrete event simulations—An empirical
+study using the M/M/l queue. IIE transactions, 21(1): 35–49.
+[72] T.A. Taylor (2018). On-demand service platforms. Manufacturing & Service Operations Manage-
+ment, 20(4): 704–720.
+[73] H. Thorisson. (1985). The queue GI/G/1: Finite moments of the cycle variables and uniform rates
+of convergence. Stochastic processes and their applications, 19(1):85–99.
+[74] J. Wang, S. Cui, and Z. Wang (2019). Equilibrium strategies in M/M/1 priority queues with
+balking. Production and Operations Management, 28(1): 43–62.
+[75] W. Whitt (1974). The continuity of queues. Advances in Applied Probability, 6:175–183.
+[76] W. Whitt (1989). Planning queueing simulations. Management Science, 35(11):1341–1366.
+[77] J. Xu and B. Hajek (2013). The supermarket game. Stochastic Systems, 3(2):405–441.
+[78] W. Yang and B. L. Nelson (1992). Multivariate batch means and control variates. Management
+Science, 38(10): 1415–1431.
+[79] D. D. Yao (1995). S-modular games, with queueing applications. Queueing Systems, 21(3):449–475.
+33
+
+Appendix A
+Verification of approximate equilibrium for Section 1.1
+For validation purpose, we estimate the mean virtual workloads for the two queues by simulating
+2 × 106 arrivals to each of the two GI/G/1 queues separately (assuming they are initially empty).
+The choice of simulation length follows the framework laid out in [76]. Note that traffic intensities
+are relatively low in these two cases, and (recalling that µ1 = µ2 = 1) are equal to λp(N)
+1
+≈0.477 in
+Server 1, and λp(N)
+2
+≈0.3 in Server 2. In the two cases below, inter-arrival times are distributed as
+S = PZ
+i=1 Ui where Ui ∼Gamma(0.1, 11), Z is geometrically distributed with a different parameter
+at each case, and services are distributed as described:
+1. Z ∼Geom(p(N)
+1
+) and services are distributed according to F1 (which is Beta(10, 10) + 0.5);
+2. Z ∼Geom(p(N)
+2
+) and services are distributed according to F2 (which is Bernoulli(0.1) · 10).
+Under the algorithm’s output strategy p(N), we obtain (consistent) estimators for E[X[1]] and
+E[X[2]], in Cases 1 and 2, respectively, by averaging the observed workloads at arrival instants.
+To construct asymptotic confidence intervals for the mean workloads we follow the CLT-based
+framework of [7, Ch. III]: We set the significance level α = 0.005. Under Case 1 we obtain an
+average virtual workload equal to 4.006 with an asymptotic 1 −α confidence interval [3.996, 4.017].
+Under Case 2 we get a sample average equal to 4.005 with an asymptotic 1 −α confidence interval
+[3.989, 4.021]. This suggests that with more than (1−α)2(≈0.99) certainty, our algorithm’s output
+p(N) is such that (E[v1], E[v2]) ∈I1 × I2, where I1 = [−0.017, 0.004] and I2 = [−0.021, 0.011].
+Hence, with high certainty (>99%) our approximated solution p(N) satisfies the criterion for an
+ϵ-approximate Nash equilibrium ([24]) for ϵ ≤max(x,y)∈I1×I2 |x −y| = 0.028.
+Appendix B
+Proofs
+B.1
+Proof of Lemma 2
+Proof. We show first that every symmetric Nash equilibrium p satisfies p = f(p). Assume p ∈
+arg maxq∈∆u(p)′q. Then any q ∈∆satisfies u(p)′q ≤u(p)′p, or equivalently, 0 ≤u(p)′(p −q).
+Assuming q ̸= p, we have that
+∥p + u(p) −q∥2 = ∥p −q∥2 + 2u(p)′(p −q) + ∥u(p)∥2
+> ∥u(p)∥2 = ∥p + u(p) −p∥2,
+meaning that p = π∆
+ p + u(p)
+
+= f(p).
+We proceed to showing that if p is not a symmetric equilibrium strategy then p ̸= f(p). Assume
+now that p /∈arg maxq∈∆u(p)′q so that there exists some strategy q ∈∆, q ̸= p, such that
+u(p)′(q −p) > 0. Hence, we can choose θ ∈(0, 1] such that
+θ < 2u(p)′(q −p)
+∥q −p∥2
+.
+Define ˜q = (1−θ)p+θq, so that p−˜q = θ(p −q). Note that ∆is a convex set, thus ˜q ∈∆. Then,
+∥p + u(p) −˜q∥2 = ∥p −˜q∥2 + 2u(p)′(p −˜q) + ∥u(p)∥2
+= θ
+ θ∥q −p∥2 −2u(p)′(q −p)
+
++ ∥u(p)∥2
+< ∥u(p)∥2 = ∥p + u(p) −p∥2,
+therefore p ̸= π∆
+ p + u(p)
+
+, meaning that p ̸= f(p).
+34
+
+B.2
+Proof of Theorem 5 and auxiliary results
+The proof of Theorem 5 essentially relies on casting the algorithm in (5) into a specific form, in
+which the conditions of Theorems 2.4 in [50, Ch. 5.2] can be verified. Roughly speaking, this theorem
+relates the asymptotic behavior of the iterate p(n) in (5) to solution paths of an appropriate ODE
+(Equation (17) below), in which the strategy p(·) is understood as a continuous function of time.
+The proof will make use of the following result:
+Lemma 11. Let p ∈∆and x ∈Rk, then
+π∆(p + x) = π∆(p + Hx),
+where H is the orthogonal projection matrix onto H = {x ∈Rk | e′x = 0}.
+Proof. Denote ˆp = π∆(p + x), and suppose, by way of contradiction, that there exists some q ∈∆
+that is closer than ˆp to p + Hx, so that
+∥p + Hx −q∥2 < ∥p + Hx −ˆp∥2.
+Note, since p, q, ˆp ∈∆, that p −q ∈H and p−ˆp ∈H, so that both p −q and p−ˆp are orthogonal
+to x −Hx. Using the (generalized) Pythagorean theorem, together with the above inequality we
+therefore have
+∥p + x −q∥2 = ∥x −Hx∥2 + ∥p + Hx −q∥2 < ∥x −Hx∥2 + ∥p + Hx −ˆp∥2 = ∥p + x −ˆp∥2,
+which is in contradiction to the definition of ˆp.
+To define the corresponding ODE let the set-valued map C : ∆→2∆be defined as follows:
+For an interior point p ∈∆o, let C(p) = {0}; for a boundary point p ∈∆\ ∆o, let C(p) be the
+infinite convex cone generated by the outer normals of the faces of ∆that contain p. Adopted to
+our framework, the projected ODE takes the form:
+˙p = Hu(p) + z,
+and
+−z(t) ∈C(p(t)), ∀t ≥0,
+(17)
+where ˙p(·) is the vector of time derivatives of p(·); ˙p = (dp1/dt, . . . , dpk/dt). The value of z(·)
+at each point in time is interpreted as the ‘minimum force’ needed to prevent the path p(·) from
+leaving ∆. A stationary point of (17) is a point pe ∈∆such that Hu(pe) + z = 0 for some z such
+that −z ∈C(pe), meaning that the minimum force needed to push pe + Hu(pe) into ∆is given by
+−Hu(pe). Hence, if pe is stationary,
+π∆(pe + Hu(pe)) = p + Hu(pe) −Hu(pe) = pe,
+and in light of Lemma 11, pe = f(pe), implying by Lemma 2 that pe is an equilibrium.
+Define the limit set of the ODE in (17) as
+L =
+[
+p0∈∆
+\
+t≥0
+
+p(s) | s ≥t, p(0) = p0 
+,
+that is, we consider solution paths of (17) starting at an initial point p0, for each such path we pick
+all points visited infinitely many times, and then define L as the union of all such points for all
+possible initial values p0 ∈∆. Theorems 2.1 and 2.4 in [50, Ch. 5.2] provide sufficient conditions
+under which the stochastic iterate p(n) converges (almost surely) to some subset of L as n →∞.
+35
+
+Clearly, if pe is stationary, then a path starting at pe will forever remain there, thus pe ∈
+L. However, in general L may include points that are not stationary, specifically when there are
+solutions of (17) that do no converge to a unique point (e.g., circles). It is therefore of interest to
+introduce conditions under which such circular paths do not exist, and Assumption A3 is one such
+condition. This is formulated in the lemma below:
+Lemma 12. Let S∗be the set of stationary points of (17). If Assumption A3 holds, then S∗= L,
+hence, every point in L is an equilibrium.
+Proof. As discussed, S∗⊆L holds trivially, therefore it suffices to show that Assumption A3 implies
+L ⊆S∗. Let ∇pu∗= −Hu, and let p(·) be a (continuous) trajectory of (17) starting at some p0 ∈∆.
+Our goal is to show that p(·) converges to some set of stationary points, using u∗(·) as a Lyapunov
+function. Note that u∗(·) is continuous and therefore attains a finite minimum on ∆, hence we
+can assume w.l.o.g that u∗(·) is positive on ∆(otherwise it can be increased by a constant without
+affecting the assumptions). For any t ≥0, the term p(t) + Hu(p(t)) + z(t) is the projection of
+p(t) + Hu(p(t)) onto ∆, hence
+∥z(t)∥= ∥p(t) + Hu(p(t)) −(p(t) + Hu(p(t)) + z(t))∥
+≤∥p(t) + Hu(p(t)) −p(t)∥= ∥Hu(p(t))∥.
+Note that the inequality is strict in the case that p(t) is non-stationary. This, together with the
+Cauchy–Schwarz inequality implies, for any non-stationary p(t),
+−∥Hu(p(t))∥2 < −∥Hu(p(t))∥· ∥z(t)∥≤
+ Hu(p(t))
+′z(t).
+Denote w(p(t)) = −(d/dt)u∗(p(t)).
+Using the gradient chain rule we therefore have, for non-
+stationary p(t),
+−w(p(t)) = d
+dtu∗(p(t)) = ∇pu∗(p(t))′ ˙p(t) = −
+ Hu(p(t))
+′(Hu(p(t)) + z(t)) < 0.
+Following the continuity of Hu(·), w(·) is continuous on ∆, and it can be seen from the above that
+for any p ∈∆, w(p) = 0 if and only if p is stationary. Furthermore, for all t ≥0,
+0 ≤
+Z t
+0
+w(p(s))ds = u∗(p0) −u∗(p(t)) ≤u∗(p0),
+where the last inequality is due to u∗being positive. It follows that 0 ≤
+R ∞
+0 w(p(s))ds < ∞, thus,
+as t →∞, w(p(t)) →0, and by continuity of w(·) and p(·),
+p(t) →{pe | w(pe) = 0},
+i.e., p(·) converges to a set of stationary points, as desired.
+Remark 5. There are cases in which Assumptions A3 can be easily verified. For example, if k = 2,
+then each strategy p = (p, 1 −p) ∈∆is uniquely characterized by a single value p ∈[0, 1] which
+parametrizes the whole simplex, and the matrix H is given by
+H = 1
+2 ·
+
+
+
+
+1
+−1
+−1
+1
+
+
+
+.
+36
+
+Then for any p = (p, 1 −p) ∈∆, denoting s = (s, 1 −s) and ˜e = e1 −e2 = (1, −1), we can simply
+define u∗(·) by
+u∗(p) =
+Z p
+0
+−(Hu(s))′˜e · ds = −
+Z p
+0
+(u1(s) −u2(s)) ds =
+Z p
+0
+(u2(s, 1 −s) −u1(s, 1 −s)) ds.
+If k > 2, then u∗can be easily shown to exist if u(·) itself is known to be conservative. In this
+case, for every parameterized curve r(s), s ∈[a, b] ⊆R, that lies entirely in ∆, any tangential vector
+at a point along r must lie in H; that is, ˙r(s) ∈H for all s ∈[a, b]. Assuming −u = ∇pv∗for some
+v∗: ∆→R, the line integral of −Hu(·) along the curve r(·) is given by
+Z b
+a
+−
+ Hu(r(s))
+′˙r(s)ds =
+Z b
+a
+−u(r(s))′H˙r(s)ds =
+Z b
+a
+−u(r(s))′˙r(s)ds = v∗(r(b)) −v∗(r(a)),
+where the first transition follows from the symmetry of H, the second follows from ˙r(s) ∈H, and
+the third is due to u(·) being conservative. This shows that the integral of −Hu(·) along any curve
+in ∆depends only on its endpoints, hence −Hu(·) is conservative.
+We next proceed to the proof of the theorem.
+Proof of Theorem 5
+Proof. Let ϵn = γnℓ(p(n)), then the algorithm in (5) can be written as
+p(n+1) = π∆
+ 
+p(n) + ϵn
+G(n)
+ℓ(p(n))
+!
+= π∆
+ 
+p(n) + ϵn
+HG(n)
+ℓ(p(n))
+!
+,
+(18)
+where the second equality is due to Lemma 11. Note that ℓ(p) ≥1, thus P∞
+n=1 ϵn ≥P∞
+n=1 γn = ∞,
+in accordance with Equation (1.1) of [50, Ch. 5.1]. Assumption A1 implies that ℓ(p) ≤M < ∞
+for all p ∈∆, hence by Assumption A4 and the compactness of ∆we have that P∞
+n=1 ϵ2
+n ≤
+M2 P∞
+n=1 γ2
+n < ∞almost surely. Therefore, condition (2.14) of Theorem 2.4 in [50, Ch. 5.2] is
+satisfied.
+Next observe that the iterate p(n) in (18) is confined to the simplex, which is a compact and non-
+empty polyhedron. Therefore, Assumption (A4.3.2) of [50, Ch. 5.2] is satisfied. Assumptions A3
+and A2 imply Assumptions (A2.1), (A2.3) of [50, Ch. 5.2].
+By Lemma 4 and the linearity of
+expectation we have that
+Ep
+"
+HG(n)
+ℓ(p(n))
+#
+= Hu(p(n)),
+hence Assumption (A2.7) of [50, Ch. 5.2] is satisfied.
+Combining the above yields the conclusion of Theorem 2.4 in [50, Ch. 5.2] that p(n) as defined in
+(18) converges to a set of limit points in L, and together with Assumption A3 we have, by Lemma
+12, that all points in L are equilibria, which concludes the proof of the theorem.
+B.3
+Proof of Proposition 7
+Proof. Assume without loss that u is non-negative in all its coordinates and that minp∈∆∥u(p)∥>
+0. This is possible since ∥u(·)∥∞admits a minimum on ∆, and shifting all coordinates of u by the
+same constant neither affects the game nor the algorithm’s progression. We first note that if u is
+37
+
+Lipschitz, then u(p)′p, as a function of p, is also (locally) Lipschitz on ∆: Let Ku be a Lipschitz
+constant for u and let Mu be an upper bound on ∥u(·)∥over ∆. Then for all p, q ∈∆
+|u(p)′p −u(q)′q| = |(u(p) −u(q))′p + u(q)′(p −q)|
+≤∥u(p) −u(q)∥· ∥p∥+ ∥u(q)∥· ∥p −q∥
+≤∥u(p) −u(q)∥+ Mu∥p −q∥
+≤(Ku + Mu)∥p −q∥.
+Thus, K = Ku + Mu is a Lipschitz constant for both u(p)′p and u(p). Note that u∗is strongly
+convex, therefore there exists a unique equilibrium pe. Furthermore, pe is a best response to itself,
+i.e., pe
+i = 0 for any i such that ui(pe) < ∥u(pe)∥∞, therefore u(pe)′pe = ∥u(pe)∥∞. Thus, for all
+p ∈∆,
+∥u(pe)∥∞−u(p)′p = u(pe)′pe −u(p)′p ≤|u(pe)′pe −u(p)′p| ≤K∥p −pe∥,
+hence, ∥u(pe)∥∞−K∥p −pe∥≤u(p)′p. For all x ∈Rk, ∥x∥∞≤∥x∥, and using the triangle
+inequality together with the above yields, for all p, q ∈∆,
+u(p)′q ≤∥u(p)∥∞= ∥u(p) −u(pe) + u(pe)∥∞≤∥u(pe)∥∞+ ∥u(p) −u(pe)∥∞
+≤∥u(pe)∥∞+ ∥u(p) −u(pe)∥≤∥u(pe)∥∞+ K∥p −pe∥
+= ∥u(pe)∥∞−K∥p −pe∥+ 2K∥p −pe∥≤u(p)′p + 2K∥p −pe∥.
+(19)
+Following Assumptions A1, for all p ∈∆, by Lemma 4, EpG = ℓ(p)u(p). Since ℓis a positive
+real function and ∥u(·)∥is bounded away from 0, using Jensen’s inequality,
+ℓ(p) = ∥EpG∥
+∥u(p)∥≤Ep∥G∥
+∥u(p)∥≤
+Ep∥G∥
+minq∈∆∥u(q)∥.
+Therefore, by Assumption A2, we can choose constants M0, M1 > 0 such that Ep∥G∥2 ≤M2
+0
+and ℓ(p) ≤M1 for all p ∈∆. Setting γn = η/n, we rewrite the iterate p(n) as in (18) with the
+corresponding step size ηℓ(p(n))/n, where we note that HG(n)/ℓ(p(n)) is unbiased for Hu(p(n)) and
+that ηℓ(p(n))/n ≥η/n (almost surely). Suppose that η > 1/(2C), then under the strong convexity
+assumption (11), we can invoke the result in [62, Eq. (2.8)], by which we have for all n ≥1 that
+E∥p(n+1) −pe∥2 ≤
+ 
+1 −ηℓ(p(n))
+n
+· 2C
+!
+2E∥p(n) −pe∥2 +
+ 
+ηℓ(p(n))
+n
+· M0
+!2
+≤
+
+1 −2Cη
+n
+
+2E∥p(n) −pe∥2 +
+ηM0M1
+n
+2
+.
+Define Mη = max{(ηM0M1)2/(2Cη −1), 1}. Then, similarly to [62, Eq. (2.9)], by induction we
+have for all n ≥1 that
+E∥p(n) −pe∥2 ≤Mη
+n .
+For any δ ∈(0, 1), using Markov’s inequality we then get
+P
+
+2K∥p(n) −pe∥>
+√
+n−δ
+
+= P
+
+∥p(n) −pe∥2 > n−δ
+4K2
+
+≤4K2E∥p(n) −pe∥2
+n−δ
+≤4K2Mη · nδ−1.
+38
+
+From (19), for all q ∈∆,
+u(p(n))′p(n) ≥u(p(n))′q −2K∥p(n) −pe∥,
+hence, if 2K∥p(n) −pe∥≤
+√
+n−δ, then p(n) is a
+√
+n−δ-equilibrium, and we conclude that
+P
+
+u(p(n))′p(n) ≥max
+q∈∆u(p(n))′q −
+√
+n−δ
+
+≥1 −4 · K2Mη · nδ−1,
+which completes the proof.
+Appendix C
+Proofs for applications and examples
+C.1
+Proof of Lemma 1
+Recall that 1/µm is the expected service time in queue m and that µ2 ≥µ1. For any strategy
+p = (p1, p2, p3) the arrival rate to queue m = 1, 2 is λpi. Let wm(pm) denote the expected stationary
+waiting time (service inclusive) in queue m = 1, 2 when strategy p = (p1, p2, p3) is played by
+all customers, where we define wm(pm) = ∞for any strategy such that λpm > µm. Clearly, if
+R −C/µ2 < 0 then in equilibrium no customer will join either queue, hence pe = (0, 0, 1) is the
+unique Nash equilibrium.
+If R −C/µ2 > 0 > R −C/µ1, then in equilibrium, customers never join queue 1, but a positive
+fraction of them join queue 2. The function w2(p2) is continuous and increasing with respect to p2
+(see [75]) such that w2(0) = 1/µ2. Therefore, if R −Cw2(1) ≥0 then pe = (0, 1, 0) is the unique
+equilibrium, and if R −Cw2(1) < 0 then there exists some p2 ∈(0, 1) such that R −Cw2(p2) = 0,
+i.e., pe = (0, p2, 1 −p2) is the unique equilibrium.
+Finally, we address the case R −C/µ2 > R −C/µ1 > 0.
+If R −C/w2(1) > R −C/µ1,
+then in equilibrium all customers join queue 2 and pe = (0, 1, 0) is the unique equilibrium.
+If
+R−C/w2(1) ≤R−C/µ1 then an equilibrium strategy must satisfy p1, p2 > 0 and w1(p1) = w2(p2).
+As before, wm(pm) is continuous and increasing in pm, m = 1, 2, hence there are two possible
+cases, (a) There exists a pair p1 + p2 < 1 such that R −C/w2(p2) = R −Cw1(p1) = 0 and
+pe = (p1, p2, 1 −p1 −p2) is the unique Nash equilibrium; (b) There exists a pair p1 + p2 = 1 such
+that R −C/w2(p2) = R −Cw1(p1) > 0 and pe = (p1, p2, 0). This solution is unique because of
+the monotonicity of the waiting times implies that there is at most one solution p1 to the equation
+w1(p1) = w2(1 −p1).
+C.2
+Proof of Proposition 8
+Proof. In light of Theorem 5, to prove our Proposition 8, it suffices to verify that Assumptions
+A1–A3 are satisfied in the underlying model.
+First, we note that u(p) is a separable function, in the sense that ui(p) is only a function of pi
+for every i = 1, . . . , k. By [75], u(·) is continuous, and can be further expressed as the gradient of
+the sum of the antiderivatives,
+u(p) = ∇p
+ k
+X
+i=1
+Z
+ui(pi)dpi
+!
+.
+Thus, Assumption A3 holds. In what follows, we verify that Assumptions A1 and A2 also hold. To
+this aim, we construct a coupling between the original system and a single-server queue, which we
+describe next.
+39
+
+Given a strategy p = (p1, . . . , pk), consider a single-server, FCFS queue, which we call the coupled
+system, with identical arrival process {Tn}n≥1 as in the original system. Consider the j-th arriving
+customer, whose arrival time (in both the original and the coupled systems) is Tj. We assume that
+if this customer chooses to join queue m in original system (which occurs with probability pm) with
+service demand Ym, then customer j in the coupled system with equal service demand Ym joins at
+the same time. If customer j in the original system balks, then we say that in the coupled system,
+customer j joins with 0 service demand.
+Recall our notation Xj(p) = (X[1]
+j (p), . . . , X[k−1]
+j
+(p)) for the vector of workloads in the original
+system observed by customer j, and let the (univariate) r.v. ˜Xj(p) represent its coupled counterpart,
+namely the workload observed by the j-th arriving customer in the coupled system. We assume both
+the original and the coupled system start empty, X[m]
+1
+(p) = ˜X1(p) = 0 for all m ∈{1, . . . , k −1}.
+It can be seen from the construction that X[m]
+j
+(p) ≤˜Xj(p) with probability one, for all m ∈
+{1, . . . , k −1} and j ≥0. Furthermore, recall that L(p) = inf{n ≥1 :
+Xn+1(p) = 0k−1(p)}
+denotes the length of a random regenerative cycle in the original system and let ˜L(p) = inf{n ≥1 :
+˜Xn+1(p) = 0} be its coupled counterpart. Then L(p) ≤˜L(p) with probability one. Denoting by
+τ(p) the departure time of the L(p)-th customer in the original system and by ˜τ(p) the departure
+time of the ˜L(p)-th customer in the coupled system, it is immediate that the busy period in the
+original system, B(p) = τ(p) −T1, and the busy period in the coupled system, ˜B(p) = ˜τ(p) −T1,
+satisfy B(p) ≤˜B(p) almost surely. Since for all m ∈{1, . . . , k −1} and j ∈{1, . . . , L(p)} we know
+that X[m]
+j
+(p) ≤B(p), we conclude that X[m]
+j
+(p) ≤˜B(p) with probability one.
+For convenience, assume without loss that µ1 ≤µ2 ≤· · · ≤µk−1.
+For any strategy p =
+(p1, . . . , pk), let ˜Y (p) be a random variable that with probability pm is a random draw from the
+distribution Fm, m ∈{1, . . . , k −1}, and with probability pk takes the value 0. Hence, given p,
+the coupled system forms a GI/G/1 queue in which service time is distributed similarly to ˜Y (p).
+Moreover, this queue is stable due to λ < µ1. By assumption, E[Y 4
+m] < ∞, and it follows that
+E[ ˜Y (p)4] < ∞. It is known (see [73]) that this implies Ep ˜L(p)4 < ∞as well as Ep ˜B(p)4 < ∞.
+Thus, ℓ2(p) ≤Ep ˜L(p)2 < ∞and Assumption A1 follows.
+Let κ > 0 be a constant such that νm is κ-Lipschitz for all m ∈{1, . . . , k −1}, and let ξ =
+maxm=1,...,k−1 νm(0) + κE[Ym]. We have, for every m ∈{1, . . . , k −1} and j ∈{1, . . . , L(p)},
+vm(Xj(p)) = E[νm(X[m]
+j
+(p) + Ym) | X[m]
+j
+(p)]
+≤νm(0) + κX[m]
+j
+(p) + κE[Ym] ≤ξ + κX[m]
+j
+(p) ≤ξ + κ ˜B(p)
+almost surely. Thus,
+∥G∥2 =
+
+L(p)
+X
+j=1
+v(Xj(p))
+
+2
+≤
+
+L(p)
+X
+j=1
+(ξ + κ ˜B(p))e
+
+2
+= k · L(p)2(ξ + κ ˜B)2 ≤k · ˜L(p)2(ξ + κ ˜B(p))2,
+and together with Hölder’s inequality,
+Ep∥G∥2 ≤kEp[˜L(p)2(ξ + κ ˜B(p))2] ≤k · (Ep[˜L(p)4])
+1
+2 (Ep[(ξ + κ ˜B(p))4])
+1
+2 < ∞,
+where the last inequality follows from the finiteness of the first four moments of ˜L(p) and ˜B(p).
+To prove that Assumption A2 holds, it suffices to show that the first four moments of ˜L(p) and
+˜B(p) are continuous functions of p, which will imply that Ep∥G∥2 is uniformly bounded on ∆. The
+remainder of the proof is therefore dedicated to proving the continuity of the moments.
+Let p(n) be a convergent sequence of strategies, and denote p = limn→∞p(n). Our goal is to
+prove Ep(n) ˜L(p(n))r →Ep ˜L(p)r and Ep(n) ˜B(p(n))r →Ep ˜B(p)r for r ≤4. The convergence of
+40
+
+p(n) to p implies that ˜Y (p(n)) →d
+˜Y (p) as n →∞. Since the cycle length and busy period are
+continuous maps of the queue-length process and workload process, respectively, and since H is a
+continuous distribution, we have by [75] that ˜L(p(n))r →d ˜L(p)r and ˜B(p(n))r →d ˜B(p)r. To show
+convergence of the means we shall use the dominated-convergence theorem based on the following
+construction:
+Define Z = maxm∈{1,...,k−1} Ym. Since EY 4
+m < ∞, we have EZ4 < ∞, and clearly, EZ > 1/µ1
+(note that Y1, . . . Yk−1 are independent). For every ϵ ∈(0, 1) there exists some Nϵ such that for all
+n ≥Nϵ and i ∈{1, . . . , k}
+p(n)
+i
+≤(1 −ϵ)pi + ϵ.
+Assume ϵ < (1/λ −1/µ1)/(EZ −1/µ1). Define ¯Y (p) as a random variable taking the value ˜Y (p)
+w.p. 1 −ϵ and Z otherwise. Hence E ¯Y (p)4 < ∞, and
+E ¯Y (p) = (1 −ϵ)E ˜Y (p) + ϵEZ ≤(1 −ϵ) 1
+µ1
++ ϵEZ = ϵ · (EZ −1/µ1) + 1/µ1 < 1/λ.
+Furthermore, for n ≥Nϵ and i ∈{1, . . . , k −1}, we note that ˜Y (p(n)) takes the (random) value
+Yi with probability p(n)
+i
+, whereas ¯Y (p) takes a value equal or larger than Yi with probability (1 −
+ϵ)pi + ϵ ≥p(n)
+i
+. Hence,
+˜Y (p(n)) ≤st ¯Y (p).
+Define ¯L and ¯B as the cycle length and busy period of a GI/G/1 queue with interarrival distribution
+H and service distribution similar to that of ¯Y (p). Thus, ˜L(p(n)) ≤st ¯L and ˜B(p(n)) ≤st ¯B. Because
+E ¯Y (p) < 1/λ and E ¯Y (p)4 < ∞, it follows that E¯Lr < ∞and E ¯Br < ∞for any integer r ≤4. Since
+for all n ≥Nϵ, ˜L(p(n))r ≤st ¯Lr and ˜B(p(n))r ≤st ¯Br, we conclude, using the dominated-convergence
+theorem, that
+lim
+n→∞Ep(n) ˜L(p(n))r = Ep ˜L(p)r
+and
+lim
+n→∞Ep(n) ˜B(p(n))r = Ep ˜B(p)r,
+hence, we have proven that Ep ˜L(p)r and Ep ˜B(p)r are continuous in p.
+C.3
+Proof of Proposition 9
+Proof. As a special case of the model in 4.2, by setting p = e2, we have that all customers join the
+queue of server 2, hence it can be modeled as an M/G/1 queue, which is stable due to λ < µ. Then,
+by a coupling argument, for every p ∈∆, the total workload process X[1](t) + X[2](t) is dominated
+by that of the corresponding M/G/1 queue of p = e2, which, under the assumption E[Y 4] < ∞, has
+finite cycle-length second moment, as explained in Example 1 in Section 3.2. Hence, Assumption
+A1 holds. Following an explanation similar to that in Example 1 in Section 3.2, we conclude that
+Assumption A2 is satisfied. Furthermore, we have in this example that k = 2, hence Assumption
+A3 holds, and together with the step size assumption A4 the conclusion of Theorem 5 follows.
+Appendix D
+Unknown stability region
+In strategic-queueing literature, it is often claimed, in a rather loose sense, that customer rationality
+imposes system stability, even when some strategies in the strategy space force the system out of
+its stability region. However, the current literature is lacking a rigorous mathematical formulation
+of a queueing game that reifies this intuitive argument. The framework presented in Section 2 does
+not formally cover models in which some strategies induce system instability, because customer
+41
+
+utility is not well defined when the system is non-regenerative. In this section we suggest a heuristic
+modification of the algorithm that attempts to deal with cases where some strategies render the
+system unstable, and the stability region of the system is not known a-priori. While we believe this
+method to be useful in practice, some important theoretical questions revolving stability in queueing
+games are left unsettled. Hopefully the results presented in this paper will motivate future research
+on this subject.
+Suppose that the underlying system is positive recurrent only for strategies in some non-empty
+connected subset of the strategy space S ⊂∆. For the sake of the discussion here we will assume
+that S itself is unknown, but that ∆\S is compact, and that S contains an equilibrium point. Note
+that when S ̸= ∆, the existence of an equilibrium in S does not follow directly from our Assumption
+A3. This can be easily seen through a degenerate variation of the Unobservable M/G/1 in Example
+1, by setting λ > µ, hence S = {p = (p, 1−p) | p ∈[0, µ/λ)}, and letting C < 0 (namely, customers
+profit from waiting). Then, although Hu is a smooth conservative vector field on S, any strategy
+in S must prescribe balking with some positive probability, while its best response is to join with
+probability 1. Furthermore, S is non-compact (as is often the case for stability regions of queueing
+systems), and in this example an equilibrium does not exist even if customers are restricted to
+choose a strategy in S.
+For our Definition 2 of an equilibrium strategy to be valid, u has to be defined in the extended
+sense as
+u(p) = lim
+n→∞E
+
+v(Xn(p))
+
+for all p ∈∆, including those strategies in ∆\ S. Moreover, this definition has to coincide with the
+stationary utility whenever a limiting distribution exists, i.e., v has to be a function such that for
+all p ∈S, if there exists a random variable X(p) such that Xn(p) →d X(p) as n →∞, then it
+must also hold that
+u(p) = lim
+n→∞E
+
+v(Xn(p))
+
+= E
+
+v(X(p))
+
+.
+Furthermore, to use our method, appropriate assumptions have to be introduced on the primitives
+that rule out the existence of equilibria in ∆\ S, and prevent the iterate from “drifting” outside S.
+Such conditions should imply that after finitely many iterations, the iterate is absorbed in a compact
+subset ˜S of S containing an equilibrium point. Rigorously formulating such conditions exceeds the
+scope of this paper. However, we conjecture that the following condition, which indeed holds in
+Example 1 (with strictly positive waiting cost), is sufficient: For all p /∈S, u(p)′p = −∞and,
+additionally, for any sequence {pm}m≥1 such that minq∈∆\S ∥pm −q∥→0, limm→∞u(pm)′pm =
+−∞. We next present a modified version of the SA algorithm that terminates busy cycles when
+they exceed a threshold that increases as the number of iteration grows.
+At iteration n ≥1, given a strategy p(n), let
+˜G(n) =
+L∧βn
+X
+j=1
+v(Xj),
+(20)
+where L ∧β = min{L, β} and {βn}n≥1 is an increasing sequence of integers such that limn→∞βn =
+∞. The modified SA algorithm is defined as
+p(n+1) = π∆
+
+p(n) + γn ˜G(n)
+.
+(21)
+Clearly ˜G(n) is in general not an unbiased estimator of g(p(n)), even if p(n) ∈S. However, we next
+argue that by carefully choosing the threshold sequence {βn}, ˜G(n) can be made asymptotically
+42
+
+unbiased to g(p(n)). Note that the number of summands in (20) is finite for all n, thus, under
+natural conditions on v, ˜G(n) is integrable for all p ∈∆, and we define gn(p) = Ep ˜G(n).
+Our goal therefore is to find an appropriate threshold sequence {βn}. In our suggested heuristic
+we attempt to choose {βn} such that for every p ∈S, the sequence {gn(p)}n≥1 converges sufficiently
+fast to g(p) as n →∞. Note that for all p ∈S, gn(p) can be written as
+gn(p) = Ep ˜G(n) = Ep
+
+
+L
+X
+j=1
+v(Xj)
+
+−Ep
+
+
+L
+X
+j=βn+1
+v(Xj)1{L>βn}
+
+
+= g(p) −Ep
+
+
+L
+X
+j=βn+1
+v(Xj)1{L>βn}
+
+
+= g(p) −Pp(L > βn) ·
+L
+X
+j=βn+1
+Ep
+
+v(Xj) | L > βn
+
+= g(p) −ξn(p),
+where
+ξn(p) = Pp(L > βn) ·
+L
+X
+j=βn+1
+Ep
+
+v(Xj) | L > βn
+
+.
+Assume that Hu is continuous and conservative on S (as in A3) and that {γn}n≥1 satisfies A4. Let
+˜S ⊂S be a compact subset of S in which an equilibrium lies, such that supp∈S Ep∥G∥2 < ∞(as
+in A2), and in addition, for all p ∈˜S,
+∞
+X
+n=1
+γnℓ(p) · |ξn(p)| < ∞.
+(22)
+If for all sufficiently large n, the iterate remains (with probability 1) in ˜S ⊂S, then, we conjecture
+that the conclusion of Theorem 5 holds. Rigorous results for iteration-dependent functions can be
+found in [50, Ch. 6].
+Noticeably, there is an inherent trade-off in the choice of the sequence {βn}n≥1: if {βn}n≥1
+diverges too slowly, |ξn(p)| diminishes slowly and may fail to satisfy the condition in (22), whereas
+if {βn}n≥1 diverges very fast, there is a risk that the algorithm will spend long periods of time
+simulating arrivals to an unstable system. A reasonable choice for βn should satisfy, as an example,
+for all sufficiently large n and p ∈S,
+Pp(L > βn) ≤z(p)n ,
+(23)
+for some function z : S →(0, 1). If z is bounded over the compact set ˜S, then this choice of {βn}n≥1,
+by the Borel-Cantelli lemma, ensures that the cycle length hits the threshold βn only finitely many
+times. This can be done, for example, if the cycle-length distribution has a light tail, i.e., if for all
+p ∈˜S there exists an α such that P(L > x) ≤αx (the latter is implied, for example, in the M/G/1
+queue, assuming that the service-time distribution is light tailed; see [25]). Then taking βn = κn
+for some constant κ > 0 yields Pp(L > βn) ≤ακn.
+In Figure 5 below we present results from a simulation of the Unobservable M/G/1 queue of
+Example 1, which demonstrate the convergence of the iterate to the true equilibrium depicted
+by the red dashed line.
+In this example, service-time are exponentially distributed with mean
+1/µ = 1 (thus, the queue is an M/M/1), and the (potential) arrival rate λ is 2, hence, λ > µ and
+S = {p = (p, 1 −p) | p ∈[0, 1/2)}. The utility parameters are R = 5 and C = 1, implying that
+43
+
+the equilibrium joining probability is given by pe = 0.4. We implement the modified algorithm, for
+n = 1, . . . , 106, using ˜G(n) as the estimator at iteration n, with βn = n, step size γn = 1/n and
+initial strategy p(1) = (1/2, 1/2). In our experimentation, over the simulation horizon, the cycle
+length hits the threshold βn a few dozens times, with n = 6, 175 being the last iteration index for
+which the threshold was hit. The last iteration n for which the the iterate exists the stability region
+is n = 5, 059, where we have p(n) = (0.53, 0.47) /∈S. This provides a strong empirical evidence that
+the iterate is absorbed in a compact set in the domain of attraction of the equilibrium point pe.
+Figure 5: Convergence of the modified SA algorithm as n →∞. The first coordinate of p(n) =
+(p(n), 1 −p(n)), i.e., the joining probability at stage n, is plotted (in blued) vs. n on a square-root
+scale. The red dashed line depicts the correct equilibrium joining probability, which is given by
+pe = 0.4.
+Appendix E
+Extension to games with state information
+In this section we extend our concept of the surrogate best-response function to the model with
+state information. Theorem 10 follows directly from this construction.
+First, we redefine the surrogate best-response function as
+f(p) = arg min
+q∈P
+X
+s∈I
+∥p(s) + ξp(s) · Hu(p | s) −q(s)∥2 .
+(24)
+Similar to (14), the optimization problem in (24) is also separable, motivating the following defini-
+tion, for all s ∈I:
+f(p | s) = π∆(p(s) + ξp(s) · Hu(p | s)) = π∆(p(s) + ξp(s) · u(p | s))
+(25)
+which is a real function from ∆to itself. The second transition in (25) follows Lemma 11. We
+can therefore think of f as a vector valued function, f : P →P (as opposed to BR, which is a
+correspondence, BR : P →2P), and in addition, p = f(p) if and only if p(s) = f(p | s) for all
+s ∈I.
+44
+
+Lemma 13. Suppose for every s ∈I, ξp(s) · Hu(p | s) is continuous on P (as a function of p).
+Then f(·) is continuous on P, and therefore admits a fixed point. In addition, any strategy is a fixed
+point for f if and only if it is an equilibrium, i.e., p = f(p) if and only if p ∈BR(p), hence, an
+equilibrium exists.
+Proof. Under the conditions of Lemma 13, the objective function in the LHS of (24) is continuous in
+(p, q) on the product space P ×P, and P is compact, thus by the maximum theorem f is continuous
+over P. As a result, by Brouwer’s fixed-point theorem, f admits a fixed point in P. The rest of the
+proof is similar to that of Lemma 2:
+Suppose p is an equilibrium, i.e., p ∈BR(p). Then for all s ∈I, the expression ξp(s)u(p | s)′r
+is maximized at r = p(s), hence ξp(s)u(p | s)′(p(s) −q(s)) ≥0 for all q ∈P. Consider a strategy
+q ̸= p, thus, for any s ∈I such that q(s) ̸= p(s),
+∥p(s) + ξp(s)u(p | s) −q(s)∥2 = ∥p(s) −q(s)∥2 + 2ξp(s)u(p | s)′(p(s) −q(s)) + ∥ξp(s)u(p | s)∥2
+> ∥ξp(s)u(p | s)∥2 = ∥p(s) + ξp(s)u(p | s) −p(s)∥2.
+Hence, p(s) = f(p | s), meaning that p = f(p). Assume on the contrary that p is not an equilibrium,
+thus we can choose q ∈P and s ∈I(p), ξp(s) > 0, such that u(p | s)′q(s) > u(p | s)′p(s). Then a
+parameter θ ∈(0, 1) can be chosen such that
+θ < min
+2ξp(s)u(p | s)′(q(s) −p(s))
+∥q(s) −p(s)∥2
+, 1
+
+,
+noting from the assumptions that the right-hand side is strictly positive.
+We then define ˜q =
+p + θ(q −p) to obtain, after rearrangement,
+∥p(s) + ξp(s) · u(p | s) −˜q(s)∥2
+= θ
+ ∥q(s) −p(s)∥2 + 2ξp(s)u(p | s)′(q(s) −p(s))
+
++ ∥ξp(s)u(p | s)∥2
+< ∥ξp(s)u(p | s)∥2 = ∥p(s) + ξp(s) · u(p | s) −p(s)∥2 ,
+and therefore p(s) ̸= f(p | s), implying that p ̸= f(p).
+Proof of Theorem 10
+Proof. Denote |I| = l. With slight abuse of notation, we treat a strategy p ∈P hereafter as a real
+k×l matrix, whose s-th column, (p1,s, . . . pk,s), is given by the vector p(s) defined previously. Define
+the mapping ¯u : P →Rk×l such that ¯u(p) is a matrix whose s-th column, (¯u1,s(p), . . . , ¯uk,s(p)),
+is given by ξp(s)Hu(p | s). Note that the strategy space P is the product space of l copies of ∆,
+hence it is a compact polyhedron in Rk×l. Furthermore, the projection of an element in x ∈Rk×l
+onto P is computed simply by projecting each column of x onto ∆. Then the corresponding ODE
+for the algorithm in (16) is
+˙p = ¯u(p) + z,
+−(z1,s(t), . . . zk,s(t)) ∈C((p1,s(t), . . . pk,s(t))), ∀t ≥0, 1 ≤s ≤l,
+(26)
+where (z1,s(t), . . . zk,s(t)) is the s-th column vector of z, and C is the set-valued map defined in
+Section B.2. Let u∗: P →Rl be the potential function, and let ∇u∗(p) be its gradient at p, i.e., a
+real k×l matrix whose element at the i-th row and s-th column is (∂/∂pi,s)u∗(p). Then Assumption
+B3 implies that ∇u∗(p) = −¯u(p). By repeating the same steps as in the proof of Lemma 12, we
+have that each point p in the limit set of (26) is stationary, i.e., satisfies p = πP(p + ¯u(p)), and
+therefore is an equilibrium strategy.
+45
+
+Similarly to the proof of Theorem 5, we define ϵn = γnℓ(p(n)), observing that P∞
+n=1 ϵn = ∞and
+P∞
+n=1 ϵ2
+n < ∞due to Assumptions B1 and A4. The algorithm in (16) can be therefore written as
+p(n+1) = πP
+ 
+p(n) + ϵn
+HG(n)
+ℓ(p(n))
+!
+,
+(27)
+where G is a k × l matrix with G(s) as its s-th column. From (15) we have that
+Ep
+"
+HG(n)
+ℓ(p(n))
+#
+= ¯u(p(n)).
+Thus, as in the proof of Theorem 5, we invoke Theorem 2.4 in [50, Ch. 5.2], to conclude that p(n)
+converges to a set of limit points of (26), and since every limit point is an equilibrium strategy, we
+obtain the result.
+Appendix F
+Multiple customer types
+Many of our results can be easily extended to queueing games with heterogeneous types of customers
+interacting in the same system. Below we explain, through a representative example, how to utilize
+our framework to approximate an equilibrium strategy with two types of customers. The model we
+consider in this section is a natural extention of the Unobservable M/G/1 presented in Example 1;
+We assume customers arrive to the system according to a Poisson process with rate λ, and services
+are iid with mean 1
+µ. We consider two customer types, 1 and 2, indexed by θ ∈{1, 2}, and assume
+that each customer’s type is drawn independently of the system state. Similarly to the single-type
+model, we denote by Rθ and Cθ the service evaluation and waiting cost rate for type θ ∈{1, 2}. As
+before, we let Xj represent the virtual workload upon the j-th arrival instant. We redefine v(Xj)
+as a mapping of a possible system state to a matrix in R2×2, with one conditional expected utility
+vector for each type,
+v(Xj) =
+
+v1(Xj)
+v2(Xj)
+
+=
+
+
+
+
+R1 −C1 · (Xj + 1/µ)
+R2 −C2 · (Xj + 1/µ)
+0
+0
+
+
+
+,
+and the vector of expected utilities is again expressed by u(p) = Ep
+
+v(X(p))
+
+. Knowing their type,
+each customer chooses whether to join or balk without observing the system state. Thus, a strategy
+profile, p ∈∆2, is now represented by a pair of point distributions over actions, p = (p1
+p2) ∈∆2.
+For a matrix m ∈R2×2, let (m)θ denote its θ-th column, θ ∈{1, 2}. An equilibrium is then defined
+as a strategy profile pe ∈∆2 such that for every θ ∈{1, 2},
+(pe)θ ∈arg max
+q∈∆
+(u(pe))′
+θq.
+Since customer types are independent of the system state, we can consider an arrival of an
+arbitrary customer (of any type) to an idling server as a time point of system regeneration. Each
+iteration of the SA algorithm includes a simulation of a single regeneration cycle and adaptation
+46
+
+of the strategy profile. By indexing customers of a single regeneration cycle by j ∈{1, 2, . . . , L}
+(where L is the cycle length) and denoting by Xj the system state upon arrival of the j-th customer,
+we can construct our utility estimator,
+G =
+L
+X
+j=1
+v(Xj).
+Consistent with the notation in previous sections, we let p(n), G(n), and γn denote the strategy
+profile, utility estimator, and step size, respectively, at the n-th iteration of the algorithm. Setting
+an arbitrary initial strategy p(1) ∈∆2, the update scheme is given by
+p(n+1) = π∆2
+
+p(n) + γnG(n)
+, n ≥1.
+(28)
+Figure 6 below depicts the convergence of the iterate to the (unique) equilibrium for an M/M/1
+queue with proportion α = 0.3 of the customers being type 1 and the rest type 2. The arrival
+process is Poisson with (total) rate of λ = 0.7 arrivals per unit time, and services are exponentially
+distributed with parameter 1.
+The cost and reward parameters for the two types are given by
+R1 = 3, C1 = 1, R2 = 5 and C2 = 2. The blue curve corresponds to the joining probability of
+type-1 customers (i.e., the first component of p(n)
+1 ), while the green curve corresponds to the joining
+probability of type-2 customers (i.e., the first component of p(n)
+2 ), as functions of the iteration
+number, n. In this example, R1
+C1 > R2
+C2 , implying that type-2 customers join the system only when
+type-1 customers join with probability 1. In this specific example, the unique equilibrium strategy
+profile can be easily calculated as we have that the joining probability of type-2 customers in
+equilibrium (assuming all type-1 customers join) is equal to
+
+µ −αλ −C2
+R2
+
+/((1 −α)λ), so that
+(pe)1 =
+
+
+
+
+1
+0
+
+
+
+,
+(pe)2 =
+
+
+
+
+0.796
+0.204
+
+
+
+.
+For γn =
+1
+2n and initial joining probability of 0.5 for each type, after 106 iterations, we obtain an
+approximation error of the order of 10−4.
+47
+
+Figure 6: Convergence as n →∞of the SA algorithm with multiple customer types. The joining
+probability at stage n, for type-1 customer (in blue) and type-2 customers (in green), is plotted vs.
+n on a square-root scale. The blue dashed line depicts the correct equilibrium joining probability
+for type 1, which is given by 1, and the green dashed line depicts the correct equilibrium joining
+probability for type 2, which is given by 0.796.
+48

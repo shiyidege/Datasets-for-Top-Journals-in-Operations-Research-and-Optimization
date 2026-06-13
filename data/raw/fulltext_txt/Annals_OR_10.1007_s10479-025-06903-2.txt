@@ -1,0 +1,1086 @@
+TITLE: Modelling and optimising switching on a physical binary sorter
+JOURNAL: Annals_OR
+YEAR: 2026
+DOI: https://doi.org/10.1007/s10479-025-06903-2
+---
+
+ORIGINAL - OR MODELING/CASE STUDY
+Received: 11 December 2024 / Accepted: 15 October 2025 / Published online: 3 February 2026
+© The Author(s) 2026
+ 
+ Josep Maria Salvia Hornos
+josepmaria.salvia@udl.cat
+Cèsar Fernández Camón
+cesar.fernandez@udl.cat
+Carles Mateu Piñol
+carles.mateu@udl.cat
+Joao Marques-Silva
+joaopaulo.marques@udl.cat
+Ivet Rafegas Fonoll
+ivet.rafegas@bonarea.com
+Josep Cirera Balcells
+josep.cirera@bonarea.com
+1 
+Department of Computer Engineering and Digital Design, University of Lleida, Lleida, Spain
+2 
+Department of IT and Systems, Artificial Intelligence Division, Corporación Alimentaria 
+Guissona S.A., Guissona, Spain
+Modelling and optimising switching on a physical binary 
+sorter
+Josep Maria Salvia Hornos1,2
+ · Cèsar Fernández Camón1
+ · Carles Mateu Piñol1
+ · 
+Joao Marques-Silva1
+ · Ivet Rafegas Fonoll2 · Josep Cirera Balcells2
+Annals of Operations Research (2026) 358:447–468
+https://doi.org/10.1007/s10479-025-06903-2
+Abstract
+In this paper, we apply MaxSAT to a system built around a physical binary sorter that 
+functions as a load balancer between warehouses. We study a sorter operating in real 
+time on 4.5 million elements per year. The optimization task is to minimize the switching 
+needed to route a sequence of elements, under an arbitrary binary function that constrains 
+the achievable load balance. The case study is drawn from a company operating hundreds 
+of such sorters, which are essential to its internal logistics. We examine the problem 
+from both theoretical and practical perspectives: we present an online model, analyze its 
+properties, and evaluate several implementations across different scenarios. Experiments 
+show switching reductions of 63 and 48% for two problem variants in a partial informa­
+tion setting.
+Keywords  Combinatorial optimisation · MaxSAT · Operations research · Physical binary 
+sorter
+1 3
+
+Annals of Operations Research (2026) 358:447–468
+1  Introduction
+In this work we present a novel problem in the field of operations research, specifically com­
+binatorial optimisation (Cook et al., 1994) that we tackle with constraint programming. We 
+name this problem the binary sorter minimization problem. This problem (and its variants) 
+are based on a real-world optimisation use-case in a complex internal logistics network at a 
+large, and vertically integrated, company in the food sector.
+The physical layout of the problem can be visualized in Fig. 1. In it we see a binary 
+sorter (represented by B, which should not be confused with a similar term in SAT/circuit 
+contexts1). This binary sorter has to make a series of decisions (L or R) based on a sequence 
+of items coming from its input on the right (represented with W).
+Currently, these decisions are based on proportional rule mapping article types to targets 
+(L or R). In order to fill the quotas of articles that must go to each destination, a binary sorter 
+must switch the target. Switching is the binary sorter process of changing the target it is 
+pointing at (L to R or vice-versa). The process of switching the target destination takes time, 
+energy and an associated mechanical wear that we want to minimize.
+The crux of the problem relies on the fact that we are not free to change the targets as 
+desired, as we want to ensure the same articles reach both destinations (L and R) in exactly 
+the same proportions as the original system, emulating the business rules more efficiently. 
+That means that if the original routing system derived three articles of type A to direction L 
+and two of type B to direction R, our new system has to uphold that property.
+This problem is an online problem (Ascheuer et al., 1999) since we have to take deci­
+sions that cannot be reconsidered at a later point in time. Moreover, in the deployment sce­
+nario this is a real-time problem (Grötschel et al., 2001), since the decisions are to be taken 
+with very low latency under the assumption that high computation times will also lead to a 
+delay in the overall system.
+This problem is particularly interesting due to its online properties. These systems work 
+uninterrupted all the time, and the sequence of items that we know is coming to the binary 
+sorter (also called window W) only provides the items of the next few minutes, forcing us to 
+optimize the sequence without having the entire information upfront.
+The combination of all of these properties (partial information, online problem, real-time 
+problem, etc.) are usually under-reported in the literature, especially when considering opti­
+mal (or almost optimal) solutions.
+Although we will focus our case study on a particular physical binary sorter, the com­
+pany in question has deployed hundreds of sorters in its factory logistics, so this problem is 
+key in optimising operational efficiency of the routing network for the delivery of the boxes.
+We motivate this research from the necessity of increasing the operational efficiency of 
+the logistic system, whose performance has decreased over the past few years. This is, in 
+part, due to the explosion in consumer demand for various niche products that has signifi­
+cantly increased the number of stock-keeping units (SKUs) (Huggs, 2016) as a consequence 
+1 In SAT and circuit contexts, a binary sorter is a construct or component used to sort binary variables or 
+numbers, often implemented using sorting networks.
+Fig. 1  Binary sorter representation, with a given width W 
+placed before the sorter B that chooses between L and R
+ 
+1 3
+448
+
+Annals of Operations Research (2026) 358:447–468
+of an increase in online retailing (Tyrväinen and Karjaluoto, 2022; Singh and Rosengren, 
+2020). Moreover, the logistics have received higher stress due to the desire to follow Just-
+In-Time (JIT) manufacturing (Iijima et al., 1996). With this problem formulation we attempt 
+to mitigate the impact from this and other inefficiencies.
+In this work we investigate how to optimize an already existing system based on some 
+weighted distribution Q, with the objective being to minimize the switching without chang­
+ing the overall behaviour of the system.
+This paper is a case study. All improvements are measured against the as-is policy Q run­
+ning in production. We study both switching reduction and computational latency.
+1.1  Relation to established optimisation problems
+Our formulation relates to several classical models, but differs in decisive constraints or 
+objective aspects:
+Load balancing Standard load balancing minimizes deviation across machines (Ghomi 
+et al., 2017; Azar, 2005). Switching between targets is assumed cost-free or a secondary 
+objective. Here, switching is the primary objective, and feasibility requires exact per-type 
+quotas.
+Changeover minimization/paint-shop scheduling Changeover (Zhu and Wilhelm, 2006) 
+or paint-shop problems (Spieckermann et al., 2004; Solnon et al., 2008) penalize color 
+changes while meeting demand constraints. Those models permit job reordering, whereas 
+the sequence is fixed in our case.
+Binary segmentation/Potts labeling The Potts model (Wu, 1982) and related segmenta­
+tion problems minimize label transitions along a chain. Our setting introduces hard per type 
+quotas across scattered positions, which are absent in these models.
+Packet switch scheduling with reconfiguration delay Scheduling in input-queued switches 
+(Marsan et al., 2003) with setup costs penalizes reconfiguration. While the switch penalty is 
+analogous, these problems address dynamic queueing systems with multiple input ports; our 
+formulation is a single-stream two-output assignment with quota constraints.
+1.2  Contributions and paper structure
+In this paper we make a set of important contributions to the problem we study, both in 
+understanding and in developing methods to exploit it. In Sect. 2 we formally define the 
+problem in complete and incomplete information settings as well as present a complete set 
+of formal definitions for our problem and optimisations techniques. In Sect. 3 we present an 
+optimal solution for the case where all the information is known ahead of time (Sect. 3.1) 
+and two different strategies in the online variant (Sect. 3.2). Then in Sect. 4 we explore the 
+effect different objective functions have on the problem solution, exploring giving bigger 
+weights to the head of the window (weight balancing) or a more subtle biasing technique 
+(weight tipping). In Sect. 5 we benchmark our strategies against a recorded sequence of 
+boxes and show an improvement in routing of up to 63% with minimal latency using Max­
+SAT. And finally we conclude in Sect. 6.
+1 3
+449
+
+Annals of Operations Research (2026) 358:447–468
+2  Problem statement
+The following definitions are used to formulate our target problem. Examples are provided 
+after the initial definitions.
+Definition 1  (Binary sorter instance) A binary sorter instance P is described with a tuple 
+⟨A, S, Q, q0⟩, where:
+ 
+●
+A is a finite set of articles,
+ 
+●
+S = [s1, s2, . . . , sn] is a vector of elements from A, so si ∈A,
+ 
+●
+Q is an arbitrary function of the form Q : N −→M, where the domain corresponds to 
+the indices of S and the codomain to the binary decisions of the sorter. Q represents the 
+decisions currently taken in production,
+ 
+●
+q0 ∈M is the initial state of the sorter.
+We refer to the binary domain as M = {L, R}. We use Q to denote the current policy in pro­
+duction. Our goal is to produce an alternative D with lower switching, subject to the same 
+per-article tallies. That is, D will need to respect the number of articles sent to each side.
+For clarity, we will often view the function Q as a vector Q = [q1, q2, . . . , qn] of the same 
+size as S, where each element corresponds to the application of Q to its index.
+Definition 2  (Article positions) For a ∈A, let Ia = { i ∈{1, . . . , |S|} | si = a }.
+Definition 3  (Decision vector) A decision vector D for an instance P is a vector 
+D = [d1, d2, ..., dn] where di ∈M and has the same size as S, that is |D| = |S|.
+Naturally, Q is also a decision vector.
+Not all decision vectors are valid alternatives to Q, and this is considered in Definition 7.
+Definition 4  (Decision count) The decision count V m
+a , where m ∈M and a ∈A is an indi­
+cator function that takes as an input a decision vector D for an instance P and describes the 
+number of times the decision m has been chosen on article a. This can be formulated with 
+partial function notation or indicator notation:
+ 
+V m
+a (D) =
+∑
+i∈Ia
+{ 1
+di = m
+0
+otherwise
+=
+∑
+i∈Ia
+1(di = m)
+(1)
+While the previous definitions established the structure of our decision vectors, we now 
+need to quantify the cost associated with these decisions. This leads us to define how we 
+measure the cost of switching between states:
+Definition 5  (Switching cost) Given q0 ∈M and a decision vector D = (d1, . . . , d|S|), the 
+switching cost is
+1 3
+450
+
+Annals of Operations Research (2026) 358:447–468
+ 
+cD = 1(q0 ̸= d1) +
+|S|
+∑
+i=2
+1(di−1 ̸= di).
+If the context allows it, we will simply reference this cost as c without reference to D.
+Example 1  An example for the definitions presented up to this point is presented in Fig. 2 
+with a cost of 5. This sequence is of 9 elements, ordered left to right. The direction L and R 
+of Q is the associated target of that element, and C is the cost of a decision for each element.
+Definition 6  (Balanced decision vector) A decision vector D is balanced on article a ∈A 
+for an instance P iff it sends the same number of articles to the same target as the original 
+function Q. Formally, this is described as ∧
+m∈M V m
+a (D) = V m
+a (Q).
+Example 2  Taking Fig.  2 as reference, we can see that V L
+A (Q) = 2; V R
+A (Q) = 3; 
+V L
+B (Q) = 1; V R
+B (Q) = 2; V L
+C (Q) = 1; V R
+C (Q) = 0.
+Definition 7  (Valid decision vector) A decision vector D is valid for an instance P iff it is 
+balanced for all articles present in S. It also follows that Q is a valid decision vector for P.
+Example 3  Let’s take Fig. 2 as reference to explain the balance decision vector definition. 
+We will take as an example the article B. This article has 2 boxes sent to R and 1 box sent 
+to L. Following the definition a balanced decision vector must also follow this property. 
+An alternative decision vector D for the problem presented in Fig. 2 is presented in Fig. 3. 
+Notice the difference between the decision vector Q and D in the 3rd and 7th item of the 
+sequences, as they swapped their directions, for a total cost of 3. This new solution is natu­
+rally still valid, since the same number of articles B are sent to each side.
+Definition 8  (Optimal decision vector) A decision vector D is optimal for an instance P iff 
+it is valid and ̸ ∃D′ such that D′ is also valid with respect to P and cD′ < cD. In the right 
+context we will refer to the cost by c and infer the decision vector.
+Fig. 3  Optimal sequence D for 
+the instance in Fig. 2
+ 
+Fig. 2  Example instance with 
+A = {A, B, C}, a sequence S 
+with |S| = 9 and q0 = L. The 
+values of the vectors are aligned 
+in a grid
+ 
+1 3
+451
+
+Annals of Operations Research (2026) 358:447–468
+Example 4  The solution in Fig. 3 presents an optimal decision vector for the given problem. 
+This can be formally verified with the methods we will present in the following sections.
+Definition 9  (Binary sorter minimization problem) Given an instance P = ⟨A, S, Q, q0⟩, the 
+binary sorter minimization problem asks us to find a decision vector D = [d1, d2, . . . , dn] 
+such that:
+ 
+●
+D is valid, i.e., it preserves the same per-article counts on L and R as the production 
+policy Q, and
+ 
+●
+the switching cost cD is minimized.
+This is the full-information version, where S and Q are known in advance.
+Terminology. We use instance for the data tuple and problem for the optimisation task; in 
+captions and informal prose we may use problem or view loosely when the optimisation 
+context is clear.
+Definition 10  (Slice notation) For any vector X = [x1, . . . , xn] and indices u < v, we write 
+X[u : v) for the half-open slice [xu, xu+1, . . . , xv−1].
+Definition 11  (Sliding window instance) The binary sorter minimization instance P with 
+a fixed optimisation window is described by the extended tuple ⟨A, S, Q, q0, W⟩, where 
+W ∈N. Decisions are taken incrementally, constructing D one element at a time.
+For each index i, we define the window subinstance Pi with sequence S[i:i + W) and 
+the restriction of Q to those indices. Intuitively, this is a sliding window of size W over P; at 
+each step we fix di having access to all previous elements.
+In a fixed window context, given a sequence of |S| elements there are |S| −W + 1 binary 
+sorter minimization subinstances Pi. We reduce the window near the end to flush the tail.
+Example 5  (Sliding window) In Fig. 4 we see an example of a sliding window view with a 
+highlighted part of the current view of the current subinstance Pi, and the elements already 
+decided upon marked with grey.
+Definition 12  (Sliding window minimization) Given P = ⟨A, S, Q, q0, W⟩, produce 
+D = [d1, . . . , dn] sequentially. At step i you fix di using only the prefix S[1 : i) and the win­
+dow S[i:i + W) (with the corresponding entries of Q). Minimize the final switching cost cD 
+subject to the global validity constraints. No optimality is required at the per-window level 
+since not all the information is known upfront.
+Fig. 4  Example of a sliding win­
+dow view. i is the current ele­
+ment, with a view of [i, i + W). 
+Grey shows elements already 
+decided whose index is smaller 
+than i. In purple we see elements 
+not yet in view of the current 
+view
+ 
+1 3
+452
+
+Annals of Operations Research (2026) 358:447–468
+Definition 13  (Timed Window instance) The binary sorter minimization instance P in a 
+timed setting is described with the tuple ⟨A, S, Q, q0, E, O⟩. Here, each ei ∈E is the time­
+stamp when element si enters the sequence, and each oi ∈O is the timestamp when its 
+decision di is made. At time oi, the eligible indices are { j | ej ≤oi } and the active window 
+is { j | ej ≤oi ∧oj ≥oi }.
+The timestamps E and O follow two natural rules:
+Temporal consistency An item cannot be decided before it arrives, so oi ≥ei.
+Sequential consistency Items come in order and are processed in order, meaning 
+ei−1 ≤ei and oi−1 ≤oi.
+A sliding window instance can be expressed as a special case of this timed window 
+formulation, but not the other way around. For that reason, we will sometimes refer to the 
+timed window problem as the variable window size or real-time version.
+Example 6  (Timed window) Consider Fig. 5. Each element j arrives at time ej and has an 
+assigned decision time oj. We are at the current item i with ei = 3 and oi = 7 (marked). 
+The long bracket highlights the eligible prefix { j | ej ≤oi }. Within that prefix, the short 
+bracket highlights the active window { j | ej ≤oi ∧oj ≥oi }, i.e., items that have arrived 
+but whose own decisions have not yet been fixed relative to oi. Items with oj ≤oi are 
+already fixed (left shaded block), and items with ej ≥oi have not yet entered the window 
+(right shaded block).
+Definition 14  (Timed window minimization) Given P = ⟨A, S, Q, q0, E, O⟩, at each deci­
+sion time oi fix di using only indices j with ej ≤oi (and their Q values). Minimize the 
+final switching cost cD subject to global validity. Problem 12 is the special case with fixed 
+lookahead W and synchronous arrivals.
+2.1  Optimisation preliminaries
+The following definitions are provided as a reference of various paradigm solving solvers 
+and strategies. They are only intended to contextualize the reader. For a more detailed treat­
+ment of these subjects the reader is referred for example to Rossi et al. (2006).
+Fig. 5  Timed window with 
+arrivals E and decision times 
+O. At the current item with 
+ei = 3 and oi = 7, the long 
+bracket marks the eligible prefix 
+{j | ej ≤oi} and the short 
+bracket marks the active window 
+{j | ej ≤oi ∧oj ≥oi}. Left 
+shading indicates elements 
+already fixed (oj ≤oi); right 
+shading indicates elements not 
+yet in the window (ej ≥oi)
+ 
+1 3
+453
+
+Annals of Operations Research (2026) 358:447–468
+Definition 15  (Conjunctive Normal Form (CNF)) Conjunctive Normal Form (CNF) Sobo­
+lev (2002) is a way of structuring logical formulas in Boolean algebra. A formula is in CNF 
+if it is a conjunction of one or more clauses, where each clause is a disjunction of literals, 
+and a literal is either a variable or the negation of a variable. Formally, a CNF formula can 
+be represented as:
+ 
+(l11 ∨l12 ∨· · · ) ∧(l21 ∨l22 ∨· · · ) ∧· · · ,
+(2)
+where lij represents the j-th literal in the i-th clause.
+Definition 16  (Satisfiability (SAT)) The Satisfiability (SAT) problem Li and Manya (2021) 
+asks whether there exists an assignment to the Boolean variables of a Boolean formula such 
+that all its clauses are satisfied. In practice, SAT is usually defined over CNF formulas.
+Definition 17  (Hard and soft clauses) In the context of optimization variants of SAT, clauses 
+are divided into two groups. Hard clauses must always be satisfied, while soft clauses may 
+be violated at a certain cost. Hard clauses can be regarded as soft clauses with infinite 
+weight.
+Definition 18  (Weighted partial MaxSAT) Let V be a finite set of Boolean variables and 
+consider a CNF formula with hard clauses H and soft clauses S; each soft clause Ci ∈S has 
+a positive weight wi (Battiti and Protasi, 1998).
+Given an assignment x : V →{0, 1}, let 1(C(x) = 1) denote the indicator that clause C 
+is satisfied under x. The problem is
+ 
+min
+x
+:
+∑
+i∈S
+wi 1(Ci(x) = 0)
+s.t.
+Cj(x) = 1
+∀j ∈H
+Definition 19  (Pseudo-Boolean and cardinality constraints) Let U = {l1, . . . , ln} be liter­
+als over Boolean variables, each identified with its 0/1 truth value. A pseudo-Boolean (PB) 
+constraint is of the form
+ 
+∑
+li∈U
+ai li ▷◁b,
+ai ∈N, b ∈Z≥0, ▷◁∈{≤, =, ≥},
+where a cardinality constraint is the special case ai = 1 for all i. We can encode these con­
+straints into CNF using standard methods (Sinz, 2005; Bailleux and Boufkhad, 2003; Eén 
+and Sörensson, 2006; Marques-Silva and Lynce, 2007).
+1 3
+454
+
+Annals of Operations Research (2026) 358:447–468
+3  Modelling the problem
+3.1  Binary sorter minimization problem
+At a high level, the optimal decision sequence D for a binary sorter minimization problem 
+P can be found by solving the following optimisation problem with the set of variables 
+⟨C, D⟩, whose indices are relative to the elements of sequence S of the problem P:
+ 
+min :
+|S|
+∑
+j=1
+cj 
+(3)
+ 
+∧
+1≤j≤|S|
+cj = (dj ̸= dj−1)
+
+(4)
+ 
+∧
+a∈A
+∧
+m∈M
+V m
+a (Q) =
+∑
+i∈Ia
+1 (di = m)
+
+(5)
+Where we assume d0 = q0, variables C,  D refer to cost vector and the decision vector 
+associated with the solution respectively. Since Q is known a priori, V m
+a (Q) is statically 
+evaluated to a constant. Equation 4 describes the cost of a decision, while Eq. 5 imposes the 
+constraints to ensure a valid solution. This formulation is designed while ignoring the binary 
+nature of the function Q and assumes that an equality comparison naturally maps over to 
+binary and can be summed over in Eq. 5.
+It should be natural to the reader a decision vector D as a result of the optimisation prob­
+lem is a valid decision vector; since that is taken care of by Eq. 5. Moreover, an optimal 
+decision vector D for this problem is also an optimal decision vector for the problem P.
+3.1.1  MaxSAT reduction
+This problem can be reduced to MaxSAT with the help of cardinality constraints. For 
+this reduction we will assume L = False; R = True. Equation 4 can be reduced to 
+∧
+1≤j≤|S|
+cj = dj ⊕dj−1, where ⊕ is the XOR operator. We encode cj = dj ⊕dj−1 with the 
+standard Tseitin gadget encoding (4 clauses).
+We reduce Eq. 5 to ∧
+a∈A
+∑
+i∈Ia ¬di = V L
+a (Q). This encoding is valid because the func­
+tion Q is of a binary codomain; since we are dealing with strict equalities, this leaves the 
+underlying equations with |M| −1 degrees of freedom, so we only need to solve consider­
+ing one of the sides of the equations, which halves the number of constraints necessary. 
+The objective function can be naturally mapped to Partial MaxSAT with unitary clauses or 
+transformed to Weighted Partial MaxSAT by setting the weight of those clauses to 1.
+1 3
+455
+
+Annals of Operations Research (2026) 358:447–468
+3.2  Sliding window problem
+The sliding window problem is quite different than the non-sliding version, since in this case 
+we are forced to make decisions without having all the information upfront.
+In order to optimize over a sliding window problem we propose two different strategies. 
+Assuming we have a fixed window problem P, this problem can be optimised by either: 
+1. Optimisation by blocks In this strategy we solve 
+⌊|S|
+W
+⌋
+ subproblems, each of those 
+problems Pi is composed of a sequence of articles of slice W, disregarding sj | j < i. 
+Those problems are then solved as described in Sect. 3.1. This is done by only solving 
+the problem at (i = 0 mod W), and concatenating the resulting decision vectors as the 
+result of the optimisation of these subproblems.
+Example 7  If we were to apply this optimisation strategy to the example in Fig. 4, we would 
+set the elements on range [i, i + W) as final, and choose the decision vector D as an alter­
+native to the decision vector Q. An example of the ranges of the subproblems is shown in 
+Fig. 6.
+2. Fluid optimisation This strategy encodes each problem individually, taking only the 
+decision di at each step as final and appending to an iteratively created decision vector 
+D. In order for the final decision vector D to be valid, we cannot simply re-encode each 
+one of these problems as described in Sect. 3.1, since the case di ̸= qi forces a negative 
+carry of the side qi (and a positive carry on side di). In order to fix this difference, we 
+accumulate this carry manually on ∆m
+a , redefining Eq. 5 as: 
+ 
+∧
+a∈A
+∧
+m∈M
+V m
+a (Q[i:i + W)) + ∆m
+a =
+∑
+j ∈Ia
+i ≤j < i + W
+1 (dj = m)
+
+(6)
+At the end of each optimisation problem, we will update ∆m
+a . We will update ∆di
+a by -1 and 
+∆qi
+a by 1. Notice that if di = qi no change will take effect.
+As previously discussed, when reducing to MaxSAT we do not need to track both sides, 
+as there is only one degree of freedom; so we collapse the tracking to δL
+a .
+We track a single accumulator per article,
+ 
+δL
+a := V L
+a (Q[1:i)) −V L
+a (D[1:i)),
+(7)
+Fig. 6  Example of the problem distribution for the optimisation by blocks strategy on a fixed window 
+problem with W = 4
+ 
+1 3
+456
+
+Annals of Operations Research (2026) 358:447–468
+so δL
+a > 0 means a debt to the left and δL
+a < 0 means a debt to the right. We update it as 
+follows:
+ 
+δL
+a := δL
+a +
+{ 0
+if qi = di
+1
+if qi ̸= di ∧di = R
+−1
+if qi ̸= di ∧di = L
+
+(8)
+And we update the left hand side in Eq. 6 to V L
+a (Q[i:i + W)) + δL
+a .
+Lemma 1  (Correctness of the fluid update rule) Let P be a sliding window binary sorter 
+minimization problem and let δL
+a be updated at step i by the update rule in Eq. 8.
+At every step i this debt is repayable: there exist at least |δL
+a | future occurrences of article 
+a in the undecided part of S whose decision in Q is opposite to the side of the debt, so that a 
+valid completion of D is always possible.
+Proof  We proceed by induction on i.
+Base case. For i = 1, δL
+a = 0 by initialization, and both Q[1 : 1) and D[1 : 1) are empty, 
+hence (7) holds.
+Inductive step. Assume (7) holds for index i. When setting di:
+ 
+●
+If di = qi, then both counts V L
+a (Q[1:i + 1)) and V L
+a (D[1:i + 1)) change equally (either 
+both increment by 1 if di = L and a = si, or both stay unchanged otherwise). The dif­
+ference is preserved and (8) leaves δL
+a unchanged.
+ 
+●
+If qi = L, di = R and a = si, then V L
+a (Q[1:i + 1)) increases by 1 while V L
+a (D[1:i + 1)) 
+does not. The difference increases by 1, and the rule increments δL
+a accordingly.
+ 
+●
+If qi = R, di = L and a = si, then V L
+a (D[1:i + 1)) increases by 1 while V L
+a (Q[1:i + 1)) 
+does not. The difference decreases by 1, and the rule decrements δL
+a accordingly.
+In all cases, the equality (7) is preserved for i + 1.
+Repayability. From (7), if δL
+a > 0 then D has sent δL
+a fewer copies of a to L than Q did so 
+far. Since the solution D obeys the updated Eq. 6 there are at least |δL
+a | remaining a in the 
+undecided suffix of S so we can repay the debt. The case δL
+a < 0 is symmetric. 
+□
+Example 8  (Fluid optimisation) Figure 7 illustrates three consecutive problems Pi−1, Pi, Pi+1 
+for W = 4. All δ counters are initially 0. Only the elements that leave or enter the window 
+contribute to the update, while the overlap cancels. The figure annotates how the counters 
+change at each step: a decrement when an si−1 leaves (that is, when when di−1 becomes 
+fixed), no change when the si is finalised, and a restoration when the next A in si+1 leaves. 
+The example update rules assume that further optimisations do not update the element i + 1 
+on vector D on Pi+1.
+These presented definitions assume a fixed window problem P. It is perfectly possible to 
+extend the strategies to the variable window size problem. For the optimisation by blocks 
+strategy, at each oi we would ask if the element i is present in the last solved optimisation, if 
+1 3
+457
+
+Annals of Operations Research (2026) 358:447–468
+not, re-optimize with a window of available elements that have not left already. The sliding 
+window version is easier to visualize, since we are forced to optimize each subproblem at 
+oi anyways.
+The two presented strategies have tradeoffs, since the optimisation by blocks strategy 
+requires less computation and is therefore faster. Additionally, it has the added benefit of 
+allowing instantaneous responses every W −1 elements of the sequence, since they are 
+precomputed.
+It should be natural to the reader that the fluid optimisation strategy leads to less switch­
+ing than the optimisation by blocks. In fact, we can prove that this is always the case:
+Lemma 2  Fluid optimisation over a sequence of items has less or equal switching cost 
+compared with block optimisation.
+We are going to present an intuitive argument that prove this and a proof of this fact:
+Intuitive argument One way to see this fact is to visualize it iteratively. Imagine a sequence 
+S in a variable sized problem. If no other elements are added to the sequence, no improve­
+ment will be possible to the decision vector, since we already have found the optimum; so 
+the switching cost will simply be the associated cost cD. Therefore, adding new elements is 
+a requisite to improve the switching cost.
+Furthermore, if this sequence S gets broken down into subsequences, each optimised 
+optimally, this is going to be at best as good as optimising the global problem. This should 
+be intuitively true to the reader, since optimising a global problem can always yield better 
+results than optimising sub-problems and combining their results (although this may be 
+computationally harder).
+Proof Sketch When we optimize in blocks of size W, at each iteration of the optimisation 
+procedure we decide the direction of the next W elements. Meanwhile, the fluid optimisa­
+tion strategy we only decide on the direction of 1 element. Therefore, the fluid optimisation 
+strategy has the ability to reconsider on the next W −1 directions as the next optimisations 
+iterations are performed. In the worst case, no improvement will be found while reconsider­
+ing, yielding a solution with the same switching cost as block optimisation. In the best case, 
+the cost can be further reduced, improving the switching beyond block optimisation. 
+□
+Example 9  (Fluid vs. block) Figure 8 contrasts disjoint blocks with a sliding window at 
+width W = 4 on eight items. Rows show items S, the block solution D with per–item costs 
+Fig. 7  Example of the prob­
+lem distribution for the fluid 
+optimisation strategy on a fixed 
+window problem with W = 4 
+with three subproblems and their 
+effect on δ
+ 
+1 3
+458
+
+Annals of Operations Research (2026) 358:447–468
+cD, and the fluid update D′ with costs cD′. Block optimises P1 = [1, 4] and P2 = [5, 8] 
+independently, so it cannot couple the boundary (4|5); hence the costs shown in cD persist 
+across the cut. A single fluid window P4 = [4, 7] straddles the cut and re-optimises over the 
+overlap, yielding the updated decisions D′ and the costs cD′. When the fluid strategy solves 
+P5, a new switch will be required for the new item C, for a total cost cD′ = 4, which is an 
+improvement from the block strategy of cD = 6.
+4  Heuristic objective alternatives
+The fluid optimisation scheme provides good performance across the sequence, but it 
+remains limited by its local scope. At each step only the immediate element is optimised, 
+with no possibility of revisiting past assignments. If the sequence were known in advance, 
+the problem could be solved globally as a binary sorter minimisation problem. Since this is 
+not the case, we explore heuristic modifications of the optimisation objective that bias the 
+solver toward more desirable local behaviours while preserving the same overall target. All 
+objectives in this section are interpreted at step i and S refers to the current visible window.
+4.1  Weight balancing
+A first class of heuristics introduces position-dependent weights on the first k elements of 
+the window:
+ 
+min :
+|S|
+∑
+j=i
+cj +
+min(k+i−1,|S|)
+∑
+j=i
+wjcj.
+(9)
+The choice of wj changes the optimisation trajectory by favouring stability at the start of the 
+window. Choices of wj bias the optimisation differently:
+Quadratic
+Fig. 8  Block (P1, P2) versus 
+fluid (P4) at W = 4. Rows: S, 
+block decision D with costs cD, 
+and fluid decision D′ with costs 
+cD′. The fluid window crosses 
+the block boundary (4|5) and re­
+duces the total cost, while blocks 
+cannot modify that overlap
+ 
+1 3
+459
+
+Annals of Operations Research (2026) 358:447–468
+ 
+min :
+|S|
+∑
+j=i
+cj +
+min(k+i−1,|S|)
+∑
+j=i
+(k −(j −i))2cj,
+(10)
+which strongly penalises early switches, promoting long runs near the head but risking over-
+constraint in highly alternating inputs.
+Linear
+ 
+min :
+|S|
+∑
+j=i
+cj +
+min(k+i−1,|S|)
+∑
+j=i
+(k −(j −i))cj,
+(11)
+a moderate bias that balances initial stability with solver flexibility.
+Constant.
+ 
+min :
+|S|
+∑
+j=i
+cj +
+min(k+i−1,|S|)
+∑
+j=i
+cj,
+(12)
+a uniform penalty over the prefix. This objective formulation is also desirable since it leads 
+to an unweighted problem.
+4.2  Weight tipping
+A second class of heuristics does not only bias the prefix, but also amplifies the weight of 
+the entire sequence. The objective becomes
+ 
+min :
+min(k+i−1,|S|)
+∑
+j=i
+cj + α ·
+|S|
+∑
+j=i
+cj
+(13)
+where α ≥2 controls the degree of global emphasis. This tipping scheme pushes the solver 
+to simultaneously reduce the overall number of switches while preferring stability at the 
+start of the window. Larger values of α strengthen the pressure on global optimisation, while 
+smaller values increase the relative influence of the prefix term.
+Tie-breaker as special case. When k = 1 the scheme reduces to the following tie-
+breaker objective:
+ 
+min : ci + 2 ·
+|S|
+∑
+j=i
+cj
+(14)
+Notice that the value of α can be ignored, since the objective formula is hierarchical in 
+nature, so we can assume α = 2. This variant is particularly suited to the fluid scheme, since 
+the first element of the window cannot be revisited. It ensures that whenever possible, the 
+solver extends the current run without sacrificing the global minimisation target.
+1 3
+460
+
+Annals of Operations Research (2026) 358:447–468
+Lemma 3  The fluid strategy with the tie-breaker improvement must result in a cost that is 
+lower or equal to applying the fluid strategy without the tie-breaker optimisation.
+This should be natural to the reader, since the cost with the tie-breaker is not bigger than 
+without the strategy, since every solution with the tie-breaker optimisation function is a 
+valid solution for the fluid strategy.
+Example 10  (Weight–tipping tie–breaker) Figure 9 contrasts standard fluid (D) with fluid 
+plus tie–breaker (D′) at W = 4. On the left (P1) both attain the same window cost, but the 
+tie–breaker flips the first item (D chooses R, D′ chooses L) to reduce the heavier side at 
+the right boundary; the per–item costs in cD and cD′ are equal. After the slide to P3 (right 
+panel), that conservative choice pays off: D′ yields a cheaper boundary and a strictly smaller 
+cumulative cost. The intermediate window P2 is not represented, as its decision concerns a 
+B and there is no other B inside the window, so its effect is negligible.
+5  Experimentation
+We implemented the MaxSAT versions following the strategy by blocks and fluid versions.
+To test our implementations we were able to extract a benchmark from a food manufac­
+turing company that is vertically integrated and owns all of its internal logistics equipment 
+and processes. This company has hundreds of binary sorters in their logistics chains. For this 
+case study we will focus on a particular binary sorter that has an approximate annual influx 
+of over 4.5 million elements continuously through 24 h.
+Fig. 9  Fluid with and without a weight–tipping tie–breaker at W = 4. Left: P1, equal window cost but 
+different decision at i = 1 (tie–breaker points left). Right: P3, the earlier tie resolution leaves a lighter 
+boundary and lowers the cumulative cost for D′; cD′ clears prior ones while cD does not
+ 
+1 3
+461
+
+Annals of Operations Research (2026) 358:447–468
+5.1  Setup
+We recorded data from the sequence for a week. Due to most of the items going through 5 
+AM and 4 PM from Monday to Friday, we decided to split our dataset into 5 different simu­
+lations, one for each day of the week resetting at midnight.
+To help with applicability and transparency in our research, we have published the data­
+set through IEEE Dataport (Salvia Hornos et al. 2024), making replication and future exper­
+imentation possible.
+We executed the simulations on an Intel i7-1165G7. The memory requirements were 
+negligible. To compute the efficiency improvements, we compared the percentage dif­
+ference between the optimisation provided by the respective strategies to the number of 
+switches (cQ) required by the original function Q. All subproblems were solved to optimal­
+ity without time limit.
+5.2  Solvers
+Choosing solvers for this kind of problem is difficult, since the problem has very low latency 
+requirements in order to not stop the conveyor belt. For this reason, we had to choose solv­
+ers with native Python bindings, since from our experiments other forms of communication 
+(pipes, I/O, etc) are too slow and require encoding and parsing the problems or could require 
+process spawning.
+For MaxSAT we chose RC2 (Ignatiev et al. 2019) available through PySAT2 (Ignatiev 
+et al. 2018), a Linear Search SAT-UNSAT (Morgado et al. 2013) version with ITotalizer 
+(Martins et al. 2014) also through PySAT.
+We additionally tested with EvalMaxSAT3 (Avellaneda 2023), UWrMaxSat4 (Piotrów 
+2020), Open-WBO5 (OLL algorithm) and Open-WBO (PartMSU3 algorithm) Martins et 
+al. (2014). Testing these solvers required the development of custom python MaxSAT bind­
+ings, since most MaxSAT solvers are not developed from the ground up with a reusable API 
+in mind (with the exception of EvalMaxSAT and partially Open-WBO OLL). This solver 
+selection ensures we cover LSU, OLL (Morgado et al. 2014) and MSU (Marques-Silva and 
+Planes 2008) families of complete algorithms.
+All solvers were run with default configuration out of the box. We want to point out that 
+Open-WBO PartMSU3 may fall back to MSU3 when partitioning fails to produce meaning­
+ful groups or would be invalid, as per the original Open-WBO source code. Due to really 
+bad performance on EvalMaxSAT, we considered multiple parameters and ended up with a 
+slightly more favorable configuration than default with multi-core strategy disabled.
+2 PyPi version: version 1.8.dev19.
+3 Commit identifier: aabaefd.
+4 Commit identifier: 230faa1.
+5 Commit identifier: 80f3073.
+1 3
+462
+
+Annals of Operations Research (2026) 358:447–468
+5.3  Dataset
+The dataset is mostly raw data (with anonymized item identifiers and timestamps). With the 
+only meaningful preprocessing of removing duplicated item signals and boundary condi­
+tions (items in boundary days).
+The average input–output time varies per binary sorter (defined as the average oi −ei) of 
+the company, and the window size available is also a variable of each sorter and the overall 
+logistics infrastructure. For this reason, we consider the problem from the data of a single 
+binary sorter. We analyze the experiments from a fixed window and variable window points 
+of view. This can give us an idea of how the algorithm scales with the available information 
+in the system.
+A summary table with the size of the sequences, the cost of the original function Q, the 
+average cost per item in the sequence and the total number of different articles can be found 
+in Table 1.
+5.4  Results
+We executed our simulator with our implementations and averaged the results per day. 
+Because the fluid optimisation strategy depends on compensating the decisions made on 
+some items with others seen later in the sequence, we need to consider the entire deci­
+sion vector for the sequence, including the tail. For this reason, on the fixed window size 
+problem we exceptionally reduce the window size at the end of the simulation to allow 
+for the remaining items in the sequence to exit the binary sorter. Each day is optimised 
+independently.
+Before we test at different window sizes and in a timed window context, we experi­
+mented to identify the optimal heuristic strategy to solve the problem. The comparison of 
+the different weight balancing strategies can be found on Fig. 10. We can see that both 
+constant and linear strategies improve over the standard objective. We strategically ran the 
+experiments at W = 50.
+Following those results, we compared the constant objective with the weight tipping 
+objectives at various α values. Figure 11 presents the results. As previously discussed, at 
+k = 1 (tie-breaker) it is particularly effective. However, the graph shows empirically that 
+setting k > 1 seems reasonably more effective, with the constant objective being the one 
+that presents the most improvement.
+Following the previous results, we ran all of the following studies strictly either on the 
+block strategy, the fluid standard strategy or the fluid constant strategy (both fluid variants 
+with real-time variants). All of these variants are unweighted MaxSAT problems.
+In Fig. 12 we can see the improvement in switching of the various strategies. There are 
+three main curves: one for the block optimisation, one for the fluid optimisation (fixed win­
+Monday
+Tuesday
+Wednesday
+Thursday
+Friday
+|S|
+19122
+18688
+18584
+18655
+20320
+cQ
+6788
+6831
+6363
+6270
+6258
+cQ/|S|
+0.35
+0.37
+0.34
+0.34
+0.31
+|A|
+170
+150
+153
+168
+187
+Max window
+72
+70
+77
+76
+75
+Mean window
+35.43
+36.45
+35.75
+37.58
+40.12
+Table 1  Summary of the bench­
+mark used
+ 
+1 3
+463
+
+Annals of Operations Research (2026) 358:447–468
+dow size) and another one of the the fluid real-time optimisation (variable window size). 
+The constant weight balancing objective with k = 5 has been implemented for both fluid 
+versions since implementing it on the block strategy would not lead to an improvement. The 
+variable window size version cannot be directly studied at multiple window sizes, so what 
+we do is cap the window size at a certain maximum, optimising over a variable window size 
+of a maximum length.
+The fluid implementation significantly outperforms the block implementation in terms 
+of efficiency, with a gap that grows from a few to 10 percentage points as the window size 
+increases. This intuitively makes sense, as an increase in the size of the window gives more 
+Fig. 11  Improvement of the weight tipping strategy compared with standard and constant objectives
+ 
+Fig. 10  Improvement of the different weight balancing strategies compared with standard objective
+ 
+1 3
+464
+
+Annals of Operations Research (2026) 358:447–468
+room for the optimisation to work. It is trivial to prove that a bigger window size in the fluid 
+strategy will always lead to the same or higher efficiencies.
+We can also observe a non trivial improvement in efficiency due to the constant weight 
+balancing objective of a few percentages points for both the fixed window size and variable 
+window size versions.
+In Fig. 13 we see a performance comparison of the previously discussed complete Max­
+SAT solvers when running under different window size the constant weight balancing objec­
+tive with k = 5. Time is reported in average time per MaxSAT solver call in wall-time 
+seconds. Surprisingly, the solvers do show a significant difference in their performance 
+profile. Among the surprising results, OpenWBO OLL performs better than OpenWBO 
+PartMSU3 implementation on this specific problem, even though PartMSU3 is the default 
+OpenWBO strategy for unweighted problems. On top of that, it is also interesting to see that 
+older, simpler strategies (like RC2 or LSU) outperform more recent MaxSAT solvers like 
+UWrMaxSAT or EvalMaxSAT.
+We attribute the discrepancy of these results to the optimisation of complete MaxSAT 
+solvers to bigger and more complex instances, which require different techniques, heuristics 
+and preprocessing than those in a low-latency scenario.
+From a theoretical perspective, it would also be interesting to study the efficiency of 
+these solutions against the optimal, assuming we know the entire sequence ahead of time, 
+even though that would not have practical applications. However, the exponential nature of 
+the problem makes the optimisation totally intractable after a few hundred boxes in window 
+size. For reference, we were able to compute an average improvement of around 67.2% 
+for the block implementation at a window size of 200, however, this was beyond the time 
+budget for a real-world implementation, and the improvement seems to plateau after that.
+Fig. 12  Switching improvement of the various strategies
+ 
+1 3
+465
+
+Annals of Operations Research (2026) 358:447–468
+6  Conclusions and future work
+In this work we presented a novel problem we refer to as the binary sorter minimization 
+problem, and presented three variants on it, one with all the information upfront, and two 
+with incoming information in an online setting, with either a static window size W and or 
+a variable one.
+Beyond the specific improvement in switching costs studied in this paper, the improve­
+ments of this paper had effects in resolving a specific logistic bottleneck in this manu­
+facturing company. Internally, this allowed them to see the impact this bottleneck had on 
+production holding (also called palletization). Moreover, resolving this bottleneck in the 
+production pipeline highlighted other throughput issues on the warehouses that are down­
+stream of the studied problem.
+We presented an optimal solution for the variant with all the information upfront and two 
+different strategies to solve the online variants. We test our algorithms with implementations 
+in MaxSAT with state of the art solvers and benchmark them on an industrial dataset of real-
+world data. With our experiments we show a significant reduction in switching by about 
+63% for the static window size problem and 48% for the variable window size problem.
+As future work we want to consider new strategies for solving the online variants and 
+pose new ways to improve the efficiency of our encodings. On top of that, we think that fur­
+ther research is possible in MaxSAT algorithms and implementations that are more suitable 
+for real-time online applications.
+We also leave as future work studying an approach leveraging Machine Learning to the 
+current problems. Being able to predict future elements of the sequence S from past ele­
+ments may allow us to formulate more efficient decision vectors. This could be naturally 
+leveraged by a Reinforcement Learning approach.
+Fig. 13  Performance of the MaxSAT solvers on a logarithm scale
+ 
+1 3
+466
+
+Annals of Operations Research (2026) 358:447–468
+Moreover, some of the other binary sorters of the company may have access to an 
+unsorted vector of future elements that will later appear in the ordered window. We leave as 
+future work exploring the properties of this problem.
+Acknowledgements  We want to thank Alexey Ignatiev for answering questions regarding the RC2 MaxSAT 
+solver.
+Author contributions  Josep Maria Salvia Hornos—Conceptualization, Data curation, Formal analysis, Fund­
+ing acquisition, Investigation, Methodology, Project administration, Software, Validation, Visualization, 
+Writing—original draft, Writing—review and editing. Cèsar Fernández Camón & Carles Mateu Piñol—
+Methodology, Supervision, Funding acquisition, Writing – review and editing. Joao Marques-Silva—Meth­
+odology, Writing—review and editing. Ivet Rafegas Fonoll and Josep Cirera Balcells—Conceptualization, 
+Funding acquisition, Methodology, Project administration, Resources, Writing—review and editing.
+Funding  Open Access funding provided thanks to the CRUE-CSIC agreement with Springer Nature. 
+Josep Maria Salvia Hornos reports funding from Generalitat de Catalunya AGAUR DI-2024-00020. 
+Cèsar Fernández reports funding by the Spanish MCIN/AEI/10.13039/501100011033/, FEDER, UE in 
+project IDs PID2022-138564OA-I00 and PID2022-137971OB-I00. Carles Mateu reports that this work 
+was partially funded by the Ministerio de Ciencia e Innovación - Agencia Estatal de Investigación (AEI) 
+(PID2021-123511OB-C31- MCIN/AEI/ 10.13039/501100011033/FEDER, UE and RED2022-134219-T).
+Declarations
+Conflict of interest  The authors have no conflict of interest to declare that are relevant to the content of this 
+article.
+Open Access  This article is licensed under a Creative Commons Attribution 4.0 International License, 
+which permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as 
+you give appropriate credit to the original author(s) and the source, provide a link to the Creative Commons 
+licence, and indicate if changes were made. The images or other third party material in this article are 
+included in the article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. 
+If material is not included in the article’s Creative Commons licence and your intended use is not permitted 
+by statutory regulation or exceeds the permitted use, you will need to obtain permission directly from the 
+copyright holder. To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Ascheuer, N., Grötschel, M., Krumke, S.O., Rambau, J. (1999). Combinatorial online optimization. In Oper­
+ations Research Proceedings 1998: Selected Papers of the International Conference on Operations 
+Research Zurich, August 31–September 3, 1998, Springer. pp. 21–37. ​h​t​t​p​s​:​/​/​d​o​i​.​o​r​g​/​1​0​.​1​0​0​7​/​9​7​8​-​3​-​6​
+4​2​-​5​8​4​0​9​-​1​_​2​
+Avellaneda, F. (2023). Evalmaxsat 2023. MaxSAT Evaluation 2022: Solver and Benchmark Descriptions, 
+12–13. http://hdl.handle.net/10138/347396
+Azar, Y. (2005). On-line load balancing. Online algorithms: the state of the art, 178–195. ​h​t​t​p​s​:​/​/​d​o​i​.​o​r​g​/​1​0​.​
+1​0​0​7​/​B​F​b​0​0​2​9​5​6​9​
+Bailleux, O., & Boufkhad, Y. (2003). Efficient CNF encoding of Boolean cardinality constraints. In Interna­
+tional conference on principles and practice of constraint programming, pp. 108–122. Springer
+Battiti, R., & Protasi, M. (1998). Approximate algorithms and heuristics for max-sat. Handbook of Combina­
+torial Optimization, 1–3, 77–148.
+Cook, W.J., Cunningham, W.H., Pulleyblank, W.R., & Schrijver, A. (1994). Combinatorial optimization. 10, 
+75–93.
+Eén, N., & Sörensson, N. (2006). Translating pseudo-Boolean constraints into sat. Journal on Satisfiability, 
+Boolean Modeling and Computation, 2(1–4), 1–26.
+1 3
+467
+
+Annals of Operations Research (2026) 358:447–468
+Ghomi, E. J., Rahmani, A. M., & Qader, N. N. (2017). Load-balancing algorithms in cloud computing: A 
+survey. Journal of Network and Computer Applications, 88, 50–71.
+Grötschel, M., Krumke, S.O., Rambau, J., Winter, T., & Zimmermann, U.T. (2001). C ombinatorial online 
+optimization in real time. Online optimization of large scale systems. pp 679–704. ​h​t​t​p​s​:​/​/​d​o​i​.​o​r​g​/​1​0​.​1​
+0​0​7​/​9​7​8​-​3​-​6​6​2​-​0​4​3​3​1​-​8​_​3​3​
+Huggs, A.E. (2016). How competition, customization, and niche markets have affected sku proliferation and 
+management. Scholar Commons ​h​t​t​p​s​:​/​/​s​c​h​o​l​a​r​c​o​m​m​o​n​s​.​s​c​.​e​d​u​/​s​e​n​i​o​r​_​t​h​e​s​e​s​/​9​4
+Ignatiev, A., Morgado, A., & Marques-Silva, J. (2019). Rc2: An efficient maxsat solver. Journal on Satisfi­
+ability, Boolean Modeling and Computation, 11(1), 53–64.
+Ignatiev, A., Morgado, A., & Marques-Silva, J. (2018). PySAT: A Python toolkit for prototyping with SAT 
+oracles. In SAT, pp. 428–437. https://doi.org/10.1007/978-3-319-94144-8_26
+Iijima, M., Komatsu, S., & Katoh, S. (1996). Hybrid just-in-time logistics systems and information networks 
+for effective management in perishable food industries. International Journal of Production Economics, 
+44(1–2), 97–103.
+Li, C. M., & Manya, F. (2021). Ma xsat, hard and soft constraints. In Handbook of satisfiability, pp. 903–927. 
+IOS Press. ​h​t​t​p​s​:​/​/​d​o​i​.​o​r​g​/​1​0​.​3​2​3​3​/​9​7​8​-​1​-​5​8​6​0​3​-​9​2​9​-​5​-​6​1​3
+Marques-Silva, J., & Lynce, I. (2007). Towards robust cnf encodings of cardinality constraints. In Principles 
+and practice of constraint programming–CP 2007: 13th International conference, CP 2007, Provi­
+dence, RI, USA, September 23-27, 2007. Proceedings 13, pp. 483–497. Springer
+Marques-Silva, J., & Planes, J. (2008). Algorithms for maximum satisfiability using unsatisfiable cores. In 
+Proceedings of the conference on design, automation and test in Europe, pp. 408–413.
+Marsan, M. A., Bianco, A., Giaccone, P., Leonardi, E., & Neri, F. (2003). Multicast traffic in input-queued 
+switches: Optimal scheduling and maximum throughput. IEEE/ACM Transactions on Networking, 
+11(3), 465–477.
+Martins, R., Joshi, S., Manquinho, V., & Lynce, I. (2014). Incremental cardinality constraints for maxsat. In 
+International conference on principles and practice of constraint programming, pp. 531–548. Springer 
+https://doi.org/10.1007/978-3-319-10428-7_39
+Martins, R., Manquinho, V., & Lynce, I. (2014). Open-wbo: A modular maxsat solver. In International con­
+ference on theory and applications of satisfiability testing, pp. 438–445. Springer ​h​t​t​p​s​:​/​/​d​o​i​.​o​r​g​/​1​0​.​1​0​
+0​7​/​9​7​8​-​3​-​3​1​9​-​0​9​2​8​4​-​3​_​3​3​
+Morgado, A., Heras, F., Liffiton, M., Planes, J., & Marques-Silva, J. (2013). Iterative and core-guided maxsat 
+solving: A survey and assessment. Constraints, 18(4), 478–534.
+Morgado, A., Dodaro, C., & Marques-Silva, J. (2014). Core-guided maxsat with soft cardinality constraints. 
+In International conference on principles and practice of constraint programming, pp. 564–573. 
+Springer
+Piotrów, M. (2020). Uwrmaxsat: Efficient solver for maxsat and pseudo-boolean problems. In 2020 IEEE 
+32nd international conference on tools with artificial intelligence (ICTAI), pp. 132–136. IEEE
+Rossi, F., Beek, P., & Walsh, T. (Eds.). (2006). Handbook of constraint programming. Foundations of artifi­
+cial intelligence (Vol. 2). Amsterdam: Elsevier.
+Salvia Hornos, J.M., Petit Riera, J., Palou Figueras, R., & Torres Amigo, R. (2024) Logistics Routing of a 
+Box Sequence on a Physical Binary Sorter. IEEE Dataport. https://doi.org/10.21227/63x4-ta24
+Singh, R., & Rosengren, S. (2020). Why do online grocery shoppers switch? An empirical investigation of 
+drivers of switching in online grocery. Journal of Retailing and Consumer Services, 53, 101962.
+Sinz, C. (2005). Towards an optimal CNF encoding of Boolean cardinality constraints. In International con­
+ference on principles and practice of constraint programming, pp. 827–831. Springer.
+Sobolev, S. (2002). Propositional formula. Encyclopedia of Mathematics. ​h​t​t​p​:​/​/​w​w​w​.​e​n​c​y​c​l​o​p​e​d​i​a​o​f​m​a​t​h​.​
+o​r​g​/​i​n​d​e​x​.​p​h​p​
+Solnon, C., Nguyen, A., Artigues, C. (2008). The car sequencing problem: Overview of state-of-the-art meth­
+ods and industrial case-study of the roadef’2005 challenge problem. European Journal of Operational 
+Research, 191(3), 912–927.
+Spieckermann, S., Gutenschwager, K., & Voß, S. (2004). A sequential ordering problem in automotive paint 
+shops. International Journal of Production Research, 42(9), 1865–1878.
+Tyrväinen, O., & Karjaluoto, H. (2022). Online grocery shopping before and during the covid-19 pandemic: 
+A meta-analytical review. Telematics and Informatics, 71, 101839.
+Wu, F.-Y. (1982). The potts model. Reviews of Modern Physics, 54(1), 235.
+Zhu, X., & Wilhelm, W. E. (2006). Scheduling and lot sizing with sequence-dependent setup: A literature 
+review. IIE Transactions, 38(11), 987–1007.
+Publisher's Note  Springer Nature remains neutral with regard to jurisdictional claims in published maps and 
+institutional affiliations.
+1 3
+468

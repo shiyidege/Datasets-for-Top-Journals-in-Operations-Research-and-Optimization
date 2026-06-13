@@ -1,0 +1,2252 @@
+TITLE: Online Risk Monitoring Using Offline Simulation
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2019
+DOI: https://doi.org/10.1287/ijoc.2019.0892
+---
+
+Submitted to iINFORMS Journal on Computing
+manuscript (Please, provide the manuscript number!)
+Authors are encouraged to submit new papers to INFORMS journals by means of a style ﬁle template,
+which includes the journal title. However, use of a template does not certify that the paper has been
+accepted for publication in the named journal. INFORMS journal templates are for the exclusive
+purpose of submitting to an INFORMS journal and should not be used to distribute the papers in print
+or online or to submit the papers to another publication.
+Online Risk Monitoring Using Ofﬂine Simulation
+Guangxin Jiang
+School of Management, Shanghai University, Shanghai, China, gxjiang@shu.edu.cn
+L. Jeff Hong
+Department of Management Science, School of Management, Fudan University, Shanghai, China, hong liu@fudan.edu.cn
+Barry L. Nelson
+Department of Industrial Engineering and Management Sciences, Northwestern University, Evanston, Illinois 60208, nelsonb@northwestern.edu
+Estimating portfolio risk measures and classifying portfolio risk levels in real time are important yet challenging tasks. In
+this paper we propose to build a logistic regression model using data generated in past simulation experiments and to use
+the model to predict portfolio risk measures and classify risk levels at any time. We further explore regularization tech-
+niques, simulation model structure, and additional simulation budget, to enhance the estimators of the logistic regression
+model to make its predictions more precise. Our numerical results show that the proposed methods work well. Our work
+may be viewed as an example of the recently proposed idea of simulation analytics, which treats a simulation model as a
+data generator and proposes to apply data analytics tools to the simulation outputs to uncover conditional statements. Our
+work shows that the simulation analytics idea is viable and promising in the ﬁeld of ﬁnancial risk management.
+Key words: simulation analytics; logistic regression; lasso; classiﬁcation; Monte Carlo simulation; variance reduction
+History: Received
+1.
+Introduction 1
+In portfolio risk management, simulation studies are often used to estimate portfolio risk measures, e.g.,
+exceedance probabilities, values-at-risk or conditional values-at-risk. These studies often produce accurate
+estimates of risk measures, as long as the stochastic processes of the underlying risk factors may be sim-
+ulated. However, they can also be very time consuming, especially when portfolios consist of multiple
+derivative products whose prices also need to be determined by additional simulation efforts. This type of
+problem is known as nested estimation and it has been studied extensively in the areas of simulation and
+ﬁnancial engineering (see, for instance, Gordy and Juneja 2010, Liu and Staum 2010, Broadie et al. 2011,
+1 A preliminary version of this work appeared in the Proceedings of the Winter Simulation Conference (Jiang et al. 2016), which
+only outlines the basic logistic regression approach without detailed analysis. Parts of Sections 2 and 3 originally appeared in the
+conference paper. In this paper, we add the full technical analysis of the basic logistic regression approach. More importantly, we
+propose three performance enhancing techniques with full technical analysis, and provide abundant numerical examples to illustrate
+all the methods.
+1
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+2
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+Sun et al. 2011). Nearly all estimation methods proposed in the simulation literature consider the estimation
+problem only once, i.e., one is interested only in estimating a risk measure at the current time point given
+the current values of all underlying risk factors, and researchers often argue that these methods may be
+implemented over night or over the weekend so that the long computational time needed to run them is not a
+huge barrier. In practice, however, portfolio risk measures are often needed in real time as the current values
+of the underlying risk factors change. For instance, the famous “4:15 report” of J. P. Morgan requires the
+company to consolidate the risks of all trading desks based on the closing values of the underlying factors,
+available within 15 minutes after the market closes everyday, and the company uses it to decide whether the
+risk is under control (Jorion 2006). We call this the online risk monitoring problem. The estimation methods
+available in the simulation literature cannot solve this problem directly, because a portfolio may contain
+thousands of ﬁnancial instruments based on many risk factors, and the risk factors may change in seconds.
+As we need to estimate the risk measures in real time based on these risk factors, we cannot guarantee that
+the desirable simulation results can be obtained in time, even though with parallel computing resources.
+We take a different view. We ask whether we can use the sample paths and derivative prices from a
+database of retained past simulation results to estimate online risk measures based on the current values of
+the underlying risk factors, without running additional simulation experiments. From a mathematical point
+of view, the traditional approaches estimate an unconditional risk measure, which is a ﬁxed value; while
+what we need is an approach that estimates a conditional risk measure, which is a function of the values of
+the underlying risk factors at a future time. This motivates us to consider the simulation analytics approach
+recently proposed by Nelson (2016).
+The main idea of the simulation analytics approach is to treat the simulation model as a generator of
+multiple (often a large number of) replications of system dynamics over time and to apply data mining and
+data analytics tools to mine the data and to estimate conditional statements. To make an analogy, we consider
+a recommendation problem, which is a classical example of data mining/data analytics (see, for instance,
+Hastie et al. 2011). In that problem, the available data include the personal attributes and purchasing records
+of many individuals, and the goal is to estimate the probability that an incoming individual with certain
+attributes will make a purchase of a certain product (known as an estimation problem) and to decide whether
+to recommend a certain product to this individual (known as a classiﬁcation problem). In the online risk
+monitoring problem, suppose we have many sample paths (i.e., the data) generated from the simulation
+model, and in each sample path (i.e., individual), we have the future evolution of risk factors (i.e., attributes)
+and its loss at a relevant day (i.e., purchasing record). Our goal is to estimate the risk measure given the
+risk factors at a future time and to classify whether the risk is too high. By this analogy, we conclude that
+the online risk monitoring problem is indeed analogous to a recommendation problem and the simulation
+analytics approach can be used to solve it.
+In this article we consider a speciﬁc online risk monitoring problem. Suppose that an ordinary Monte
+Carlo simulation study was conducted at an initial time point (time 0) to evaluate the (unconditional)
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+3
+exceedance probability (i.e., the probability that the loss is greater than a given threshold) at an important
+future date (time T). To estimate the exceedance probability, the simulation study generated many sample
+paths from the initial state of the underlying risk factors at time 0 to time T and evaluated the portfolio loss
+(including possibly pricing of derivatives) for each sample path at time T. Our goal is to use the same sam-
+ple paths to estimate the same exceedance probability at time T conditional on the state of the underlying
+risk factors at any time t ∈[0,T] and to classify the portfolio risk at time t into either “safe” or “dangerous”
+based on whether the exceedance probability is below or above a certain threshold. The problem was moti-
+vated by our conversations with investment practitioners in the insurance industry, who complained that
+their company does not set risk limits dynamically based on portfolio status and, instead, uses static limits.
+In this paper, we analyze the problem in the context of ﬁnancial simulation, which typically assume that the
+simulation model is the true model, and do not consider the model misspeciﬁcation issue.
+Regression is commonly used in estimating the conditional relationship. For instance, Longstaff and
+Schwartz (2001) proposed to use linear regression to approximate continuation values in the American
+option pricing problem. To estimate the conditional probability and to classify the risk category, logistic
+regression is used, and the maximum likelihood method is applied to estimate the parameters of the model.
+According to generalized linear model theory (Fahrmeir and Kaufmann 1985), we will show that the risk
+estimators are strongly consistent and asymptotically normal. In addition, the classiﬁcation error goes to
+zero exponentially fast as the sample size n →∞. This result shows that risk classiﬁcations, which are often
+the main purpose of online risk monitoring, are signiﬁcantly easier than risk estimations.
+The logistic regression approach is treated as a baseline method in this paper. We then propose three per-
+formance enhancing techniques, by taking advantage of either existing data analytics tools or the knowledge
+of the simulation models, to further improve the baseline method. Firstly, considering that the number of
+risk factors is often large in practical situations, we propose to use L1-regularization (often known as lasso)
+to conduct variable selection and to improve prediction accuracy. The basic idea of lasso is to tradeoff a
+small increase of bias to obtain a large decrease of variance, so that the estimation and classiﬁcation can be
+done more precisely. It is a standard tool in data analytics to handle high-dimension data, and we show that
+it also works well in the context of online risk monitoring. We also prove that the risk estimators using lasso
+are strongly consistent and asymptotical normally, and the classiﬁcation error goes to zero exponentially
+fast as the sample size n →∞.
+Secondly, noticing that our data are generated from simulation, we may use our knowledge of the simu-
+lation model (i.e., the data generating process) to develop more efﬁcient tools. This is a unique feature of
+simulation analytics. In typical data analytics problems, data are observed and the data generating processes
+are unknown. To improve the baseline method, we utilize gradient estimation in simulation to develop a
+method that perturbs all simulated sample paths so that they are more spread out. Through both theoretical
+analysis and numerical studies, we show that the perturbation method can signiﬁcantly improve the quality
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+4
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+of both risk estimators and risk classiﬁers, especially when the time is close to the beginning of the planning
+horizon where sample paths are more clustered together.
+Thirdly, in some practical situations we may have time to conduct a small number of additional simulation
+experiments. Therefore, we also consider how to incorporate the additional simulation data into the analysis
+to improve the quality of the risk estimators and risk classiﬁers. In particular, we propose two approaches,
+one is to combine two estimators that are derived from the original data and the new data, respectively, and
+the other is to combine the original data and the new data together to compute a new estimator. Through
+both theoretical analysis and numerical studies, we show that using additional simulation data can improve
+the performance in both risk estimations and risk classiﬁcations.
+Literature Review
+Our work is related to three lines of literature. The ﬁrst is on portfolio risk measurement. Glasserman et al.
+(2000, 2002) were among the ﬁrst to study how to estimate portfolio values-at-risk. In particular, Glasser-
+man et al. (2000) considered the case where the risk factors follow light-tailed distributions and Glasserman
+et al. (2002) considered the case of heavy-tailed distributions. Glasserman and Li (2005), Bassamboo et al.
+(2008) and Glasserman et al. (2008) studied portfolio credit risks. For large portfolios, large pool approx-
+imation can be used to study the risk measures, see Iscoe and Kreinin (2010) and Sirignano and Giesecke
+(2018). All of these papers study situations where the loss of the portfolio may be calculated easily through
+closed-form expressions or delta-gamma approximations, and consider how to apply variance reduction
+techniques so that the risk measures may be estimated more accurately.
+Sometimes, estimation of portfolio losses need additional simulation experiments. For instance, a port-
+folio may contain derivatives whose values need to be priced through simulation. Nested simulation
+approaches are often used in these situations. Lee and Glynn (2003) studied the general formulation of
+nested simulation and considered how to balance the simulation effort in the inner and outer levels, while
+Gordy and Juneja (2010) applied it to portfolio risk measurement. Liu and Staum (2010) used stochastic
+kriging to improve the estimation efﬁciency, and Broadie et al. (2011) designed an adaptive method to allo-
+cate the simulation effort in inner and outer levels. To reduce the large amount of simulation effort needed
+in the inner level, Broadie et al. (2015) proposed a regression method and Hong et al. (2017) proposed
+a kernel method to avoid nested simulations. Interested readers may see Hong et al. (2014) for a recent
+comprehensive review on simulation methods in estimating risk measures.
+The second related line of literature is regression. Regression is a standard technique used in data analyt-
+ics and statistical learning to construct functional relations and to classify instances (see, for instance, Hastie
+et al. (2011) for a thorough introduction of regression techniques in statistical learning). In this article our
+goal is to estimate conditional probabilities and use them for classiﬁcation. Therefore, it is natural for us
+to consider logistic regression. For background on logistic regression and how to use maximum likelihood
+to estimate model parameters, readers are referred to the monograph of Hosmer and Lemeshow (2004). In
+statistical learning, lasso is often used with regression to select variables and to improve prediction preci-
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+5
+sion, especially when the number of variables is large. It was ﬁrst introduced by Tibshirani (1996) and it can
+be applied to not only linear regression models but also generalized regression models that include logistic
+regression. Regression has also been used at the interface of stochastic simulation and ﬁnancial engineering.
+For instance, as we mentioned earlier, Broadie et al. (2015) proposed a regression method to estimate port-
+folio risk measures. Sirignano and Giesecke (2018) used logistic regression to approximate the transition
+function in loan-level models. Longstaff and Schwartz (2001) used a regression method to price Ameri-
+can style options. Generally, pricing American style options is equivalent to solving dynamic programming
+problems, where regression is often used to approximate the value functions for backward induction. In our
+method, regression is used repeatedly to approximate the functions of conditional exceedance probabilities,
+which are used directly for online risk monitoring.
+The third related line of literature is on re-use of simulation experiments. Liu et al. (2010) proposed to
+run simulation experiments to construct a good “database” and use it for future estimations. They call the
+approach “simulation on demand”. Rosenbaum and Staum (2015) further developed this idea into database
+Monte Carlo simulation that uses the database to construct control variates to reduce the variances of the
+estimators. Similar to our idea of re-using simulation data, Feng and Staum (2017) proposed the concept
+of green simulation that uses retained simulation data as a complementary resource to new simulation data
+by employing a change of probability measures. Unlike the approaches mentioned above that either pre-run
+simulation experiments (as in simulation on demand) or convert the old simulation data to the new data (as
+in green simulation), our approach learns (or mines) the simulation data to uncover conditional relationships
+available in the data.
+The rest of this paper is organized as follows. We formulate the online risk monitoring problem in Sec-
+tion 2 and introduce the logistic regression based methods in Section 3. Three performance enhancing
+techniques, lasso, perturbation, and additional simulation, are discussed in detail in Sections 4, 5, and 6,
+respectively. Numerical results are presented in Section 7, followed by conclusions and discussions in Sec-
+tion 8.
+2.
+Problem Statement
+Suppose that S(t) = (S1(t),S2(t),...,Sm(t))⊤is a vector of the underlying risk factors, which may include
+prices of stocks and bonds, stochastic interest rates, etc, and that S(t) follows a Markov process deﬁned on
+a probability space (Ω,F,P) with a natural ﬁltration Ft that governs the evolution of the process. Consider
+a portfolio with k ﬁnancial products, e.g., stocks, bonds and derivatives, whose values at time t are denoted
+by Vi(t),i = 1,...,k, which depend on the realizations of the underlying risk factors S(t). For convenience
+of the notation, we let V(t) = (V1(t),...,Vk(t))⊤. Furthermore, suppose that the positions on the ﬁnancial
+products are w = (w1,...,wk)⊤. Then, the value of the portfolio at time t is
+Φ(t) =
+k
+X
+i=1
+wiVi(t) = w⊤V(t).
+(1)
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+6
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+Let L(t) = Φ(0) −Φ(t). Then, L(t) is the loss of the portfolio at time t.
+Suppose that there is a ﬁxed future time T at which portfolio loss L(T) needs to be evaluated and
+further actions need to be taken based on L(T). For instance, T may be the end of the ﬁscal year at which
+portfolio loss needs to be reported to shareholders or T is the end of the investment cycle at which bonuses
+are distributed. Then, the managers of the portfolio may be interested in estimating the loss distribution
+and the portfolio risk measures at time T. In this paper, we consider the estimation of the exceedance
+probability, i.e., Pr{L(T) > y} for some important threshold value y. Notice that, if Pr{L(T) > y} may
+be estimated for any y, we may use it to obtain other risk measures, such as value-at-risk and conditional
+value-at-risk (Glasserman et al. 2000). In the simulation literature, much has been done in estimating the
+unconditional probability, i.e., Pr{L(T) > y}, but we are interested in estimating the conditional probability
+Pr{L(T) > y|Fu}, which denotes the exceedance probability given the information up to time u ∈(0,T).
+By the Markov property of the underlying risk factors S(t), we have Pr{L(T) > y|Fu} = Pr{L(T) >
+y|S(u)}. The conditional probability is useful because, at any time u ∈(0,T), given the realization of S(u)
+observed in the market, we can tell the probability that the portfolio loss exceeds the threshold y at the
+important future time T and we may use the probability as a risk monitoring tool to determine whether the
+portfolio risk is under control.
+2.1.
+The Data
+When the portfolio is formed at time 0, a thorough simulation study is typically conducted to analyze
+the risk proﬁle of the portfolio and report the risk measures to relevant stakeholders. In this article we
+suppose that the unconditional exceedance probability Pr{L(T) > y} is estimated through a nested Monte
+Carlo simulation study. For this simulation study, one often has more time available to run simulation
+experiments, and the risk measures are often estimated accurately. Then, after the simulation study, we have
+n simulated sample paths of the underlying risk factors, denoted by S1(t),S2(t),...,Sn(t) for 0 ≤t ≤T.
+These sample paths are often simulated under the real probability measure and they are the output of the
+outer level simulation in a nested simulation study. Moreover, we also have the values of the ﬁnancial
+products at time T evaluated based on each simulated realization of the underlying risk factors. We denote
+them as V1(T),V2(T),...,Vn(T). Notice that these ﬁnancial products may include complicated ﬁnancial
+derivatives whose values do not have closed-form expressions. Then, an inner level simulation study under
+the risk neutral probability measure may need to be used to estimate the Vi(T) values. In this article, we
+assume that these values can be estimated so accurately that they are effectively without estimation error.
+Then, given the weights w of the portfolio, we can easily calculate the portfolio loss at time T based on the
+simulated realizations of the underlyings, and we denote them as L1(T),L2(T),...,Ln(T).
+2.2.
+Online Risk Monitoring
+Once the portfolio is constructed, the portfolio managers need to constantly monitor the risk of the portfolio.
+For instance, they may need to estimate the exceedance probability at any real time (instead of the simulated
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+7
+time) given the market conditions, i.e., the real realization of the underlyings S(u), and decide whether the
+portfolio is safe or not at time u. We call the ﬁrst the “online risk estimation problem” and the second the
+“online risk classiﬁcation problem”. For both problems, we want to use the simulated data in Section 2.1 to
+avoid simulating more data, so that both problems may be solved quickly to meet the practical requirements.
+In the online risk estimation problem, our goal is to estimate pu(S(u)) = Pr{L(T) ≥y|S(u)} for any
+u ∈(0,T) in real time. Notice that pu(S(u)) is a function of S(u). Therefore, our goal is to estimate a
+function, which is often called a regression problem in the ﬁeld of statistical learning (Hastie et al. 2011),
+and the regression is on S(u) for ﬁxed u. If the function is estimated, we may then plug in S(u) observed
+at real time u to estimate the exceedance probability pu(S(u)). Notice that this may be done very quickly
+if the function has been estimated before hand.
+In the online risk classiﬁcation problem, our goal is to classify the portfolio risk into two categories,
+“safe” and “dangerous”, based on the exceedance probability pu(S(u)) in real time. For instance, we may set
+α ∈(0,1) as a threshold and classify the portfolio risk is dangerous if pu(S(u)) > α and safe otherwise. In
+practice, we may set α = 0.05 or 0.1. Risk classiﬁcation allows risk managers to know immediately whether
+actions need to be taken to control the portfolio risk. One may further extend the number of categories from
+two to a higher number in the risk classiﬁcation problem. This may lead to a risk ratings that resemble
+to the credit ratings, e.g., the AAA to D levels, used by credit rating agencies such as Standard & Poor’s
+and Moody’s. Notice that, once the function pu(S(u)) is estimated, the classiﬁcation can also be solved
+immediately given the values of S(u) at the time u ∈(0,T).
+2.3.
+From Online Risk Monitoring to Online Risk Control
+Notice that online risk monitoring is only the ﬁrst step to online risk control, which is often the goal of risk
+management. For instance, if the risk classiﬁcation indicates that the portfolio risk level is dangerous, risk
+managers may decide to change some positions and add some additional products. To apply the simulation
+analytics approach to estimate the risk of this new portfolio, however, there may be some difﬁculties. The
+major difﬁculty is that the new products may depend on new risk factors whose sample paths are not in
+our data. Moreover, even when the new products do not involve new risk factors, how their values at time
+T depend on existing sample paths of underlying risk factors may still be unknown and require additional
+simulation effort to evaluate. In these situations, we have to run additional simulation experiments, because
+the information cannot be mined if it is not in the data.
+However, if the online risk control involves only adjusting the positions of existing ﬁnancial products, i.e.,
+changing the weights w, without adding new products, we can still apply the simulation analytics approach
+to estimate the risk of the new portfolio. To do that, suppose the weights at time u are now w(u). Based
+on the new weights, we may reconstruct the portfolio value Φ(T) based on Equation (1) and calculate the
+portfolio loss L(T) for the new portfolio, assuming the portfolio will be held until time T. Once we update
+the data, we are back to the situation that is considered in Section 2.2. Notice that the reconstruction of the
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+8
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+data does not need additional simulation experiments. Therefore, it can be done efﬁciently and it will not
+cause much delay in providing the risk estimates and the risk classiﬁcations.
+3.
+Logistic Regression
+As stated in Section 2, our goal is to estimate pu(S(u)) = Pr{L(T) ≥y|S(u)} and use it for classiﬁcation
+for any u ∈(0,T). To do that, notice that we have the simulated sample paths {Si(t),0 ≤t ≤T}, i =
+1,2,...,n, and the corresponding portfolio loss Li(T) for each sample path i. Let
+Y =
+(1
+if L(T) ≥y,
+0
+otherwise.
+(2)
+We have pu(S(u)) = E[Y |S(u)]. Based on the simulated sample paths, we have n observations of Y ,
+denoted by Y1,Y2,...,Yn. Then, to estimate the regression function pu(S(u)), we have n observations of the
+input-output pair for given u, and denoted by {(S1(u),Y1),(S2(u),Y2),...,(Sn(u),Yn)}, where the inputs
+are also called predictors, input variables or features, and the outputs are also called dependent variables or
+responses or classes or labels in the areas of statistical learning.
+Notice that both the regression problem and the classiﬁcation problem are classical supervised learning
+problems. There are parametric and nonparametric approaches that can be used to solve the problems. For
+our problems, because the data were collected from a separate simulation study, the number of observations
+is typically not very large. Moreover, as the portfolio may include many assets, the dimension of the features,
+i.e., the underlying risk factors S(u), may be quite large. Therefore, the observations may be scattered
+sparsely in the feature space. These characteristics typically make nonparametric methods, such as k-nearest
+neighbors and kernel methods, less effective due to a high level of variance of the predictions (Hastie et al.
+2011). Therefore, in this paper, we consider parametric methods that generally trade off variance for bias
+but may be effective if the parametric model is chosen appropriately.
+3.1.
+Logistic Regression Model and Maximum Likelihood Estimation
+Because the response Y is a Bernoulli random variable, to model pu(S(u)), a natural choice is a logistic
+regression model (Hosmer and Lemeshow 2004). Let X(·) : ℜm →ℜd denote a set of basis functions
+computed from S(u), we then propose the following logistic regression model
+log
+
+pu(S(u))
+1 −pu(S(u))
+
+= β(u)⊤X(S(u)),
+(3)
+where β(u) = (β1(u),...,βd(u))⊤is the vector of coefﬁcients. It is worthwhile noting that both X(·) and
+β(u) depend on the time u. Therefore, for different time points u ∈(0,T), we may use different basis
+functions and obtain different coefﬁcients.
+To use the logistic regression model in Equation (3) we need to specify the basis functions X(·). One way
+is to specify based on the properties of the loss function, and another is to use polynomials of S(u) due to
+the well-known Weierstrass approximation theorem (Rudin 1991). In this paper we suggest the second way
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+9
+and we propose to use linear and individual quadratic functions, i.e., X(S(u)) = (1,S(u),S2(u))⊤, where
+S(u)2 = (S2
+1(u),...,S2
+m(u))⊤. Notice that this is the simplest form of polynomials of S(u) that one may
+use and it should also be the ﬁrst form of polynomials for one to consider. Fortunately, our numerical results
+show that this approach works well for both the regression problem and the classiﬁcation problem. Notice
+that the ﬁrst component of X is typically 1, so β1 denotes the intercept. More details on the appropriateness
+of the logistic regression model are provided in the online supplement.
+The parameters of the logistic regression model of Equation (3) are typically estimated by the maximum
+likelihood (ML) method. For the convenience of notation, we omit the time index u when it does not cause
+confusion. That is, in Equation (3), we let X denote X(S(u)) and β denote β(u), and
+g(X,β) = exp(β⊤X)/(1 + exp(β⊤X)).
+Then, the log likelihood function is
+log ℓ(β|X,Y ) = Y log (g(X,β)) + (1 −Y )log (1 −g(X,β)).
+(4)
+For any u ∈(0,T), we have the training data {(Xi,Yi),i = 1,...,n}, where Xi = X(Si),
+Ln(β) = 1
+n
+n
+X
+i=1
+{Yi log (g(Xi,β)) + (1 −Yi)log (1 −g(Xi,β))}
+= 1
+n
+n
+X
+i=1
+
+Yiβ⊤Xi −log
+ 1 + exp(β⊤Xi)
+ 
+,
+(5)
+and the ML estimator ˆβn is given by
+ˆβn = arg max
+β∈ℜd Ln(β),
+(6)
+and the maximization problem may be solved numerically and efﬁciently by the coordinate descent algo-
+rithm (Hastie et al. 2011).
+3.2.
+Online Risk Estimation
+In the risk estimation problem our goal is to estimate pu(Sr(u)) = Pr{L(T) ≥y|Sr(u)} given that we
+have observed Sr(u) at time u. We use the notation Sr(u) to denote it is the real-world observation of
+S(u), instead of a simulated observation. Nevertheless, we assume that it has the same distribution as the
+simulated observations. When using the logistic regression model, we estimate pu(Sr(u)) by
+ˆpu(Sr(u)) = g(Xr, ˆβn) =
+exp
+
+ˆβ
+⊤
+n Xr
+
+1 + exp
+
+ˆβ
+⊤
+n Xr
+,
+(7)
+where Xr = X(Sr(u)) is known at time u and ˆβn is the ML estimator of the unknown parameter β calcu-
+lated using the training data, i.e., the simulated observations of {(Xi,Yi),i = 1,2,...,n} at time u. Based
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+10
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+on the generalized linear model theory in Fahrmeir and Kaufmann (1985), we can assess the quality (i.e.,
+consisitency and asymptotic normality) of the risk estimator ˆpu(Sr(u)) easily. To do that, we make the
+following assumptions.
+ASSUMPTION 1. The observations {(Xi,Yi),i = 1,2,...,n} are independent observations of (X,Y )
+and, given X, Y is a Bernoulli random variable with Pr(Y = 1|X) = g(X,β0).
+Notice that the independence condition is easily satisﬁed because {(Xi,Yi),i = 1,2,...,n} are calcu-
+lated based on sample paths that are simulated independently. Therefore, Assumption 1 basically assumes
+that the logistic regression model of Equation (3) is the true model and the true parameter is β0. This is a
+typical assumption that is made in parametric statistical estimations, and we can only build the properties
+of the estimators based on this assumption. Nevertheless, we have to keep in mind that models are just
+approximations and they may introduce bias of which we are not aware.
+Let L(β) denote the expectation of the log-likelihood function, i.e.,
+L(β) = E[log ℓ(β|X,Y )] = E
+
+Y β⊤X −log
+ 1 + exp(β⊤X)
+
+.
+(8)
+Assumption 1 also implies that
+β0 = arg max
+β∈ℜd L(β).
+(9)
+Let H(β) denote the Hessian matrix of the log-likelihood function, i.e., H(β) = ∇2
+β log ℓ(β|X,Y ). One
+can easily verify that
+H(β) = −
+eβ⊤X
+ 1 + eβ⊤X2 XX⊤.
+We make the following assumptions on H(β), where the expectations E(·) are taken with respect to the
+distribution of (X,Y ).
+ASSUMPTION 2. The Fisher information matrix J = −E[H(β0)] exists and is positive deﬁnite.
+ASSUMPTION 3. There
+exists
+a
+neighborhood
+of
+β0,
+denoted
+as
+N(β0),
+such
+that
+E
+
+supβ∈N(β0) ∥H(β)∥
+
+< ∞.
+Assumptions 2 and 3 are typical assumptions used to analyze the asymptotic properties of the ML esti-
+mators (see, for instance, Fahrmeir and Kaufmann 1985 and Newey and McFadden 1994), and they can be
+satisﬁed easily in our framework, see the online supplement. Then, we can obtain the asymptotic properties
+of the online risk estimator ˆpu(Sr(u)) deﬁned in Equation (7). The following theorem can be found in Jiang
+et al. (2016) without proof, and we provide the detailed proof in the online supplement. Again, we want to
+emphasize that the result is conditional on Sr(u) (and also Xr = X(Sr(u))).
+THEOREM 1. Suppose that Assumptions 1, 2 and 3 are satisﬁed. Then, ˆpu(Sr(u)) →pu(Sr(u)) a.s. and
+√n[ˆpu(Sr(u)) −pu(Sr(u))]
+d→N(0,D),
+as n →∞, where D = cXrJ −1X⊤
+r , and c = exp(2β0
+⊤Xr)/(1 + exp(β0
+⊤Xr))4.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+11
+Theorem 1 states that, under the assumption that the logistic regression model is the true model, the
+estimated conditional probability is a consistent estimator of the true conditional probability and it has
+an asymptotic normal distribution. As it has been demonstrated empirically in online supplement that the
+logistic regression model is a good model for the conditional probability, Theorem 1 also shows that our
+proposed approach can be used to solve the online risk estimation problem. Furthermore, as the logistic
+regression may be done very quickly given the sample paths or can even be done before Sr(u) is observed
+for any given u, the proposed approach can be used for risk estimation in real time.
+3.3.
+Online Risk Classiﬁcation
+Sometimes we are concerned about the classiﬁcation problems, i.e., whether the portfolio is safe or not at
+a given time. Of course, an accurately estimated logistic regression model may lead to good classiﬁcations.
+However, a coarsely estimated logistic regression may also give acceptable classiﬁcations. For example
+in Figure 1, the true boundary is the solid line, and classiﬁes the points into two categories. With a less
+accurate boundary, the dash line, the classiﬁcation accuracy is almost as good. This motivates us to consider
+the accuracy of classiﬁcation instead of the accuracy of prediction as in Section 3.2, especially in high-
+dimensional cases.
+x1
+x2
+true boundary
+estimated boundary
+Figure 1
+True and estimated classiﬁcation boundaries in the feature space deﬁned by (x1,x2), where ∗and
+◦deﬁne observations of different categories
+Suppose that α is the threshold probability of safe/dangerous zone. If the exceedance probability
+pu(Sr(u)) is less than or equal to α, we say the portfolio is in the safe zone. Otherwise, the portfolio is in
+the dangerous zone. In practice, pu(Sr(u)) is unknown and we estimate it by ˆpu(Sr(u)). Let I and ˆI denote
+the safe/dangerous indictors under the true and estimated probabilities, respectively, i.e.,
+I =
+(1
+if pu(Sr(u)) ≤α
+0
+if pu(Sr(u)) > α
+,
+ˆI =
+(1
+if ˆpu(Sr(u)) ≤α
+0
+if ˆpu(Sr(u)) > α
+.
+(10)
+Then, ˆI ̸= I denotes a misclassiﬁcation, and we are also interested in understanding how the misclassiﬁ-
+cation probability, i.e., Pr{ˆI ̸= I}, converges to zero as the sample size n →∞. To analyze Pr{ˆI ̸= I},
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+12
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+we ﬁrst establish a large-deviation result on Pr{∥ˆβn −β0∥> δ} and use it as a bridge. In the rest of this
+section, we drop the subscript u for convenience, and we use X to denote X(Sr(u)) and Xj to denote the
+jth component of X, j = 1,2,...,d. This is not to be confused with Xi which is the ith observation of X,
+and the boldface denotes that it is a vector. We make the following assumption on Xj.
+ASSUMPTION 4. For each j = 1,2,...,d, there exists a constant ωj > 0 such that E
+ eωj|Xj|
+< ∞.
+In this paper Xj is typically a polynomial function of the risk factors S(u). Assumption 4 basically
+requires that all risk factors are light-tailed. However, if some of risk factor, say Sj(u), is heavy tailed, we
+may redeﬁne it so that it is light-tailed. For instance, if Sj(u) follows a lognormal distribution, we may
+redeﬁne it by taking its logarithm. Based on Assumption 4, we establish an exponential rate of convergence
+of the ML estimator ˆβn to the true parameter β0, as summarized in the following theorem, which is a
+standard large deviation result in ML estimator (see Fu et al. 1993), and has also been stated in Jiang et al.
+(2016) but without proof. We provide our own proof of this theorem (see the online supplement), because
+similar proof techniques are also used in the proof of Theorem 5.
+THEOREM 2. Suppose that Assumptions 1, 2, and 4 hold. Then, for any δ > 0, there exists a positive
+constant ¯c(δ) such that
+lim
+n→∞−1
+n log Pr
+n
+∥ˆβn −β0∥> δ
+o
+≥¯c(δ).
+Based on Theorem 2, we have the following theorem showing that both the probability of a large deviation
+of the estimated exceedance probability from its true value, i.e., Pr{|ˆpu(Sr(u)) −pu(Sr(u))| > δ} for any
+δ > 0, and the probability of misclassiﬁcation, i.e., Pr{ˆI ̸= I}, converge exponentially fast as n →∞. The
+proof is included in the online supplement.
+THEOREM 3. Suppose that Assumptions 1, 2, and 4 hold. If ∥Xr∦= 0, then for any δ > 0, there exists
+˜c(δ) > 0 such that
+lim
+n→∞−1
+n log Pr{|ˆpu(Sr(u)) −pu(Sr(u))| > δ} ≥˜c(δ).
+(11)
+Furthermore, if ∥Xr∦= 0 and pu(Sr(u)) ̸= α, then there exists a constant c0 > 0 such that
+lim
+n→∞−1
+n log Pr
+n
+I ̸= ˆI
+o
+≥c0.
+(12)
+Theorem 3 indicates that the misclassiﬁcation probability converges to zero with an exponential rate. This
+shows that the risk classiﬁcation problem is in general easier than the risk estimation problem considered in
+Section 3.2, as we showed intuitively in Figure 1. In online risk monitoring, we are often interested more in
+risk classiﬁcation than in risk estimation; Theorem 3 shows that we can often expect the proposed method
+to give a good risk classiﬁcation even when the sample size is not large.
+The logistic regression model considered in this section serves as a baseline model in this paper. It is
+quite straight-forward once the online risk monitoring problems are deﬁned as we do. In Sections 4 to 6,
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+13
+we consider various techniques to enhance the performance of the baseline model, based on either more
+advanced data analytics tools or the knowledge and the ﬂexibility of the simulation model itself. We show
+that these performance enhancing techniques can indeed improve the qualities of risk estimators and risk
+classiﬁers, compared to the baseline model, and they may be used together to achieve further improvements.
+4.
+Regularization Through Lasso
+A large ﬁnancial portfolio may include many ﬁnancial products whose prices are affected by multiple under-
+lying risk factors. Therefore, in a simulation study, we often simulate the dynamics of a large number of risk
+factors. This imposes a challenge to the online risk monitoring problems that we consider in this paper. In
+particular, when the number of risk factors is large, the number of predictors (i.e., the basis functions of the
+risk factors) used in the logistic regression model is often larger. Then, the ML estimate of the model param-
+eters may have a large amount of variability, known as overﬁtting, and thus reduce the precision of risk
+estimation and risk classiﬁcation. Furthermore, due to limited positions in relevant ﬁnancial instruments,
+hedging or other reasons, the risk exposure to some risk factors may be quite small or even negligible at
+some time. This motivates us to consider regularization techniques, commonly used in statistical learning
+(e.g., Chapter 6 of James et al. 2013), to reduce the number of predictors in the model or to shrink the
+estimated coefﬁcients. The basic idea is to tradeoff a small increase of bias to obtain a large decrease of the
+variance, thus improving the overall prediction accuracy of the model. A model with a smaller number of
+predictors also brings better model interpretability. In online risk monitoring, this is particularly important
+because it shows clearly to managers the risk factors that they need to monitor closely. In this section we
+propose to use L1 regularization, also known as lasso, to improve the logistic regression model. Compared
+to other regularization techniques, such as L2 regularization, lasso not only improves prediction accuracy,
+but also reduces the number of non-zero predictors, thus improving the model interpretability. More expla-
+nation on the variable-selection property of lasso is included in the online supplement.
+Under the logistic regression model, i.e., Equation (3), the lasso estimator is
+ˆβ
+λn
+n = arg max
+β∈ℜd {Ln(β) −λn∥β∥1},
+(13)
+where ∥β∥1 = Pd
+j=1 |βj| is the L1-norm of the vector β. Compared to the ML estimator in Equation (6),
+the lasso estimator adds a shrinkage penalty term λn∥β∥1 in the maximization problem, where λn > 0 is
+known as the tuning parameter. It is clear that the penalty term shrinks the lasso estimator towards zero
+when compared to the ML estimator ˆβn. In particular, ˆβ
+λn
+n = ˆβn if λn = 0, and ˆβ
+λn
+n = 0 if λn = +∞.
+In the implementation of lasso, the tuning parameter λn is critical to the prediction accuracy of the model.
+To select a good λn, we suggest using k-fold cross validation with k = 5 or k = 10 to ﬁnd the λn value
+that minimizes the average classiﬁcation errors of the k test sets (see Chapter 5.1 of James et al. (2013) for
+an introduction). Once the tuning parameter is chosen, one can use all the training data to reﬁt the lasso
+model, i.e., Equation (13), to ﬁnd the lasso estimate ˆβ
+λn
+n . For a given tuning parameter, we suggest using
+the coordinate descent algorithm of Friedman et al. (2010) to ﬁt the lasso model.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+14
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+Similar to Section 3, in this section, we also study the consistency, asymptotic normality and the large
+deviation of the lasso estimators of the exceedance probability as well as the misclassiﬁcation probability.
+We show that the lasso estimators preserve all the asymptotic properties that the ML estimators have. To
+study asymptotic properties of the lasso estimators, we need a stronger assumption on the Hessian matrix
+H(β) than Assumption 2, which is commonly used in analyzing lasso estimators (see, for instance, Fan and
+Li 2001). In the assumption, we let Hjk(β) and βl denote the (j,k)th element of H(β) and lth element of
+β, respectively, for any 1 ≤j,k,l ≤d.
+ASSUMPTION 5. There exists a neighborhood of β0, denoted as N(β0), such that for any β ∈N(β0)
+and any 1 ≤j,k,l ≤d, ∂βlHjk(β) exists and there exists a function Mjkl such that |∂βlHjk(β)| ≤
+Mjkl(X,Y ) and E[Mjkl(X,Y )] < ∞.
+We have the following lemma on the consistency and asymptotic normality of the lasso estimator ˆβ
+λn
+n .
+LEMMA 1 (Fan and Li (2001)). Suppose that Assumptions 1, 2 and 5 holds. If λn →0 as n →∞, then
+ˆβ
+λn
+n →β0 in probability as n →∞. Furthermore, if √nλn →0 as n →∞, then
+√n
+
+ˆβ
+λn
+n −β0
+
+d→N
+ 0,J −1
+as n →∞.
+REMARK 1. Even though we attribute Lemma 1 to Fan and Li (2001), we want to point out the lemma
+is an adaptation of Theorem 1 of Fan and Li (2001) to our context. Therefore, for completeness, we also
+provide the proof of the lemma in the online supplement.
+REMARK 2. Furthermore, we want to emphasize that these asymptotic results are meaningful, even
+though the tuning parameter λn is chosen by cross validation in the actual implementation of lasso. We
+do expect λn chosen by cross validation to get smaller as n increases because we have enough data to tell
+which predictors matter without regularization.
+Let ˆpλn
+u (Sr(u)) = g(Xr, ˆβλn
+n ) = exp(X⊤
+r ˆβλn
+n )/(1 + exp(X⊤
+r ˆβλn
+n )) be the lasso estimator of the
+exceedance probability at any time u ∈(0,T) after observing Sr(u) as well as Xr = X(Sr(u)). Similar to
+Theorem 1, based on the consistency and asymptotic normality of the lasso estimator (i.e., Lemma 1), by
+the continuous mapping theorem and the delta method (Van der Vaart 2000), we can prove the following
+Theorem on the consistency and asymptotic normality of ˆpλ
+u(Sr(u)). We omit the proof here.
+THEOREM 4. Suppose that Assumptions 1, 2, and 5 holds. If λn →0 as n →∞, then ˆpλn
+u (Sr(u)) →
+pu(Sr(u)) in probability as n →∞. Furthermore, if √nλn →0 as n →∞, then
+√n
+
+ˆpλn
+u (Sr(u)) −pu(Sr(u))
+ d→N(0,D)
+as n →∞, where D = cXrJ −1X⊤
+r and c = exp(2β0
+⊤Xr)/(1 + exp(β0
+⊤Xr))4.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+15
+In the following theorem, we establish the large deviation result of the lasso estimator ˆβ
+λn
+n . Indeed, for
+the theorem to hold, we need the Fisher information matrix to be positive deﬁnite. Therefore, Assumptions
+2 is used. The proof of the theorem is included in the online supplement.
+THEOREM 5. Suppose that Assumptions 1, 2, and 4 hold and λn →0 as n →∞. Then, for any ϵ > 0,
+there exists a positive constant ¯cλ(ϵ) such that
+lim
+n→∞−1
+n log Pr
+nˆβ
+λn
+n −β0
+ > ϵ
+o
+≥¯cλ(ϵ).
+REMARK 3. Notice that, by Equations (9), (6) and (13), β0 = arg maxβ∈ℜd
+L(β),
+ˆβn =
+arg maxβ∈ℜd Ln(β), and ˆβ
+λn
+n = arg maxβ∈ℜd Lλn
+n (β), where Lλn
+n (β) = Ln(β)−λn∥β∥1. Therefore, β0,
+ˆβn and Lλn
+n (β) are all solutions to corresponding optimization problems. The proofs of both Theorems 2
+and 5 depend critically on Proposition 4.32 in Bonnans and Shapiro (2000), which bounds the differences
+between the optimal solutions, i.e., ∥ˆβn −β0∥and ∥ˆβ
+λn
+n −β0∥, by the differences between the objective
+functions, i.e., ∥Ln(β)−L(β)∥and ∥Lλn
+n (β)−L(β)∥, respectively. For more details, one may refer to the
+online supplement.
+Similar to the proof of Theorem 3, we can prove the following theorem on the probability of a large devi-
+ation of the estimated exceedance probability from its true value, i.e., Pr
+ˆpλn
+u (Sr(u)) −pu(Sr(u))
+ > δ
+ 
+for any δ > 0, and the probability of misclassiﬁcation, i.e., Pr{ˆIλn ̸= I}. We omit the proof here.
+THEOREM 6. Suppose that Assumptions 1, 2, and 4 hold. If ∥Xr∦= 0, then for any ϵ > 0, there exists
+˜cλ(ϵ) > 0 such that
+lim
+n→∞−1
+n log Pr
+ˆpλn
+u (Sr(u)) −pu(Sr(u))
+ > δ
+ 
+≥˜cλ(δ).
+Furthermore, if ∥Xr∦= 0 and pu(Sr(u)) ̸= α, then there exists a constant cλ
+0 > 0 such that
+lim
+n→∞−1
+n log Pr
+n
+I ̸= ˆIλno
+≥cλ
+0.
+(14)
+REMARK 4. We prove Theorems 5 and 6 in our context. However, these results are of interest beyond
+the context of online risk monitoring, because logistic regression and lasso are widely used in other contexts
+as well.
+5.
+Variance Reduction Through Perturbation
+So far in this paper we have taken a data analytics approach to analyzing the simulation output through
+logistic regression for risk estimation and risk classiﬁcation. However, there is a fundamental difference
+between typical data analytics problems and simulation analytics problems. In simulation analytics prob-
+lems, the analysts know the underlying data generating processes (i.e., the simulation model) and therefore
+have much more information than their peers in solving other types of analytics problems. In this section we
+ask how we might be able to use the information to develop more efﬁcient tools for risk estimation and risk
+classiﬁcation. In particular, we propose a method that perturbs the sample paths generated by the simulation
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+16
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+study and then uses a ﬁrst-order Taylor expansion to approximate the portfolio value under the perturbed
+sample paths. We show that the ML estimators of the logistic regression parameters using the perturbed
+sample paths have smaller variances than those using the original sample paths, at least when the time is
+close to 0.
+5.1.
+Basic Idea of the Perturbation Method
+Notice that, for the logistic regression model to work, we only need to ensure that the sample paths deliver
+the correct default probabilities when conditioned on S(u) (see Assumption 1). Therefore, we only need to
+make sure that S(t) follows the correct dynamics when t ∈(u,T]. This motivates us to perturb the initial
+values S(0) of the sample paths so that the correct dynamics are used for all t ∈(0,T] but the sample paths
+are more spread out. We can then use the new sample paths to ﬁt the logistic regression model for any
+u ∈(0,T).
+0
+0.2
+0.4
+0.6
+0.8
+1
+t
+30
+40
+50
+60
+70
+80
+St
+95% CI
+0.2
+0.4
+0.6
+0.8
+1
+t
+30
+40
+50
+60
+70
+St
+95% CI
+Figure 2
+The default paths (darker color) and the non-default paths (lighter color) before and after perturbing
+the initial value
+Consider a simple example where there is only one risk factor that is modeled as a geometric Brownian
+motion. In the left panel of Figure 2, we plot the generated sample paths. We color a path darker if it
+leads to default and lighter otherwise, and we also plot the 95% range of the data. From the plot we see
+that the paths with different colors are easier to differentiate when the time u is large because they are
+more separated, but more difﬁcult to differentiate when u is small because they are more clustered together.
+Suppose that, instead of simulating all sample paths of risk factor from the initial value S(0), we perturb it
+by a small amount, say S(0)(1 + δU), where δ > 0 is the perturbation size and U ∈(−1,1) can be chosen
+deterministically or randomly, and simulate sample paths from the new initial values. We can then evaluate
+the portfolio risk at T and color the sample paths, as in the right panel of Figure 2. From the plot we see that
+the sample paths with different colors are more separated, especially when u is small. Therefore, intuitively,
+we would expect the perturbed sample paths lead to better risk estimation and risk classiﬁcation. In the
+left and right panels of Figure 3, we plot the estimated risk boundaries for this one dimensional example
+using the original and perturbed sample paths, respectively. From the plots we see clearly that the perturbed
+sample paths lead to better risk estimation and risk classiﬁcation.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+17
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+40
+45
+50
+55
+S
+← α=0.1
+← α=0.3
+← α=0.5
+← α=0.7
+← α=0.9
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+40
+45
+50
+55
+S
+← α=0.1
+← α=0.3
+← α=0.5
+← α=0.7
+← α=0.9
+Figure 3
+The boundaries for different α values using the original (left) and perturbed (right) sample paths.
+The solid lines are the true boundaries, and the dashed lines are the estimated boundaries via
+logistic regression
+The perturbation method can be extended easily to multi-dimensional risk factors by perturbing Si(0) to
+Si(0)(1+δiUi) for any risk factor i = 1,2,...,m, where U1,...,Um ∈(−1,1). In Section 5.2 we show that,
+under the assumption that the sample paths are simulated from the perturbed initial values, the perturbation
+method works well when u is small. In particular, when u →0, the variance reduction ratio, i.e., the variance
+of the original estimator over that of the new estimator, goes to inﬁnity. In Section 5.3 we show how to
+implement the perturbation method using the existing sample paths.
+5.2.
+Analysis of the Perturbation Method
+Let S′(u) = (S′
+1(u),...,S′
+m(u))⊤denote the perturbed sample paths for any u ∈[0,T], where S′
+i(u) is
+simulated from a randomly perturbed initial value Si(0)(1 + δiUi) with δi > 0 and Ui ∈(−1,1) chosen
+determinsitcally or randomly for all i = 1,2,...,m. Let X′(u) = X(S′(u)), let ˆβ
+′
+n denote the ML esti-
+mator of β0 of the logistic regression model (3) using the perturbed sample paths, and J ′(u) denote the
+Fisher information matrix when using the perturbed data. By Lemma C.1 in the online supplement, we have
+√n[ˆβ
+′
+n −β0]
+d→N(0,J ′−1(u)) as n →∞for any u ∈(0,T).
+Notice that, for the original sample paths, all observations have the same S(0) value thus same X(S(0))
+value at time 0. Then, intuitively, the logistic regression model cannot be ﬁtted if X has more than one
+dimension, i.e., d ≥2. For the perturbed data, however, all observations have different S′(0) values thus dif-
+ferent X′(0) values. Therefore, the logistic regression model may be ﬁtted if there are enough observations.
+This intuitively explains why the perturbation method works well at least when u is close to 0. In the rest of
+this subsection, we prove this intuition in a rigorous way.
+To simplify the notation, we let X(u) = X(S(u)) and let X(0) = x to denote it is a deterministic vector.
+Furthermore, let J −1
+ii (u) and J ′−1
+ii (u) denote the ith diagonal elements of J −1(u) and J ′−1(u), respectively,
+for any u ∈(0,T). Notice that they are the asymptotic variances of ˆβi and ˆβ′
+i, respectively, for all i =
+1,2,...,d. Let ri(u) = J −1
+ii (u)/J ′−1
+ii (u) denote the asymptotic variance reduction ratio of the perturbation
+method for estimating β0i for any u ∈(0,T). The following theorem shows that at least d −1 terms of
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+18
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+r1(u),...,rd(u) go to inﬁnity if u goes down to zero. Therefore, when u is close to zero, the perturbation
+method leads to a signiﬁcant variance reduction effect compared to using the original sample paths. The
+proof is given in the online supplement.
+THEOREM 7. Suppose that Assumptions 1 and 2 are satisﬁed for any u ∈(0,T). Furthermore, suppose
+that X(u) is right continuous a.s. at u = 0, supu∈(0,T ) E[∥X(u)∥2+ϵ] < ∞for some ϵ > 0, and J ′(0) is of
+full rank. Then, ri(u) →∞as u →0+ for at least d −1 values of i ∈{1,2,...,d}, where u →0+ means u
+goes to zero from the positive side.
+5.3.
+Implementation of the Perturbation Method
+To implement the perturbation method, we need to construct the sample paths from randomly perturbed
+initial values using the original sample paths and also evaluate the portfolio loss for each newly constructed
+sample path. In some cases, these tasks can be done exactly. But in general cases, these can only be done
+approximately. First, we consider how to construct sample paths. In many models of risk factors, includ-
+ing the geometric Brownian motion model, Heston’s stochastic volatility model, Merton’s jump diffusion
+model, and others (see Hull 2014), Sj(u)/Sj(0) is not a function of Sj(0). For these models, one can
+construct the new sample path of risk factor j exactly by setting
+S′
+j(u) = Sj(u)
+Sj(0)S′
+j(0) = Sj(u)[1 + δUj]
+(15)
+for any u ∈(0,T]. For more general models of risk factors, we assume that the derivative process
+dSj(u)/dSj(0) is available along with the sample path Sj(u). Notice that dSj(u)/dSj(0) is known as the
+sample path derivative. It is often very easy to simulate and requires very little additional effort, when it
+is simulated along with S(u) (Broadie and Glasserman 1996). Then, we may apply Taylor’s ﬁrst-order
+approximation and approximate S′(u) by
+S′
+j(u) ≈Sj(u) + dSj(u)
+dSj(0)
+
+S′
+j(0) −Sj(0)
+
+= Sj(u) + dSj(u)
+dSj(0)Sj(0)δUj
+(16)
+for any u ∈(0,T].
+Second, we consider how to reconstruct the portfolio loss. By Equation (1), the portfolio loss satisﬁes
+L(T) = Φ(0)−Φ(T) = Φ(0)−wV(T) = Φ(0)−Pk
+i=1 wiVi(T). Then to reconstruct the portfolio loss for
+the new sample paths, we need to compute V′(T), which includes the values of the ﬁnancial products at time
+T. Notice that V′(T) depends on S′(T). If there exists closed-form expressions, e.g., Black-Scholes formula
+for European call and put options, then V′(T) may be computed analytically. Otherwise, we assume that the
+price sensitivities of Vi(T) with respect to Sj(T), i.e., ∂Vi(T)/∂Sj(T), are available for all i = 1,2,...,k
+and j = 1,2,...,m. Indeed, dVi(T)/dSj(T) are known as the Greeks in ﬁnancial risk management and
+they typically calculated when evaluating Vi(T) (see, for instance, Broadie and Glasserman (1996) and
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+19
+Liu and Hong (2011) on simulating the Greeks). Then, we may apply Taylor’s ﬁrst-order approximation to
+approximate V ′
+i (T) by
+V ′
+i (T) ≈Vi(T) +
+m
+X
+j=1
+∂Vi(T)
+dSj(T)
+
+S′
+j(T) −Sj(T)
+
+,
+where S′
+j(T) −Sj(T) may be computed using either Equation (15) or (16) by setting u = T.
+Lastly, we discuss how to generate the initial values S′(0). Based on our current construction, S′
+j(0) =
+Sj(0)[1 + δUj], where U = (U1,...,Um)⊤is uniformly distributed in the hyperbox (−1,1)m. However,
+the randomness in U also introduces additional variance in the estimation of ˆβ
+′
+n. This motivates us to use
+low dispersion sequences to spread out the observations of U more evenly in the hypercube to reduce the
+variance of the ML estimator. In our implementations, we use the Sobol sequence (Niederreiter 1988). In
+the online supplement, we compare the uniformness between two-dimensional uniform random vector and
+the Sobol sequence.
+6.
+Additional Simulation
+In previous sections, we assumed that all sample paths are generated at time 0. In some practical situations,
+one may be able to simulate more sample paths at some time point between 0 and T. For instance, when
+there is a weekend, one may decide to add more sample paths simulated from the current values of the risk
+factors. In this section, we consider how to incorporate the additional data into the analysis to improve the
+quality of the risk estimators and risk classiﬁers. In particular, we consider two methods. In the ﬁrst method,
+we use the two sets of data to generate two estimators separately and then combine the two estimators; and
+in the second method, we combine the two sets of data together and use logistic regression on the combined
+data set to obtain a new estimator. We prove that both methods lead to estimators that have smaller variances
+than the one without using the additional data. The numerical experiments conducted in Section 7.2 show
+that both methods have comparable performance in both risk estimations and risk classiﬁcations. However,
+compared to the ﬁrst method, the second one is easier to extend to the situations where there are multiple
+sets of additional data (simulated at different time points) and is easier to implement. Therefore, we prefer
+and recommend the second method.
+6.1.
+Combining Estimators
+Let {˜S(t),u′ ≤t ≤T} be the additional sample paths generated from the time point u′ ∈(0,T), and ˜Y be
+the corresponding exceendance indicator, deﬁned similarly as in Equation (2). For any u ∈[u′,T], one may
+obtain two estimators, denoted as ˆp0
+u and ˆp1
+u, based on the original data and the additional data, respectively.
+Then, we may use the following combined estimator
+˜pu = ν0ˆp0
+u + ν1ˆp1
+u,
+where ν0 > 0 and ν1 > 0 are the corresponding weights with ν0 + ν1 = 1.
+Notice that the original sample paths and the additional sample paths are independent. Then,
+Var[˜pu] = Var
+
+ν0ˆp0
+u + ν1ˆp1
+u
+
+= ν2
+0Var
+
+ˆp0
+u
+
++ ν2
+1Var
+
+ˆp1
+u
+
+.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+20
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+Therefore, we propose to ﬁnd the optimal weights ν∗
+0 and ν∗
+1 to minimize the variance of the combined
+estimator, i.e., to solve the following optimization problem:
+min
+ν0,ν1 ν2
+0Var
+
+ˆp0
+u
+
++ ν2
+1Var
+
+ˆp1
+u
+
+,
+s.t. ν0 + ν1 = 1,
+0 ≤ν0,ν1 ≤1.
+It is easy to see that the optimal weights are
+w∗
+0 =
+Var[ˆp1
+u]
+Var[ˆp0
+u] + Var[ˆp1
+u] and w∗
+1 =
+Var[ˆp0
+u]
+Var[ˆp0
+u] + Var[ˆp1
+u].
+(17)
+In addition, it is clear that the combined estimator with the optimal weights has a smaller variance to both
+ˆp0
+u and ˆp1
+u have. Therefore, by adding additional sample paths, one can improve the quality of the original
+estimator ˆp0
+u. To use the combined estimator in practice, one ﬁrst estimates the variances of ˆp0
+u and ˆp1
+u using
+the corresponding sample paths, and then uses these variance estimates to approximate the optimal weights
+and to calculate the combined estimator.
+6.2.
+Combining Data
+Notice that the original sample paths {S(t),0 ≤t ≤T} and the additional sample paths {˜S(t),u′ ≤t ≤T}
+follow the same simulation model from u′ to T, conditioned on S(u′) and ˜S(u′) respectively. Then, for any
+u ∈[u′,T], given S(u) = s and ˜S(u) = s, the probability mass functions of Y and ˜Y are the same. Based
+on the logistic regression model, we have
+Pr{Y = 1|S(u) = s} = Pr{ ˜Y = 1|˜S(u) = s} =
+eβ⊤
+0 X(s)
+1 + eβ⊤
+0 X(s) .
+Therefore, the likelihood functions of these two data sets are the same, and we may conduct logistic regres-
+sion on the combined dataset. In the rest of this subsection, we show that, by combing the two datasets
+together, we may estimate the exceedance probabilities with smaller asymptotic variances, compared to the
+original estimator without adding the additional sample paths.
+Recall that X denotes X(S(u)). For the convenience of notation, we also use ˜X to denote X(˜S(u))
+when u ∈[u′,T] is ﬁxed. By Theorem 1, we know that the asymptotic variance of the estimator √n ˆp0
+u is
+D = cX⊤
+r J −1Xr, where n is the original sample size, c = exp(2β0
+⊤Xr)/(1 + exp(β0
+⊤Xr))4 with Xr =
+X(Sr), and J = E[exp(β⊤
+0 X)/(1 + exp(β⊤
+0 X))2XX⊤]. So we can use D/n to approximate the variance
+of the estimator ˆp0
+u. Similarly, let ˆp1
+u denote the estimator derived from the additional simulation data, then
+its variance is approximately ˜D/˜n, where ˜n is the sample size of the additional data and ˜D = cX⊤
+r ˜J −1Xr
+with ˜J = E[exp(β⊤
+0 ˜X)/(1 + exp(β⊤
+0 ˜X))2 ˜X ˜X⊤]. Let ˜pu denote the estimator derived from the combined
+dataset.
+Consider the likelihood function on the combined dataset
+ln+˜n(β) =
+n
+Y
+i=1
+g(Xi,β)Yi (1 −g(Xi,β))
+1−Yi
+˜n
+Y
+j=1
+g( ˜Xj,β)
+˜Yj
+
+1 −g( ˜Xj,β)
+1−˜Yj ,
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+21
+and recall that g(X,β) = exp(β⊤X)/(1 + exp(β⊤X)), so the averaged log likelihood function is
+Ln+˜n(β) =
+1
+n + ˜n
+
+n
+X
+i=1
+
+Yiβ⊤Xi −log
+ 1 + exp(β⊤Xi)
+
++
+˜n
+X
+j=1
+h
+˜Yjβ⊤˜Xj −log
+
+1 + exp(β⊤˜Xj)
+i
+.
+Suppose that there is a sampling regime that makes the additional simulation data size ˜n = ˜n(n), which
+is related to the original simulation data size n, and limn→∞˜n(n)/n →r. Under this regime, we only need
+to focus on the asymptotic analysis with n →∞.
+Notice that (Xi,Yi),i = 1,2,...,n are i.i.d., and ( ˜Xj, ˜Yj),j = 1,2,..., ˜n are i.i.d., then according to
+Theorems 1 and 2 in Hoadley (1971), the Fisher information matrix is given by
+¯J =
+1
+1 + rJ +
+r
+1 + r
+˜J.
+(18)
+Then, the variance of ˜pu is approximated by ¯D/(n + ˜n), where ¯D = cX⊤
+r ¯J −1Xr.
+To compare the the asymptotic variance of ˜pu with those of ˆp0
+u and ˆp1
+u, we need the following lemma,
+whose proof is provided in the online supplement.
+LEMMA 2. Suppose that Σ1 and Σ2 are both d × d positive deﬁnite matrices, and Σ = Σ1 + Σ2. For
+every non-zero column vector Xr ∈ℜd,
+X⊤
+r Σ−1Xr < X⊤
+r Σ−1
+i Xr,i = 1,2.
+(19)
+Based on Lemma 2, we have the following proposition that shows ¯D/(n + ˜n) is smaller than those of
+D/n and ˜D/˜n, where D/n and ˜D/˜n approximate the variances of ˆp0
+u and ˆp1
+u, respectively. The proof is
+given in the online supplement.
+PROPOSITION 1. Let r = ˜n/n. If J and ˜J are positive deﬁnite, then ¯D/(n + ˜n) < min{D/n, ˜D/˜n}.
+7.
+Numerical Examples
+In this section we conduct a sequence of numerical experiments to study the behavior of our proposed
+methods in online risk estimation and classiﬁcation, and to compare their performance. Notice that, in
+this paper, we focus on designing simulation methods. Therefore, we assume that simulation models are
+valid models without misspeciﬁcation errors. For calibrating simulation models and discussions on model
+misspeciﬁcation, readers are referred to Alexander (2001), Belomestny and Reib (2006), and White (1982).
+In Sections 7.1 to 7.3, we use only the linear basis functions in logistic regression, and in Section 7.4,
+we use both linear and individual quadratic basis functions. In all these examples, let λn = λ/n, and we
+use 5-fold cross validation to determine the tuning parameter λ when implementing lasso, and use the
+perturbation size δ = 5% when implementing the perturbation method. Furthermore, for all examples, we
+assume that there are 10000 simulated sample paths, and for each sample path, 100 inner-level simulation
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+22
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+replications are used to determine the values and the Greeks of the derivatives in the portfolio. Some of the
+results reported in Sections 7.1 and 7.3 are also available in Jiang et al. (2016). We add more results on the
+use of the enhancing techniques and the comparisons.
+7.1.
+A Portfolio with 5 Underlying Assets
+Consider a portfolio that longs 3 call options and 2 put options based on 5 different underlying assets, which
+are mutually independent and driven by geometric Brownian motions (GBMs). Speciﬁcally, let S(t) =
+(S1(t),...,S5(t))⊤, and the portfolio Φ(t) = V c
+1 (t) + V c
+2 (t) + V c
+3 (t) + V p
+4 (t) + V p
+5 (t). At time T, if the
+portfolio Φ(T) ≤Q, i.e., the loss Φ(0) −Φ(T) ≥Φ(0) −Q, we consider the portfolio in default. Let
+the initial values of the ﬁve underlying assets S(0) = (50,50,60,60,70)⊤, the drifts of the GBMs µ =
+(0.05,0.06,0.07,0.06,0.05)⊤, the volatilities σ = (0.1,0.1,0.1,0.1,0.1)⊤, and the strikes of the options
+K = (40,40,45,80,85)⊤. Let the risk-free interest rate rf = 0.02 and the portfolio loss evaluation time
+T = 0.3. Notice that there are two probability measures in our problem. The price dynamics of S(t) with
+0 ≤t ≤T are simulated under the real probability measure where µ are used as the drifts of the GBMs,
+while the options are evaluated under the risk neutral measure where rf is used as the drift of the GBMs.
+Suppose that [0,T] is discreted into N = 30 equal-length intervals, we denote them by 0 = t0 ≤t1 ≤··· ≤
+tN = T. Let the maturities of all the options be the same τ = 1, and let Q = 65.
+Even though the option prices and their deltas (i.e., price sensitivities w.r.t. S(T)) may be calculated easily
+by Black-Scholes formula, we still use simulation to price them to mimic the more complicated situations.
+In our logistic regression model, we choose the basis function X(S(t)) = (1,S(t))⊤. Furthermore, when
+applying the perturbation method, we use Equations (15) and (16) to approximate the perturbed risk factors
+and the corresponding options prices, respectively.
+Because the distribution of S(T) is directly available given Sr(t) and the portfolio value Φ(T) may
+be calculated easily using Black-Scholes formula given S(T), we may evaluate the true value p(Sj(t))
+accurately using a large number of scenarios (e.g., 104 in our calculation) conditioning on any Sr(t). We
+can then use the true value as the benchmark to evaluate the performance of our proposed methods.
+We plot the standard deviations of the all six parameter estimators in the logistic regression model, with
+and without the perturbation method, in Figure 4. We see that the perturbation method clearly reduces the
+variances. However, variance reduction diminishes as t increases. Furthermore, we see that the variances of
+the estimators of both methods may increase as t approaches T. This is because, when t is close to T, the
+exceedance probabilities are likely to be close to either 0 or 1, leading the parameters of the logistic regres-
+sion models to very large values, thus increasing the variances of the estimators. Indeed, this phenomenon
+exists not only in this example, it exists in all three examples that we consider. In Figure 4, we did not give
+the standard deviations of the lasso and lasso+perturbation estimators because the number of risk factors in
+this example is small and lasso does not provide beneﬁts.
+Figure 4 provides useful insight. However, it does not tell us how good our proposed method is for
+risk estimation and classiﬁcation. To evaluate the quality of risk estimation (e.g., predicting exceedance
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+23
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+100
+101
+102
+103
+Standard deviation of β1
+ML Estimator
+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+0.16
+Standard deviation of β2
+ML Estimator
+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+Standard deviation of β3
+ML Estimator
+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+0.16
+Standard deviation of β4
+ML Estimator
+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+0.07
+0.08
+0.09
+Standard deviation of β5
+ML Estimator
+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+Standard deviation of β
+ML Estimator
+Perturbation
+Figure 4
+Standard deviations of the ML and perturbation estimators in Example 1
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.002
+0.004
+0.006
+0.008
+0.01
+0.012
+0.014
+0.016
+RMSE
+ML Estimator
+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0.92
+0.94
+0.96
+0.98
+1
+PCC
+ML Estimator
+Perturbation
+Figure 5
+RMSE (left panel) and PCC (right panel) of the ML and perturbation estimators in Example 1
+probabilities), we use the root-mean-square error (RMSE) as the criterion for the estimated probabilities at
+different time points. The RMSE is calculated as
+RMSE(t) =
+v
+u
+u
+t 1
+L
+L
+X
+l=1
+1
+J
+J
+X
+j=1
+[ˆpl(Sj(t)) −p(Sj(t))]
+2,
+where L is the number of training sets and J is the number of testing sets for each training set, i.e., for
+each training set l, we get an estimated probability function ˆp(·), and we generate J testing sets with M
+sample paths to calculate the RMSE for this estimated probability throughout ti,i = 1,...,N −1, then we
+replicate L times to calculate the average. The RMSE basically tells us the average errors of the probability
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+24
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+original
+combining-estimators
+combining-data
+0.007
+0.008
+0.009
+0.01
+0.011
+0.012
+0.013
+0.014
+0.015
+RMSE
+original
+combining-estimators
+combining-data
+0.975
+0.98
+0.985
+0.99
+0.995
+1
+PCC
+Figure 6
+Box plots of RMSEs and PCCs for the estimators of the original data, the combining-estimators
+method and the combining-data method based on 40 replications. u = 0.20, u′ = 0.16
+estimates. To evaluate the quality of risk classiﬁcation, we use the probability of correct classiﬁcation (PCC)
+as the criterion. In the numerical study, we set L = J = 10, and M = 500, and plot the RMSEs and PCCs
+in Figure 5. From the ﬁgure, we see that the RMSEs are small (about 0.01) and the PCCs are large (mostly
+above 0.95) for all proposed methods, indicating that the risk estimations and classiﬁcations may be done
+precisely. Moreover, the perturbation method can improve the quality of risk estimation and classiﬁcation,
+especially when t is small.
+7.2.
+Additional Simulation
+We consider the same example in Section 7.1. In addition, we generate some new sample paths ˜S(u),u ∈
+[u′,T] from u′ ∈(0,T) based on the observed values of ˜S(u′). We let ˜n = 1000, which is 10% of the
+original sample size n.
+We ﬁrst consider the case where u′ = 0.16 and u = 0.20, with all other parameters remaining the same
+as in Section 7.1. Notice that u > u′, which means the additional data were generated before the prediction
+time u. We plot the results in Figure 6. In this ﬁgure, the left, middle and right box plots of both panels are
+from the estimators of the original data, the combining-estimators method and the combining-data method,
+respectively. This ﬁgure shows that, with only 10% additional sample paths, the qualities of risk estima-
+tors are signiﬁcantly improved, while the qualities of risk classiﬁers are slightly improved. Moreover, the
+estimators of the two methods with additional data have comparable performances.
+Further, we study the improvement at different prediction time u with u′ = u −0.04, and summarize
+the results in Table 1. In this table, we see that both of the estimators with additional data have similar
+performances, and both outperform the one with only the original data, especially in risk estimations.
+Next, we consider the case u = u′. By setting different values of u, we report the results in Table 2.
+Similar to the results in Table 1, both of the estimators with additional data have similar performances, and
+both signiﬁcantly outperform the one with only the original data.
+These numerical results show that both methods with additional data have comparable performances in
+risk estimations and classiﬁcations. However, the method of combining data is in general easier to imple-
+ment than the method of combining estimators. Moreover, it can be extended easily to situations where
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+25
+Table 1
+RMSE and PCC for different parameter u with u′ = u −0.04
+original
+combining estimators combining data
+RMSE
+PCC
+RMSE
+PCC
+RMSE
+PCC
+u = 0.05 0.0098 0.962 0.0087
+0.965
+0.0087
+0.965
+u = 0.10 0.0119 0.974 0.0093
+0.977
+0.0090
+0.976
+u = 0.15 0.0130 0.982 0.0096
+0.984
+0.0091
+0.985
+u = 0.20 0.0120 0.988 0.0089
+0.990
+0.0084
+0.990
+u = 0.25 0.0112 0.988 0.0083
+0.989
+0.0074
+0.989
+Table 2
+RMSE and PCC for different u
+original
+combining estimators combining data
+RMSE
+PCC
+RMSE
+PCC
+RMSE
+PCC
+u = 0.05 0.0096 0.964 0.0063
+0.971
+0.0063
+0.969
+u = 0.10 0.0105 0.979 0.0062
+0.981
+0.0063
+0.981
+u = 0.15 0.0131 0.983 0.0066
+0.987
+0.0066
+0.986
+u = 0.20 0.0109 0.987 0.0057
+0.988
+0.0059
+0.987
+u = 0.25 0.0107 0.990 0.0066
+0.988
+0.0068
+0.989
+multiple batches of data are added at different time points, as we only need to combine all data together and
+conduct logistic regression once. Therefore, we prefer and recommend the method of combing data.
+7.3.
+Adding Perfectly Hedged Positions
+In this example, we add another 20 underlying assets to Example 1 in Section 7.1. For each of the new
+underlying assets, we long one call option, and short one put option and the corresponding underlying asset.
+Then, by put-call parity (Hull 2014), the newly added positions are perfectly hedged and have a deterministic
+value. We further add a proper position of cash so that the value of the new portfolio is the same as that of
+Example 1. Therefore, the exceedance probability in this example is exactly same as that in Example 1 and
+it is not affected by the newly added underlying assets. We apply our proposed methods on all underlying
+assets, old and new, and our goal is to test the performance of the lasso and lasso+perturbation estimators.
+We model the dynamics of all underlying assets as GBMs. More speciﬁcally, we now call the ﬁve assets
+used in Example 1 as S1(t) and the new assets as S2(t), and Φ(t) = Φ1(t) + Φ2(t). The parameters of
+S2(t) (the initial values, drifts, volatilities, and correlations) and the strike prices K2,i are given in Table
+1 in the online supplement. All other parameters remain the same as that in Example 1. Therefore, the
+exceedance probabilities remain the same. In this example we let the basis function X(S(t)) = (1,S(t))⊤=
+(1,S1,1,...,S1,5(t),S2,1(t),...,S2,20(t))⊤.
+In Figure 7 we plot the standard deviations of the estimators of β1,...,β6, and in Figure 8 we plot the
+RMSEs of β7,...,β26, because we know their true values are 0. From these ﬁgures, we see that the pertur-
+bation method reduces variances of all estimators. However, lasso reduces the variances of the intercept β1
+and βi,i = 7,...,26, without reducing the variances of β2,...,β6.
+We also plot the RMSEs and PCCs in Figure 9. When compared to Figure 5, we ﬁnd that the RMSEs
+and PCCs of the ML estimators are higher in this example than in Example 1, indicating that the added risk
+factors introduce more noise and make the risk estimation and classiﬁcation more difﬁcult. However, lasso,
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+26
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+100
+101
+102
+103
+Standard deviation of β1
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+0.16
+Standard deviation of β2
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+Standard deviation of β3
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+0.16
+Standard deviation of β4
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+Standard deviation of β5
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+0.14
+Standard deviation of β6
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+Figure 7
+Standard deviations of the ML, lasso, perturbation and lasso+perturbation estimators of β1,...,β6
+in Example 2
+perturbation and lasso+perturbation estimators can all improve the RMSEs and PCCs. In particular, the
+lasso+perturbation estimators perform very well, making the RMSEs and PCCs almost as good as those in
+Example 1.
+7.4.
+A Portfolio with 80 Risk Factors
+In this example we consider a portfolio with 60 underlying assets, and some of them are correlated. The
+portfolio has two groups of products. The ﬁrst group longs one call option and one put option for each of
+the ﬁrst 40 underlying assets, which are modeled by GBMs. The second group longs one share of the asset
+for each of the remaining 20 underlying assets, which are modeled by Heston’s stochastic volatility models,
+i.e., the asset price S(t) is modeled by
+dS(t) = µS(t)dt +
+p
+v(t)S(t)dW1(t)
+dv(t) = κ(θ −v(t))dt + η
+p
+v(t)dW2(t)
+dW1(t)dW2(t) = ρ′dt,
+where W1(t) and W2(t) are standard Brownian motions, κ is the rate of mean reversion, θ is the long-term
+mean of variance, η is the volatility of the volatility, µ is the drift of the stock, and ρ′ is the correlation
+of two Brownian motions. Notice that, to make sure the volatility is always positive, we need the con-
+dition 2κθ > η2. Speciﬁcally, let S1(t) = (S1,1(t),...,S1,40(t)) and S2(t) = (S2,1(t),...,S2,20(t)) denote
+the underlying assets in the ﬁrst and second group, respectively. Let Φ1(t) = P40
+i=1{V c
+i (t) + V p
+i (t)}, and
+Φ2(t) = P20
+i=1 S2,i(t). Similar to previous two examples, we let T = 0.3 and the number of discretization
+points N = 30. Other parameters are given in Table 2 in the online supplement, and the maturity times of
+all the options are τ = 1.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+27
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+RMSE
+β7
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+RMSE
+β8
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+RMSE
+β9
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+RMSE
+β10
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+RMSE
+β11
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+RMSE
+β12
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+RMSE
+β13
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+RMSE
+β14
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+RMSE
+β15
+0
+0.1
+0.2
+0.3
+t
+0
+0.02
+0.04
+0.06
+0.08
+0.1
+0.12
+RMSE
+β16
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β17
+0
+0.1
+0.2
+0.3
+t
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+0.03
+RMSE
+β18
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β19
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β20
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β21
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β22
+0
+0.1
+0.2
+0.3
+t
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+RMSE
+β23
+0
+0.1
+0.2
+0.3
+t
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+0.03
+RMSE
+β24
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β25
+0
+0.1
+0.2
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+RMSE
+β26
+Figure 8
+RMSEs of the ML, lasso, perturbation and lasso+perturbation estimators of β7,...,β26 in Example
+2 (legends are in Figure 7)
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.005
+0.01
+0.015
+0.02
+0.025
+RMSE
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0.8
+0.85
+0.9
+0.95
+1
+PCC
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+Figure 9
+RMSE (left panel) and PCC (right panel) of the ML, lasso, perturbation and lasso+perturbation
+estimators in Example 2
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+28
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+0.07
+0.08
+0.09
+RMSE
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0.86
+0.88
+0.9
+0.92
+0.94
+0.96
+0.98
+PCC
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+Figure 10
+RMSE (left panel) and PCC (right panel) of the ML, lasso, perturbation and lasso+perturbation
+estimators in Example 3
+This is a challenging example because there are 80 risk factors and only 10000 sample paths. We want to
+use this example to test the performance of the proposed methods for high-dimensional problems.
+We evaluate the true exceedance probabilities by running 10000 observations at each time point, as in the
+ﬁrst two examples, and use them as the benchmark to evaluate the RMSEs and PCCs, based on 100 testing
+paths with L = J = 10 and M = 100. At any time t, notice that there are two groups of risk factors, denoted
+by S(t) and v(t), where v(t) = (v1(t),...,v20(t))⊤are the volatilities in Heston models at time t. We ﬁrst
+include all the linear terms in the basis function, i.e., X(S(t)) = (1,S(t),v(t))⊤, and plot the RMSEs and
+PCCs in Figure 10. From the left panel, we see that the risk estimation is not as precise as in previous two
+examples, especially when the time is close to T. This may be because the number of risk factor is quite
+large in this example and the logistic regression model with only linear terms may be insufﬁcient, i.e., having
+a high level of bias. However, from the right panel of the ﬁgure, we see that the quality of risk classiﬁcation
+is still quite good, which also supports our argument that risk classiﬁcation is typically an easier problem
+than risk estimation. In this example, the logistic model with only the linear terms of risk factors appears
+inadequate in approximating the real exceedance probability, especially for large t. This is a misspeciﬁcation
+problem, which is a common issue for many statistical learning tools. To alleviate the problem, we add
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0
+0.01
+0.02
+0.03
+0.04
+0.05
+0.06
+0.07
+0.08
+0.09
+RMSE
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+0
+0.05
+0.1
+0.15
+0.2
+0.25
+0.3
+t
+0.86
+0.88
+0.9
+0.92
+0.94
+0.96
+0.98
+PCC
+ML Estimator
+Perturbation
+Lasso
+Lasso+Perturbation
+Figure 11
+RMSE (left panel) and PCC (right panel) of the ML, lasso, perturbation and lasso+perturbation
+estimators in Example 3 with square terms
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+29
+the square terms of the individual risk factors, i.e., X(S(t)) = (1,S(t),v(t),S2(t),v2(t))⊤, where S2(t) =
+(S2
+1,1(t),...,S2
+1,40(t),S2
+2,1(t),...,S2
+2,20(t))⊤and v2(t) = (v2
+1(t),...,v2
+20(t))⊤, and plot of the RMSEs and
+PCCs in Figure 11. The results show that the risk estimators are more precise (i.e., the RMSEs are smaller)
+and the risk classiﬁcations remain the same (i.e., the PCCs are similar). In both cases, we see that the
+lasso+perturbation works the best. This example demonstrates that the proposed estimators, especially the
+lasso+perturbation estimator, work well even for high-dimensional problems (notice that X(S(t)) is of 161
+dimensions) with a reasonable sample size (n = 10000).
+8.
+Conclusions and Future Research
+In this paper we consider how to use retained simulation sample paths to estimate the exceedance probabil-
+ities and classify risk levels of a ﬁnancial portfolio in real time. We propose various methods to solve the
+problem, study their asymptotic properties, and test their performance numerically on realistic examples.
+These methods belong to a new class of techniques, known as simulation analytics, which apply data min-
+ing and data analytics tools to estimate conditional statements. We also show that knowing the simulation
+model gives us advantages and allows us to develop methods, such as the perturbation method, that are more
+efﬁcient than typical data analytics tools.
+The perspective of simulation analytics creates many opportunities in ﬁnancial risk management. For
+instance, we may consider how to simulate from different S(0), instead of perturbing a single initial value,
+so that the online risk monitoring problems may be solved more effectively, or how to conduct online risk
+monitoring if the sample paths are simulated using importance sampling, a tool often used for variance
+reduction in risk measurement. We may also consider how to handle portfolios that have path-dependent
+derivatives such as Asian options and barrier options, and investigate how to use nonlinear statistical learn-
+ing tools, such as tree-based methods and neural networks, to improve the accuracy of the risk estimators
+and classiﬁers.
+Acknolwedgement
+The research reported in this paper is partially supported by Hong Kong Research Grants Council Grant
+Number GRF 16203214 and by National Science Foundation Grant Number CMMI-1537060.
+References
+Alexander C (2001) Market Models: A Guide to Financial Data Analysis (Chichester: John Wiley & Sons Ltd).
+Bassamboo A, Juneja S, Zeevi A (2008) Portfolio credit risk with extremal dependence: Asymptotic analysis and
+efﬁcient simulation. Operations Research 56(3):593–606.
+Belomestny D, Reib M (2006) Spectral calibration of exponential L´evy models. Finance and Stochastics 10(4):449–
+474.
+Bonnans JF, Shapiro A (2000) Perturbation Analysis of Optimization Problems (New York: Springer).
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+30
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+Broadie M, Du Y, Moallemi CC (2011) Efﬁcient risk estimation via nested sequential simulation. Management Science
+57(6):1172–1194.
+Broadie M, Du Y, Moallemi CC (2015) Risk estimation via regression. Operations Research 63(5):1077–1097.
+Broadie M, Glasserman P (1996) Estimating security price derivatives using simulation. Management Science
+42(2):269–285.
+Fahrmeir L, Kaufmann H (1985) Consistency and asymptotic normality of the maximum likelihood estimator in
+generalized linear models. The Annals of Statistics 13(1):342–368.
+Fan J, Li R (2001) Variable selection via nonconcave penalized likelihood and its oracle properties. Journal of the
+American Statistical Association 96(456):1348–1360.
+Feng M, Staum J (2017) Green simulation: Reusing the output of repeated experiments. ACM Transactions on Mod-
+eling and Computer Simulation 37(4):Article 23.
+Friedman J, Hastie T, Tibshirani R (2010) Regularization paths for generalized linear models via coordinate descent.
+Journal of Statistical Software 33(1):1–22.
+Fu JC, Li G, Zhao LC (1993) On large deviation expansion of distribution of maximum likelihood estimator and its
+application in large sample estimation. Annals of the Institute of Statistical Mathematics 45:477–498.
+Glasserman P, Heidelberger P, Shahabuddin P (2000) Variance reduction techniques for estimating value-at-risk. Man-
+agement Science 46(10):1349–1364.
+Glasserman P, Heidelberger P, Shahabuddin P (2002) Portfolio value-at-risk with heavy-tailed risk factors. Mathemat-
+ical Finance 12(3):239–269.
+Glasserman P, Kang W, Shahabuddin P (2008) Fast simulation of multifactor portfolio credit risk. Operations Research
+56(5):1200–1217.
+Glasserman P, Li J (2005) Importance sampling for portfolio credit risk. Management Science 51(11):1643–1656.
+Gordy MB, Juneja S (2010) Nested simulation in portfolio risk measurement. Management Science 56(10):1833–1848.
+Hastie T, Tibshirani R, Friedman J (2011) The Elements of Statistical Learning (New York: Springer-Verlag), second
+edition.
+Hoadley B (1971) Asymptotic properties of maximum likelihood estimators for the independent not identically dis-
+tributed case. The Annals of Mathematical Statistics 42(6):1977–1991.
+Hong LJ, Hu Z, Liu G (2014) Monte carlo methods for value-at-risk and conditional value-at-risk: A review. ACM
+Transactions on Modeling and Computer Simulation 24(4):Article 22.
+Hong LJ, Juneja S, Liu G (2017) Kernel smoothing for nested estimation with application to portfolio risk measure-
+ment. Operations Research 65(3):657–673.
+Hosmer DW, Lemeshow S (2004) Applied Logistic Regression (New York: John Wiley & Sons).
+Hull JC (2014) Options, Futures, and Other Derivatives (New Jersey: Pearson Prentice Hall), 9th edition.
+
+Author: Online Risk Monitoring Using Ofﬂine Simulation
+Article submitted to INFORMS Journal on Computing; manuscript no. (Please, provide the manuscript number!)
+31
+Iscoe I, Kreinin I (2010) Large pool approximations. Cont R, ed., Encyclopedia of Quantitative Finance, volume 3
+(Chichester: John Wiley & Sons).
+James G, Witten D, Hastie T, Tibshirani R (2013) An Introduction to Statistical Learning (New York: Springer).
+Jiang G, Hong LJ, Nelson BL (2016) A simulation analytics approach to dynamic risk monitoring. Roeder TMK,
+Frazier PI, Szechtman R, Zhou E, Huschka T, Chick SE, eds., Proceedings of the 2016 Winter Simulation Con-
+ference, 437–447.
+Jorion P (2006) Value at Risk: The New Benchmark for Managing Financial Risk (New York: McGraw-Hill), third
+edition.
+Lee SH, Glynn PW (2003) Computing the distribution function of a conditional expectation via monte carlo: Discrete
+conditioning spaces. ACM Transactions on Modeling and Computer Simulation 13(3):238–258.
+Liu G, Hong LJ (2011) Kernel estimation of the greeks for options with discontinuous payoffs. Operations Research
+59(1):96–108.
+Liu M, Nelson BL, Staum J (2010) Simulation on demand for pricing many securities. Johansson B, Jain S, Montoya-
+Torres J, Hugan J, Yucesan E, eds., Proceedings of the 2010 Winter Simulation Conference, 2782–2789.
+Liu M, Staum J (2010) Stochastic kriging for efﬁcient nested simulation of expected shortfall. Journal of Risk 12(3):3–
+27.
+Longstaff FA, Schwartz ES (2001) Valuing American options by simulation: a simple least-squares approach. Review
+of Financial Studies 14(1):113–147.
+Nelson BL (2016) ‘Some tactical problems in digital simulation’ for the next ten years. Journal of Simulation 10(1):2–
+11.
+Newey WK, McFadden D (1994) Large sample estimation and hypothesis testing. Engle R, McFadden D, eds., Hand-
+book of Econometrics, volume 4, chapter 36, 2111–2245 (New York: Elsevier).
+Niederreiter H (1988) Low-discrepancy and low-dispersion sequences. Journal of Number Theory 30(1):51–70.
+Rosenbaum I, Staum J (2015) Database Monte Carlo for simulation on demand. Yilmaz L, Chan WKV, Moon I,
+Roeder TMK, Macal C, Rossetti MD, eds., Proceedings of the 2015 Winter Simulation Conference, 679–688.
+Rudin W (1991) Functional Analysis (New York: McGraw-Hill), second edition.
+Sirignano J, Giesecke K (2018) Risk analysis for large pools of loans. Management Science In Advance.
+Sun Y, Apley DW, Staum J (2011) Efﬁcient nested simulation for estimating the variance of a conditional expectation.
+Operations Research 59(4):998–1007.
+Tibshirani RJ (1996) Regression shrinkage and selection via the lasso. Journal of the Royal Statistical Society, Series
+B 58(1):267–288.
+Van der Vaart AW (2000) Asymptotic Statistics (Cambridge, MA: Cambridge University Press).
+White H (1982) Maximum likelihood estimation of misspeciﬁed models. Econometrica 50(1):1–25.

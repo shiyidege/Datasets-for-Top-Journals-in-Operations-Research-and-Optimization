@@ -1,0 +1,2744 @@
+TITLE: Production Planning Under Demand and Endogenous Supply Uncertainty
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2024
+DOI: https://doi.org/10.1287/ijoc.2023.0067
+---
+
+arXiv:2506.23780v1 [math.OC] 30 Jun 2025
+Production planning under demand and endogenous
+supply uncertainty
+Mike Hewitt1 and Giovanni Pantuso2
+1Department of Information Systems and Supply Chain Management,
+Loyola University Chicago, USA , mhewitt3@luc.edu
+2Department of Mathematical Sciences, University of Copenhagen,
+Denmark , gp@math.ku.dk
+Abstract
+We study the problem of determining how much finished goods inventory to source
+from different capacitated facilities in order to maximize profits resulting from sales
+of such inventory. We consider a problem wherein there is uncertainty in demand for
+finished goods inventory and production yields at facilities. Further, we consider that
+uncertainty in production yields is endogenous, as it depends on both the facilities
+where a product is produced and the volumes produced at those facilities. We model
+the problem as a two stage stochastic program and propose an exact, Benders-based
+algorithm for solving instances of the problem. We prove the correctness of the al-
+gorithm and with an extensive computational study demonstrate that it outperforms
+known benchmarks. Finally, we establish the value in modeling uncertainty in both
+demands and production yields.
+1
+Introduction
+In many industries, organizations sell finished goods inventories of multiple products to
+customers to make a profit. To support such sales, these organizations face the production
+planning problem of determining how much finished goods inventory of these products to
+source from multiple facilities. Such a planning problem is often complicated by uncertainty
+in supply, demand, or both. On the supply side, the organization may place a production
+order with a facility but only a percentage of items produced are of sufficient quality to be
+sold. In addition, that percentage, often referred to as a yield, is not known with certainty.
+On the demand side, the organization may not know with certainty how much demand there
+will be for finished goods of each product.
+When statistical distributions for uncertain parameter values (demands, yields) are avail-
+able, and production decisions do not impact those distributions (i.e. they are exogenous to
+planning decisions), such a planning problem is a natural candidate for a two-stage stochastic
+1
+
+programming model. In such a model, production decisions at facilities are made in the first
+stage before yield and demand values are revealed. After they are revealed, the second stage
+models meet known demands for products with known amounts of finished goods inventory.
+The goal of the stochastic program is to maximize expected profits. While easy to state,
+algorithmic developments may be needed for solving large-scale instances of such a model.
+However, there are many industrial situations in which demand uncertainty is exogenous
+but production planning decisions do impact supply uncertainty. For example, consider a
+company that relies on third party contract manufacturers for some or all of its finished
+goods inventories. Some contract manufacturers may have better production facilities and
+processes than others. In such a case, while the type of distribution (e.g. Normal) that best
+describes production yields may be the same for all manufacturers, the distribution means
+for some manufacturers may be higher. Or, suppose the company has a longer history of
+ordering finished goods from some manufacturers than others. In such a case, the type of
+distribution and its mean that best describes production yields may be the same across all
+manufacturers. However, the variances are smaller for the ones with whom the company
+has more experience. In both these examples, the choice of contract manufacturer(s) that
+produce a product impacts the supply uncertainty faced.
+Alternately, suppose a manufacturer gets better at producing products of sufficient qual-
+ity the more it produces. In such a case the mean of a yield distribution at a facility may
+increase the larger the finished goods order placed with that facility. Or, suppose orders
+have deadlines and the yield represents the percentage of the order that is completed by the
+deadline. The literature on learning curves [4] has shown that the more often an individual
+performs a task the less time they require to complete it. Thus, the mean of this yield distri-
+bution will depend on the size of the production order and in multiple ways. Conversely, the
+literature [38, 55] has also identified cases in which yields go down as production volumes
+(or rates) increase. This could be due to factors such as machine wear or worker fatigue. In
+all these cases, the yield distribution at a facility may depend on the finished goods order
+placed with that facility.
+A practical example of the problem we consider occurs in agricultural planning [33, 32,
+2, 9]. Namely, the determination of how much to plant of different crops in different fields.
+Due to the long time that elapses between when a field is planted and the crop harvested,
+demand is typically only known in distribution. Similarly, due to multiple effects, including
+weather, the yield of a crop in a field is often uncertain as well. There has been increased
+adoption [63, 29, 59] of technology to measure factors that are believed to impact crop yields,
+and in real time. This data can then be used to more accurately forecast crop yield and its
+dependence on those factors [30]. Further, the production costs that reflect acquiring seeds
+to plant and the planting process itself cannot be recovered. Because of different climates,
+the distributions of harvest yields may vary by field. Thus, the fields in which a crop is
+planted impact the uncertainty in how much is harvested. As a grower’s ability to effectively
+harvest a crop tends to improve the more of it they plant, the distributions of the yield in a
+given field may depend on the amount planted. Thus, how much crop is planted in a chosen
+field impacts the uncertainty in how much is harvested.
+Motivated by these examples (and others) we consider a production planning problem
+in which demand uncertainty is exogenous but supply uncertainty is endgenous. We assume
+that both demand distributions and yield distributions can be approximated to a sufficient
+2
+
+level of accuracy by a finite set of scenarios. We model the problem as a two-stage stochastic
+program in which the first stage of the model contains the same decisions as a stochastic
+program that models exogenous uncertainty in demand and supply. However, we explicitly
+model that the resulting yield distributions and set of appropriate scenarios to consider in the
+second stage depends on those first stage decisions. As doing so leads to a very large number
+of scenarios we propose an exact Benders-based solution method for solving instances of the
+problem. With an extensive computational study we demonstrate the value in modeling
+supply and demand uncertainty separately as well as together. We also demonstrate com-
+putationally that the proposed Benders-based scheme outperforms two known benchmarks.
+We believe this paper makes the following contributions.
+• We introduce a mathematical model for a production planning problem which rec-
+ognizes exogenous uncertainty in demand and endogenous uncertainty in yield. The
+model we propose is general and can be adapted to different manufacturing settings
+and practical considerations in those settings.
+• We propose an exact Benders-based decomposition method and prove its correctness.
+With an extensive computational study we demonstrate that it significantly outper-
+forms known benchmarks.
+• We substantiate the need for modeling both yield and demand uncertainty, offering
+estimates of the increase in expected profits when doing so. Further, we show that
+modeling both sources of uncertainty leads to a much greater increase in expected
+profits than modeling only one.
+The rest of this paper is organized as follows. Section 2 reviews relevant literature while
+Section 3 presents a detailed description of the problem we consider and a model of that
+problem. Section 4 presents the Benders-based solution method we propose along with addi-
+tional speed-up techniques. Section 5 describes how our computational study was performed
+and discusses results regarding the value of modeling uncertainty and the performance of
+the proposed Benders-based method as compared to two benchmarks. Finally, Section 6
+concludes the paper and presents avenues for future research.
+2
+Literature Review
+In this section, we first discuss relevant literature on optimization-based methods for pro-
+duction planning. We then discuss the literature on stochastic programming.
+Starting with the earliest contribution by [49] the literature on mathematical program-
+ming models for production planning is extensive [37]. Given that, we focus our discussion
+on papers that are particularly relevant to the problem considered in this paper. The in-
+terested reader can refer to available textbooks, e.g., [31, 22, 62, 37], and surveys, e.g.,
+[16, 65, 19, 50, 12, 28].
+Despite its ability to provide mathematically richer formulations [48] stochastic program-
+ming approaches have not reached similar extensive application as in areas such as energy
+planning and financial services [37]. As a result, a large portion of the existing research
+studies deterministic problems [28]. The majority of the articles dealing with uncertainty
+3
+
+consider uncertainty in demand [12]. Other sources of uncertainty include, e.g., costs [42],
+input quality [11, 20], and yield [65].
+Among these, we find a number of germane studies which address yield and demand
+uncertainty, possibly simultaneously. [35] studies production planning with random yield
+and demand. Particularly, sale price and purchasing cost are increasing with decreasing
+random yield. The paper focuses on the olive oil industry. Similarly, [36] study the role of
+the yield-dependent trading cost structure influencing the optimal choice of the selling price
+and production quantity in the agricultural industry. [43] considers remanufacturing and
+pricing decisions when both the remanufacturing yield and the demand for remanufactured
+products are random. [44] study a single-item multi-period disassembly scheduling problem
+with random yields and demands in which procured, returned items are disassembled into
+components to satisfy their demands. [64] consider demand and yield uncertainty in a study
+of buyback contracts for a two-echelon supply chain consisting of a buyer and a seller. [66]
+consider a supply chain consisting of a manufacturer, a reliable supplier, and an unreliable
+supplier with random yield. The authors model the interaction between the actors and derive
+optimal production quantity of the suppliers and ordering quantity of the manufacturer. [39]
+study production and pricing decisions of a risk-averse monopoly firm under supply random
+yield. They investigate the impact of the firm’s risk-aversion level on its optimal decisions
+and the corresponding profit.
+[13] study the sourcing of a monopoly firm that procures
+from multiple unreliable suppliers to meet deterministic and price-dependent demand. The
+production processes of the suppliers are however unreliable and modeled by correlated
+proportional random yields.
+Our contribution distinctly departs from available methods as it explicitly incorporates
+both demand and yield uncertainty, where the specification of the yield uncertainty is en-
+dogenously determined by production decisions. This new trait complicates the problem
+substantially as it prevents the use of classical stochastic programming techniques. Partic-
+ularly, the resulting problem is adequately rendered in mathematical terms as a stochastic
+program with endogenous uncertainty, a type of problem where, as we explain next, method-
+ological advancements are still sparse. Some of these methodological advancements are part
+of our contribution.
+From a methodological point of view, following [18], there exist at least two ways in
+which decisions can influence the the nature of underlying stochastic process in stochastic
+programs. The first possibility is that decisions alter the probability space underlying the
+stochastic process, thus changing the likelihood of the possible events or the nature of the
+event space. The second possibility is that decisions determine the time when the uncer-
+tainty is resolved. The problem dealt with in this article is concerned with the first type of
+endogenous uncertainty.
+The research dealing with decisions influencing probability distributions is rather sparse.
+One of the first approaches dates back to [54] who consider a Markovian random process
+whose transition probabilities depend on the decision variables of the optimization problem.
+The author provides an algorithm that converges with probability one. Later, [34] consider
+the case where decisions influence both the probability measure and the timing of the ob-
+servation. Their framework includes both two- and multi-stage problems. Nevertheless, the
+decisions that have an impact on the uncertainty are entirely made at the first decision
+stage. As in the case described in this article, the authors assume that the set of prob-
+4
+
+ability measures which can be enforced by decisions is finite and countable. The authors
+show that the problem can be recast as choosing the best among the stochastic programs
+determined by a choice of a distribution and propose an implicit enumeration algorithm. In
+a similar framework, [51] consider multi-stage problems and extends the model of [34] by
+allowing decisions at all stages to determine the probability measure for the later stages. The
+author offers a solution method for a special case and a general purpose multi-distribution
+scenario tree structure and a mathematical formulation that avoids explicit statement of non-
+anticipativity constraints which are typically linked to model size growth, see e.g., [5, 26, 27].
+[24] and [25] discuss several ways of modeling the interplay between the decision variables
+and the parameters of the underlying probability distributions in two-stage stochastic pro-
+grams. Particularly, the authors formulate two-stage models where prior probabilities are
+distorted through affine transformations, or combined using convex combinations of several
+probability distributions. Furthermore, the authors present models which incorporate the
+parameters of the probability distribution as first-stage decision variables.
+Beyond this, the literature presents a number of practical applications. [1] illustrates
+examples of problems with endogenous uncertainty, such as facility location, network design
+and server selection. The author also presents an exact solution method for the resulting
+one-stage integer problems. [61] consider the problem of investing in strengthening actions
+for the links of a network subject to disruptive events. The problem is modeled as a two-
+stage stochastic program where first-stage investment decisions influence the likelihood of
+disruptive events happening at upgraded links.
+The problem is solved using an approx-
+imate solution procedure. The same problem is studied also by [10], [53] and [41]. [23]
+consider the problem of interdicting a stochastic network, that is a network whose structure
+is unknown to the interdictor. In this problem, the probabilities of different future network
+configurations depend on previous interdiction actions. [60] present an oil refinery planning
+problem considering that the uncertainty in product yield is influenced by operation mode
+changeovers. Finally, [15] study the problem of mitigating the effects of natural disasters
+through preventive actions. The problem is formulated as a three-stage stochastic bilinear
+integer program with both exogenous and endogenous uncertainty. Particularly, decisions
+can influence both the probabilities and the intensity of future uncertain events.
+When the second type of uncertainty is considered, we are in the presence of random
+processes whose resolution time depends on the decisions made. A typical example is pro-
+vided by [17]: The decision maker has to decide which gas reservoirs to explore, and when,
+by installing exploration facilities. The size and quality of the reservoirs is uncertain and the
+uncertainty is resolved only after facilities have been installed. The literature dealing with
+this type of stochastic programs includes [7], [56], [57], [8], [21], [47], [58], [5].
+The problem studied in this article is in line with the work of [34] and [51] in that the set
+of potential probability distributions enforced by first-stage decisions is finite and countable.
+Particularly, [34] propose an implicit enumeration algorithm which relies on computing and
+storing bounds for each choice of a probability distribution. As the authors acknowledge, this
+solution strategy is viable only when the set of probability measures has a small cardinality.
+As it will be more evident in Section 3, this is not the case in the problem at hand. In
+our case, the number of probability measures grows exponentially with the size of the prob-
+lem, particularly with the number of production levels. In addition, capacity constraints on
+the facilities impose a mutual dependence between the probability distributions enforced on
+5
+
+different products so that enumaration becomes impractical. To overcome these method-
+ological limitations, we propose an exact Benders-based decomposition strategy based on an
+ad-hoc optimality cuts and strong valid inequalities. Section 5 proves the effectivenes of the
+proposed algorithm.
+3
+Problem description and mathematical model
+In this section, we present a formal description of the problem we consider. We then present
+a mathematical model of that problem.
+3.1
+Problem description
+We consider a company that sources and sells multiple products. These products can be
+sourced from one or more capacitated production facilities. These facilities may be manu-
+facturing plants owned and operated by the company or external suppliers. Each facility has
+a capacity with respect to total volume it can produce across all products. It may be that a
+product cannot be sourced from every facility. When a facility can supply a product, there
+is a per-unit cost associated with doing so. This cost can vary by product and by facility.
+Finished units of a product for which there is demand can be sold at a pre-determined
+price that varies by product. Finished units of a product for which there is not demand can
+be sold at a discounted price that also varies by product. We note that this discounted price
+is less than the cost of manufacture at any facility. The company makes decisions regarding
+how many units to source of each product and from which facilities to source those units
+with uncertainty regarding product demand and supply. It makes these decisions with the
+goal of maximizing expected profit.
+Specifically, the manufacturer faces two sources of uncertainty. The first is the demand
+for each product. Product demands can be assumed to follow known statistical distributions
+with known parameter values for those distributions. In addition, demands for different
+products may be correlated (either positive or negative). However, demand for a product
+does not depend on the number of units available for sale of that product. In other words,
+uncertainty in product demands is exogenous.
+The second source of uncertainty relates to the yield of each product at each facility.
+Namely, while the manufacturer may supply a facility with the raw materials to make a
+given number of units of a product, the manufacturing process may in fact yield a smaller
+number of finished goods. These yields are not known with certainty. Instead, probability
+distributions, and their parameter values, are known. In addition, there may be correlation
+between the yields of a given product at different facilities. Finally, yield distributions depend
+in part on which of the finite levels of production is chosen for a product at each facility,
+wherein associated with a production level are lower and upper limits on production volume.
+Note that the yield distributions for a product may be different for different facilities.
+6
+
+3.2
+Mathematical model
+We next present a mathematical model of the problem we consider. Consider a manufacturer
+that produces a set of products P at a set of facilities F. The manufacturer seeks to determine
+how much of each product p ∈P to make at each facility f ∈F. For each facility f and
+product p the manufacturer chooses a production level l that defines a lower limit, Lpfl, and
+upper limit, Upfl, on the production volume for that product at that facility. We let Lpf
+denote the set of potential production levels for product p at facility f. We assume that, for
+each product p and facility f, the production levels determine disjoint production intervals.
+That is [Lpfl, Upfl] ∩[Lpfl′, Upfl′] = ∅for all l,′ l ∈Lpf. We presume that the sets Lpf include
+a level that models the company not producing product p ∈P at facility f ∈F. Namely, a
+level l such that Lpfl = Upfl = 0. For each facility f ∈F there is a maximum, Bf, on the
+total volume it can be allocated.
+We recall that when planning production, the yield of each product at each facility, and
+the cumulative demand of each product are uncertain to the decision maker. As such, we
+let ξp = (Yp,f1, . . . , Yp,f|F|, Dp) denote a random variable representing the uncertain yield
+of product p at the different facilities, Ypf, and its cumulative demand, Dp. Observe that
+we use bold fonts for random variables (e.g., ξp) and plain fonts for their realizations (e.g.,
+ξp). We assume that, for each product p, only finitely many probability distributions can
+be determined and let Dp denote the set of joint probability distributions of the yield and
+demand of product p. We also presume that there is a map l : P × F × ∪p∈PDp →∪f∈FLf
+that, for each product p and facility f, indicates the production level of product p at facility
+f that leads to distribution d ∈Dp. We note that we do not presume this mapping is one-to-
+one. Namely, for a given product p and facility f there may be multiple distributions that
+map to the same production level. Rather, it is the specific combination of production levels
+at the different facilities that determines a probability distribution. However, the mapping
+does preclude multiple production levels l, l′ of product p at facility f requiring the same
+distribution d. If required, this case can be accommodated by creating a second distribution
+d′ which is identical to d and having l(p, f, d) imply production level l and l(p, f, d′) imply
+production level l′. Recall that we presume correlations between yields for the same product
+at different facilities may exist. As the yield distribution at a specific facility also depends on
+the production level chosen at that facility, for product p it is necessary that the production
+level indicated by the map l is chosen for each facility f for probability distribution d ∈Dp to
+accurately represent uncertainty in yields. We assume that for each pair of products (p1, p2)
+the respective yields Yp1,f and Yp2,f, at the same or at different facilities f, are mutually
+independent. Finally, we also note that in our mathematical formulation the distribution of
+demand is endogenously determined by the choice of production level. This entails that the
+model is also able to handle endogeneity of demand, should that present itself. In the cases
+we address we simply assume that each distribution has the same marginal distribution of
+the demand.
+We further assume that each probability distribution is either discrete or can be ade-
+quately represented by a finite number of scenarios. We let Spd represent the set of scenarios
+in distribution d ∈Dp for product p ∈P. Associated with scenario s ∈Spd for distribution
+d ∈Dp we let πsd denote the probability that it occurs. Regarding a specific scenario s ∈Spd,
+we let Ypfds be the realization of the yield of product p at facility f under scenario s ∈Spd
+7
+
+d1
+d2
+d3
+d4
+d1
+d2
+d3
+d4
+sd1
+1
+sd1
+2
+sd2
+1
+sd2
+2
+sd3
+1
+sd3
+2
+sd4
+1
+sd4
+2
+F1
+Lp
+A
+Lp
+B
+sd1
+1
+sd1
+2
+sd2
+1
+sd2
+2
+sd3
+1
+sd3
+2
+sd4
+1
+sd4
+2
+F2
+Lp
+C
+Lp
+D
+Figure 1: Example with two facilities, F1 and F2, with two production
+level each, (LA, LB) and (LC, LD), respectively, and four possible
+distributions d1 through d4, represented by nodes of different shapes.
+Each distribution di has two possible realizations, namely sdi
+1 and sdi
+2 .
+Table 1: Relationship between production level choices and distribu-
+tion enforced in the example in Figure 1 for each individual product.
+Level
+F1
+F2
+Resulting distribution
+Lp
+A
+Lp
+C
+d1
+Lp
+A
+Lp
+D
+d2
+Lp
+B
+Lp
+C
+d3
+Lp
+B
+Lp
+D
+d4
+of distribution d ∈Dp. Similarly, we let Dpds represent the realization of the demand for
+product p under scenario s ∈Spd of distribution d ∈Dp.
+The example illustrated in Figure 1 depicts the case of two facilities, F1 and F2, that can
+produce product p ∈P. At F1 it is possible to produce product p at levels Lp
+A and Lp
+B. At F2
+it is possible to produce at levels Lp
+C and Lp
+D. Thus, in the example, LF1,p = {Lp
+A, Lp
+B} and
+LF2,p = {Lp
+C, Lp
+D}. In addition, there are four alternative probability distributions which may
+materialize, that is Dp = {d1, . . . , d4}. In the example, the scenarios of different distributions
+are depicted by different shapes. Note that the shape for a given distribution is the same
+at different facilities as distribution d describes the yield uncertainty for all facilities. We
+have Sp,di = {sdi
+1 , sdi
+2 } for i = 1, . . . , 4. Finally, Table 1 serves to illustrates the map l(p, f, d)
+for the example in Figure 1. Considering distribution d1, we have l(p, F1, d1) = Lp
+A and
+l(p, F2, d1) = Lp
+C, indicating that for d1 to accurately describe the uncertainty in production
+yields at the two facilities, production should fall within the bounds associated with level
+Lp
+A at F1 and the bounds associated with level Lp
+C at F2.
+Having established how we represent uncertainty, we next introduce a formal mathe-
+matical model for the problem described above. Our mathematical model takes the form
+of a two-stage stochastic program in which the probability distributions describing random
+elements are determined by the decisions made in the first decision state. We let xpf ≥0
+represent the amount of raw materials, quoted in terms of finished goods, of product p ∈P
+allocated to facility f ∈F. The coefficient Cpf represents the cost per unit of product p
+allocated to facility f. We let binary variable ypfl equal 1 if production level l ∈Lpf is chosen
+8
+
+for product p ∈P at facility f ∈F and 0 otherwise. The binary decision variable δpd repre-
+sents whether distribution d ∈Dp should be used to describe yield uncertainties for product
+p. Decision variables x := (xpf)p∈P,f∈F, y := (ypfl)p∈P,f∈F,l∈Lpf and δ := (δpd)p∈P,d∈Dp are
+first-stage decision variables as the decisions they model are made in advance of yield and
+demand information being revealed.
+Once yield and demand information have materialized through a scenario s ∈Spd for
+the distribution d ∈Dp for product p ∈P, the decision maker makes second-stage decisions
+concerning sales. We define the continuous variable zpds to represent the amount of available
+inventory of product p ∈P in scenario s ∈Spd of distribution d ∈Dp. The continuous variable
+wpds defines the amount of product p ∈P that is sold at “full” price Pp in scenario s ∈Spd
+of distribution d ∈Dp because there is sufficient demand for the product in that scenario
+at that price. Finally, the continuous variable opds represents the amount of inventory of
+product p ∈P that is not sold at price Pp in scenario s ∈Spd of distribution d ∈Dp due to
+insufficient demand. Each unit of this inventory is instead sold at a discounted price, Op,
+wherein Op < Cpf ∀f ∈F.
+With this notation and these decision variables, the decision maker seeks to solve the
+following optimization problem, which we refer to as the Production Planning under Demand
+and Endogenus Supply Uncertainty Problem (PP-DESUP).
+v∗
+PP−DESUP = max −
+X
+p∈P
+X
+f∈F
+Cpfxpf +
+X
+p∈P
+X
+d∈Dp
+δpd
+" X
+s∈Spd
+πsd
+
+Ppwpds + Opopds
+#
+(1)
+subject to
+X
+p∈P
+xpf ≤Bf
+∀f ∈F,
+(2)
+X
+l∈Lpf
+ypfl = 1
+∀p ∈P, f ∈F,
+(3)
+X
+l∈Lpf
+Lpflypfl ≤xpf ≤
+X
+l∈Lpf
+Upflypfl
+∀p ∈P, f ∈F,
+(4)
+X
+d∈Dp
+δpd = 1
+∀p ∈P,
+(5)
+X
+f∈F
+yp,f,l(p,f,d) ≥|F|δpd
+∀p ∈P, d ∈Dp,
+(6)
+zpds =
+X
+f∈F
+Ypfdsxpf
+∀p ∈P, d ∈Dp, s ∈Spd,
+(7)
+wpds ≤Dpds
+∀p ∈P, d ∈Dp, s ∈Spd,
+(8)
+wpds + opds = zpds
+∀p ∈P, d ∈Dp, s ∈Spd,
+(9)
+xpf ≥0
+∀p ∈P, f ∈F,
+(10)
+ypfl ∈{0, 1}
+∀p ∈P, f ∈F, l ∈Lpf,
+(11)
+δpd ∈{0, 1}
+∀p ∈P, d ∈Dp,
+(12)
+zpds ≥0, wpds ≥0, opds ≥0
+∀p ∈P, d ∈Dp, s ∈Spd.
+(13)
+9
+
+The objective (1) seeks to maximize expected profit, which is computed as the difference
+between the expected revenues earned by selling inventory at full or discounted prices and
+the cost of manufacturing inventory. Constraints (2) ensure the total capacity of each facility
+is observed. Constraints (3) ensure that a production level is chosen for each product at each
+facility. Constraints (4) ensures that the amount allocated to a facility falls within the bounds
+defined by the chosen production level. Constraints (5) ensure that a single distribution is
+used to represent yield and demand uncertainties for each product. Constraints (6) ensure
+that the appropriate production levels are chosen for each product at each facility for the yield
+distribution used. Constraints (7) compute the amount of available inventory of a product in
+a given scenario. Constraints (8) limit the amount of inventory of a product that is sold at full
+price in a scenario by the demand for that product in that scenario. Constraints (9) ensure
+that each unit of available inventory is sold either at full or discounted price. Constraints
+(10) - (12) define the first stage decision variables and their domains. Constraints (13) define
+the second stage decision variables and their domains.
+We note that the right-hand-side of constraints (4) can be tightened by replacing Upfl with
+min{Bf, Upfl}. The objective function of the model just presented contains the bilinear terms
+δpdwpds and δpdopds. Since the δ variables are binary and the w and o variables continuous and
+bounded, an exact linearization can be obtained using McCormic inequalities, see [46, 3].
+We illustrate the procedure for doing so in Section A.
+4
+Benders-based method
+We propose an iterative, Benders-based solution approach to solve instances of the PP-
+DESUP presented in the previous section. The approach is based on repeatedly solving
+an optimization problem that is initially a relaxation of the PP-DESUP. This relaxation
+is formulated with a single variable for each product that serves as an approximation of
+the expected revenues from selling finished goods inventory of that product. During the
+solution process the values of approximation variables in a solution to this relaxation can
+over-estimate the expected revenues possible given the amounts of products allocated to fa-
+cilities. When an expected revenue over-estimation for a product occurs, the corresponding
+allocations for that product are used to define an optimality cut that corrects the approx-
+imation value.
+The cut generated for product revenue approximations are added to the
+relaxation and the solution process repeats.
+In this section, we first present a reformulation of the PP-DESUP that serves as the basis
+of the relaxation solved by the Benders-based method. We then present that relaxation.
+After presenting the relaxation, we present optimality cuts that are tight at the point where
+they are separated and yield a valid upper bound elsewhere. We then present the overall
+algorithm and a proof that if will converge in finitely many iterations. We finish the section
+with additional valid inequalities for strengthening the relaxation solved at each iteration of
+the proposed solution approach.
+10
+
+4.1
+Reformulation
+We first reformulate the PP-DESUP based on the observation that computing expected
+revenues, given values for the x and y variables, is separable by product.
+Thus, we let
+Qp(x, y) define the optimal expected revenues generated from product p ∈P given the
+facility production levels indicated by the y variables and facility allocations prescribed by
+the x variables. We label this problem, which we refer to as our master problem, as MP.
+The MP is as follows.
+v∗
+MP = max
+(
+−
+X
+f∈F
+Cpfxpf +
+X
+p∈P
+Qp(x, y)|(2), (3), (4), (10), (11)
+)
+(14)
+To compute Qp(¯x, ¯y) for product p ∈P given the values ¯y for the y variables and ¯x for
+the x variables we first note that we can determine the appropriate distribution d(¯y) ∈Dp
+given the ¯y values. Then, given the distribution d(¯y), for each scenario s ∈Spd(¯y) in d(¯y)
+and the values ¯x for the x variables we can determine the finished goods inventory level
+¯zpd(¯y)s = P
+f∈F Ypfd(¯y)s¯xpf. As such, given the inventory level ¯zpd(¯y)s, we can determine the
+revenue for that product, distribution, and scenario by solving the following optimization
+problem.
+Qpd(¯y)s(¯z) = max Ppwpd(¯y)s + Opopd(¯y)s
+(15a)
+wpd(¯y)s + opd(¯y)s = ¯zpd(¯y)s
+(15b)
+wpd(¯y)s ≤Dpd(¯y)s
+(15c)
+wpd(¯y)s, opd(¯y)s ≥0
+(15d)
+Clearly, Qp(¯x, ¯y) is feasible for all values of ¯x, ¯y that are feasible for MP. However, we note
+that this problem can be solved by inspection. Namely, we have
+Qpd(¯y)s(¯z) =
+
+
+
+
+
+
+
+
+PpDps + Op(¯zpd(¯y)s −Dps)
+
+if Dpd(¯y)s ≤¯zpd(¯y)s
+
+Pp¯zpd(¯y)s
+
+if Dpd(¯y)s > ¯zpd(¯y)s
+(16)
+Thus, we have Qp(¯x, ¯y) = P
+s∈Spd(¯y) πsd(¯y)Qpd(¯y)s(¯z) where ¯zpd(¯y)s = P
+f∈F Ypfd(¯y)s¯xpf. With
+Qp(x, y) defined in this manner, it is clear that MP is a valid reformulation of PP-DESUP
+and thus we have v∗
+MP = v∗
+PP−DESUP. We next propose a relaxation of this master problem
+that is solved in the Benders-based scheme we propose.
+4.2
+Relaxed master problem
+The Benders-based scheme solves an optimization problem that is a relaxation of the MP
+presented above. To formulate this optimization problem, we let the decision variable µp,
+p ∈P, serve as an approximation of the expected revenue Qp(x, y) earned from that product.
+With these additional decision variables, we have the following relaxed master problem, which
+we refer to as RMP.
+11
+
+v∗
+RMP = max
+(
+−
+X
+f∈F
+Cpfxpf +
+X
+p∈P
+µp|(2), (3), (4), (10), (11), µp ≥0, p ∈P
+)
+(17)
+Clearly, RMP is a relaxation of the master problem and thus we have v∗
+RMP ≥v∗
+MP =
+v∗
+PP−DESUP. In addition, it is easy to see that the RMP has an unbounded optimal objective
+function value as there are no upper bounds on the approximation variables, µp. However,
+we next derive an upper bound on these values that can be added to RMP to ensure it has
+a finite optimal objective function value.
+First, we observe that for each product p ∈P, distribution d ∈Dp, and scenario s ∈Spd
+we have that the quantity
+¯Zpds =
+X
+f∈F
+Ypfds min
+
+Bf, Up,f,l(p,f,d)
+
+is an upper bound on the available finished goods inventory for that product in that scenario
+for that distribution. Namely, we have that ¯Zpds ≥¯zpds, the actual finished goods inventory
+of product p in scenario s of distribution d, always holds. The logic behind this claim is as
+follows.
+Consider a given facility f and distribution d. Note that as we have a specific distribution
+d in mind, we know the production level l(p, f, d) for p that must be observed at facility f
+for distribution d to be in effect. That level in turn induces an upper bound, Up,f,l(p,f,d)
+on how much of p can be ordered from facility f. Thus, when distribution d is in effect
+we have that xpf ≤min
+
+Bf, Up,f,l(p,f,d)
+
+. Supsequently, in a given scenario s ∈Spd we
+have that the amount of finished goods inventory produced at facility f can be at most
+Ypfds min
+
+Bf, Up,f,l(p,f,d)
+
+. As this logic is valid for all facilities, we have our claim. With
+¯Zpds providing an upper bound on the finished goods inventory we have that
+Pp min
+
+Dps, ¯Zpds
+
++ Ops max
+
+¯Zpds −Dpds, 0
+
+is an upper bound on the revenue earned on that product in that scenario. Thus, we have
+the following bound on the expected revenue for product p ∈P over all scenarios and
+distributions.
+µp ≤max
+d∈Dp
+ X
+s∈Ssd
+πsd
+
+Pp min
+
+Dpds, ¯Zpds
+ 
++ Ops max
+ ¯Zpds −Dpds, 0
+ 
+= Mp ∀p ∈P
+(Bnd-p)
+We label this upper bound for product p as Mp. By adding constraints (Bnd-p) to RMP
+we will have v∗
+RMP < ∞. However, it may still be the case that v∗
+RMP > v∗
+MP. Namely, that
+for the solution (¯x, ¯y, ¯µ) to the RMP, the value ¯µp of the expected revenue approximation
+variable for product p over-estimates the actual expected revenue Qp(¯x, ¯y). To address this
+case, we next describe an optimality cut that is added to RMP to render (¯x, ¯y, ¯µ) infeasible,
+effectively correcting the value of the approximation µ. Finally, we note that any solution
+to RMP yields a feasible second-stage solution (w, o) and is thus not necessary to address
+feasibility, e.g., by means of so called feasibility cuts.
+12
+
+4.3
+Optimality cuts
+We next present the key ingredient of our decomposition, namely an optimality cut we
+generate from a solution
+ ¯x, ¯y, ¯µ
+
+that is used to refine the RMP relaxation.
+Before we introduce the optimality cut we set up some necessary additional notation. We
+recall from Section 3 that l(p, f, d) represents the production level l ∈Lpf at facility f which
+is necessary to enforce distribution d on product p. Further, we recall that given a solution
+(¯x, ¯y) to RMP, for product p ∈P we can derive the distribution d(¯y) enforced. We can
+also derive the exact finished goods inventory level ¯zpd(¯y)s for each scenario in Spd(¯y). Given
+these inventory levels, the inequality is based on partitioning the set of scenarios Spd(¯y) into
+two sets. The first, S↑
+pd(¯y)(¯x, ¯y) ⊆Spd(¯y) consists of scenarios s such that Dpd(¯y)s < ¯zpd(¯y)s.
+In other words, in these scenarios, there is finished goods inventory in excess of demand.
+In the second set of scenarios, S↓
+pd(¯y)(¯x, ¯y) we have Dpd(¯y)s ≥¯zpd(¯y)s meaning all finished
+goods inventory can be sold at full price. Effectively, Spd(¯y) = S↑
+pd(¯y)(¯x, ¯y) ∪S↓
+pd(¯y)(¯x, ¯y) and
+S↑
+pd(¯y)(¯x, ¯y) ∩S↓
+pd(¯y)(¯x, ¯y) = ∅. With these sets we can express the expected revenue of a
+decision (¯x, ¯y) for all p ∈P as
+Qp(¯x, ¯y) =
+X
+s∈S↓
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)s¯xpf
+
+(18)
++
+X
+s∈S↑
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)s¯xpf + (Pp −Op)Dpd(¯y)s
+
+Observe that in the first term of the right-hand side all inventory is sold at full price while
+in the second term all inventory is sold at the discounted price Op and only for the amount
+for which there is demand is the additional Pp −Op revenue earned.
+With these items defined, the following propositions introduce an optimality cut and
+prove its validity.
+Proposition 1. Let
+ ¯x, ¯y, ¯µ
+
+be a solution to RMP for which
+¯µp > Qp(¯x, ¯y)
+for some p ∈P. Then solution
+ ¯x, ¯y, ¯µ
+
+violates optimality cut
+µp ≤
+X
+s∈S↓
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sxpf
+
+(19)
++
+X
+s∈S↑
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sxpf + (Pp −Op)Dpd(¯y)s
+
++ Mp
+
+|F| −
+X
+f∈F
+yp,f,l(p,f,d(¯y))
+
+13
+
+Proof. By substituting
+ ¯x, ¯y, ¯µ
+
+in (19) we observe that the last term of the right-hand side
+becomes null as P
+f∈F yp,f,l(p,f,d(¯y)) = |F| for the distribution d(¯y) enforced by ¯y. That is,
+¯yp,f,l(p,f,d) = 1 for all f ∈F, whenever d is the distribution enforced by ¯y, i.e., d(¯y). Thus,
+the right-hand side reduces to Qp(¯x, ¯y), see (18), and we obtain
+¯µp ≤Qp(¯x, ¯y)
+proving that the optimality cut is violated by solution
+ ¯x, ¯y, ¯µ
+
+.
+Proposition 1 introduces optimality cut (19) and effectively allows us to use a Benders-
+based approach where, upon finding a solution
+ ¯x, ¯y, ¯µ
+
+where ¯µ overestimates the true
+expected revenue, one can cut off the solution by adding cut (19) to RMP. The following
+corollary clarifies that optimality cut (19) not only prevents the solution at which it has been
+generated, but all solutions in a neighborhood of production volumes wherein the relationship
+between finished goods inventory and product demands remains the same in each scenario.
+Corollary 2. Let
+ ¯x, ¯y, ¯µ
+
+be a solution to RMP for which
+¯µp > Qp(¯x, ¯y)
+for some p′ ∈P. Assume an optimality cut (19) is generated and added to RMP. Let
+ ˆx, ¯y, ˆµ
+
+be a different solution to RMP (note that the y component is the same as for the previous
+solution) for which
+ˆµp′ > Qp′(ˆx, ¯y)
+and for which
+S↑
+p′,d(¯y)(ˆx, ¯y) = S↑
+p′,d(¯y)(¯x, ¯y)
+i.e., the change from ¯x to ˆx does not change the partition of Sp′,d(¯y). Then the optimality cut
+generated for
+ ¯x, ¯y, ¯µ
+
+is violated by
+ ˆx, ¯y, ˆµ
+
+.
+Proof. By substituting for
+ ˆx, ¯y, ˆµ
+
+in the optimality cut added we obtain
+ˆµp′ ≤
+X
+s∈S↓
+p′d(¯y)(¯x,¯y)
+πsd(¯y)
+
+Pp′
+X
+f∈F
+Yp′fd(¯y)sˆxp′f
+
++
+X
+s∈S↑
+p′d(¯y)(¯x,¯y)
+πsd(¯y)
+
+Op′
+X
+f∈F
+Yp′fd(¯y)sˆxp′f + (Pp′ −Op′)Dp′d(¯y)s
+
+= Qp′(ˆx, ¯y)
+which is violated since ˆµp′ > Qp′(ˆx, ¯y).
+Corollary 2 illustrates that once an optimality cut is added to RMP, in addition to cutting
+off a solution which bears an overestimation of the revenue, it enforces an exact estimate
+of the expected revenue for all other solutions x, provided that the resulting finished goods
+inventory level yields the same partition of Spd(¯y) as production level ¯x. We can also conclude
+from Corollary 2 that there are finitely many inequalities (19). We observe that for each
+product p and distribution d, the resulting finished goods inventory level in each scenario
+14
+
+can either exceed demand or not. Thus, the total number of inequalities (19) needed to
+guarantee vRMP = vMP is P
+p∈P
+P
+d∈Dp 2|Spd|.
+We next prove that inequality (19) is not violated by a solution to RMP from which an
+optimal solution to PP-DESUP can be derived. To do so, we consider a solution (x∗, y∗, µ∗)
+to RMP for which it holds that µ∗
+p = Qp(x∗, y∗) for some p ∈P. Examining the possible
+relationship between (¯x, ¯y) and (x∗, y∗) we see there are three cases (for the given p) to
+consider. Namely,
+1. y∗
+pfl = ¯ypfl ∀f ∈F, l ∈Lpf and x∗
+pf = ¯xpf ∀f ∈F,
+2. y∗
+pfl ̸= ¯ypfl for some f ∈F and l ∈Lpf,
+3. y∗
+pfl = ¯ypfl ∀f ∈F, l ∈Lpf and x∗
+pf ̸= ¯xpf for some f ∈F.
+We next prove that in each of these three cases inequality (19) is satisfied by (x∗, y∗, µ∗).
+Lemma 3. Consider inequality (19), generated for some (¯x, ¯y, ¯µ) and some p ∈P. Let
+(x∗, y∗, µ∗) be a solution to RMP for which it holds that
+µ∗
+p = Qp(x∗, y∗)
+for the same p ∈P, and where y∗
+pfl = ¯ypfl ∀f ∈F, l ∈Lpf and x∗
+pf = ¯xpf ∀f ∈F. Then,
+inequality (19) is satisfied by (x∗, y∗, µ∗).
+Proof. Since y∗
+pfl = ¯ypfl ∀f ∈F, and l ∈Lpf the right-hand side of the optimality cut reduces
+to
+X
+s∈S↓
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++
+X
+s∈S↑
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sx∗
+pf +(Pp−Op)Dpd(¯y)s
+
+In addition, we have that d(¯y) = d(y∗) and, as x∗
+pf = ¯xpf
+∀f ∈F, the sets S↓
+pd(¯y)(¯x, ¯y)
+and S↓
+pd(¯y)(x∗, y∗) are the same (as are their complements).
+Thus, the right-hand-side is
+equivalent to the right-hand-side of (18) and we obtain
+µ∗≤Qp(x∗, y∗)
+which is true by assumption. Thus, (x∗, y∗, µ∗) satisfies the optimality cut.
+Lemma 4. Consider inequality (19), generated for some (¯x, ¯y, ¯µ) and some p ∈P. Let
+(x∗, y∗, µ∗) be a solution to RMP for which it holds that
+µ∗
+p = Qp(x∗, y∗)
+for the same p ∈P, and where y∗
+pfl ̸= ¯ypfl for some f ∈F and l ∈Lpf. Then, (19) is
+satisfied by (x∗, y∗, µ∗).
+Proof. We have |F| −P
+f∈F y∗
+p,f,l(p,f,d(¯y)) ≥1 and thus the right-hand side of inequality (19)
+is at least as great as Mp which was already shown to be a valid upper bound on Qp(x∗, y∗).
+Thus, (x∗, y∗, µ∗) satisfies the optimality cut.
+15
+
+Lemma 5. Consider inequality (19), generated for some (¯x, ¯y, ¯µ) and some p ∈P. Let
+(x∗, y∗, µ∗) be a solution to RMP for which it holds that
+µ∗
+p = Qp(x∗, y∗)
+for the same p ∈P, and where y∗
+pfl = ¯ypfl for all f ∈F and l ∈Lpf, and x∗
+pf ̸= ¯xpf for some
+f ∈F. Then, inequality (19) is satisfied by (x∗, y∗, µ∗).
+Proof. This case is more involved as the sets S↓
+pd(¯y)(¯x, ¯y) and S↓
+pd(¯y)(x∗, y∗) (and their com-
+plements) may contain different scenarios as ¯x and x∗are different and so are, in general,
+the inventories of finished goods. As such, to show that the optimality cut is satisfied, we
+need to show that the right-hand side of the cut overestimates the true expected revenue of
+solution (x∗, y∗) for product p. That is, we next show that the following inequality holds
+X
+s∈S↓
+pd(¯y)(x∗,y∗)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++
+X
+s∈S↑
+pd(¯y)(x∗,y∗)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)Dpd(¯y)s
+
+≤
+X
+s∈S↓
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++
+X
+s∈S↑
+pd(¯y)(¯x,¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)Dpd(¯y)s
+
+(20)
+Here the left-hand side of inequality (20) gives Qp(x∗, y∗): simply note that S↓
+pd(¯y)(x∗, y∗) =
+S↓
+pd(y∗)(x∗, y∗) (and so their complements) as d(¯y) = d(y∗). The right-hand side computes ex-
+pected revenues using the partition of scenarios induced by solution ¯x. Particularly, note that
+in the right-hand side the sums are taken over the sets of scenarios S↓
+pd(¯y)(¯x, ¯y), S↑
+pd(¯y)(¯x, ¯y)
+induced by (¯x, ¯y, ¯µ) but with values from the solution (x∗, y∗). We will show that (20) holds
+by proving that in the cases where expected revenues are computed differently for a scenario,
+the method used on the right-hand side of the inequality (i.e., in the optimality cut) is an
+over-estimate.
+To do so, given the two partitions of the set of scenarios Spd(¯y) induced by the two so-
+lutions, each into two sets, we further partition the set of scenarios Spd(¯y) into four sets as
+follows.
+1. SA
+pd(¯y) = {s ∈Spd(¯y)|s ∈S↓
+pd(¯y)(x∗, y∗) and s ∈S↓
+pd(¯y)(¯x, ¯y)}
+2. SB
+pd(¯y) = {s ∈Spd(¯y)|s ∈S↓
+pd(¯y)(x∗, y∗) and s ∈S↑
+pd(¯y)(¯x, ¯y)}
+3. SC
+pd(¯y) = {s ∈Spd(¯y)|s ∈S↑
+pd(¯y)(x∗, y∗) and s ∈S↑
+pd(¯y)(¯x, ¯y)}
+4. SD
+pd(¯y) = {s ∈Spd(¯y)|s ∈S↑
+pd(¯y)(x∗, y∗) and s ∈S↓
+pd(¯y)(¯x, ¯y)}
+We illustrate this partition in Figure 2, which also depicts how expected revenues would be
+computed in each set in the partition in each solution. For example, consider a scenario in
+SA
+pd(¯y). As it is in S↓
+pd(¯y)(x∗, y∗), the expected revenues in the solution (x∗, y∗) for this product
+are computed presuming the full price, Pp, is earned on all finished goods inventory. As the
+16
+
+Finished goods inventory 
+<= demand
+Finished goods inventory 
+> demand
+Finished 
+goods 
+inventory 
+<= demand
+Finished 
+goods 
+inventory 
+> demand
+Solution (x*, y*)
+Solution (¯x, ¯y, ¯μ)
+𝒮A
+pd(¯y)
+𝒮B
+pd(¯y)
+𝒮C
+pd(¯y)
+𝒮D
+pd(¯y)
+Earn full price on finished 
+goods inventory
+Solution (x*, y*)
+Earn full price on demand 
+Earn discounted price on 
+excess
+Earn full 
+price on 
+finished 
+goods 
+inventory
+Earn full 
+price on 
+demand 
+Earn 
+discounted 
+price on 
+excess
+Solution (¯x, ¯y, ¯μ)
+Figure 2: Scenario partition
+scenario is also in S↓
+pd(¯y)(¯x, ¯y), the expected revenues would have been computed in the same
+manner. Next, consider a scenario in SB
+pd(¯y). Again, the scenario is in S↓
+pd(¯y)(x∗, y∗) and thus
+the expected revenues in the solution (x∗, y∗) for this product are computed presuming the
+full price, Pp, is earned on all finished goods inventory. However, in the solution (¯x, ¯y, ¯µ) to
+the RMP this scenario was in S↑
+pd(¯y)(¯x, ¯y). As such, in that solution, expected revenues were
+computed by first meeting demand with finished goods inventory at full price and then selling
+whatever inventory is left over at a discount.
+Let us now rewrite (20) using the new partition of the scenarios. We first observe that
+a scenario s in either SA
+pd(¯y) or SC
+pd(¯y) evaluates to the same value on each side of inequality
+(20). As such, we can rewrite (20) as
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)Dpd(¯y)s
+
+≤
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)Dpd(¯y)s
+
++
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+(21)
+We next compare the terms on each side of inequality (21) that involve summing over
+scenarios in SB
+pd(¯y). Observe that the sum over scenarios in SB
+pd(¯y) on the right-hand side of
+(21) can be rewritten as follows
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+PpDpd(¯y)s + Op
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf −Dpd(¯y)s
+
+17
+
+=
+X
+s∈SB
+pd
+πsd(¯y)
+
+Pp
+
+Dpd(¯y)s +
+X
+f∈F
+Ypfd(¯y)sx∗
+pf −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ Op
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf −Dpd(¯y)s
+
+=
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+Pp
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ PpDpd(¯y)s −Pp
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ Op
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+−OpDpd(¯y)s
+=
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+Pp
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ Pp
+
+Dpd(¯y)s −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+−Op
+
+Dpd(¯y)s −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+=
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+Pp
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ (Pp −Op)
+
+Dpd(¯y)s −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+Next, we recall that scenarios in SB
+pd(¯y) are also in S↓
+pd(¯y)(x∗, y∗) and thus we have Dpd(¯y)s ≥
+P
+f∈F Ypfd(¯y)sx∗
+pf. Given that Pp > Op we have that
+X
+s∈SB
+pd(¯y)
+πsd(¯y)Pp
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+≤
+X
+s∈SB
+pd(¯y)
+πsd(¯y)
+
+Pp
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ (Pp −Op)
+
+Dpd(¯y)s −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+|
+{z
+}
+≥0
+
+showing that the sums over scenarios in SB
+pd(¯y) evaluate to a larger value in the right-hand
+side of (21) than in the left.
+We next compare the terms on each side of inequality (21) that involve summing over
+scenarios in SD
+pd(¯y). We observe that the expression on the left-hand side of (21) that involves
+summing over scenarios in SD
+pd(¯y) can be rewritten as
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Op
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)Dpd(¯y)s
+
+=
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+
+Dpd(¯y)s +
+X
+f∈F
+Ypfd(¯y)sx∗
+pf −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
++ Op
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf −Dpd(¯y)s
+
+=
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + PpDpd(¯y)s −Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + Op
+ X
+f∈F
+Ypfd(¯y)sx∗
+pf −Dpd(¯y)s
+
+=
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)Dpd(¯y)s + (Op −Pp)
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+=
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)
+
+Dpd(¯y)s −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+18
+
+We recall that scenarios in SD
+pd(¯y) are also in S↑
+pd(¯y)(x∗, y∗). As such, we have P
+f∈F Ypfd(¯y)sx∗
+pf ≥
+Dpd(¯y)s, or, Dpd(¯y)s −P
+f∈F Ypfd(¯y)sx∗
+pf ≤0. As Pp > Op, we can conclude that
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf + (Pp −Op)
+
+Dpd(¯y)s −
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+|
+{z
+}
+≤0
+
+≤
+X
+s∈SD
+pd(¯y)
+πsd(¯y)
+
+Pp
+X
+f∈F
+Ypfd(¯y)sx∗
+pf
+
+where the term on the right-hand side is the corresponding term on the right-hand side of
+(21). This shows that also in the third case the cut is satisfied by the solution and completes
+the proof.
+Having addressed each of these cases we are now able to prove that the proposed opti-
+mality cut is valid.
+Proposition 6. Let (x∗, y∗, µ∗) be a solution to RMP for which it holds that
+µ∗
+p = Qp(x∗, y∗)
+for some p ∈P. Then, inequality (19), generated for some (¯x, ¯y, ¯µ) and the same p, is
+satisfied by (x∗, y∗, µ∗).
+Proof. Consider a solution (¯x, ¯y, ¯µ) to RMP and assume it was used to generate cut (19) for
+some p ∈P. Let (x∗, y∗, µ∗) be a solution to RMP for which
+µ∗
+p = Qp(x∗, y∗)
+for the same p ∈P. There are three possible relationships between (¯x, ¯y) and (x∗, y∗) for the
+given p. They are as follows.
+1. y∗
+pfl = ¯ypfl ∀f ∈F, l ∈Lpf and x∗
+pf = ¯xpf ∀f ∈F,
+2. y∗
+pfl ̸= ¯ypfl for some f ∈F and l ∈Lpf,
+3. y∗
+pfl = ¯ypfl ∀f ∈F, l ∈Lpf and x∗
+pf ̸= ¯xpf for some f ∈F.
+Lemmas 3, 4, and 5 prove that in each case the solution (x∗, y∗, µ∗) satisfies the inequality
+(19). As these are the only cases possible, the inequality is valid.
+Finally, we note the similarity between (19) and the integer L-shaped method cuts pro-
+posed by [40]. Given a binary first-stage solution ¯y, the cut generated by [40] reduces to
+the expected second-stage value of ¯y if evaluated in ¯y, and in a bound otherwise. Given a
+first-stage solution (¯x, ¯y), the cut generated by our method reduces to a linear expression in
+x when evaluated in ¯y and in a valid bound otherwise. The linear expression in x represents
+an approximation to the expected value as a function of x under the distribution enforced
+by ¯y.
+19
+
+4.4
+A convergent algorithm
+With the elements defined in Section 4.3 we can now introduce a complete algorithm, which
+we refer to as the Benders-based method (BBM). The pseudocode is presented in Algorithm
+1.
+In this algorithm, we refer to RMPk as the instance of the RMP solved at iteration
+k, which may include multiple optimality cuts (19). The value vBest
+MP holds the objective
+function value of the best primal solution the algorithm has found, while vk
+MP holds the
+objective function value of the primal solution found at iteration k. We note that the values
+(¯x, ¯y) of a solution to RMP also satisfy the constraints of MP. Thus, constructing a solution
+to MP from a solution to the RMP only requires evaluating Qp(¯x, ¯y) for each product p ∈P.
+Algorithm 1 Benders-based algorithm
+Require: Optimality tolerance ϵ
+Require: Time limit τ
+Set vBest
+MP = 0
+Instantiate RMP0 with bound (Bnd-p) ∀p ∈P
+STOP←FALSE
+while NOT STOP do
+Solve RMPk for solution (¯xk, ¯yk, ¯µk) and bound vk
+RMP
+Set vk
+MP = −P
+f∈F Cpf ¯xk
+pf
+for p ∈P do
+Compute Qp(¯x, ¯y)
+if ¯µp > Qp(¯x, ¯y) then
+Save cut (19) for p
+end if
+Set vk
+MP = vk
+MP + Qp(¯x, ¯y)
+end for
+if vk
+MP > vBest
+MP then
+Set vBest
+MP = vk
+MP
+end if
+if No cuts saved then
+Set vBest
+MP = vk
+MP
+STOP←TRUE
+else
+Compute gap = (vk
+RMP −vBest
+MP )/vk
+RMP
+if gap ≤ϵ OR elapsed time > τ then
+STOP←TRUE
+else
+Instantiate RMPk+1 with cuts (19) in RMPk
+Add to RMPk+1 all saved cuts
+end if
+end if
+end while
+The following proposition clarifies that the algorithm terminates in at most a finite num-
+ber of iterations, even when ϵ = 0 and τ = ∞, where ϵ is the target optimality gap and τ is
+the allowed computation time.
+20
+
+Proposition 7. Assume all optimality cuts (19) have been added to RMP at iteration k.
+Then, for solution (xk, yk, µk) we have that
+µk = Qp(xk, yk)
+for all p ∈P.
+Proof. Proof of Proposition 7 This can be proven by contradiction. Assume all P
+p∈P
+P
+d∈Dp 2|Spd|
+optimality cuts (19) have been added to RMP and that for (xk, yk, µk) we have that µk >
+Qp(xk, yk) for some p ∈P. Then solution (xk, yk, µk) is cut off by
+µp ≤
+X
+s∈S↓
+pd(yk)(xk,yk)
+πsd(yk)
+
+Pp
+X
+f∈F
+Ypfd(yk)sxpf
+
++
+X
+s∈S↑
+pd(yk)(xk,yk)
+πsd(yk)
+
+Op
+X
+f∈F
+Ypfd(yk)sxpf + (Pp −Op)Dpd(yk)s
+
++ Mp
+
+|F| −
+X
+f∈F
+yp,f,l(p,f,d(yk))
+
+as shown in Proposition 1. This contradicts the assumption that all cuts are in RMP and
+completes the proof.
+4.5
+Valid inequalities
+We next present two further valid inequalities that can be added to RMP in an a priori
+manner so that it better approximates the potential expected revenues earned from each
+product and is a tighter relaxation.
+For the first, we let ¯Ypf = maxd∈Dp,s∈Spd{Ypfds} denote the largest yield for product p at
+facility f over all distributions. Given a solution (x∗, y∗) to MP, we have that Qp(x∗, y∗) ≤
+Pp
+P
+f∈F ¯Ypfx∗
+pf as the expected revenues from a given product cannot exceed those realized
+when the highest yield is achieved at each facility and all finished goods inventory is sold at
+full price. Therefore, the following inequality is valid and can be added to RMP.
+µp ≤Pp
+X
+f∈F
+¯Ypfxpf
+(VI1)
+The next valid inequality relies on the quantity Y E
+pfd = P
+s∈Spd πsdYpfds that represents
+the expected yield of product p when allocated to facility f under distribution d. Given that
+definition, we next prove that the following inequality is valid.
+µp ≤Pp
+X
+f∈F
+max
+d∈Dp
+
+Y E
+pfd
+ 
+xpf
+(VI2)
+21
+
+Proposition 8. The inequality
+Qp(x, y) ≤Pp
+X
+f∈F
+"
+max
+d∈Dp{Y E
+pfd
+ 
+xpf
+#
+is satisfied by all feasible solutions (x, y) to MP.
+Proof. Proof of Proposition 8 Consider a solution (˜x, ˜y) to MP. As before, we let Qpds(˜x, ˜y)
+denote the expected revenues earned for product p under distribution d ∈Dp and scenario
+s ∈Spd given the allocations prescribed by ˜x. We have that Qpds(˜x, ˜y) ≤Pp
+P
+f∈F Ypfds˜xpf
+as the most revenue that can be earned is when all finished goods are sold at full price.
+Taking expectations with respect to the scenarios in Spd we have
+Qpd(˜x, ˜y) ≤Pp
+X
+f∈F
+X
+s∈Spd
+ πsdYpfds˜xpf
+
+= Pp
+X
+f∈F
+Y E
+pfd˜xpf
+where Qpd(x, y) represents the expected revenue for product p under distribution d. Further-
+more, we have that
+max
+d∈Dp Qpd(˜x, ˜y) ≤max
+d∈Dp
+ Pp
+X
+f∈F
+Y E
+pfd˜xpf
+
+= Pp
+X
+f∈F
+max
+d∈Dp
+ Y E
+pfd
+
+˜xpf.
+Thus, we can conclude that
+Qp(˜x, ˜y) ≤max
+d∈Dp Qpd(˜x, ˜y) ≤Pp
+X
+f∈F
+max
+d∈Dp{Y E
+pfd}˜xpf
+as required .
+5
+Computational analysis
+In this section we computationally analyze two issues. First, we estimate the value in model-
+ing uncertainty in both production yields and product demands by computing the well-known
+Value of Stochastic Solution (VSS), and under different sources of uncertainty. Specifically,
+we compute the VSS when there is uncertainty only in production yields, only in product
+demands, and uncertainty in both. We next study the effectiveness of the proposed Benders-
+based solution method. However, to ground those analyses we first discuss the instances and
+computational environment used in the computational study.
+22
+
+5.1
+Instances
+In this section we discuss the instances used in the experiments that form the basis of
+our compuational analyses. We first note that all instances underlying our computational
+study are randomly generated. Thus, we will next describe the parameter values used when
+generating those instances. We recall that there are two primary parameters that define
+the context in which the production planning problem considered in this paper would be
+formulated and solved. Specifically, the number of products, |P|, to be manufactured and
+the number of facilities, |F|, in which they can be manufactured. A third parameter defining
+an instance is the number of production levels, |Lpf|, for product p at facility f for which
+there is a different statistical distribution describing the production yield.
+All instances
+considered in our experiments contained a number of products that ranged between five and
+ten and a number of facilities that ranged between two and five. We note the instances
+were constructed such that each product could be produced in each facility. In addition, all
+products had either two or three production levels at each facility. Thus, we define a class
+of instance by the triplet (|F|, |P|, |L|), wherein |Lpf| = |L| ∀f ∈F, p ∈P.
+For an instance within a given class we randomly determined the remaining parameter
+values. We determined the value of the capacity, Bf, of facility f via the following approach.
+We first determined total expected demand of each product over all scenarios for that in-
+stance. More specifically, let νp denote the expected demand of product p. We then computed
+the value χ = P
+p∈P νp/|F|, which represents the expected capacity needed at each facility
+if demands were met and allocated evenly across facilities. Next, for each facility f we drew
+its capacity from the uniform distribution [χ −γχ, χ + γχ] with γ = .1
+Regarding costs and revenues, the cost Cfp of manufacturing product p ∈P in facility
+f ∈F was randomly drawn from the range [60, 80]. The price Pp at which product p ∈P is
+sold was randomly drawn from the range [125, 185]. As such, the expected gross margin on
+products sold is 54%. Finally, the revenue Op recovered from left-over inventory of product
+p ∈P was randomly drawn from the range [15, 40]. Note this ensures that in each instance
+there is a loss on products manufactured but not sold at full price.
+As noted, we generated instances with either two or three production levels for each
+product at each facility. Given a number of production levels, the same procedure is used to
+generate the bounds for each level for each product and each facility. When there are two lev-
+els, the bounds for the levels are (Lpf0, Upf0) = (0, .75νp) and (Lpf1, Upf1) = (.75νp, νp). When
+there are three levels, the bounds are (Lpf0, Upf0) = (0, .5νp), (Lpf1, Upf1) = (.50νp, .75νp),
+and (Lpf2, Upf2) = (.75νp, νp).
+We next discuss the scenario generation process.
+We first recall that the model and
+the solution method presented allow the treatment of endogenous demand distributions.
+However, we are unaware of sufficient justification to model this relationship. Thus, in the
+scenarios generated demand is treated as a fully exogenous random variable. This is done
+by appending the same marginal demand distribution to the joint distribution of the yield.
+Thus, associated with each product in an instance are |Dp| = |L||F| + 1 distributions,
+wherein the first |L||F| are distributions of production yields at different facilities for different
+sets of production levels and the remaining is of product demands. The scenario generation
+process used to generate instances presumed a given number of scenarios to represent each
+distribution. Specifically, S = 5,10,15,20, and 25 scenarios per distribution were considered.
+23
+
+As a result, an instance consists of S|P|(|L||F| + 1) scenarios, which can range from 105
+to 60,750 scenarios. Regarding demands, we presumed the distribution of demand for each
+product was normal with mean 20,000 and standard deviation of 15,000.
+For production yields, we considered normal distributions albeit with different param-
+eters.
+We note that for a given product and facility we presume the mean of the yield
+distribution is the same for all production levels. However, for a given mean, the larger the
+production level the smaller the standard deviation. In other words, we model that variabil-
+ity in yields decreases as the level of production increases. We summarize the different yield
+distributions we considered in Table 2. When generating an instance with a given number
+of production levels, one of the relevant distributions in Table 2 was randomly assigned to
+each product and facility. Then, to generate scenarios, values were randomly drawn from
+these distributions. However, we note that we truncated the values at .25 and 1.
+Distributions for |L| = 2
+Distribution
+Level
+Mean
+Standard deviation
+1
+1
+0.50
+0.20
+2
+0.50
+0.10
+2
+1
+0.70
+0.20
+2
+0.70
+0.10
+3
+1
+0.90
+0.05
+2
+0.90
+0.01
+Distributions for |L| = 3
+Distribution
+Level
+Mean
+Standard deviation
+1
+1
+0.50
+0.20
+2
+0.50
+0.15
+3
+0.50
+0.10
+2
+1
+0.70
+0.20
+2
+0.70
+0.15
+3
+0.70
+0.10
+3
+1
+0.90
+0.05
+2
+0.90
+0.03
+3
+0.90
+0.01
+Table 2: Production yield distributions, two and three production
+levels
+For a given class and given number of scenarios per distribution we generated five in-
+stances. In total, we considered four different values for |F|, six different values for |P| and
+two different values of |L|, yielding 48 different classes of instances. Then, for each class we
+considered five different numbers of scenarios per distribution, yielding 240 instance config-
+urations. With five instances per configuration, our experimental study is based upon 1,200
+instances in total.
+5.2
+Computational environment
+In this section, we describe the computational environment in which all experiments were
+run. All code is implemented in Java. All optimization models solved by that code were done
+24
+
+so using CPLEX 20.1. We note that the method proposed in Section 4 has been embedded in
+a branch-and-cut framework in which optimality cuts are separated and added to the RMP
+at nodes at which integer solutions are discovered.
+All tests were performed on computing nodes equipped with 40 CPUs and 188 GB mem-
+ory. However, no parallelization techniques were used when executing the proposed Benders-
+based algorithm. Each of those experiments was run using a single thread. However, when
+solving extensive linearized forms with CPLEX, CPLEX was configured to use its default
+deterministic parallel search strategy for the Branch & Bound method, which used up to 32
+threads. Both executing the proposed method and solving the deterministic equivalent were
+done with an optimality tolerance of 0.0001 and a time limit of 1, 800 seconds.
+5.3
+Value of modeling uncertainty
+We next study the value in modeling uncertainty in both supply and demand in this context.
+To do so, we compute the Value of Stochastic Solution (V SS) (see [6] and its extensions
+[14, 45, 52]) adapted to problems with endogenous uncertainty. Generally speaking, the V SS
+represents the relative difference in objective function values between the optimal solution
+to the stochastic program and a solution derived by optimizing with respect to expected
+values. Particularly, when solving the expected value problem, random parameters are re-
+placed by their expected values in each possible distribution and the choice of production
+levels no longer determines a probability distribution but simply expected yield and demand
+realizations. The solution to the expected value problem (which determines a probability
+distribution of yield and demand) is then used to formulate and solve instances of the second-
+stage problem for each scenario of the distribution enforced. Observe that the distribution
+enforced may be different from that enforced by the optimal solution to the stochastic pro-
+gram. The solutions to the second-stage problems, along with the first stage values from
+the expected value problem, are then used to construct a complete solution to the stochastic
+program. With vSP representing the objective function value of an optimal solution to the
+stochastic program and vEV the objective function value of the expected value solution, the
+V SS can be computed as (vSP −vEV )/vSP.
+In our problem, there is uncertainty with respect to both supply and demand. As a
+result, we compute multiple V SSs. The first, which we label V SSsupply, measures the value
+in modeling uncertainty in supply, presuming demand is uncertain. To do so, the expected
+value solution is constructed by solving the stochastic program wherein yield values are
+not treated as uncertain and instead set to their expected values.
+Like the traditional
+V SS, the resulting values of first stage decision variables are used to formulate and solve
+second stage problems for each scenario. Letting vsupply
+EV
+represent the objective function
+value of the resulting solution we have V SSsupply = (vSP −vsupply
+EV
+)/vSP. The second, which
+we label V SSdemand, measures the value in modeling uncertainty in demand, presuming
+yields are uncertain. In this case, the expected value solution is constructed by solving the
+stochastic program wherein demand values are set to their expected values. Letting vdemand
+EV
+represent the objective function value of the resulting solution we have V SSdemand = (vSP −
+vdemand
+EV
+)/vSP. Finally, we denote the classical V SS, which is computed by constructing an
+expected value solution based on expectations with respect to both demands and production
+yields, by V SSfull.
+25
+
+Thus, in the next three tables we report the V SSsupply, V SSdemand, and V SSfull statistics,
+averaged over different sets of instances. We note we only report results for instances which
+could be solved to optimality.
+In Table 3 we report each of the V SS statistics, albeit
+averaged over instances with the same number of products.
+Table 4a is similar, albeit
+averaged over instances with the same number of facilities. Finally, Table 4b reports V SS
+statistics averaged over instances with the same number of production levels.
+|P|
+V SS
+5
+6
+7
+8
+9
+10
+Average
+V SSsupply
+1.14%
+0.89%
+1.03%
+1.02%
+0.90%
+0.92%
+0.99%
+V SSdemand
+7.83%
+5.13%
+5.16%
+5.34%
+3.97%
+4.09%
+5.37%
+V SSfull
+22.03%
+17.02%
+18.53%
+17.92%
+13.48%
+15.43%
+17.64%
+Table 3: V SS statistics by number of products
+|F|
+V SS
+2
+3
+4
+5
+V SSsupply
+0.86%
+1.01%
+1.07%
+1.04%
+V SSdemand
+4.83%
+4.92%
+6.37%
+5.59%
+V SSfull
+15.49%
+17.22%
+19.74%
+18.76%
+(a) By number of facilities
+|L|
+2
+3
+V SSsupply
+1.19%
+0.71%
+V SSdemand
+5.73%
+4.89%
+V SSfull
+19.44%
+15.24%
+(b) By number of production levels
+Table 4: V SS statistics
+We see from these tables that taken in isolation, modeling uncertainty in demands leads
+to a greater difference in solution quality than modeling uncertainty in production yields.
+However, we also see that modeling uncertainty in both leads to the greatest improvement
+in solution quality. Finally, we do not conclude from these tables that there is a correlation
+between the parameter values that define a class of instance and any of the V SS statistics.
+5.4
+Performance of proposed solution approach
+In this section, we study the performance of the Benders-based solution approach presented
+in Section 4. We note that to generate the results presented in this section, computational
+experiments were run with a time limit of 1,800 seconds and an optimality tolerance of .0001
+(the default for CPLEX). We focus our comparisons on two performance metrics. The first
+is the percentage of the 1,200 instances that a method could solve within the time limit and
+to the desired optimality tolerance. The second is the average time in seconds the method
+took to solve an instance to that tolerance, averaged over instances the method was able to
+solve.
+We first compare the computational performance of the proposed Benders-based ap-
+proach with that of two benchmarks. The first is a commercial solver, CPLEX, solving the
+full instance of the PP-DESUP, after linearization. We label this benchmark CPLEX-FULL.
+Given that the second stage variables in PP-DESUP are continuous, the problem is a can-
+didate for a classical Benders decomposition-based approach. To benchmark against such
+26
+
+an approach, we use the automated Benders decomposition of CPLEX, which we label as
+CPLEX-BD. We first consider the performance of the approach presented in Section 4.4,
+which we label BSC as it involves a single optimality cut for each product at each iteration.
+We then study the impact of augmenting BBM with the valid inequalities VI1 and VI2. We
+label such algorithm configurations as BBM + VI1 and BBM+VI2 respectively.
+We report in Table 5 the values of the two performance metrics for the proposed Benders-
+based method and the two benchmarks. We see that the Benders-based approach was able
+to solve many more instances than either of the two benchmarks. In addition, even though
+it could solve many more instances, it was also able to solve that larger set of instances in
+much less time. Thus, we conclude from the results in this table that the Benders-based
+approach is computationally superior to the two benchmarks under consideration.
+Method
+% solved
+Time to solve (sec.)
+CPLEX-Full
+23.98%
+855.28
+CPLEX-BD
+8.82%
+1151.82
+BBM
+71.76%
+151.27
+Table 5: Comparison of Benders-based algorithm with benchmarks
+We next study the impact of augmenting the Benders-based method with the two valid
+inequalities. We focus on the same two performance metrics as reported in Table 5, but
+averaged over instances based on the same number of facilities (Tables 6a and 6b), products
+(Tables 7a and 7b), or production levels (Tables 8a and 8b). To further understand the
+performance of the two benchmarks, we also report values of the performance metrics for
+those methods.
+|F|
+Method
+2
+3
+4
+5
+Average
+CPLEX-Full
+51.01%
+17.03%
+10.82%
+7.18%
+23.98%
+CPLEX-BD
+23.34%
+8.90%
+2.18%
+0.00%
+8.82%
+BBM
+94.93%
+76.11%
+64.51%
+51.52%
+71.76%
+BBM+VI1
+95.97%
+76.95%
+65.89%
+55.18%
+73.47%
+BBM+VI2
+100.00%
+97.27%
+82.21%
+69.67%
+87.24%
+(a) % solved
+|F|
+Method
+2
+3
+4
+5
+Average
+CPLEX-Full
+762.01
+946.56
+1,178.21
+987.67
+855.28
+CPLEX-BD
+1,161.05
+1,111.79
+1,222.12
+N/A
+1,151.82
+BBM
+89.76
+102.82
+198.27
+276.81
+151.27
+BBM+VI1
+94.11
+122.70
+197.27
+291.81
+162.04
+BBM+VI2
+27.07
+106.48
+147.56
+123.41
+96.65
+(b) Solve time
+Table 6: Performance metrics by number of facilities
+We first note that CPLEX-BD performs worse (i.e. solves fewer instances, requires more
+time) than CPLEX-Full for every value of |P|, |F|, and |Lpf|. We next observe that the first
+valid inequality (VI1) enables the Benders-based method to solve more instances. While the
+average solve time increases, this is due to BBM+VI1 solving instances that BBM could not
+solve. We note that BBM+VI1 was able to solve every instance that BBM could solve and
+it solved those instances in less time, 129.95 seconds.
+While the first valid inequality improves the performance of the Benders-based method,
+the second valid inequality (VI2) does so much more. Further, for every value of |P|, |F|,
+or |Lpf| we see that using VI2 enabled the Benders-based method to solve at least as many
+instances and in much less time. Next, we note that an increase in any of the parameter
+values lead to a decrease in performance (fewer instances solved, more time required to do so)
+for all methods under consideration. However, increasing the number of production levels,
+27
+
+|P|
+Method
+5
+6
+7
+8
+9
+10
+Average
+CPLEX-Full
+51.72%
+39.88%
+25.47%
+13.46%
+6.10%
+4.35%
+23.98%
+CPLEX-BD
+28.93%
+14.52%
+5.32%
+2.79%
+0.00%
+0.00%
+8.82%
+BBM
+100.00%
+92.35%
+77.44%
+64.97%
+60.10%
+35.71%
+71.76%
+BBM+VI1
+100.00%
+95.98%
+80.40%
+65.66%
+59.50%
+39.70%
+73.47%
+BBM+VI2
+100.00%
+100.00%
+91.37%
+81.00%
+77.89%
+73.50%
+87.24%
+(a) % solved
+|P|
+Method
+5
+6
+7
+8
+9
+10
+Average
+CPLEX-Full
+779.02
+851.63
+892.30
+938.38
+992.14
+1,209.10
+855.28
+CPLEX-BD
+1,144.34
+1,166.73
+957.77
+1,544.62
+N/A
+N/A
+1,151.82
+BBM
+51.62
+112.49
+130.79
+105.21
+304.62
+399.72
+151.27
+BBM+VI1
+44.64
+143.89
+178.39
+129.29
+258.71
+372.32
+162.04
+BBM+VI2
+25.07
+65.25
+132.60
+111.55
+132.47
+136.61
+96.65
+(b) Solve time
+Table 7: Performance metrics of methods by number of products
+|Lpf |
+Method
+2
+3
+Average
+CPLEX-Full
+32.98%
+12.06%
+23.98%
+CPLEX-BD
+15.17%
+2.03%
+8.82%
+BBM
+92.98%
+51.01%
+71.82%
+BBM+VI1
+93.11%
+53.86%
+73.47%
+BBM+VI2
+100.00%
+74.62%
+87.24%
+(a) % solved
+|Lpf |
+Method
+2
+3
+Average
+CPLEX-Full
+850.64
+872.13
+855.28
+CPLEX-BD
+1,135.83
+1,279.73
+1,151.82
+BBM
+91.79
+257.87
+151.27
+BBM+VI1
+85.58
+293.99
+162.04
+BBM+VI2
+11.33
+209.63
+96.65
+Average
+61.55
+248.56
+134.12
+(b) Solve time
+Table 8: Performance metrics of Benders-based method by number
+of production levels
+arguably leads to the greatest degradation in performance. This is likely due to a larger
+number of production levels leading to a much larger set of scenarios, S, overall.
+We also note that on average, when BBM could not solve an instance, the average
+optimality gap it reported for those instances was 134.04%.
+With the use of VI1, that
+average drops to 104.19%. With the use of VI2 that gap drops further, to 30.48%. Finally,
+we observe that BBM, with and without valid inequalities, never required more than a few
+megabytes of memory during its execution.
+To understand why VI2 has such a dramatic impact on the performance of the Benders-
+based method, we recall that VI2 is added to the RMP a priori. Therefore, we next study
+the relative gap between the upper bound on the optimal objective function value, v∗
+MP,
+produced at the first iteration by solving the RMP both when VI2 is added to and when it is
+not. Namely, we let v1
+RMP denote the bound produced by solving RMP at the first iteration
+of the Benders-based method, before any optimality cuts have been added. We let v1−V I2
+RMP
+represent the same quantity, only when RMP is strengthened with VI2. Given these values,
+we compute the gap RMPgap = (v1
+RMP −v1−V I2
+RMP )/v1
+RMP.We report averages of these bounds
+and this gap, averaged over instances based on the same number of products in Table 9a.
+Table 9b is similar, only averaged over instances based on the same number of facilities.
+We see that adding VI2 to RMP leads to a significant reduction in the bound produced
+by solving RMP before the addition of any optimality cuts. However, this reduction tends
+to decrease as instance parameter values increase, particularly the number of facilities. We
+note that VI1 also improves the bound at the first iteration, only less so. Averaged over all
+instances, using inequality VI1 reduces the bound at the first iteration by 82.25%.
+28
+
+|P|
+v1
+RMP
+v1−V I2
+RMP
+RMPgap
+5
+10,061,828.38
+1,933,102.16
+-420.50%
+6
+13,901,803.48
+2,862,069.48
+-385.73%
+7
+17,792,070.22
+3,718,940.70
+-378.42%
+8
+19,232,664.61
+3,934,961.43
+-388.76%
+9
+26,841,465.65
+6,018,151.87
+-346.01%
+10
+28,724,420.99
+6,316,784.74
+-354.73%
+(a) By number of products
+|F|
+v1
+RMP
+v1−V I2
+RMP
+RMPgap
+2
+16,285,038.80
+3,236,958.38
+-403.10%
+3
+19,261,859.83
+3,936,760.71
+-389.28%
+4
+20,629,325.55
+4,464,340.33
+-362.09%
+5
+21,646,685.17
+4,916,712.95
+-340.27%
+(b) By number of facilities
+Table 9: Improvement in bound due to VI2
+6
+Conclusion and future work
+In this paper, we studied a production planning problem in which there is uncertainty in both
+supply and demand. Further complicating matters, uncertainty in supply is endogeneous as
+it depends on choices regarding production levels of products at facilities. We formulated
+the problem as a two-stage stochastic program in which scenarios contain both production
+yield and customer demand information. We proposed a Benders-based solution approach
+wherein the objective function of the relaxed master problem includes decision variables that
+approximate the expected profits for a product given production choices made in the first
+stage. In the proposed scheme, when the approximation variables over-estimate expected
+profits an optimality cut is generated and added to the relaxed master problem. The solution
+process then repeats. We proved there are a finite number of such optimality cuts and thus
+that the algorithm is guaranteed to converge in a finite number of iterations.
+We also
+presented additional valid inequalities to strengthen the relaxed master problem.
+With an extensive computational study we first analyzed the value in modeling supply
+and demand uncertainty separately as well as together. We saw that modeling either supply
+or demand unertainty lead to an improvement in solution quality in a stochastic setting.
+However, when modeling both the improvement was much more pronounced. Finally, we
+demonstrated that the proposed Benders-based scheme outperforms two benchmarks. The
+first benchmark is an off-the-shelf solver solving the full stochastic program. As the second
+stage variables in the proposed stochastic program are continuous, the second benchmark is
+a standard implementation of Benders, as implemented by an off-the-shelf solver.
+We see multiple avenues for future work in this area. The first is managerial. In this paper
+we focused on proposing an efficient, exact, algorithm for the problem under consideration.
+However, such a problem arises in multiple industrial contexts, including agriculture and
+manufacturing. An extensive analysis of high-quality solutions to the problem could yield
+tactics for managing uncertainty in both supply and demand, particularly when supply
+uncertainty is endogenous, for those contexts.
+The second is algorithmic and is motivated by assumptions underlying the proposed
+work that may not hold in certain practical applications. For example, a critical assumption
+of the model and Benders-based scheme we propose is that the yields across products are
+independent.
+However, in many practical contexts this is not the case.
+Relatedly, the
+proposed Benders-based scheme relies on the fact that the determination of expected profits
+is separable by product. However, in cases wherein one product may be substituted for
+29
+
+another, such separability is lost. Also, the inequality generated by the proposed Benders-
+based scheme is specific to the distribution induced by the master problem solution at hand.
+The validity of that inequality requires an expression that indicates whether a master problem
+solution induces that same distribution. There may be opportunities to strengthen the cut
+with a different expression that captures this implication.
+The third relates to implementation of the proposed model in industrial contexts as it
+presupposes the fitting of multiple distributions that describe yields of a product at different
+facilities. On the one hand, we see opportunities for research into how to best determine
+and fit those distributions.
+On the other hand, we see opportunities to develop robust
+optimization-type models which require less information regarding distributions.
+Finally, we recognize the need for additional research to estimate the value of modeling
+endogenous uncertainty.
+To provide such estimate tests and metrics would be required
+that compare the solution to a stochastic program with endogenous uncertainty to that of
+a benchmark stochastic program with exogenous uncertainty. Nevertheless, the decisions
+of how to choose the exogenous distribution for the stochastic program with exogenous
+uncertainty lends itself to different interpretations and is potentially problem-specific.
+References
+[1] S. Ahmed. Strategic planning under uncertainty: Stochastic integer programming ap-
+proaches. Phd, University of Illinois at Urbana-Champaign, 2000.
+[2] O. Ahumada and J. R. Villalobos. Application of planning models in the agri-food
+supply chain: A review. European journal of Operational research, 196(1):1–20, 2009.
+[3] F. A. Al-Khayyal and J. E. Falk. Jointly constrained biconvex programming. Mathe-
+matics of Operations Research, 8(2):273–286, 1983.
+[4] M. J. Anzanello and F. S. Fogliatto. Learning curve models and applications: Liter-
+ature review and research directions. International Journal of Industrial Ergonomics,
+41(5):573–583, 2011.
+[5] R. M. Apap and I. E. Grossmann. Models and computational strategies for multistage
+stochastic programming under endogenous and exogenous uncertainties. Computers &
+Chemical Engineering, 103:233–274, 2016.
+[6] J. R. Birge. The value of the stochastic solution in stochastic linear programs with fixed
+recourse. Mathematical programming, 24(1):314–325, 1982.
+[7] M. Colvin and C. T. Maravelias. A stochastic programming approach for clinical trial
+planning in new drug development. Computers & Chemical Engineering, 32(11):2626–
+2642, 2008.
+[8] M. Colvin and C. T. Maravelias. Modeling methods and a branch and cut algorithm for
+pharmaceutical clinical trial planning using stochastic programming. European Journal
+of Operational Research, 203(1):205–215, 2010.
+30
+
+[9] P. Comhaire and F. Papier. Syngenta uses a cover optimizer to determine production
+volumes for its european seed supply chain. Interfaces, 45(6):501–513, 2015.
+[10] B. da Costa Flach. Stochastic Programming with Endogenous Uncertainty: An Appli-
+cation in Humanitarian Logistics. PhD thesis, PUC-Rio, 2010.
+[11] M. Denizel, M. Ferguson, and G. e. C. Souza. Multiperiod remanufacturing planning
+with uncertain quality of inputs.
+IEEE Transactions on Engineering Management,
+57(3):394–404, 2010.
+[12] M. D´ıaz-Madro˜nero, J. Mula, and D. Peidro. A review of discrete-time optimization
+models for tactical production planning. International Journal of Production Research,
+52(17):5171–5205, 2014.
+[13] L. Dong, X. Geng, G. Xiao, and N. Yang. Procurement strategies with unreliable suppli-
+ers under correlated random yields. Manufacturing & Service Operations Management,
+24(1):179–195, 2022.
+[14] L. F. Escudero, A. Gar´ın, M. Merino, and G. P´erez. The value of the stochastic solution
+in multistage problems. Top, 15(1):48–64, 2007.
+[15] L. F. Escudero, M. A. Gar´ın, J. F. Monge, and A. Unzueta. On preparedness resource
+allocation planning for natural disaster relief under endogenous uncertainty with time-
+consistent risk-averse management. Computers & Operations Research, 98:84–102, 2018.
+[16] L. F. Gelders and L. N. Van Wassenhove. Production planning: a review. European
+Journal of Operational Research, 7(2):101–110, 1981.
+[17] V. Goel and I. E. Grossmann.
+A stochastic programming approach to planning of
+offshore gas field developments under uncertainty in reserves. Computers & Chemical
+Engineering, 28:1409–1429, 2004.
+[18] V. Goel and I. E. Grossmann. A Class of stochastic programs with decision dependent
+uncertainty. Mathematical Programming, 108:355–394, 2006.
+[19] A. Grosfeld-Nir and Y. Gerchak. Multiple lotsizing in production to order with random
+yields: Review of recent advances. Annals of Operations Research, 126:43–69, 2004.
+[20] Z. Guan and A. B. Philpott. A multistage stochastic programming model for the new
+zealand dairy industry. International Journal of Production Economics, 134(2):289–299,
+2011.
+[21] V. Gupta and I. E. Grossmann. Solution strategies for multistage stochastic program-
+ming with endogenous uncertainties. Computers & Chemical Engineering, 35:2235–2247,
+2011.
+[22] A. C. Hax and D. Candea. Production and Inventory Management. Prentice-Hall, 1984.
+[23] H. Held and D. L. Woodruff.
+Heuristics for Multi-Stage Interdiction of Stochastic
+Networks. Journal of Heuristics, 11(5-6):483–500, 2005.
+31
+
+[24] L. Hellemo. Managing Uncertainty in Design and Operation of Natural Gas Infrastruc-
+ture. Phd, Norwegian University of Science and Technology, 2016.
+[25] L. Hellemo, P. I. Barton, and A. Tomasgard.
+Decision-dependent probabilities in
+stochastic programs with recourse. Computational Management Science, 15(3):369–395,
+2018.
+[26] F. Hooshmand and S. A. MirHassani.
+Efficient constraint reduction in multistage
+stochastic programming problems with endogenous uncertainty. Optimization Meth-
+ods and Software, 31:359–376, 2016.
+[27] F. Hooshmand and S. A. MirHassani. Reduction of nonanticipativity constraints in mul-
+tistage stochastic programming problems with endogenous and exogenous uncertainty.
+Mathematical Methods of Operations Research, 87(1):1–18, 2018.
+[28] A. Jamalnia, J.-B. Yang, A. Feili, D.-L. Xu, and G. Jamali. Aggregate production plan-
+ning under uncertainty: a comprehensive literature survey and future research direc-
+tions. The International Journal of Advanced Manufacturing Technology, 102:159–181,
+2019.
+[29] T. C. J. Jeaunita, V. Sarasvathi, M. S. Harsha, B. M. Bhavani, and T. Kavyashree. An
+automated greenhouse system using agricultural internet of things for better crop yield.
+In Smart Cities Symposium 2018, pages 1–6, 2018.
+[30] X. Jin, L. Kumar, Z. Li, H. Feng, X. Xu, G. Yang, and J. Wang. A review of data
+assimilation of remote sensing and crop models. European Journal of Agronomy, 92:141–
+152, 2018.
+[31] L. A. Johnson and D. C. Montgomery. Operations research in production planning,
+scheduling and inventory control. John Wiley and Sons Ltd, 1974.
+[32] P. C. Jones, G. Kegler, T. J. Lowe, and R. D. Traub. Managing the seed-corn supply
+chain at syngenta. Interfaces, 33(1):80–90, 2003.
+[33] P. C. Jones, T. J. Lowe, R. D. Traub, and G. Kegler. Matching supply and demand:
+The value of a second chance in producing hybrid seed corn. Manufacturing & Service
+Operations Management, 3(2):122–137, 2001.
+[34] T. W. Jonsbr˚aten, R. J.-B. Wets, and D. L. Woodruff. A class of stochastic programs
+withdecision dependent random elements. Annals of Operations Research, 82:83–106,
+1998.
+[35] B. Kazaz.
+Production planning under yield and demand uncertainty with yield-
+dependent cost and price. Manufacturing & Service Operations Management, 6(3):209–
+224, 2004.
+[36] B. Kazaz and S. Webster. The impact of yield-dependent trading costs on pricing and
+production planning under supply uncertainty. Manufacturing & Service Operations
+Management, 13(3):404–417, 2011.
+32
+
+[37] K. G. Kempf, P. Keskinocak, and R. Uzsoy. Planning production and inventories in the
+extended enterprise: A state of the art handbook, volume 1. 2011.
+[38] M. Khouja and A. Mehrez.
+Economic production lot size model with variable pro-
+duction rate and imperfect quality. The Journal of the Operational Research Society,
+45(12):1405–1417, 1994.
+[39] P. Kouvelis, G. Xiao, and N. Yang. Role of risk aversion in price postponement under
+supply random yield. Management Science, 67(8):4826–4844, 2021.
+[40] G. Laporte and F. Louveaux. The integer L-shaped method for stochastic integer pro-
+grams with complete recourse. Operations Research Letters, 13:133–142, 1993.
+[41] M. Laumanns, S. Prestwich, and B. Kawas. Distribution shaping and scenario bundling
+for stochastic programs with endogenous uncertainty.
+In J. L. Higle, W. R¨omisch,
+and S. Sen, editors, Stochastic Programming E-Print Series, Stochastic Programming
+E-Print Series. Institut f¨ur Mathematik, 2014.
+[42] S. C. Leung and W.-L. Ng. A stochastic programming model for production planning of
+perishable products with postponement. Production Planning and Control, 18(3):190–
+202, 2007.
+[43] X. Li, Y. Li, and X. Cai. Remanufacturing and pricing decisions with random yield and
+random demand. Computers & Operations Research, 54:195–203, 2015.
+[44] K. Liu and Z.-H. Zhang. Capacitated disassembly scheduling under stochastic yield and
+demand. European Journal of Operational Research, 269(1):244–257, 2018.
+[45] F. Maggioni and S. W. Wallace. Analyzing the quality of the expected value solution
+in stochastic programming. Annals of Operations Research, 200(1):37–54, 2012.
+[46] G. P. McCormick. Computability of global solutions to factorable nonconvex programs:
+Part i—convex underestimating problems. Mathematical programming, 10(1):147–175,
+1976.
+[47] L. Mercier and P. Van Hentenryck. An anytime multistep anticipatory algorithm for on-
+line stochastic combinatorial optimization. Annals of Operations Research, 184(1):233–
+271, 2011.
+[48] H. Missbauer and R. Uzsoy. Optimization models of production planning problems.
+Planning Production and Inventories in the Extended Enterprise: A State of the Art
+Handbook, Volume 1, pages 437–507, 2011.
+[49] F. Modigliani and F. E. Hohn. Production planning over time and the nature of the
+expectation and planning horizon. Econometrica, Journal of the Econometric Society,
+pages 46–66, 1955.
+[50] J. Mula, R. Poler, J. P. Garc´ıa-Sabater, and F. C. Lario. Models for production planning
+under uncertainty: A review. International journal of production economics, 103(1):271–
+285, 2006.
+33
+
+[51] G. Pantuso. A node formulation for multistage stochastic programs with endogenous
+uncertainty. Computational Management Science, 18(3):325–354, 2021.
+[52] G. Pantuso and T. K. Boomsma. On the number of stages in multistage stochastic
+programs. Annals of Operations Research, 292(2):581–603, 2020.
+[53] S. Peeta, F. S. Salman, D. Gunnec, and K. Viswanath. Pre-disaster investment decisions
+for strengthening a highway network. Computers & Operations Research, 37:1708–1719,
+2010.
+[54] G. C. Pflug. On-line optimization of simulated markovian processes. Mathematics of
+Operations Research, 15(3):381–395, 1990.
+[55] S. S. Sana. An economic production lot size model in an imperfect production system.
+European Journal of Operational Research, 201(1):158–170, 2010.
+[56] B. Tarhan and I. E. Grossmann. A multistage stochastic programming approach with
+strategies for uncertainty reduction in the synthesis of process networks with uncertain
+yields. Computers & Chemical Engineering, 32:766–788, 2008.
+[57] B. Tarhan, I. E. Grossmann, and V. Goel.
+Stochastic Programming Approach for
+the Planning of Offshore Oil or Gas Field Infrastructure under Decision-Dependent
+Uncertainty. Industrial & Engineering Chemistry Research, 48:3078–3097, 2009.
+[58] B. Tarhan, I. E. Grossmann, and V. Goel. Computational strategies for non-convex
+multistage MINLP models with decision-dependent uncertainty and gradual uncertainty
+resolution. Annals of Operations Research, 203(1):141–166, 2013.
+[59] N. N. Thilakarathne, H. Yassin, M. S. A. Bakar, and P. E. Abas. Internet of things
+in smart agriculture: Challenges, opportunities and future directions. In 2021 IEEE
+Asia-Pacific Conference on Computer Science and Data Engineering (CSDE), pages
+1–9, 2021.
+[60] K. Tong, Y. Feng, and G. Rong. Planning under Demand and Yield Uncertainties in an
+Oil Supply Chain. Industrial & Engineering Chemistry Research, 51(2):814–834, 2012.
+[61] K. Viswanath, P. Srinivas, and S. F. Sibel. Investing in the Links of a Stochastic Network
+to Minimize Expected Shortest Path Length. 2004.
+[62] S. Voss and D. L. Woodruff. Introduction to computational optimization models for
+production planning in a supply chain, volume 240. Springer Science & Business Media,
+2006.
+[63] P. B. Wakhare, S. Neduncheliyan, and G. S. Sonawane. Automatic irrigation system
+based on internet of things for crop yield prediction. In 2020 International Conference
+on Emerging Smart Computing and Informatics (ESCI), pages 129–132, 2020.
+[64] L. Xie, J. Ma, and M. Goh. Supply chain coordination in the presence of uncertain yield
+and demand. International Journal of Production Research, 59(14):4342–4358, 2021.
+34
+
+[65] C. A. Yano and H. L. Lee. Lot sizing with random yields: A review. Operations research,
+43(2):311–334, 1995.
+[66] X. Yuan, G. Bi, Y. Fei, and L. Liu. Supply chain with random yield and financing.
+Omega, 102:102334, 2021.
+Appendix A
+Linearized PP-DESUP
+In this appendix we provide an exact linearization of the PP-DESUP using McCormick
+inequalities. Particularly, we add the variable µpds to replace the product δpdwpds and the
+variable ρpds to replace the product δpdopds. To define the constraints that enforce µpds =
+δpdwpds we note that Dpds is an upper bound on the decision variable µpds as more of a
+product cannot be sold in a scenario than there is demand. To define the constraints that
+enforce ρpds = δpdopds we note that opds ≤Npds = P
+f∈F Ypfds min{Bf, maxl∈Lpf Upfl} on
+opds. This upper bound reflects that the inventory in excess of demand for a product in a
+scenario can never exceed the inventory achieved when allocating the maximum amount to
+each facility and the corresponding yields occurring. The resulting linearized model is as
+follows.
+v∗
+PP−DESUP = max −
+X
+p∈P
+X
+f∈F
+Cpfxpf +
+X
+p∈P
+X
+d∈Dp
+X
+s∈Spd
+πsd
+
+Ppµpds + Opρpds
+
+(22a)
+X
+p∈P
+xpf ≤Bf
+∀f ∈F
+(22b)
+X
+l∈Lpf
+ypfl = 1
+∀p ∈P, f ∈F
+(22c)
+X
+l∈Lpf
+Lpflypfl ≤xpf ≤
+X
+l∈Lpf
+min{bf, Upflypfl}
+∀p ∈P, f ∈F
+(22d)
+X
+d∈Dp
+δpd = 1
+∀p ∈P
+(22e)
+X
+f∈F
+yp,f,l(p,f,d) ≥|F|δpd
+∀p ∈P, d ∈Dp
+(22f)
+zpds =
+X
+f∈F
+Ypfdsxpf
+∀p ∈P, d ∈Dp, s ∈Spd,
+(22g)
+wpds ≤Dpds
+∀p ∈P, d ∈Dp, s ∈Spd
+(22h)
+wpds + opds = zpds
+∀p ∈P, d ∈Dp, s ∈Spd
+(22i)
+35
+
+xpf ≥0
+∀p ∈P, f ∈F,
+(22j)
+ypfl ∈{0, 1}
+∀p ∈P, f ∈F l ∈Lpf,
+(22k)
+δpd ∈{0, 1}
+∀p ∈P, d ∈Dp,
+(22l)
+zpds ≥0, wpds ≥0, opds ≥0
+∀p ∈P, d ∈Dp, s ∈Spd.
+(22m)
+µpds ≤wpds
+∀p ∈P, d ∈Dp, s ∈Spd
+(22n)
+µpds ≤Dpdsδpd
+∀p ∈P, d ∈Dp, s ∈Spd
+(22o)
+µpds ≥wpds −Dpds(1 −δpd)
+∀p ∈P, d ∈Dp, s ∈Spd
+(22p)
+ρpds ≤opds
+∀p ∈P, d ∈Dp, s ∈Spd
+(22q)
+ρpds ≤Npdsδpd
+∀p ∈P, d ∈Dp, s ∈Spd
+(22r)
+ρpds ≥opds −Npds(1 −δpd)
+∀p ∈P, d ∈Dp, s ∈Spd.
+(22s)
+36

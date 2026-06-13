@@ -1,0 +1,3838 @@
+TITLE: Deep learning for derivatives pricing: a comparative study of asymptotic and quasi-process corrections
+JOURNAL: Annals_OR
+YEAR: 2024
+DOI: https://doi.org/10.1007/s10479-024-06114-1
+---
+
+Annals of Operations Research (2026) 357:113–157
+https://doi.org/10.1007/s10479-024-06114-1
+ORIGINAL RESEARCH
+Deep learning for derivatives pricing: a comparative study of
+asymptotic and quasi-process corrections
+Hideharu Funahashi1
+Received: 2 September 2023 / Accepted: 11 June 2024 / Published online: 8 July 2024
+© The Author(s) 2024
+Abstract
+In this study, we compare two methods for using neural networks to efﬁciently learn the
+price of derivatives. The ﬁrst method, proposed by Funahashi (Quant Financ 21(4):575–592,
+2021a), involves training the neural networks to learn the difference between the derivative
+price and its asymptotic expansion, rather than learning the derivative price directly. The
+target derivative price is then obtained by adding the approximate solution with the predicted
+value of neural networks. This method reduces the required amount of learning data, often by
+a factor of one hundred to one thousand, compared to the case where the derivative price is
+directly learned through neural networks. In the second method, established in this paper, the
+neural networks learn the difference between the derivative price written on the underlying
+asset price that follows the target complex stochastic process and the derivative price written
+on the underlying asset price that has a relatively simple stochastic process that has a closed-
+form solution for the target derivative prices. This method provides an alternative valuation
+method when no efﬁcient approximate solution for the derivative value is observed and if
+one can arbitrarily determine the model parameters of the quasi-process that approximates
+the original process. We also propose a uniﬁed method to determine the model parameters
+of quasi-processes from underlying asset processes. These methods prove valuable in cases
+where general analytic solutions are absent, as seen in widely used ﬁnancial models such as
+the stochastic volatility models. These cases involve time-consuming numerical calculations
+to generate learning data, highlighting the value of the two methods, which signiﬁcantly
+compress calculation times.
+Keywords Artiﬁcial neural network · Derivatives · Local and stochastic volatility model ·
+Asymptotic expansion · Monte Carlo simulation · Stochastic differential equation
+1 Introduction
+Practically, local volatility models (LVMs) and stochastic volatility models (SVMs), or hybrid
+models (LSVMs) that combine them, are widely used to express asset prices. However, exact
+analytical solutions for European option prices written on such underlying assets often do not
+exist. Conversely, in practice, the ﬁnancial installments that have sufﬁcient liquidity to be used
+B Hideharu Funahashi
+hfunahashi@kanagawa-u.ac.jp
+1
+Faculty of Economics, Kanagawa University, 3-27-1 Rokkakubashi, Kanagawa-ku, Yokohama-shi,
+Kanagawa 221-8686, Japan
+123
+
+114
+Annals of Operations Research (2026) 357:113–157
+for model calibration are mostly limited to European options. Therefore, the feasibility of an
+efﬁcient calculation of European option prices is a bottleneck in the modeling of underlying
+assets. As some important studies, we refer to Rubinstein (1983), Dupire (1994), and Marris
+(1999) for LSVs and Hull and White (1987), Heston (1993), and Schöbel and Zhu (1999)
+for SVMs.
+In LSVMs, a stock price S and its volatility v are assumed to follow the stochastic differ-
+ential equation (SDE):
+⎧
+⎨
+⎩
+dSt
+St
+= (r(t) −d(t))dt + σ(St, vt)dW S
+t ,
+dvt = (θ(t) −κ(t)vt) dt + γ (vt)dW v
+t
+(1.1)
+where the short rate r(t), the dividend rate d(t),1 θ(t), and κ(t) are deterministic functions of
+time t, σ(s, v) is a deterministic function of asset price and volatility, γ (v) is a deterministic
+function of volatility, and W S and W v are standard Brownian motions under the risk neutral
+probability measure with dW S
+t dW v
+t = ρdt. It is assumed throughout this study that σ(s, v)
+and γ (v) are inﬁnitely differentiable regarding (s, v) and v, respectively. See, for example,
+Funahashi (2014) for LSVMs.
+Many previous studies have challenged the pricing of ﬁnancial derivatives that lack ana-
+lytic solutions. For example, methods using ﬁnite difference methods (FDM) or Monte Carlo
+(MC) methods to numerically solve stochastic differential equations and obtain solutions
+have been widely proposed. See, for example, Duffy (2006) for FDM and Brigo and Mer-
+curio (2006); Valentina (2023) for MC. However, calibrating the model using these methods
+becomes computationally intensive, as it involves solving an optimization problem through
+techniques such as Newton–Raphson, simplex, and Levenberg–Marquardt. These techniques
+iteratively determine the model parameters until a stopping criterion is met. Practically, fre-
+quent re-calibration is required for trading desks and risk management purposes. Hence,
+the efﬁcient calculation of European option prices remains a signiﬁcant bottleneck in the
+modeling of underlying assets.
+Many approximation methods have been proposed to ﬁll this gap. In this study, we refer
+to some approximation approaches that have high generality. Fouque et al. (2003) used the
+singularperturbationmethodforstochasticvolatilitymodelsandasymptoticallyexpandedthe
+partial differential equation around the invariant distribution of a stochastic volatility model
+and calculated the approximate solution of the option price. Hagan et al. (2002) derived
+the pricing formula for European call and put options when the underlying asset follows
+the SABR model using the singular perturbation method. Methods for approximating the
+transition probability and likelihood function in diffusion processes have also been proposed
+in Aït-Sahalia (2002, 2008). The author approximated the transition probability by expanding
+it in Hermite polynomials and calculated the approximate solution of the log-likelihood
+function when the underlying asset follows a multidimensional process. The asymptotic
+expansion method is also an active approach of discussion. This approach is based on the idea
+of expanding the solution of a stochastic differential equation (SDE) into a power series of a
+small parameter, such as volatility. By truncating the series at a certain order, one can obtain an
+approximate solution of derivative prices, or its Greeks. Takahashi (1999) applied this method
+to compute the European and average call options under general Markovian processes of
+underlying asset prices. Funahashi (2014) applied the Wiener-Itô Chaos expansion to derive
+an approximate closed formula of the vanilla option prices under the LVMs and SVMs,
+respectively.
+1 If one considers the FX rate as the underlying, the foreign interest rate plays the role of the dividend.
+123
+
+Annals of Operations Research (2026) 357:113–157
+115
+The use of artiﬁcial intelligence in the ﬁnancial industry has made remarkable progress in
+the past 10 years. Particularly, in the ﬁeld of ﬁnancial engineering and quantitative ﬁnance,
+deep learning (DL) of artiﬁcial neural networks (ANNs) has been used to solve the problems
+of hedging2 and derivative pricing. Efforts to use DL and ANN as alternatives to numerical
+computation and approximate solutions are actively being researched. Neural networks have
+the potential to handle derivatives with complex payoffs that cannot be analytically solved
+by traditional mathematical models because of their high ability to approximate nonlinear
+functions. Moreover, it can efﬁciently compute several derivatives because of its rapid com-
+putation and parallel processing. An excellent, comprehensive review of the literature can be
+found in Ruf and Wang (2020).
+Neural networks comprise two processes: Training, which is the process of teaching the
+training data to the neural network model, and prediction, which is the process of estimating
+values using the learned results. The former requires generating several training data and
+correcting the hidden layer parameters of the neural network through supervised learning,
+which is a time-consuming process; however, the latter can rapidly estimate values. One
+advantage of using neural networks for pricing derivatives is that they can perform the time-
+consuming learning process ofﬂine and use online estimation in daily training to swiftly
+calculate prices.
+Hernandez (2017) applied the neural network to the calibration procedure to ﬁx the pric-
+ing model parameters for the highly liquid ﬁnancial instrument. The author trained the feed
+forward neural network to directly return calibrated parameters of a derivative pricing model.
+More speciﬁcally, after all of the training sets were generated using an option pricing formula,
+he switched the option price and model parameters in order to directly return the calibrated
+parameters of the pricing model. He showed that this inverse mapping method directly per-
+forms the calibration task using neural networks. An important advantage of this method is
+that it eliminates the need for iterative calculations by pre-learning the relationship between
+model parameters and model prices with a neural network.
+Itkin (2015) suggested some limitations of the inverse mapping method proposed by
+Hernandez (2017), such as the lack of control over the inversion function. Therefore, the
+two-step process has recently become the dominant method: First, a feedforward neural
+network is trained ofﬂine with simulated data to estimate the value function for a given
+asset pricing model. Subsequently, model parameters are calibrated online with a traditional
+optimization method. In this process, the price calculation formula depends on the rapid
+predictions made by the neural network. Similar methods have been adopted in various
+studies, such as Liu et al. (2019a, 2019b) and Horvath et al. (2021), and the references they
+cite. These studies examined different pricing models, such as the Black-Scholes, Heston
+(1993), and Bates (1996) models, and the rough Bergomi model. The results showed that
+ANNs can greatly reduce computation time, thus reducing the importance of calibration
+speed in model selection.
+However, these methods require a high computational cost due to the ofﬂine training.
+This is because, training the ANN model for option pricing directly requires a large number
+of numerical simulations to produce training and testing data. To achieve a high level of
+accuracy in derivative pricing, neural networks usually need between 100,000 and 1,000,000
+training data points. The actual number of data points depends on factors such as the contract’s
+expiry date, the volatility of the underlying asset, and the volatility of the volatility. However,
+ﬁnancial ﬁrms handle thousands of products, each associated with several pricing models.
+To get these training data points ofﬂine, they must run numerical simulations such as MC
+2 See Buehler et al. (2019) for example.
+123
+
+116
+Annals of Operations Research (2026) 357:113–157
+and PDE for each product and model combination. This task is remarkably computationally
+intensive, even if it is performed only once or a few times a year.
+Efﬁciently training neural networks is an important area of research in the ﬁeld of
+derivative pricing. McGhee (2018) proposed an accurate integration scheme for the SABR
+model (instead of the two-factor ﬁnite difference scheme, which is more accurate but time-
+consuming) and computed it 300,000 times to generate data sets for training and testing the
+ANNmodels.TheauthorshowedthatanANNcouldconstructhighlyefﬁcientrepresentations
+of both integration and the two-factor ﬁnite difference scheme. Funahashi (2021a) combined
+the advantages of asymptotic expansion (AE) and neural networks (ANNs) by training an
+ANN to learn the residual term between the option price C and its asymptotic approximation
+¯C. This improved the stability and approximation accuracy of previous research methods
+because (i) the option price, C, can start from an approximated price ¯C that is adjacent to the
+original value, and moreover, the variance of the training data is reduced signiﬁcantly, (ii)
+the residual terms can be approximated in a smooth and inﬁnitely differential function and
+(iii) the derivative of the residual term with respect to volatility is no longer bell-shaped and
+the exploding gradients are less likely to occur. See also Buccioni (2023) for a detailed dis-
+cussion of this approach. Funahashi (2021a) showed empirically that their method can safely
+reduce the training set size by approximately a hundredth to thousands of standard ANN
+trainings with fewer layers and nodes, making the ANN training and prediction more robust.
+This method lowers the computational cost of ofﬂine procedures, which are computationally
+expensive, and simultaneously increases the stability and accuracy of the online prediction
+of derivative prices. Funahashi (2023) applied the same method to price options under the
+SABR model. The author trained an ANN to learn the difference between the implied volatil-
+ity values obtained by numerical computation and those obtained by Hagan’s approximation
+formula. This enables one to calculate the implied volatility of deep-in-the-money and deep-
+out-of-the-money options more accurately and efﬁciently than conventional approximation
+methods. However, this method is not ﬂawless either. Approximation methods are common
+in option pricing and many useful ones exist in the literature. Nonetheless, as the model and
+product become more realistic and complex, approximation formulas often become either
+unavailable or cumbersome and challenging to compute.
+A similar approach is proposed by Kienitz et al. (2020). The authors used the difference
+between a target option price C on an original underlying asset process S, and the option
+price ¯C on a completely different model ¯S, which has a tractable solution of ¯C. The authors
+regard this method as the control variates (CV)3 for neural networks; similar to applications
+for MC simulations, they used a completely different model for the approximate price to
+improve the quality of deep learning applied to option pricing problems. The ANN with
+quasi-process correction with a different model has lower accuracy and slower convergence
+speed than the direct approximation formula with the same model as Funahashi (2021a) did.
+However, it is more widely applicable because it does not require a complex approxima-
+tion formula. This makes it easier to implement and use, hence it can be applied to a wider
+range of options. Notably, as the approximation order increases, the asymptotic approxima-
+tion becomes tedious and messy, and expansion terms increase exponentially. Kienitz et al.
+(2020) do not reveal how to decide on a suitable model and the parameters that correspond
+to the model; hence, their method is not suitable for practical applications. Accordingly, one
+of the aims of this study is to establish a uniﬁed approach to determining suitable parameters
+and appropriate models for the ANN with quasi-process correction. As will be demonstrated
+3 In the context of neural networks (ANNs), the term “control variate” generally refers to a different method.
+In this study, we unify the method of Kienitz et al. (2020) under the name ANN with quasi-process correction.
+123
+
+Annals of Operations Research (2026) 357:113–157
+117
+shortly, if one chooses a model with a different distribution than the original one, the con-
+vergence will be slow, especially in deep-in-the-money and deep-out-of-the-money cases,
+resulting in worse predictions compared to the direct ANN learning.
+This paper is organized as follows: The next section introduces three previous studies that
+form the basis of this study. First, we provide an overview of the asymptotic approximation
+for the price of derivatives. Second, we introduce Funahashi’s (2021a) method for improving
+the stability of neural networks by learning the difference between the price of derivatives
+and the asymptotic approximation. Third, we explain the quasi-process correction for neural
+networks. In Sect.3, we propose and establish a new uniﬁed approach for determining suitable
+parameters and appropriate models for the ANN with quasi-process correction. Section4 is
+devoted to numerical examples. By comparing the methods of Funahashi (2021a) and Kienitz
+et al. (2020) using the European and Barrier options, we show that the former method has
+signiﬁcantly higher accuracy for learning and prediction than the latter method. However,
+as will be observed, the latter method does not require a complex approximation, and if
+one can appropriately select the base approximation model and set the correct parameters
+of the selected models, the latter method requires one of ten training data sets compared to
+directly learning the price of derivatives even if a relatively simple model is used. The latter
+method proves particularly advantageous in cases where efﬁcient approximation prices for
+derivatives are unavailable. In Sect.5, we examine the circumstances in which our proposed
+neural network effectively learns derivative prices in the context of a complex local stochastic
+volatility model. We utilized the SABR model as a foundational quasi-process. Finally, Sect.6
+concludes this paper.
+2 Backgrounds
+Before proposing our deep learning method for derivative pricing, this section summarizes
+the results obtained in previous studies to provide a foundation for the analysis given in the
+next section. To enhance intuitive understanding, in this section, we begin with a relatively
+simple model and progressively extend it to LSVM (1.1).
+The price of the underlying asset St(ω) = St for 0 ≤t ≤T is assumed to follow the SDE
+dSt
+St
+= (r(t) −d(t)) dt + σ(St, t)dW S
+t
+(2.1)
+where {Wt}t≥0 is a standard Brownian motion under the risk-neutral measure. This model is
+called a local volatility model, which is a simple version of (1.1).
+Suppose that the SDE (2.1) has the solution, and we denote ∥g∥2
+t =
+ t
+0 g2(u)du, Jt(g) =
+ t
+0 g(u)dW S
+u , we then apply Itô’s formula to obtain
+St = F(0, t) exp
+
+Jt(σ) −1
+2∥σ∥2
+t
+
+(2.2)
+where F(0, t) = S0e
+ t
+0 (r(s)−d(s))ds is the forward price.
+2.1 Wiener Itô Chaos expansion
+We assume the following condition, which can be regarded as a stochastic version of the
+Picard iteration:
+123
+
+118
+Annals of Operations Research (2026) 357:113–157
+Assumption 2.1 Let S(0)
+t
+= F(0, t), where F(0, t) = S0e
+ t
+0 (r(s)−d(s))ds, and S(m)
+t
+is deﬁned
+successively by
+S(m+1)
+t
+= F(0, t) exp
+
+Jt(σ (m)) −1
+2∥σ (m)∥2
+t
+
+,
+(2.3)
+where σ (m)(t) = σ(S(m)
+t
+, t). It is assumed throughout the rest of the study that S(m)
+t
+(ω)
+converges to St(ω) as m →∞for P-a.s. ω ∈.
+Although Funahashi and Kijima (2015) gave a sufﬁcient condition for the convergence in
+Assumption 2.1, the condition is often too strong for practical uses. Hence, we only assume
+the successive substitution (2.3) in the following development.
+Under this assumption, the third-order chaos expansion approximation of the process is
+as follows:
+Xt :=
+St
+F(0, t) −1 = a1(t) + a2(t) + a3(t) + R4,
+(2.4)
+where Rn represents the contributions of the nth or higher-order multiple stochastic integrals.
+a1, a2, a3 are ﬁrst, second, and third-order chaos expansion terms, respectively:
+a1(t) =
+t
+0
+p1(s)dW S
+s ,
+a2(t) =
+t
+0
+p2(s)
+⎛
+⎝
+s
+
+0
+σ0(u)dW S
+u
+⎞
+⎠dW S
+s ,
+a3(t) =
+t
+0
+p3(s)
+⎛
+⎝
+s
+
+0
+σ0(u)
+⎛
+⎝
+u
+
+0
+σ0(r)dW S
+r
+⎞
+⎠dW S
+u
+⎞
+⎠dW S
+s ,
++
+t
+0
+p4(s)
+⎛
+⎝
+s
+
+0
+p5(u)
+⎛
+⎝
+u
+
+0
+σ0(r)dW S
+r
+⎞
+⎠dW S
+u
+⎞
+⎠dW S
+s .
+Notably, a1(t) follows a normal distribution with zero mean and variance t =
+ t
+0 p2
+1(s)ds.
+pk(t) are all deterministic functions
+p1(s) :=
+⎧
+⎨
+⎩σ0(s) + F(0, s)σ ′
+0(s)
+⎛
+⎝
+s
+
+0
+σ 2
+0 (u)du
+⎞
+⎠+ 1
+2 F2(0, s)σ ′′
+0 (s)
+⎛
+⎝
+s
+
+0
+σ 2
+0 (u)du
+⎞
+⎠
+⎫
+⎬
+⎭,
+p2(s) := σ0(s) + F(0, s)σ ′
+0(s),
+p3(s) := σ0(s) + 3F(0, s)σ ′
+0(s) + F2(0, s)σ ′′
+0 (s),
+p4(s) := σ0(s) + F(0, s)σ ′
+0(s),
+p5(s) := F(0, s)σ ′
+0(s),
+with σ0(t) = σ(F(0, t), t), σ ′
+0(t) = ∂xσ(x, t)|x=F(0,t), σ ′′
+0 (t) = ∂xxσ(x, t)|x=F(0,t).
+We can justify this approximation through an analysis based on small volatility expansion,
+where we assume small volatility. Let us denote f0(t) = σ0(t), fi(t) = pi(t) for i = 1, . . . , 5
+and ¯f (t) = maxk fk(t) ∈L2([0, t]) for all t. We then have
+E[a2
+n] ≤∥f ∥2n
+t /n!
+(2.5)
+Therefore, if ∥¯fk∥t is sufﬁciently small, the sum of iterated integrals beyond the nth order
+can be approximated as zero. More intuitively, to emphasize that the volatility is small, we
+rewrite σ0 →ϵσ0 and pi(t) →ϵ pi(t) and obtain
+a1(t) →ϵa1(t), a2(t) →ϵ2a2(t), a3(t) →ϵ3a3(t), R4 →ϵ4R4.
+(2.6)
+123
+
+Annals of Operations Research (2026) 357:113–157
+119
+We now insert these results into (2.4) to get
+Xt :=
+St
+F(0, t) −1 ≈ϵa1(t) + ϵ2a2(t) + ϵ3a3(t) + O(ϵ4).
+(2.7)
+Moreover, we note that because the right-hand side of (2.5) is divided by the factorial of n, it
+accelerates the convergence speed of E[a2
+n] →0 (n →∞) and improves the approximation
+accuracy of (2.4). In this study, we omit terms involving iterated integrals higher than the
+third order; R4 ≈0 for n ≥4.
+Let S(ξ) be the characteristic function of Xt. Substituting (2.4), we obtain
+S(ξ) = E[eiξ Xt ] ≈E[eiξ(a1(t)+a2(t)+a3(t))]
+= E
+
+eiξa1(t)
+
+1 + iξa2(t) + iξa3(t) −1
+2ξ2a2
+2(t) + R4
+
+(2.8)
+Based on the same approximation strategy to ignore R4 ≈0, we get
+E[eiξa1(t)R4] ≤E[|eiξa1(t)|2]
+1
+2 E[|R4|2]
+1
+2 = E[|R4|2]
+1
+2 ≈0.
+Hence, S(ξ) reduces to
+(ξ) ≈E
+
+eiξa1(t)
++ iξ E
+
+eiξa1(t)E[a2(t)|a1(t)]
+
++iξ E
+
+eiξa3(t)E[a2(t)|a1(t)]
+
+−1
+2ξ2E
+
+eiξa1(t)E[a2
+2(t)|a1(t)]
+
+.
+(2.9)
+However, using formulas provided in Appendix D of Funahashi and Kijima (2015), which
+present one-dimensional (1D) versions of Lemma 2.1 in Takahashi (1999), we can explicitly
+compute the conditional approximations as follows:
+E[a2(t)|a1(t) = x] = q S
+1 (t)
+
+x2
+( S
+t )2 −1
+ S
+t
+
+,
+(2.10)
+E[a3(t)|a1(t) = x] = q S
+2 (t)
+
+x3
+( S
+t )3 −
+3x
+( S
+t )2
+
+,
+(2.11)
+E[a2
+2(t)|a1(t) = x] = q S
+3 (t)
+
+x4
+( S
+t )4 −
+6x2
+( S
+t )3 +
+3
+( S
+t )2
+
++ q S
+4 (t)
+
+x2
+( S
+t )2 −1
+ S
+t
+
++q S
+5 (t),
+(2.12)
+where the exact formulas of deterministic functions t and qi(t) are given as
+ S
+t =
+t
+0
+p2
+1(s)ds,
+q S
+1 (t) =
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+σ0(u)p1(u)du
+⎞
+⎠ds,
+q S
+2 (t) =
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+σ0(u)p1(u)
+⎛
+⎝
+u
+
+0
+σ0(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p1(s)p4(s)
+⎛
+⎝
+s
+
+0
+p1(u)p5(u)
+⎛
+⎝
+u
+
+0
+σ0(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds,
+123
+
+120
+Annals of Operations Research (2026) 357:113–157
+q S
+3 (t) = q2
+1(t),
+q S
+4 (t) = 2
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+p1(u)p2(u)
+⎛
+⎝
+u
+
+0
+σ 2
+0 (r)dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+σ0(u)p2(u)
+⎛
+⎝
+u
+
+0
+σ0(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p2
+2(s)
+⎛
+⎝
+s
+
+0
+σ0(u)p1(u)du
+⎞
+⎠
+2
+ds,
+q S
+5 (t) =
+t
+0
+p2
+2(s)
+⎛
+⎝
+s
+
+0
+σ 2
+0 (u)du
+⎞
+⎠ds.
+Remark 2.1 As an example, when S(t) follows a displaced diffusion (DD) model
+dSt = (r(t) −d(t))Stdt + ¯ϵ
+ ¯βSt + (1 −¯β)F(0, t)
+
+dW S
+t ,
+(2.13)
+we have σ0(s) = ¯ϵ, p1(s) = ¯ϵ, p3(s) = ¯β, p4(s) = ¯β, and p5(s) = −(1 −¯β)¯ϵ. Hence,
+the six deterministic functions, t and qi (i = 1, . . . , 5), S
+t
+= ¯ϵ2t, q S
+1 (t) =
+1
+2 ¯β ¯ϵ4t2,
+q S
+3 (t) = 1
+6 ¯β2 ¯ϵ6t3, q S
+3 (t) = 1
+4 ¯β2 ¯ϵ8t4, q S
+4 (t) = ¯β2 ¯ϵ6t3, q S
+5 (t) = 1
+2 ¯β2 ¯ϵ4t2.
+Because a1(t) follows a normal distribution with zero mean and variance S
+t and the con-
+ditional expectations in S(ξ) are polynomial functions, one can directly apply the Fourier
+inversion formula to obtain the probability distribution function fXt (x). More speciﬁcally,
+for any polynomial functions h(x) and g(x), we have
+1
+2π
+
+R
+e−ikyg(−ik)E
+
+h(Y)eikY 
+dk = g
+ ∂
+∂y
+
+h(y)n(y; 0, ),
+(2.14)
+where Y ∼N(0, ) and n(x; a, b) is the normal density function with mean a and variance
+b. Notably, the aforementioned formula is easily obtained by differentiating both sides of
+1
+2π
+
+R
+e−ikyE
+
+h(Y)eikY 
+dk = h(y)n(y; 0, )
+regarding y.
+By applying (2.14) to each term in (2.9), the probability density function of Xt is approx-
+imated as
+˜fXt (x) = 1
+2n (x; 0, t)
+q3(t)
+ 3t
+h6
+
+x
+√ t
+
++ (2q2(t) + q4(t))
+ 2t
+h4
+
+x
+√ t
+
++ 2q1(t)
+√ t
+3 h3
+
+x
+√ t
+
++ q5(t)
+ t
+h2
+
+x
+√ t
+
++ 2
+
+,
+(2.15)
+where hn(t) is Hermite polynomial of order n:
+hn(x) = (−1)nex2/2 dn
+dxn e−x2/2,
+n = 1, 2, . . . ,
+(2.16)
+123
+
+Annals of Operations Research (2026) 357:113–157
+121
+with h0(x) = 1.4
+Note that the value of the European call option with maturity T and strike K is given by
+C S(t) = E
+⎡
+⎣e
+−
+t
+0
+r(s)ds
+(St −K)+
+⎤
+⎦= S(0)
+∞
+
+−
+K
+
+x + 
+K
+
+fXt (x)dx,
+where 
+K := 1 −
+K
+F(0,t). Hence, it follows that
+C S(t) ≈C S
+App(t)
+where the approximation holds by following our approximation strategy, and C S
+App(t) is given
+by
+C S
+App(t) ≈S0n( 
+K; 0, t)
+2
+q3(t)
+ 2t
+h4
+
+
+K
+√ t
+
++ (q4(t) + 2q2(t))
+ t
+h2
+
+
+K
+√ t
+
+−2q1(t)
+√ t
+h1
+
+
+K
+√ t
+
++ q5(t) + 2 t
+
++S0 
+K
+ 
+1 −(−
+K/
+!
+ t)
+"
+,
+(2.17)
+where (x) is the cumulative distribution function of the standard normal distribution.
+Remark 2.2 Thus far, we have derived the approximation formula for European options in
+the framework of the local volatility model. Notably, as demonstrated in Funahashi (2014),
+the formula (2.17) retains its identical form even when inﬂuenced by stochastic volatility,
+with t and pi(t) for i = 1, . . . , 5 undergoing adjustments. The functions in the stochastic
+local volatility model are detailed in Appendix A.
+Moreover, approximate closed-form solutions for a wide range of exotic derivatives,
+including the Barrier option, Asian options, Basket options, and VWAP options, can be
+obtained using the deterministic functions S
+t and qi(t) (i = 1, . . . , 5). See Funahashi and
+Higuchi (2018) and Funahashi and Kijima (2014) for detailed discussions. Below, we denote
+the price of these options by C S and their approximate closed-form formula by C S
+App in the
+following sections.
+2.2 ANN with asymptotic correction
+Let us denote ξ M = {ξM
+1 , ξM
+2 , . . .} by the input data observed from the market or determined
+in contract, including interest rate r, strike K, spot asset price S0, and maturity T : ξ M =
+{r, K, S0, T , . . .}. ξ P = {ξP
+1 , ξP
+2 , . . .} denotes model parameters, for example, the DD model
+in (2.13) has two model parameters ξ P = { ¯β, ¯ϵ}. Then, the option price with strike K and
+maturity T written on the asset S is given by
+C S(ξ ) = E[e−rT g(ST )]
+(2.18)
+where g(·) is a payoff function and ξ = {ξ M,ξ P}.
+Various ANN approaches have emerged for derivative pricing and ﬁnancial asset pricing
+model calibration. One commonly employed technique involves utilizing deep learning to
+predict option prices. This process generally follows these steps:
+4 For example, we have h1(x) = x, h2(x) = x2 −1, h3(x) = x3 −3x, h4(x) = x4 −6x2 + 3, h6(x) =
+x6 −15x4 + 45x2 −15 etc.
+123
+
+122
+Annals of Operations Research (2026) 357:113–157
+(1) generate N sets of input vectors ξ k for k = 1, 2, . . . , N,
+(2) obtain C S(ξ k) for k = 1, 2, · · · , N using numerical methods such as PDF and MC,
+(3) train the ANN model, that is, minimizing the loss function to determine weights and
+biases in the ANN model using all pairs of inputs and outputs {ξ k, C S(ξ k)}k=1,...,N, to
+obtain a map
+MC : ξ →C S
+ANN
+, where C S
+ANN is an ANN prediction of the derivative price C S, and
+(4) predict option price at an arbitrary parameter set ξ
+C S(ξ ) ≈C S
+ANN(ξ )
+(2.19)
+One of the beneﬁts of applying ANNs in the ﬁnancial sector is that they can split the
+pricing process into two parts: Ofﬂine training steps (1)–(3), which use ANN models to
+obtain an accurate estimate of option prices, and prediction step (4), which forecasts and
+calculates option prices online with the trained ANN. The ofﬂine training is computationally
+intensive because it needs abundant numerical simulations to generate training and testing
+data, whereas the online prediction is fast enough for real-world applications. After the ANN
+models have learned the connection weights, the network can be reused to predict option
+prices for new input patterns. Therefore, practitioners can beneﬁt from the online prediction
+with quick computations in their daily pricing work and perform the ANN training, which
+consumes much time, ofﬂine when they have enough time at hand.
+The ofﬂine training is done only once or a few times a year, but ﬁnancial ﬁrms handle
+various products with many pricing models. So, for the ofﬂine training, they need to run
+several hundred thousand to a few million numerical simulations for each product, which
+demands huge computational costs. Funahashi (2021a) combined the advantages of asymp-
+totic expansion (AE) and ANN, which trained the residual term
+DS(ξ ) = C S(ξ ) −C S
+App(ξ )
+between the option price, C S(ξ ), and its asymptotic approximation, C S
+App(ξ ), to improve the
+stability and approximation accuracy. More speciﬁcally, the author proposed a mapping
+MD : ξ →DANN
+and predicted the option value of arbitrary input ξ to be
+C S(ξ ) ≈C S
+App(ξ ) + DS
+ANN(ξ )
+(2.20)
+If the base approximation is chosen appropriately, the variance of the target outputs
+{DS(ξ k)} for k = 1, . . . , N is very small compared to that of {C S(ξ k)}; hence, the pre-
+diction and convergence of the mapping MD become stable and fast.
+Moreover, for instance, using the WIC expansion, the approximate option price is deter-
+mined by the sum of the product of polynomials by a CDF and PDF of the standard normal
+distribution,5 DS(ξ ) is a smooth and inﬁnitely differential function. Hence, it is useful not
+only to improve the efﬁciency of the training ANN but also to stabilize the computation of
+the Greeks guaranteed by Hornik et al. (1990).
+Consequently, by employing European and Barrier options in the framework of the LSVM
+in (1.1), Funahashi (2021a) empirically shows that their ANN training and prediction meth-
+ods demonstrate robustness. Additionally, their approach enables a signiﬁcant reduction in
+5 Recall that the European option price is approximated by (2.17) and approximations of Asian and Barrier
+options can be found in Funahashi and Kijima (2014) and Funahashi and Higuchi (2018).
+123
+
+Annals of Operations Research (2026) 357:113–157
+123
+training set size by a factor ranging from a hundredth to thousands, all while utilizing fewer
+layers and nodes in the ANN architecture. This outcome indicates that the extensive numer-
+ical computations required for derivative price calculations, which constitute a signiﬁcant
+portion of the calculation time, can be effectively reduced by a factor of 100–1000. Thus, the
+computational cost associated with resource-intensive ofﬂine procedures can be substantially
+alleviated. Moreover, this reduction in computation overhead simultaneously improves the
+stability and accuracy of online predictions of derivative prices.
+2.3 ANN with quasi-process correction
+ANNswithanasymptoticcorrectionapproachrequirethederivationofanapproximateoption
+formula and the prediction of the impact of the residual terms of the approximation option
+formula using ANNs. Generally, it can improve the ANN prediction as the approximation
+order increases. Moreover, it can estimate the degree of error, and hence, one can safely
+choose an appropriate C S
+App. Note that C S
+App could be a general approximation formula;
+Kienitz et al. (2020) and Funahashi (2022) examined SABR models using the approximate
+implied normal and lognormal volatility derived by Hagan et al. (2002), respectively, and
+Funahashi (2022) tested the free-boundary SABR model using the approximation formula
+proposed in Antonov et al. (2015).
+However, as the approximation order increases, the calculation becomes tedious and
+messy, and expansion terms increase exponentially. For exotic derivatives under LSVM,
+it is generally difﬁcult to obtain an approximation solution. Although Funahashi and Higuchi
+(2018) derived an approximate pricing formula for the Barrier option under the Heston model
+using a WIC expansion, it becomes messy and requires many calculations to derive these
+formulas.
+Conversely, Kienitz et al. (2020) consider this method as the control variate (CV) for neural
+networks. Similar to applications for MC simulations, they used a completely different model,
+¯S, for the approximate price to improve the quality of deep learning applied to option pricing
+problems. They focused on the fact that for each parameter, ξ k = {ξ M,ξ P}, of the original
+process, if the model parameters of the approximation process, ¯ξ k = {ξ M
+k , ¯ξ P
+k }, are suitably
+chosen, then a large portion of the price is already mimicked by the approximate price
+D(ξ k, ¯ξ k) = C S(ξ k) −C ¯S
+App(¯ξ k).
+(2.21)
+Motivated by this fact, they generated the mapping
+M ¯D : {ξ k, ¯ξ k} →DANN.
+The authors examined the use of the Black-Scholes price as an approximate benchmark
+for pricing European options in the Heston (1993) model, and similarly, they employed a
+co-terminal European swaption as an approximation for pricing Bermudan swaptions in the
+Hull-White mode.
+Although the accuracy and speed of convergence are inferior when compared with using
+the direct approximation formula with the same model proposed in Funahashi (2021a), the
+ANN with quasi-process correction can be more widely applicable; the error related to the
+model differences is left to the learning process of the neural network without needing to
+derive a complex asymptotic formula. However, in most cases, the problem of determining
+appropriate models for C S
+App and suitable parameters, ¯ξ k, are not clear; hence, their method
+cannot apply to general problems. As will be subsequently discussed, it is essential to select
+the appropriate C S
+App carefully. If one selects a model with a different distribution than the
+123
+
+124
+Annals of Operations Research (2026) 357:113–157
+original one, the convergence will be slow, especially in deep-in-the-money and deep-out-
+of-the-money cases. Moreover, the prediction will be inferior to direct ANN learning.
+Before running the ANN process, ¯ξ k = {ξ M
+k , ¯ξ P
+k } is estimated from ξ k = {ξ M
+k ,ξ P
+k }
+under the conditions, ξ M
+k = {r, K, S0, T , . . .}. However, recall that our ANN ﬁrst generates
+a mapping M ¯D using training data
+{{ξ k, ¯ξ k}, D({ξ k, ¯ξ k})}k=1,2,...,N
+where D({ξ k, ¯ξ k}) is deﬁned in (2.21), and then predicts the option price at an arbitrary
+parameter set {ξ , ¯ξ }:
+C S(ξ ) ≈C ¯S(¯ξ ) + DANN({ξ , ¯ξ }).
+(2.22)
+¯ξ used in training (2.21) should be stably consistent with that used in prediction (2.22);
+otherwise, because the base approximation oscillates, the predicted value jumps and produces
+a poor result.
+Notably, for off-line training, one can utilize prices of the target derivatives, C S(ξ k),
+to calibrate ¯ξ k because one has already derived training data using numerical simulation.
+However, recall that our original goal is to ﬁnd C S(ξ k) from ξ k and ¯ξ k using the mapping
+M ¯D; hence, for online prediction, one does not have C S(ξ k) and cannot obtain ¯ξ k using
+calibration. Hence, by some means, we must estimate the appropriate parameter ¯ξ k from
+parameter ξ k without using price. Moreover, recall that only one strike is available in ξ k
+to generate ¯ξ k. Hence, even if one obtains suitable implied volatility at the strike, K, ¯ξ P
+changes from strike to strike because the pricing model incorporates the volatility skew and
+smile across different strikes, which causes the base approximation to be unstable.
+In the next section, we propose a replication strategy,
+S ≈¯S,
+that can minimize the error and unsuitability for the ANN training and prediction. In the
+following section, we will show that this approach is free from the contract parameters,
+including strikes; hence, it ﬁts our purpose.
+3 Proposed method
+One aim of this study is to establish a uniﬁed approach to determining the suitable parameters
+and appropriate models for the ANN with quasi-process correction. To achieve this goal, we
+use a replication technique proposed by Funahashi (2021b) to replicate a complex model St
+from a simpler model ¯St, for which the closed-form solution of the target contingent claim
+is available.
+From (2.9), if one can set the parameters of the simpler model, ¯St, such that
+ ¯S
+t = S
+t
+and q ¯S
+i (t) = q S
+i (t)
+(3.23)
+for i = 1, . . . , 5, the characteristic functions of the target process, St, can be approximated
+by that of ¯St, that is,
+S(ξ) ≈ ¯S(ξ).
+Fromtheuniquerelationshipbetweenthedistributionfunctionandthecharacteristicfunction,
+the marginal distribution of St can be approximated by that of ¯St and the European call option
+123
+
+Annals of Operations Research (2026) 357:113–157
+125
+price of S with maturity T , and strike K is approximated by that of ¯S because
+C S
+App(t) = C ¯S
+App(t).
+Before proceeding, we review the assignment of the functions S
+t and q S
+i (t) for i =
+1, . . . , 5, and determine the priority of the equation (3.23) with an analysis based on a
+small volatility explanation. From (2.6), a1(t) is O(ϵ), which follows a normal distribution
+N(0, S
+t ), where S
+t is O(ϵ2). Hence, if ϵ is sufﬁciently small, then St is approximated by
+the normal process
+St ≈F(0, t)(1 + a1(t))
+(3.24)
+with mean F(0, t) and variance F(0, t)2 t. However, a2(t) and a3(t) are O(ϵ2) and O(ϵ3),
+respectively, which increases the accuracy of Xt (and thus, St) when ϵ is not negligible. q S
+1 (t),
+q S
+2 (t), and q S
+3 (t) −q S
+5 (t) are derived from the conditional expectations E[a2(t)|a1(t) = x],
+E[a3(t)|a1(t) = x], and E[a2
+2(t)|a1(t) = x] in (2.9), whose asymptotic orders are O(ϵ2),
+O(ϵ3), and O(ϵ4), respectively. These deterministic functions correct the characteristic func-
+tion, (ξ), by including the inﬂuence of a2(t), a3(t), and a2
+2(t), respectively. Thus, the
+functions q1(t), q2(t), and q3(t) determine the size of the corrections of the asymptotics of
+the order O(ϵ2), O(ϵ3), and O(ϵ4), respectively. Therefore, the ﬁrst priority is matching t
+and q1(t), followed by q2(t), and then q3(t) −q5(t).
+As an example of the simple process, the DD model in (2.13) has only two parameters, ¯β
+and ¯ϵ, and hence, no solution exists for the six equations in (3.23). Therefore, we match the
+ﬁrst two equations: ¯S
+t = S
+t and q ¯S
+1 = q S
+1 . Recall that because
+ ¯S
+t = (¯ϵ∗)2t,
+q ¯S
+1 (t) = 1
+2
+¯β∗(¯ϵ∗)4t2,
+(3.25)
+optimal ¯ϵ∗and ¯β∗can be explicitly determined as
+¯ϵ∗=
+#
+ S
+t
+t ,
+¯β∗= 2q S
+1 (t)
+( S
+t )2 .
+(3.26)
+The European option price under the DD model can be analytically obtained as
+C ¯S
+DD(T , K; ¯β, ¯σ) = e
+−
+t
+0
+r(s)ds
+Bl
+ F(0, T )
+¯β
+, K + 1 −¯β
+¯β
+F(0, T ), ¯β ¯ϵ
+√
+T
+
+,
+(3.27)
+where
+Bl(F, K, v) = F(0, T )(d1(F, K, v)) −K(d2(F, K, v)),
+(3.28)
+with
+d1(F, K, v) = log
+ F
+K
+
++ v2
+2
+v
+,
+d2(F, K, v) = log
+ F
+K
+
+−v2
+2
+v
+.
+Hence, the European option price under the SDE (2.1) is approximated by
+C S(S, T ) ≈C ¯S
+DD(T , K; ¯β∗, ¯σ ∗)
+where the error can be explicitly estimated as
+C S(S, T ) −C ¯S
+DD(T , K; ¯β∗, ¯σ ∗)
+≈C S
+App(ξ ) −C ¯S
+App(¯ξ )
+123
+
+126
+Annals of Operations Research (2026) 357:113–157
+= S0n( 
+K; 0, t)
+2 4t
+
+D3(t)( 
+K 4 −6 
+K 2 t + 3 2
+t )
++ 2
+t (D4(t) + 2D2(t))
+ 
+K 2 − t
+
++ D5(t) 4
+t
+
+(3.29)
+where t = S
+t = ¯S
+t and Di(t) = q S
+i (t) −q ¯S
+i (t) for i = 2, . . . , 5. Note that the leading
+terms in (2.17) vanish in (3.29).
+The Black-Scholes model is another useful example
+dSt
+St
+= rdt + ¯ϵdW S
+t .
+(3.30)
+In this case, only one parameter can be controlled; hence, this model is not very accurate at
+explaining complex models. However, it is very ﬂexible and can easily match the variance,
+ ¯S
+t = S
+t , with an optimal parameter ¯ϵ∗:
+¯ϵ∗=
+#
+ S
+t
+t .
+(3.31)
+In Sect.5, we compare a direct mapping, MC, and our method, MD and M ¯D, with three
+base approximations: Approximate close-form solution using Wiener-Itô chaos expansion,
+and replication method using DD and BS models as base approximations.
+4 Artiﬁcial neural networks
+ANNs are a type of machine learning that are developed based on biological neural networks.
+The perceptron, which is the prototype of ANNs, was proposed by Rosenblatt (1958), and
+later the backpropagation algorithm was developed and widely known by Rumelhart et al.
+(1986), which made it possible to efﬁciently perform the calculations necessary for updating
+the parameters in the learning of multilayer neural networks. Today, ANNs are successful in
+many ﬁelds. The background of this success includes factors such as the development of the
+internet and infrastructure, the availability of large-scale data that can be easily obtained to
+train neural networks without overﬁtting for complex real-world problems, and the dramatic
+improvement of computer capabilities such as GPUs and multicore CPUs. For the history of
+multilayer neural networks, we cite Okatani (2015) and the references therein.
+4.1 Feedforward neural network
+Figure 1 shows the outline of a feedforward neural network. A perceptron (Fig.1a) is a simple
+unit of a neural network that receives the input x = {x1, . . . , xn}, multiplies it by the weights
+W = {w1, . . . , wn} that represent the strength of the connections between the layers, and
+adds a term called bias b to perform a linear transformation
+u =
+n
+$
+i=1
+wi xi + b.
+Subsequently, it applies a nonlinear activation function f to the value and computes the
+output
+z = f (u).
+123
+
+Annals of Operations Research (2026) 357:113–157
+127
+Fig. 1 Left-hand side panel indicates the perceptron, and the right-hand side panel shows a feedforward neural
+network
+The activation function determines whether a neuron should be activated or not. Some exam-
+ples of activation functions are sigmoid, tanh, ReLU, and softmax. Refer to Nwankpa et al.
+(2018) for an example.
+A feedforward neural network is a neural network that has a structure in which units
+(perceptrons) arranged in layers are connected between adjacent layers, and information
+propagates from the input side to the output side in one direction without any feedback loops.
+Hence, it is sometimes called a multi-layer perceptron. The feedforward neural network in
+Fig.1b consists of L layers, and we denote each layer from left to right as l = 2, . . . , L −1.
+In this case, l = 1 is the input layer, l = L is the output layer, and l = 2, . . . , L −1 are
+called hidden layers. Moreover, we assume that each layer l has nl nodes arranged in it. From
+now on, we put the layer number on the right shoulder of each variable to distinguish the
+input and output of each layer. When the input z(1) = x is given to this network, the l−th
+(l = 2, . . . , L −1) hidden layer receives the output z(l) from the previous layer and calculates
+u(l+1) = W (l+1)z(l) + b(l+1)
+(4.1)
+and then applies the activation function f to obtain the output
+z(l+1) = f (u(l+1))
+(4.2)
+This way, information is propagated from the input layer through the hidden layer to the
+output layer, resulting in the ﬁnal output being obtained as
+y = z(L).
+Therefore, a feedforward neural network can be regarded as a deep nested function that gives
+the output
+y(x;w) = ¯f (W (L) f (W (L−1) f (W (L−2) · · · f (W (2)x + b(2)) + b(L−1)) + b(L))
+(4.3)
+depending on the values of the weights W (l+1) and biases b between the layers, given the
+input x. Here, w = {w1, . . . , wP} is a vector consisting of all elements of W (l+1) and b and
+¯f is the activation function for output layer.
+123
+
+128
+Annals of Operations Research (2026) 357:113–157
+In neural networks, when a training data consisting of pairs of input x i and output yi is
+given
+{(x 1, y1), (x 2, y2), . . . , (x N, y N), }
+(4.4)
+the goal is to adjust w to reproduce these input–output pairs
+y(x i;w) ≈yi,
+(4.5)
+and to estimate an appropriate output y for an unknown input x. In this case, an error function
+E(w) is used as a measure of the closeness of (4.5). Additionally, it is common to perform
+data normalization as a preprocessing step, as it can hinder learning if a bias in the training
+data is observed. The most widely used method involves normalizing the input–output data
+x i = {xi1, . . . , xin} (i = 1, . . . , N) by
+xi j =
+x′
+i j −¯x′
+j
+σ j
+,
+¯x′
+j = 1
+N
+N
+$
+i=1
+x′
+i j, σ j =
+%
+1
+N
+$N
+i=1(x′
+i j −¯x′
+j)2.
+for each component j ( j
+=
+1, . . . , n) of the original input–output vector x ′
+i
+=
+{x′
+i1, . . . , x′
+in} (i = 1, . . . , N).
+In this study, we use the squared error as the error function
+E(w) =
+N
+$
+i=1
+Ei(w),
+Ei(w) = 1
+2∥yi −y(x i;w)∥2.
+(4.6)
+In other words, the purpose of learning is to ﬁnd
+w∗= arg max
+w
+E(w).
+(4.7)
+4.2 Backpropagation
+Generally, an optimization problem (4.8) uses methods such as Newton–Raphson, simplex,
+and Levenberg–Marquardt that iteratively determine the model parameters until a stopping
+criterion is met. However, in general, in neural network problems, the scale of optimization
+becomes large, making it difﬁcult to calculate second- or higher-order derivatives. Therefore,
+gradient descent methods, which only require ﬁrst derivatives, are used. In gradient descent
+methods, starting from a preset initial value w0, the current weight wm is updated repeatedly
+w(m+1) = w(m) −ϵE,
+E =
+ ∂E
+∂w1
+, . . . , ∂E
+∂wP
+T
+(4.8)
+to search for a local minimum point w∗. Here, ϵ is a coefﬁcient that determines the size of
+the update and is called the learning rate.
+In (4.6), the error function was calculated using all the training data, but in each step m,
+a suitable set Am (called a mini-batch, |Am| = Mm ≤N) is selected from the training data,
+and the weight is updated in that unit.
+w(m+1) = w(m) −ϵE Am(w),
+E Am(w) =
+1
+Mm
+$
+i∈Am
+Ei(w).
+(4.9)
+Particularly, the method of updating the parameters with the size of the mini-batch set to
+(Mm = 1 is called stochastic gradient descent (SDG)). In (4.8), the objective function to be
+minimized is always the same, so once it falls into a local solution, it cannot escape from
+123
+
+Annals of Operations Research (2026) 357:113–157
+129
+there, but in SDG, by randomly selecting samples in each step m, the objective function is
+different every time; hence, it can greatly reduce the risk of falling into an undesirable local
+minimum point. Particularly, Mm = 8 −128 is often used to enjoy the advantages of SDG
+and the beneﬁts of efﬁciently implementing parallel computing.
+As discussed thus far, the efﬁcient calculation of the gradient of the error function is
+crucial for performing gradient descent. However, in deep layers (layers close to the input)
+of a feedforward neural network, the gradient of the error function ( ∂E(w)
+∂w(l)
+ji
+and ∂E(w)
+∂b(l)
+j
+) can
+become intricate. The backpropagation method offers an efﬁcient approach to computing
+these gradients. We consider differentiating En(w) regarding the weight of the lth layer, and
+from the chain rule we get
+∂En(w)
+∂w(l)
+j,i
+= ∂En(w)
+∂u(l)
+j
+∂u(l)
+j
+∂w(l)
+j,i
+(4.10)
+However, because u(l)
+j
+= &nl−1
+i=1 w(l)
+j,iz(l−1)
+i
++ b(l)
+j , the second term on the right-hand side is
+given by
+∂u(l)
+j
+∂w(l)
+j,i
+= z(l−1)
+i
+.
+(4.11)
+Concurrently, when considering the ﬁrst term on the right-hand side, the effect of a change
+in u(l)
+j on En(w) is transmitted through u(l+1)
+k
+= &n(l)
+j=1 w(l+1)
+k, j
+f (u(l)
+j ) + b(l+1)
+k
+; hence, using
+the chain rule again, we obtain
+∂En(w)
+∂u(l)
+j
+=
+nl+1
+$
+k=1
+∂En(w)
+∂u(l+1)
+k
+∂u(l+1)
+k
+∂u(l)
+j
+=
+nl+1
+$
+k=1
+∂En(w)
+∂u(l+1)
+k
+w(l+1)
+k, j
+f ′(u(l)
+j )
+If we deﬁne δ(l)
+j
+= ∂En(w)
+∂u(l)
+j
+, then
+δ(l)
+j
+= f ′(u(l)
+j )
+nl+1
+$
+k=1
+δ(l+1)
+k
+w(l+1)
+k, j
+.
+(4.12)
+Therefore, substituting (4.11) and (4.12) into (4.10), we obtain
+∂En(w)
+∂w(l)
+j,i
+= δ(l)
+j z(l−1)
+i
+(4.13)
+Ultimately, we observe that the effect of the variation of w(l)
+j,i which represents the strength
+of the connection between layer l and l + 1, on ∂En(w)
+∂w(l)
+j,i
+is determined only by the delta of
+unit j, δ(l)
+j , and the output of unit i in layer l −1, z(l−1)
+i
+. Notably, because the delta of layer
+l, δ(l)
+j , can be calculated according to (4.12) if the delta of layer l + 1 is obtained. This can
+be repeated sequentially to the output layer, and because the delta of the output layer
+δ(L)
+j
+= ∂En(w)
+∂u(L)
+j
+is given, we can calculate the delta of any layer. Therefore, from (4.12) or (4.13), we can
+calculate the desired gradient (4.9). In this calculation method, because the delta is propagated
+from the output layer to the input layer, the error is corrected in the opposite direction of
+forward propagation; hence, this method is termed backpropagation.
+123
+
+130
+Annals of Operations Research (2026) 357:113–157
+5 Numerical example
+In this section, we compare the accuracy and effectiveness of the ANN prediction of our
+method based on asymptotic correction with those of the quasi-process corrections using
+numerical examples. Therefore, we examine call option and barrier option prices under an
+LSVM
+
+dSt = r(t)Stdt + vt [βSt + (1 −β)F(0, t)] dW S
+t ,
+dvt = (θ(t) −κ(t)vt) dt + νvtdW v
+t
+(5.14)
+The ANN approximations of the implied volatilities (respectively, barrier option prices)
+using our proposed mapping MD and M ¯D are denoted by σ D
+ANN (respectively, B D
+ANN), while
+those using the direct mapping M are denoted by σANN (respectively, BANN).
+The implied volatilities σMC, σWIC, σDD, and σBS are calculated using the MC simulation,
+the Wiener-Itô chaos expansion, the replicated DD model, and the mimicked BS model,
+respectively. Similarly, the barrier option prices BMC, BWIC, and BBS are calculated using
+those methods.
+In this study, we generate the training and testing data by following the method used in
+Funahashi (2023). Notably, our method trains the ANN model to predict implied volatilities,
+MD : ξ →σ D
+ANN(ξ), using the differences between Monte Carlo and approximate implied
+volatilities, D(ξk) = σMC(ξk) −σApp(ξk), for k = 1, . . . , N with respect to the parameters
+ξk = {(S0)k,rk, βk, (v0)k, νk, ρk, κk, θk, Kk}. To prepare N sets of vectors {ξk} for k = 1 to
+N, we ﬁrst generate M sets of vectors {vl}l=1,...,M, where M = N/21. Each vl is a vector
+of 9 elements, namely (S0)l,rl, βl, (v0)l, νl, ρl, κl, θl. The elements of each vl are generated
+from a uniform random distribution with the given ranges.
+To generate appropriate strikes, we do not use ﬁxed values because, depending on the
+combination of the 9 elements, the volatility of the underlying asset becomes extremely
+small or large. Instead, we use each vl to run an MC simulation with W trials and then set
+K1 = max(μ −2
+√
+V , 0.6F(0, Tl)),
+(5.15)
+K21 = min(μ + 2
+√
+V , 1.5F(0, Tl)),
+(5.16)
+and Kk = K1 + (k −1)K for k = 2, . . . , 19 where K = K21−K1
+20
+. For each sample
+path w = 1, . . . , W, we generate F(ωw; 0, T ) and compute its mean μ = E[F(0, T )] and
+variance V = E[(F(0, T )−μ)2]. More speciﬁcally, we compute M Monte Carlo simulations
+to create training and testing data of size N = M × 21. For each Monte Carlo simulation,
+W trials are run. The training and testing data ξi,k = {vi, Kk} and target values σMC(ξi,k)
+(respectively, BMC(ξi,k)) are obtained simultaneously.
+For each test, we run M = 1000–20, 000 MC simulations to create N = 21, 000–420, 000
+datasets and split the datasets into an 80/20 ratio, where 80% is used for training and 20%
+is used for testing, which is a common practice in data science. All of the results of the
+following tests are created by the out-of-sample inputs, that is, the latter 20%, which is not
+used for the training.
+In the training stage, the hyper-parameters are set with Adam as the optimizer, ReLU as
+the activation function,6 six hidden layers, and 32 nodes for each layer. The epoch length and
+batch sizes are set to 100 and 128, respectively.
+6 The activation function for the output layer, ¯f , is set to the identity function because the outputs are
+unbounded.
+123
+
+Annals of Operations Research (2026) 357:113–157
+131
+Table 1 Upper and lower limits
+of the input model parameters
+{T , S0,r, β, v0, ν, ρ, κ, θ}
+generated by uniform random
+valuables
+T
+S0
+r
+β
+v0
+ν
+ρ
+κ
+θ
+Max
+5
+150
+0.1
+0.99
+0.5
+0.5
+0.8 4
+0.6
+Min
+0.083
+75
+0.001
+0.6
+0.1
+0.05
+−0.8 0.1
+0.05
+5.1 Call option
+We ﬁrst examine call option prices under the LSVM (5.14) using the WIC approximation,
+mimicking the DD model with optimal parameters in (3.26), and mimicked the BS model with
+parameters (3.31) for the base approximations. Here, we use the Euler-Maruyama scheme
+with W = 500,000 trials7 and 100 simulation time steps.
+We generated uniformly distributed random vectors ξ P = {β, v0, ν, ρ, κ, θ} and ξ M =
+{T , S0,r} within the range given in Table 1. On the other hand, strikes are computed by
+following the strategy discussed in the introduction of this section to create ξ = {ξ P,ξ M}
+where ξ M = {T , S0,r, K}. σMC(ξ ) and σWIC(ξ ) were computed using ξ . To ensure the
+stability of the estimation, we throw out any implied volatilities that are too small or too big
+σA(ξl) < 0.05 or σA(ξl) > 0.8.
+(5.17)
+Therefore, for the actual ANN training and testing, we use N ′(≤N) data sets, {ξn}n=1,...,N′,
+which exclude these cases.
+For the WIC approximation, the deterministic functions of the LSVM, p1 to p7 deﬁned
+in Appendix A, can be explicitly computed as
+p1 = e−s(2κ+r) 
+p1a + p1b −p1c + p1d + p1e −p1 f
+
+κ3
+, p2 = βe−κs 
+θ (eκs −1) + κv0
+
+κ
+,
+p3 = e−κs, p4 = ν
+θ (eκs −1)
+κ
++ v0
+
+, p5 = βe−κs 
+θ (eκs −1) + κv0
+
+κ
+, p6 = 0,
+p7 =
+
+β + ers −1
+
+e−s(κ+r), p8 = (β −1)e−κs
+θ (eκs −1)
+κ
++ v0
+
+where p1a
+=
+θes(2κ+r) 
+θνρ + κ2
+, p1b
+=
+κes(κ+r) 
+−2θ2νρs + θκ(2νρsv0 −1)
+−2θνρv0 + κv0(κ + νρv0)], p1c = νρers(θ −κv0)2, p1d = (β −1)θ2νρe2κs, p1e =
+(β −1)κνρeκs 
+−2θ2 s + 2θv0(κs −1) + κv2
+0
+
+, and p1 f = (β −1)νρ(θ −κv0)2. The
+optimal DD parameters, ¯ξ P
+i =
+'
+¯ϵ∗, ¯β∗(
+, and BS parameter, ¯ξ P
+i = {¯ϵ∗}, can be explicitly
+determined using (3.26) and (3.31), respectively. σDD(¯ξ i)8 and σBS(¯ξ i) are computed using
+the optimized parameters, where ¯ξ i = {ξ M
+i , ¯ξ P
+i }.
+7 We compute M times MC simulations to create training and testing data N = M × 21 and for each MC
+simulation, W trials are run.
+8 In order to stabilize the calculation, for the DD case, if the optimal skew parameter, ¯β∗, is smaller than 0.05,
+we approximate that the underlying asset process follows the normal distribution and use the European call
+price
+C(T , K; ϵ∗, 0) = (S0 −Ke−rT )(d(T , K)) + ϵ∗e−rT √
+T φ(d(T , K)), d(T , K) = S0erT −K
+ϵ∗√
+T
+,
+(5.18)
+to compute the implied volatility. Here, φ is the probability distribution function (PDF) of the standard normal
+distribution.
+123
+
+132
+Annals of Operations Research (2026) 357:113–157
+Table 2 Parameter sets of the
+comparative statics used in
+Figs.13, 14 and 15. The table
+shows the values of the
+parameters T , S0, r, β, v0, ν, ρ,
+κ, θ for each of the four scenarios
+considered in the analysis. The
+scenarios are labeled as A, B, C,
+and D
+T
+S0
+r
+β
+v0
+ν
+ρ
+κ
+θ
+Case A
+3
+100
+0.03
+0.8
+0.1
+0.4
+0.2
+0.5
+0.15
+Case B
+5
+100
+0.03
+0.8
+0.1
+0.4
+0.2
+0.5
+0.15
+Case C
+3
+100
+0.03
+0.6
+0.1
+0.4
+0.2
+0.5
+0.15
+Case D
+3
+100
+0.03
+0.8
+0.1
+0.4
+−0.2
+0.5
+0.15
+Here, we generate N = 21000, 210000, and 420,000 (M = 1000, 10,000, and 20,000
+(number of MC simulations) × 21 (strikes per one trial)) sets of ξ and remove 1513, 12,327,
+and 25,724 data sets (i.e., N ′ =19,487, 197,673, and 394,276), respectively, following the
+condition (5.17). We use the MC scheme with 500,000 trials and 100 simulation time steps
+to compute σMC. A single Monte Carlo trial requires approximately 2.46s to complete on a
+PC with an Intel Core i9-10980XE CPU with 18 cores and 36 threads. The test is performed
+under a multi-threaded application running on a multi-core processor with 20 cores, and it
+takes 41min to compute M = 20,000 MC simulations. Whereas, the computational costs to
+compute the WIC approximation, replicated DD, and replicated BS models for a call option
+are listed in Table 3, which are swift enough for practical usage.
+Figures 2 and 3 compare the implied volatilities of our proposed methods and MC results
+for M = 1000 (N =21,000) and M =10,000 (N = 210,000), respectively. The upper left-,
+upper right-, lower left-, and lower right-hand panels plot the implied volatilities σANN v.s.
+σMC, σ D
+ANN(W IC) v.s. σMC, σ D
+ANN(DD) v.s. σMC, and σ D
+ANN(BS) v.s. σMC respectively.
+The upper left-, upper right-, lower left-, and lower right-hand panels of Figs.4, 5 and 6
+show the frequency histograms of the differences between σANN and σMC, σ D
+ANN(WIC) and
+σMC, σ D
+ANN(DD) and σMC, and σ D
+ANN(BS) and σMC, respectively. Here, σANN, σ D
+ANN(WIC),
+σ D
+ANN(DD), and σ D
+ANN(BS) represent the implied volatilities calculated by ANN through
+direct mapping M, with WIC correction, using DD model as quasi-process correction, and
+using BS model as quasi-process correction, respectively. More speciﬁcally, σ D
+ANN(WIC) is
+derived using mapping MD, while σ D
+ANN(DD) and σ D
+ANN(BS) are computed using mapping
+M ¯D. Recall that we used the test data, which is 20% in the second half of data in N.
+To understand more intuitively, we compare the implied volatilities calculated by σMC,
+σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) under various test data sizes, using the
+parameters given in Table 2. Figures13, 14, and 15 in Appendix C9 show the cases
+where the test data, that is, the latter 20% of N = 21, 000, 210, 000, and 420, 000 (i.e.,
+M = 1, 000, 10, 000, and 20, 000), respectively, are used.
+As observed from Figs.2–6 and 13–15, σ D
+ANN(WIC) converges most swiftly. From Fig.13,
+it is evident σ D
+ANN(WIC) mostly converges to the σMC even in the case of M = 1, 000, while
+other methods do not. In σ D
+ANN(WIC), the range of error is already kept within 1% even
+with N = 21, 000. When N is set to 210, 000, σ D
+ANN(DD) converges next, and when N
+is set to 420, 000, σ D
+ANN(BS) converges. Conversely, σANN surpasses 1% error even with
+N = 420, 000. From Fig.14, σ D
+ANN(DD) has converged but σ D
+ANN(BS) does not in Case A.
+From Fig.15, σ D
+ANN(BS) has converged but σANN still has some error in Cases B, C, and D.
+As the distribution of the model that we approximate becomes more similar to the original
+one, we can reduce the amount of training data for ANN learning. The WIC expansion is
+the closest one because it approximates the original distribution itself. Moreover, using the
+DD model that approximates the original distribution well can reduce the training data much
+9 The graphs are in Appendix C because they are too many and too big to ﬁt in the main text.
+123
+
+Annals of Operations Research (2026) 357:113–157
+133
+Fig. 2 Comparison of the implied volatilities derived by artiﬁcial neural network (ANN) and Monte Carlo
+(MC) results. The upper left, upper right, lower left, and lower right panels plot the implied volatilities
+σANN v.s. σMC, σ D
+ANN(WIC) v.s. σMC, σ D
+ANN(DD) v.s. σMC, and σ D
+ANN(BS) v.s. σMC, respectively. Here,
+σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the implied volatilities calculated by MC
+simulation, ANN through direct mapping M, ANN with WIC correction, ANN using DD model as quasi-
+process correction, and ANN using BS model as quasi-process correction, respectively. The test data, that is,
+20% of N = 21, 000 (M = 1000) samples is used
+more than using the BS model with the log-normal distribution. However, it is remarkable that
+even the BS model with a very different distribution could lower the data amount compared
+to directly using ANN learning. We provide a detailed discussion in Sect.6.
+These results can also be conﬁrmed from Table 3, which analyzes the mean, variance,
+and computational times of online prediction and ofﬂine learning for the differences between
+σANN and σMC, σ D
+ANN(WIC) and σMC, σ D
+ANN(DD) and σMC, and σ D
+ANN(BS) and σMC with
+respectto N.Inthetable,“times(online) DANN”and“times(online)σApp”showthecomputa-
+tional times of the online prediction and approximation methods, respectively, whereas “time
+(ofﬂine)” indicates the computational times of the ofﬂine learning (excluding the numeri-
+cal simulation). The direct mapping M converges to the MC result as N increases, but the
+convergence speed is slower than the mapping MD. This is consistent with the ﬁndings of
+Funahashi (2021a). To conduct a more detailed analysis, in Appendix D, we assess the impact
+and performance of both the new and previous methods across a range of ANN conﬁgura-
+tions, including different activation functions, numbers of nodes, and numbers of hidden
+layers.
+123
+
+134
+Annals of Operations Research (2026) 357:113–157
+Table 3 Mean and variance of the differences between σANN and σMC, σ D
+ANN(WIC) and σMC, σ D
+ANN(DD) and σMC, and σ D
+ANN(BS) and σMC. The number of Monte Carlo
+simulations performed is M = 1, 000, 10, 000, and 20, 000 (i.e., N = 21, 000, 210, 000, and 420, 000, respectively). “times (online) DANN” and “times (online) σApp” show
+the computational times of the online prediction and approximation methods, respectively, whereas “time (ofﬂine)” indicates the computational times of the ofﬂine learning
+σANN −σMC
+σ D
+ANN(WIC) −σMC
+N = 21,000
+210,000
+420,000
+21,000
+210,000
+420,000
+Mean
+−5.31×10−3
+−3.14×10−5
+−5.19×10−4
+1.07×10−5
+−3.77×10−5
+8.08×10−5
+Standard deviation
+3.37×10−2
+3.08×10−3
+2.38×10−3
+2.17×10−3
+1.18×10−3
+8.42×10−4
+Time (online) DANN (ms)
+2.45
+2.74
+2.60
+2.27
+2.47
+2.36
+Time (online) σApp
+–
+4.78 ms
+Time (ofﬂine) (s)
+69.13
+623.75
+1164.83
+70.45
+631.64
+1023.71
+σ D
+ANN(DD) −σMC
+σ D
+ANN(BS) −σMC
+N = 21,000
+210,000
+420,000
+21,000
+210,000
+420,000
+Mean
+1.27×10−4
+−1.05×10−4
+1.43×10−4
+−4.55×10−4
+3.30×10−4
+3.84×10−5
+Standard deviation
+5.69×10−3
+1.59×10−3
+8.48×10−4
+4.56×10−3
+1.51×10−3
+1.06×10−3
+Time (online) DANN (ms)
+2.25
+2.58
+2.59
+2.31
+2.48
+2.69
+Time (online) σApp
+0.203 ms
+13.0 μs
+Time (ofﬂine) (sec.)
+62.11
+647.40
+1120.90
+63.21
+635.77
+1040.86
+123
+
+Annals of Operations Research (2026) 357:113–157
+135
+Fig. 3 Comparison of the implied volatilities derived by artiﬁcial neural network (ANN) and Monte Carlo
+(MC) results. The upper left, upper right, lower left, and lower right panels plot the implied volatilities
+σANN v.s. σMC, σ D
+ANN(WIC) v.s. σMC, σ D
+ANN(DD) v.s. σMC, and σ D
+ANN(BS) v.s. σMC, respectively. Here,
+σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the implied volatilities calculated by MC
+simulation, ANN through direct mapping M, ANN with WIC correction, ANN using DD model as quasi-
+process correction, and ANN using BS model as quasi-process correction, respectively. The test data, that is,
+20% of N = 210, 000 (M = 10, 000) samples is used
+5.2 Barrier option
+This subsection examines up-and-in barrier options as an example of an exotic derivative.
+These options cannot be exercised until the price of the underlying asset reaches or exceeds
+a predetermined barrier level, B. Once the barrier level is reached, the option becomes
+exercisable, and the holder can buy or sell the underlying asset at the strike price, depending
+on whether the option is a call or put.
+We use the approximate Barrier option formula, BWIC(ξ ), proposed by Funahashi and
+Higuchi (2018). The option price of an up-and-in barrier option with barrier level B, maturity
+T , and strike K is approximated by
+UI(T , K) = e
+−
+T
+0
+r(s)ds
+eT
+2
+√
+2π T
+
+e−
+(ω1
+T (K)−˙ωT )2
+2T
+X1(T ) −e−
+(ω1
+T (B)−˙ωT )2
+2T
+X2(T )
+
++ eT
+2 T
+X3(T )
+)
+
+)
+ω1
+T (B) −˙ωT
+√
+T
+*
+−
+)
+ω1
+T (K) −˙ωT
+√
+T
+**
++ F(0, T )
+√
+2π 
+5
+2
+T
+e−
+¯B2
+2 T ' ¯B2( ¯B + ¯K)q(T ) −¯Kq(T ) T + 3
+T
+(
+123
+
+136
+Annals of Operations Research (2026) 357:113–157
+Fig. 4 Frequency histograms of the differences between σANN and σMC (upper left), σ D
+ANN(WIC) and σMC
+(upper right), σ D
+ANN(DD) and σMC (lower left), and σ D
+ANN(BS) and σMC (lower right). Here, σMC, σANN,
+σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the implied volatilities calculated by Monte Carlo (MC)
+simulation,artiﬁcialneuralnetwork(ANN)throughdirectmappingM,ANNwithWICcorrection,ANNusing
+DD model as quasi-process correction, and ANN using BS model as quasi-process correction, respectively.
+The x-axis shows the difference in implied volatilities between MC results and those obtained by an ANN
+using four methods. The y-axis indicates how often each difference occurs. The test data, that is, 20% of
+N = 21, 000 (M = 1000) samples is used
++F(0, T ) ¯K
+
+1 −
+
+¯B
+√ T
+ 
+.
+(5.19)
+where ¯KT := 1 −K/F(0, T ), ¯B = B/F(0, T ) −1. (x) is the cumulative distribution
+function of the standard normal distribution. q(t), T , ω1
+t (B), T , ˙ωT and Xi(T ) are deﬁned
+in Appendix B.
+This formula is based on a second order chaos expansion. Hence, compared to the third-
+order expansion used for call option cases in Sect. 5.1, the accuracy of the approximation
+gradually worsens as volatility increases and maturity lengthens. This approximation can
+be expanded to include even high-order terms; see 5.4 of Funahashi and Higuchi (2018).
+However, in the usual derivative, such an approximation does not exist or, if it does, it
+requires very complex calculations. Therefore, we will keep the approximation to the second
+123
+
+Annals of Operations Research (2026) 357:113–157
+137
+Fig. 5 Frequency histograms of the differences between σANN and σMC (upper left), σ D
+ANN(WIC) and σMC
+(upper right), σ D
+ANN(DD) and σMC (lower left), and σ D
+ANN(BS) and σMC (lower right). Here, σMC, σANN,
+σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the implied volatilities calculated by Monte Carlo (MC)
+simulation,artiﬁcialneuralnetwork(ANN)throughdirectmappingM,ANNwithWICcorrection,ANNusing
+DD model as quasi-process correction, and ANN using BS model as quasi-process correction, respectively.
+The x-axis shows the difference in implied volatilities between MC results and those obtained by an ANN
+using four methods. The y-axis indicates how often each difference occurs. The test data, that is, 20% of
+N = 210, 000 (M = 10, 000) samples is used
+order and observe the effect of the replication method, which is expected to be applicable to
+more general cases.
+We consider two types of datasets. The ﬁrst type, Case E, has volatilities at the level
+observed in the normal market. Whereas the second type, Case F, allows for higher volatilities,
+which are the same level of volatilities used in the previous subsection, with higher barrier
+level and interest rates. More speciﬁcally, we generate uniformly distributed random vectors
+ξ P = {β, v0, ν, ρ, κ, θ, ϵ} and ξ M = {T , S0,r, U} within the range given in Table 4. Here,
+U1 and U2 is used to generate the barrier level B = S0 × U1 and volatility of volatility
+ν = v0 × U2, respectively.
+Notably, for an up-and-in barrier option, if the strike price exceeds the barrier level, that is,
+K > B, then the option reduces to a standard call option, which we have already considered
+in the previous section. Therefore, we omit these cases from our analysis. For Case E, to
+123
+
+138
+Annals of Operations Research (2026) 357:113–157
+Fig. 6 Frequency histograms of the differences between σANN and σMC (upper left), σ D
+ANN(WIC) and σMC
+(upper right), σ D
+ANN(DD) and σMC (lower left), and σ D
+ANN(BS) and σMC (lower right). Here, σMC, σANN,
+σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the implied volatilities calculated by Monte Carlo (MC)
+simulation,artiﬁcialneuralnetwork(ANN)throughdirectmappingM,ANNwithWICcorrection,ANNusing
+DD model as quasi-process correction, and ANN using BS model as quasi-process correction, respectively.
+The x-axis shows the difference in implied volatilities between MC results and those obtained by an ANN
+using four methods. The y-axis indicates how often each difference occurs. The test data, that is, 20% of
+N = 420, 000 (M = 20, 000) samples are used
+Table 4 Upper and lower limits of the input model parameters {T , S0,r, β, v0, ν, ρ, κ, θ, U1, U2} generated
+by uniform random valuables. U1 and U2 are used to generate B = S0 × U1 and ν = v0 × U2, respectively
+T
+S0
+r
+β
+v0
+U2
+ρ
+κ
+θ
+U1
+Case E
+Max
+3
+120
+0.05
+0.99
+0.4
+0.8
+0.8
+1
+0.4
+1.1
+min
+0.083
+80
+0.001
+0.6
+0.1
+0.05
+−0.8
+0.1
+0.1
+1.01
+Case F
+Max
+3
+150
+0.1
+0.99
+0.5
+1
+0.8
+4
+0.6
+1.2
+Min
+0.083
+75
+0.001
+0.6
+0.1
+0.01
+−0.8
+0.1
+0.05
+1.01
+123
+
+Annals of Operations Research (2026) 357:113–157
+139
+generate appropriate strikes, we consider strikes
+K1 = max(μ −1.1
+√
+V , 0.9F(0, Tl)),
+(5.20)
+K21 = min(min(μ + 1.1
+√
+V , 1.1F(0, Tl)), B),
+(5.21)
+and Kk = K1 + (k −1)K for k = 2, . . . , 19 where K = K21−K1
+20
+. Whereas for Case F,
+we use (5.15) for K1 but modify K21 as
+K21 = min(min(μ + 2
+√
+V , 1.5F(0, Tl)), B).
+For Case F, we adopt the same condition (5.17) as used in the call option case. For Case
+E, we lower the upper limit of the parameters that express maturity and volatility. This could
+make the volatility value too small and cause the MC results to be inaccurate for deep-in-
+the-money or deep-out-of-the-money cases. Therefore, we further limit the acceptable range
+of implied volatility.
+σA(ξl) < 0.1 or σA(ξl) > 0.8
+(5.22)
+Regarding the call option cases, for the actual ANN training and testing, we use N ′(≤N)
+data sets, {ξn}n=1,...,N′, which exclude these cases.
+FortheCaseE,theactualdata N =21,000and420,000(M =1000and20,000)areprepared
+and ﬁltered out 651 and 15,414 (i.e., N ′ = 20,349 and 404,586) data sets, respectively, due
+to the condition (5.22). Conversely, for the Case F, we prepare N = 105,000 and 420,000 (M
+= 5000 and 20,000) sets of ξ and remove 15,183 and 61,110 (i.e., N ′ = 89,817 and 358,890)
+data sets, respectively, following the condition (5.17). We use the MC scheme with 500,000
+trials and 1000 simulation time steps.
+A single Monte Carlo trial takes approximately 24.4s to complete on a PC with an Intel
+Core i9-10980XE CPU with 18 cores and 36 threads. The test is performed under a multi-
+threaded application running on a multi-core processor with 20 cores, and it takes seven
+hours to perform M = 20,000 MC simulations. Because the deterministic functions t and
+q(t) (deﬁned in Appendix B) used in the WIC approximation for the Barrier option can be
+explicitly computed as the following, it takes 0.175 milliseconds to compute WIC approxi-
+mation for a barrier option, which is fast enough even compared to the ofﬂine prediction of
+the neural network.
+ s = e−2κs
+2κ3
+ 
+θ2 
+e2κs(2κs −3) + 4eκs −1
+
++ κ2v2
+0
+
+e2κs −1
+
++ 2θκv0
+
+eκs −1
+2"
+,
+q(s) = e−3κs
+6κ6 (A(s) + B(s)) .
+where
+A(s) = 3βeκs 
+sinh(κs)
+
+θ2(κs −1) + κ2v2
+0
+
++ θ cosh(κs)(θ(κs −2) + 2κv0)
++2θ(θ −κv0)]2 ,
+B(s) = κνρ
+
+e3κs 
+−16θ3 + 6θ2κ(θs + v0) + 3θκ2v2
+0 + κ3v3
+0
+
++6θe2κs 
+3θ2 −κ2v0(2θs + v0) + θκ(2θs −v0)
+
+−3κeκs(κv0 −θ)(κv0(2θs + v0) −2θ(θs + v0)) −2(θ −κv0)3
+.
+Using the Case E parameters in Table 4, Fig.7 shows the comparisons between ANN
+prediction and MC results of the up and in barrier option prices using the test data. The upper,
+middle, and lower panels show BANN v.s. BMC, B D
+ANN(W IC) v.s. BMC, and B D
+ANN(BS) v.s.
+BMC, respectively. Here, BANN, B D
+ANN(WIC), and B D
+ANN(BS) represent the barrier option
+123
+
+140
+Annals of Operations Research (2026) 357:113–157
+Fig. 7 Comparisons between artiﬁcial neural network (ANN) prediction and Monte Carlo (MC) results of the
+up and in barrier option prices. The upper, middle, and lower panels show BANN v.s. BMC, B D
+ANN(W IC) v.s.
+BMC, and B D
+ANN(BS) v.s. BMC, respectively. Here, BMC, BANN, B D
+ANN(WIC), and B D
+ANN(BS) represent
+the barrier option price calculated by MC simulation, ANN through direct mapping M, ANN with WIC
+correction, and ANN using BS model as quasi-process correction, respectively. The left- and right-hand side
+panels indicate N = 21,000 (M = 1000) and N = 420,000 (M = 20,000), respectively. The Case E parameters
+in Table 4 are used
+price calculated by ANN through direct mapping M, ANN with WIC correction, and ANN
+using BS model as quasi-process correction, respectively. The left- and right-hand side panels
+indicate N = 21,000 (M = 1000) and N = 252,000 (M = 12,000), respectively. Concurrently,
+Fig.8 shows frequency histograms of the differences between BANN and BMC (upper-),
+B D
+ANN(WIC(2nd)) and BMC (middle-), and B D
+ANN(BS) and BMC (lower-panel).
+Figures 7 and 8 indicate that the neural network of B D
+ANN(WIC) converges most quickly.
+B D
+ANN(WIC) has already converged for the most part with the learning data of N = 21,000 (M
+= 1000), but the estimated error of B D
+ANN(BS) is noticeable at the right tail of the distribution,
+with errors exceeding −0.5. Even with a second-order WIC approximation, it indicates that
+123
+
+Annals of Operations Research (2026) 357:113–157
+141
+Fig. 8 Frequency histograms of the differences between BANN and BMC (upper-), BD
+ANN(WIC(2nd))
+and BMC (middle-), and B D
+ANN(BS) and BMC (lower-panel). Here, BMC, BANN, B D
+ANN(WIC(2nd)), and
+B D
+ANN(BS) represent the barrier option price calculated by Monte Carlo (MC) simulation, artiﬁcial neural
+network (ANN) through direct mapping M, ANN with WIC correction, and ANN using BS model as quasi-
+process correction, respectively. The x-axis shows the difference in barrier option prices between MC results
+and those obtained by an ANN using three methods. The y-axis indicates how often each difference occurs. The
+left- and right-hand side panels indicate N = 21,000 (M = 1000) and N = 420,000 (M = 20,000), respectively.
+The Case E parameters in Table 4 are used
+123
+
+142
+Annals of Operations Research (2026) 357:113–157
+Fig. 9 Comparisons between artiﬁcial neural network (ANN) prediction and Monte Carlo (MC) results of the
+up and in barrier option prices. The upper and lower panels show BANN v.s. BMC and B D
+ANN(BS) v.s. BMC,
+respectively, while the left- and right-hand side panels indicate N = 105,000 (M = 5000) and N = 420,000 (M
+= 20,000), respectively. Here, BMC, BANN, and B D
+ANN(BS) represent the barrier option price calculated by
+Monte Carlo (MC) simulation, artiﬁcial neural network (ANN) through direct mapping M, and ANN using
+BS model as quasi-process correction, respectively. The x-axis shows the difference in barrier option prices
+between MC results and those obtained by an ANN using two methods. The y-axis indicates how often each
+difference occurs. The parameters are set to Case F in Table 4
+the convergence is faster than the BS model. Conversely, BANN has not converged even with
+N = 420,000 (M = 20,000), and is insufﬁcient for practical use.
+However, notably, the estimated results between B D
+ANN(WIC) and B D
+ANN(BS) do not show
+a signiﬁcant difference compared to the call option cases. The reduction to the second-order
+approximation has a signiﬁcant impact on the accuracy of the model. However, up-and-
+in barrier options have additional conditions built in, which severely limits the downside
+compared to their equivalent vanilla counterparts10. Hence, even if we use an approximation
+based on the Black Scholes model as an alternative to the Wiener-Itô Chaos approximation,
+we can expect to converge sufﬁciently if we keep N = 105,000–420,000.
+Using the Case F parameters, Figs.9 and 10 show the comparisons and frequency his-
+tograms of the differences between ANN prediction and MC results of the up and in barrier
+option prices, respectively. In Fig.9, the upper-, and lower-panels show BANN v.s. BMC and
+B D
+ANN(BS) v.s. BMC, respectively while, the left- and right-hand side panels indicate N =
+105,000 (M = 5000) and N = 420,000 (M = 20,000), respectively. In Fig.10, the upper and
+lower panels indicate BANN and BMC and B D
+ANN(BS) and BMC, respectively, while the left-
+and right-hand side panels indicate N = 105,000 (M = 5000) and N = 420,000 (M = 12,000),
+respectively.
+10 The same is true for other types of barrier options.
+123
+
+Annals of Operations Research (2026) 357:113–157
+143
+Fig. 10 Frequency histograms of the differences between BANN and BMC (upper-) and BD
+ANN(BS) and BMC
+(lower-panels). The x-axis shows the difference in barrier option prices between Monte Carlo (MC) results and
+those obtained by an artiﬁcial neural network (ANN) using two methods. Here, BMC, BANN, and BD
+ANN(BS)
+represent the barrier option price calculated by MC simulation, ANN through direct mapping M, and ANN
+using BS model as quasi-process correction, respectively. The y-axis indicates how often each difference
+occurs. The left- and right-hand side panels indicate N = 105,000 (M = 5000) and N = 420,000 (M = 20,000),
+respectively. The parameters are set to Case F in Table 4
+As shown in Figs.9 and 10, the neural network used in B D
+ANN(BS) has sufﬁcient accuracy
+for practical use when N = 105,000–420,000 while BANN does not converge sufﬁciently. This
+suggests the need for more training data, which subsequently requires more time-consuming
+numerical simulations, resulting in a signiﬁcant increase in time requirements. Furthermore,
+the time required for ofﬂine learning cannot be overlooked. Therefore, even when an accurate
+approximation solution cannot be obtained for the derivative price on the underlying asset
+that follows a complex probability process, employing ANN with a simple model correction
+such as the Black-Scholes (BS) model enables efﬁcient learning and prediction for neural
+networks.
+123
+
+144
+Annals of Operations Research (2026) 357:113–157
+6 Discussion
+Here, we discuss the limitations of the ANN with quasi-process correction using call option
+prices under the LSVM (5.14) in the SABR stochastic volatility model
+⎧
+⎨
+⎩
+d ¯St
+¯St
+= vt ¯Sβ−1
+t
+dW ¯S
+t ,
+dvt = νvtdW ¯v
+t , v0 = α
+(6.1)
+for the base approximation, where W ¯S
+t and W ¯v
+t are two standard Brownian motions with
+correlation dW ¯S
+t dW ¯v
+t = ¯ρdt.
+For the WIC approximation, the ﬁrst three functions of the SABR model are explicitly
+computed as
+ ¯S
+T = α
+{αβT (α(β −1) + 2ν ¯ρ) + 2}3 −8
+
+12β(α(β −1) + 2ν ¯ρ)
+,
+q ¯S
+1 (T ) = 1
+32α3T 2(αβ + ν ¯ρ)(αβT (α(β −1) + 2ν ¯ρ) + 4)2,
+q ¯S
+2 (T ) =
+1
+384α4T 3 
+α2β(2β −1) + 3αβν ¯ρ + ν2 ¯ρ2
+(αβT (α(β −1) + 2ν ¯ρ) + 4)3
+To obtain appropriate SABR parameters, ¯ξ = {α, β, ν, ¯ρ}, we use same correlation used
+in the LSVM (5.14), ¯ρ = ρ. On the other hand, θ = {v0, β, ν} is obtained by solving the
+problem
+¯θ = argmin
+θ∈
+ 
+( S
+t − ¯S
+t )2 + (q S
+1 (t) −q ¯S
+1 (t))2 + (q S
+2 (t) −q ¯S
+2 (t))2"
+(6.2)
+within the range , 0.05 < v0 < 2, 0.55 < β < 0.998, 0.002 < ν < 0.8,.11
+Figure 11 shows frequency histograms of the differences between σANN and σMC (upper-
+left panel), σ D
+ANN(WIC) and σMC (upper-right panel), σ D
+ANN(DD) and σMC (lower-left panel),
+and σ D
+ANN(SABR) and σMC (lower-right panel). The parameters are generated by uniformly
+distributed random vectors within the range Case E given in Table 4. Here, we generate N =
+210,000 (i.e., M = 10,000) sets of ξ and remove 714 data sets (i.e., N ′ =209,28) following
+the condition (5.17). Here, σ D
+ANN(SABR) represents the implied volatilities calculated by
+ANN using SABR model as quasi-process correction and σMC is computed using the Euler–
+Maruyama scheme with W = 500,000 trials and 100 simulation time steps.
+From Fig.11, we can see that the differences between σ D
+ANN(SABR) and σMC are dis-
+tributed near 0, compared to the differences between σANN and σMC. Therefore, the former
+approximation is generally more efﬁcient than the latter. However, it is also evident that the
+approximation through the SABR model demonstrates a relatively large error. This discrep-
+ancy arises because the SABR model lacks the capability to accommodate negative values,
+unlike the LSVM model (5.14). When attempting to replicate the LSVM model using the
+SABR model, the latter tends to adopt values near 0 instead of negative values, leading to
+the inﬂation of probability density near 0.
+Figure 12 shows the cumulative distribution functions of the LSVM model, replicated
+SABR model, and replicated DD model. Here, we use a low-bias simulation scheme for
+the SABR model proposed by Chen et al. (2012), which introduced an efﬁcient algorithm
+11 To stabilize the Hangn et al. (2002) approximation and the MC simulation, we restrict the range of the
+SABR parameters.
+123
+
+Annals of Operations Research (2026) 357:113–157
+145
+Table 5 Parameters of the original LSVM model, replicate DD model, and replicated SABR model used to
+compute CDF in Fig.12
+Model
+β
+v0
+ν
+ρ
+κ
+θ
+LSVM
+0.614073
+0.38642
+0.253564
+−0.752
+0.240152
+0.325306
+DD
+0.438813
+0.582959
+0
+0
+0
+0
+SABR
+0.762148
+2
+0.260041
+−0.752
+0
+0
+to simulate the squared Bessel process with an absorbing boundary at zero, whereas the
+Euler-Maruyama scheme is used to compute the underlying asset price in the DD model. To
+compute the cumulative distribution function (CDF), we run 1,000,000 MC trials with 300
+simulation steps. The parameters of the original LSVM model, ξ M = {ϵ∗, β∗}, the replicate
+DD model
+¯
+ξ M = {ϵ∗, β∗} in (3.26), and replicated SABR model ¯θ in (6.2) are listed in
+Table 5.
+In this case, the original LSVM and SABR processes have relatively large errors, poten-
+tially hampering the estimation, rather than directly estimating the option price using a neural
+network. This observation is consistent with the ﬁndings presented in Section 8.5 of Funa-
+hashi (2021b). In summary, considering the distribution shape, it is not advisable to employ
+the SABR model for replicating the LSVM model.
+Thus,whenusingtheNNbasedontheapproximationofaquasi-process,itbecomescrucial
+to exercise caution and thoroughly select the probability distribution of the underlying asset,
+whereas NNs utilizing asymptotic methods are free of these concerns because they directly
+use the original distribution. This represents a signiﬁcant advantage of the latter approach.
+7 Conclusion
+This study introduces two methods for efﬁciently learning the price of derivatives in neural
+networks. The ﬁrst method is to learn the difference between the price of derivatives and its
+asymptotic expansion, and the second method is to learn the difference between the price of
+derivatives written on two different underlying asset prices; one underlying asset price is the
+target complex stochastic process, and the other is a relatively simple stochastic process that
+has a closed-form solution for the target derivatives prices. The former method has the advan-
+tage that it can be much more efﬁcient than the latter one, especially when an approximate
+solution is available. Concurrently, the latter method is an alternative valuation method when
+there is no efﬁcient approximate solution for the derivative value, and if one can arbitrarily
+determine the model parameters of the quasi-process that approximates the underlying asset
+process. The latter method requires more training data than the former method, but we demon-
+strate that it remains signiﬁcantly more efﬁcient than directly learning the derivative price
+using neural networks. Even if a relatively simple quasi-process, such as the Black-Scholes
+model, is employed, the learning and estimation efﬁciency are overwhelmingly superior to
+the direct method.
+However, the latter method, as shown in Section 6 using the SABR model, may have
+the same or even lower approximation accuracy than the direct derivative price learning
+method if the pseudo-process of the underlying asset price is not selected appropriately.
+Therefore, the key to the latter method is to determine appropriate model parameters that
+mimic the original underlying asset process. An important contribution of this study is that
+123
+
+146
+Annals of Operations Research (2026) 357:113–157
+Fig. 11 Frequency histograms of the differences between σANN and σMC (upper-left panel), σ D
+ANN(WIC) and
+σMC (upper-right panel), σ D
+ANN(DD) and σMC (lower-left panel), and σ D
+ANN(SABR) and σMC (lower-right
+panel). Here, σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(SABR) represent the implied volatilities
+calculated by Monte Carlo (MC) simulation, artiﬁcial neural network (ANN) through direct mapping M,
+ANN with WIC correction, ANN using DD model as quasi-process correction, and ANN using SABR model
+as quasi-process correction, respectively. The x-axis shows the difference in implied volatilities between MC
+results and those obtained by an ANN using four methods. The y-axis indicates how often each difference
+occurs. The test data, that is, 20% of N=210,000 (M = 10,000) samples is used. The range of the parameters
+are set to Case E in Table 4
+it proposes a uniﬁed replication strategy to determine model parameters of quasi-processes
+from original underlying asset processes. Moreover, we showed that this approach is free
+from contract parameters, including strikes; hence, it ﬁts our purpose. In summary, the two
+methods introduced in this study provide a more efﬁcient way to learn the price of derivatives
+in neural networks. This is especially useful for stochastic volatility models and other cases
+where analytic solutions do not exist or are computationally expensive to obtain.
+First, we use a general approximation method, such as the singular perturbation method
+or asymptotic expansion, to calculate the price of the derivative. If an accurate approximation
+is available, we use the ﬁrst method (ANN with asymptotic correction). Conversely, if the
+approximate solution does not exist, or the accuracy is poor, or computation time is required,
+we calculate the difference between the target derivative price and the corresponding price
+under the quasi-process using the replication method, using the second method (ANN with
+quasi-process correction). The proposed methods can not only reduce the amount of training
+123
+
+Annals of Operations Research (2026) 357:113–157
+147
+Fig. 12 Cumulative distribution functions (CDF) of the LSVM model, the replicated SABR model, and the
+replicated DD models with the model parameters listed in Table 5
+data required for the neural network ofﬂine but also signiﬁcantly improve the accuracy of the
+online estimation used in daily trading.
+Although this study only examines a method for estimating the derivative price by using
+the Monte Carlo simulation, these methods can be applied to other numerical methods that
+are computationally expensive, such as partial differential equations (PDEs), ﬁnite difference
+methods (FDMs), numerical integration, or approximation methods. Therefore, this method
+is generally effective for problems that can be calculated but take a long time to use in daily
+trading.
+Our method works for more general cases, including multi-dimensional diffusions. We
+can then consider the valuation problem of ﬁnancial products such as basket options and
+spread options using the approximation formulas derived in Funahashi and Kijima (2014)
+for CApp. Another case in which it is possible to extend our method is the valuation of
+American options. Liang et al. (2021) discusses the application of deep learning methods
+to the valuation problem of early exercisable derivatives such as American and Bermudan
+options, which is another topic that is frequently discussed in the literature. Since, the Fourier
+cosine expansion (COS) method, for example, Fang and Oosterlee (2009, 2011), is known to
+approximate American option prices well, it is the leading candidate for CApp to obtain more
+accurateandstableANNtraining.Moreover,usingtheresultforthebaseapproximationCApp,
+we can utilize the quasi-process correction using a simpler model to train the ANN model to
+learn the prices of American and Bermudan options under a complex model. A comparison
+between Liang et al. (2021) method and ours with this approach will be considered in a future
+study.
+Appendix A. The exact formulas of 6t and qi(t) under the LSVM
+Funahashi (2014) derived the formulas of t, pi(t) for i = 1, . . . 8, and qi(t) for i = 1, . . . , 5
+under the LSVM (1.1).
+123
+
+148
+Annals of Operations Research (2026) 357:113–157
+We denote σ (0)(t) = σ(F(0, t), V (0, t)) and γ (0)(t) = γ (V (0, t)) where F(0, t) =
+e
+t
+0
+r(s)ds
+and V (0, t) =
+¯E(t)
+)
+v0 +
+t
+0
+E(u)θ(u)du
+*
+with E(t) = e
+t
+0
+κ(u)du
+and ¯E(t) =
+1/E(t), Subsequently, he demonstrated the validity of the following formulas for pi(t):
+p1(s) := σ (0)(s) +
+
+σ (0)
+S (s)F(0, s) + 1
+2 F(0, s)2σ (0)
+SS (s)
+ ⎛
+⎝
+s
+
+0
+(σ0(u))2 du
+⎞
+⎠
++1
+2σ (0)
+vv (s) ¯E(s)2
+⎛
+⎝
+s
+
+0
+E(u)2γ (0)(u)2du
+⎞
+⎠
++
++
+σ (0)
+v (s) ¯E(s) + σ (0)
+Sv (s)F(0, s) ¯E(s)
+
+⎛
+⎝
+s
+
+0
+ρE(u)γ (0)(u)σ (0)(u)du
+⎞
+⎠,
+p2(s) := σ (0)(s) + F(0, s)σ (0)
+S (s),
+p3(s) := σ (0)
+v (s) ¯E(s),
+p4(s) := E(s)γ (0)(s),
+p5(s) := σ (0)(s) + 3σ (0)
+S (s)F(0, s) + σ (0)
+SS (s)F(0, s)2,
+p6(s) := σ (0)
+vv (s) ¯E(s)2,
+p7(s) := σ (0)
+v (s) ¯E(s) + σ (0)
+Sv F(0, s) ¯E(s),
+p8(s) := σ (0)
+S (s)F(0, s).
+The
+derivatives
+are
+deﬁned
+as
+σ (0)
+S (t)
+:=
+∂sσ(s, v)|s=S(0)
+t
+,v=v(0)
+t ,
+σ (0)
+v (t)
+:=
+∂vσ(s, v)|s=S(0)
+t
+,v=v(0)
+t ,
+σS(t)
+:=
+∂ssσ(s, v)|s=S(0)
+t
+,v=v(0)
+t ,
+σ (0)
+vv (t)
+:=
+∂vv
+σ(s, v)|s=S(0)
+t
+,v=v(0)
+t , and σSv(t) := ∂svσ(s, v)|s=S(0)
+t
+,v=v(0)
+t , where S(0)
+t
+= F(0, t) and
+v(0)
+t
+= V (0, t).
+Subsequently, the objective functions t and qi(t) are given as follows:
+ t =
+t
+0
+p2
+1(s)ds,
+(A.1)
+q1(t) =
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+σ (0)(u)p1(u)du
+⎞
+⎠ds
++
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+ρ p1(u)p4(u)du
+⎞
+⎠ds,
+(A.2)
+q2(t) = q2,1(t) + q2,2(t) + q2,3(t),
+(A.3)
+q3(t) = q2
+1(t),
+q4(t) = q4,1(t) + q4,2(t) + q4,3(t),
+(A.4)
+q5(t) =
+t
+0
+p2
+2(s)
+⎛
+⎝
+s
+
+0
+(σ (0)(u))2du
+⎞
+⎠ds +
+t
+0
+p2
+3(s)
+⎛
+⎝
+s
+
+0
+p2
+4(u)du
+⎞
+⎠ds
+123
+
+Annals of Operations Research (2026) 357:113–157
+149
++2
+t
+0
+p2(s)p3(s)
+⎛
+⎝
+s
+
+0
+ρσ (0)(u)p4(u)du
+⎞
+⎠ds
+(A.5)
+and we have deﬁned q2,1(t), q2,2(t), q2,2(t), q4,1(t), q4,2(t) and q4,3(t) as
+q2,1(t) =
+t
+0
+p1(s)p5(s)
+⎛
+⎝
+s
+
+0
+σ (0)(u)p1(u)
+⎛
+⎝
+u
+
+0
+σ (0)(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+p1(u)p8(u)
+⎛
+⎝
+u
+
+0
+σ (0)(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
+(A.6)
+q2,2(t) =
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+ρ p1(u)γ (0)
+v (u)
+⎛
+⎝
+u
+
+0
+ρ p1(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds,
+(A.7)
+q2,3(t) =
+t
+0
+p1(s)p6(s)
+⎛
+⎝
+s
+
+0
+ρ p1(u)p4(u)
+⎛
+⎝
+u
+
+0
+ρ p1(s)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p1(s)p7(s)
+⎛
+⎝
+s
+
+0
+ρ p1(u)p4(u)
+⎛
+⎝
+u
+
+0
+σ (0)(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p1(s)p7(s)
+⎛
+⎝
+s
+
+0
+σ (0)(u)p1(u)
+⎛
+⎝
+u
+
+0
+ρ p1(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+p1(u)p3(u)
+⎛
+⎝
+u
+
+0
+ρ p1(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds,
+(A.8)
+q4,1(t) = 2
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+p1(u)p2(u)
+⎛
+⎝
+u
+
+0
+(σ(r))2 dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+σ (0)(u)p2(u)
+⎛
+⎝
+u
+
+0
+σ (0)(r)p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++
+t
+0
+p2(s)2
+⎛
+⎝
+s
+
+0
+σ (0)(u)p1(u)du
+⎞
+⎠
+2
+ds
+(A.9)
+q4,2(t) = 2
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+p1(u)p3(u)
+⎛
+⎝
+u
+
+0
+p4(r)2dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+ρ p3(u)p4(u)
+⎛
+⎝
+u
+
+0
+ρ p1(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds
+123
+
+150
+Annals of Operations Research (2026) 357:113–157
++
+t
+0
+p3(s)2
+⎛
+⎝
+s
+
+0
+ρ p1(u)p4(u)du
+⎞
+⎠
+2
+ds
+(A.10)
+q4,3(t) = 2
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+p1(u)p3(u)
+⎛
+⎝
+u
+
+0
+ρσ (0)(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+p1(u)p2(u)
+⎛
+⎝
+u
+
+0
+ρσ (0)(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p1(s)p2(s)
+⎛
+⎝
+s
+
+0
+σ (0) p3(u)
+⎛
+⎝
+u
+
+0
+ρ p1(r)p4(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p1(s)p3(s)
+⎛
+⎝
+s
+
+0
+ρ p2(u)p4(u)
+⎛
+⎝
+u
+
+0
+σ (0) p1(r)dr
+⎞
+⎠du
+⎞
+⎠ds
++2
+t
+0
+p2(s)p3(s)
+⎛
+⎝
+s
+
+0
+σ (0)(u)p1(u)du
+⎞
+⎠
+⎛
+⎝
+s
+
+0
+ρ p1(u)p4(u)du
+⎞
+⎠ds (A.11)
+Appendix B. Explicit formulas of the deterministic functions in barrier
+option
+Funahashi and Higuchi (2018) derived an approximation formula for eight types of barrier
+options: up-and-in call, up-and-in put, down-and-in call, down-and-in put, up-and-out call,
+up-and-out put, down-and-out call, and down-and-out put. Their approximation is based on
+the 2nd-order WIC expansion.
+The basic concept is to mimic the target asset process using a polynomial of the Wiener
+process. This approach allows them to translate the problem of solving the ﬁrst hit probability
+of the asset process into that of a Wiener process whose distribution of passage time is known.
+Finally, using Girsanov’s theorem and the reﬂection principle, they showed that single barrier
+option prices can be approximated in a closed form (5.19).
+Let
+F(0, t)
+=
+S0e
+t
+0
+r(u)du
+, V (0, t)
+=
+¯E(t)
+)
+v0 +
+t
+0
+E(s)θsds
+*
+, σ (0)(t)
+=
+σ(F(0, t), V (0, t)),
+σ (0)
+S (t)
+=
+∂xσ(x, y)|x=F(0,t),y=V(0,t),
+σ (0)
+v (t)
+=
+∂yσ(x,
+y)|x=F(0,t),y=V (0,t), and γ (0)(t) = γ (V (0, t)) with E(s) := e
+s
+0
+κudu
+, ¯E(s) := 1/E(s),
+ t :=
+t
+0
+(σ (0)(s))2ds. Then, the explicit formulas of the functions q(t), T , ω1
+t (B), T , ˙ωT
+are given as
+q(t) =
+t
+0
+p1(s)σ (0)(s)
+⎛
+⎝
+s
+
+0
+ 
+σ (0)(u)
+"2
+du
+⎞
+⎠ds + ρ
+t
+0
+p2(s)σ (0)(s)
+⎛
+⎝
+s
+
+0
+p3(u)σ (0)(u)du
+⎞
+⎠ds.
+123
+
+Annals of Operations Research (2026) 357:113–157
+151
+where
+p1(s) := σ (0)(s) + F(0, t)σ (0)
+S (s),
+p2(s) := σ (0)
+v (s) ¯E(s),
+p3(s) := γ (0)(s)E(s),
+ω1
+t (B) := −
+√t( 
+3
+2t −√Dt(B))
+2q(t)
+,
+where
+Dt(B) := 3
+t + 4
+
+B
+F(0, t) −1
+
+q(t) t + 4q2(t),
+t =
+t
+0
+α2(s)ds,
+where
+α(t) := −∂
+∂t ω1
+t (B),
+and ˙ωT = ω1
+T (B) + ω1
+0(B). Finally, Xi(T ) for i = 1, 2, 3 are deﬁned as
+X1(T ) := F(0, T )q(T )
+
+ω1
+T (K) + ˙ωT
+ 
+(ω1
+T (K))2 + ( ˙ωT )2
+T T −3
+2
++F(0, T )
+
+(ω1
+T (K))2 + ω1
+T (K) ˙ωT + ( ˙ωT )2 
+2φq(T)
+!
+T + 
+3
+2
+T T
+
+T −1
++
+
+ω1
+T (K) + ˙ωT
+
+ T
+
+F(0, T )
+ 
+2φ
+!
+ T T + T
+"
+−KT
+
+T −1
+2
++F(0, T )q(T )
+
+ω1
+T (K)(2 + T ) + ˙ωT (2 + 3T )
+
+T −1
+2
++F(0, T ) T
+
+2φ
+!
+T +
+!
+ T (2 + T )
+
++ 2φ(F(0, T )q(T ) −K T )
+!
+T ,
+X2(T ) := F(0, T )q(T )
+
+ω1
+T (B) + ˙ωT
+ 
+(ω1
+T (B))2 + ( ˙ωT )2
+T T −3
+2
++F(0, T )
+
+(ω1
+T (B))2 + ω1
+T (B) ˙ωT + ( ˙ωT )2 
+2φq(T)
+!
+T + 
+3
+2
+T T
+
+T −1
++
+
+ω1
+T (B) + ˙ωT
+
+ T
+
+F(0, T )
+ 
+2φ
+!
+ T T + T
+"
+−KT
+
+T −1
+2
++F(0, T )q(T )
+
+ω1
+T (B)(2 + T ) + ˙ωT (2 + 3T )
+
+T −1
+2
++F(0, T ) T
+
+2φ
+!
+T +
+!
+ T (2 + T )
+
++ 2φ(F(0, T )q(T ) −K T )
+!
+T ,
+and
+X3(T ) := F(0, T )q(T ) ˙ω4
+T T T −2 + F(0, T) ˙ω3
+T
+
+2φq(T )
+!
+T + 
+3
+2
+T T
+
+T −3
+2
++ ˙ω2
+T
++
+2φF(0, T ) T
+!
+ T T + F(0, T ) T T + 2F(0, T )q(T )(1 + 2T ) −K T T
+
+T −1
++2F(0, T ) ˙ωT
+
+2φq(T )
+!
+T + 
+3
+2
+T (1 + T ) + φ T
+!
+T
+
+T −1
+2 −2φK ˙ωT
+!
+T T T −1
+2
++2F(0, T ) T
+ 
+1 + φ
+!
+ T T
+"
++ 2F(0, T)q(T )T −2K T ,
+respectively.
+123
+
+152
+Annals of Operations Research (2026) 357:113–157
+Fig. 13 Implied volatilities calculated by σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS), using the
+parameters given in Table 2. Here, σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the
+implied volatilities calculated by Monte Carlo (MC) simulation, artiﬁcial neural network (ANN) through
+direct mapping M, ANN with WIC correction, ANN using DD model as quasi-process correction, and ANN
+using BS model as quasi-process correction, respectively. The upper left-, upper right-, lower left-, and lower
+right-hand panels display Case A, B, C, and D, respectively. The test data, that is 20% of N =21,000 (i.e., M
+= 1000) is used
+Appendix C. A Comparison of the implied volatilities from four ANN
+methods under various test data sizes
+Here, we compare the implied volatilities calculated by σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD),
+and σ D
+ANN(BS), using the parameters given in Table 2. Figures13, 14, and 15 show the cases
+where the test data, that is, the latter 20% of N =21,000, 210,000, and 420,000 (i.e., M =
+1000, 10,000, and 20,000), respectively, are used.
+Appendix D. The impact and performance of the new and previous
+methods under various ANN conﬁgurations
+In this section, we investigate the impact and performance of the new and previous meth-
+ods under various ANN conﬁgurations, including different activation functions, numbers of
+nodes, and numbers of hidden layers.
+It is evident from Table 6 that the variances and absolute values of the means of
+σ D
+ANN(WIC) −σMC, σ D
+ANN(DD) −σMC, and σ D
+ANN(BS) −σMC are much lower than those of
+σANN −σMC. This is especially true for σ D
+ANN(WIC) −σMC with 1,000 training data cases,
+which are much lower than σANN −σMC with 10,000 training data cases. We observe that the
+123
+
+Annals of Operations Research (2026) 357:113–157
+153
+Fig. 14 Implied volatilities calculated by σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS), using the
+parameters given in Table 2. Here, σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the
+implied volatilities calculated by Monte Carlo (MC) simulation, artiﬁcial neural network (ANN) through
+direct mapping M, ANN with WIC correction, ANN using DD model as quasi-process correction, and ANN
+using BS model as quasi-process correction, respectively. The panels represent different cases: Upper left for
+Case A, upper right for Case B, lower left for Case C, and lower right for Case D. The test data consists of
+20% of the total dataset (N =210,000, M = 10,000)
+hyperparameters are crucial for direct mapping M but have little inﬂuence on the mapping
+MD with WIC approximation. It should be noted that the hyperparameters have a slight
+effect on the performance of MD with DD and MD with BS when the training data is 1,000
+samples, but this effect vanishes when the training data is increased to 10,000 samples, while
+the instability remains in M. The time required for ofﬂine learning increases in proportion to
+the number of training data so by using less data, one can speed up the computation. On the
+other hand, the time required for online prediction does not change considerably with this
+degree of hyperparameter variation. This suggests that the mapping MD can achieve higher
+accuracy in ofﬂine learning with less computation.
+123
+
+154
+Annals of Operations Research (2026) 357:113–157
+Table 6 The mean, variance, and computational times of the new and previous methods under different activation functions, numbers of nodes, and numbers of hidden layers
+#data
+Hyperparameters
+σANN −σMC
+σ D
+ANN(WIC) −σMC
+Computational time
+Computational time
+Activation function
+#Hidden layers
+#Nodes
+Mean
+Variance
+Online(ms)
+Ofﬂine(s)
+Mean
+Variance
+Online (ms)
+Ofﬂine (s)
+1000
+ReLU
+3
+8
+−3.25×10−3
+2.12×10−2
+2.73156
+58.15439
+3.97×10−5
+2.45×10−3
+2.77095
+60.34530
+1000
+ReLU
+3
+16
+−2.87×10−3
+2.91×10−2
+2.70504
+62.03385
+1.55×10−5
+2.38×10−3
+2.75772
+60.36451
+1000
+ReLU
+9
+32
+−9.55×10−4
+3.87×10−2
+2.70276
+75.66634
+−9.99×10−5
+2.23×10−3
+2.78147
+75.63928
+1000
+softmax
+3
+8
+−8.44×10−4
+1.24×10−2
+2.75770
+65.10594
+2.06×10−5
+2.24×10−3
+2.73861
+64.40933
+1000
+softmax
+6
+16
+−3.90×10−3
+1.12×10−2
+2.68484
+75.69889
+−1.14×10−4
+2.24×10−3
+2.84468
+73.88174
+10000
+ReLU
+3
+8
+9.65×10−4
+8.72×10−3
+2.76489
+573.51845
+1.71×10−5
+1.46×10−3
+2.79584
+581.69601
+10000
+ReLU
+3
+16
+1.96×10−3
+5.01×10−3
+2.90258
+581.10616
+1.49×10−5
+1.33×10−3
+2.71214
+589.39636
+10000
+ReLU
+9
+32
+−8.05×10−4
+3.02×10−3
+2.90080
+705.18142
+−8.54×10−5
+1.31×10−3
+2.95268
+732.50726
+10000
+softmax
+3
+8
+2.03×10−3
+7.99×10−3
+2.85006
+592.44848
+1.43×10−5
+1.56×10−3
+2.99424
+629.35740
+10000
+softmax
+6
+16
+2.88×10−4
+4.01×10−3
+2.85056
+639.39005
+7.19×10−5
+1.14×10−3
+3.04332
+704.97423
+data
+Hyperparameters
+σ D
+ANN(DD) −σMC
+σ D
+ANN(BS) −σMC
+Computational time
+Computational time
+#data
+Activation Function
+#Hidden layers
+#Nodes
+Mean
+Variance
+Online (ms)
+Ofﬂine(s)
+Mean
+Variance
+Online(s)
+Ofﬂine(ms)
+1000
+ReLU
+3
+8
+4.59×10−4
+5.54×10−3
+2.68363
+64.95859
+1.05×10−4
+5.04×10−3
+2.62281
+56.00099
+1000
+ReLU
+3
+16
+3.44×10−4
+4.73×10−3
+2.50421
+56.96757
+3.55×10−4
+4.44×10−3
+2.74171
+55.16539
+1000
+ReLU
+9
+32
+3.63×10−4
+5.77×10−3
+2.71760
+69.23810
+−3.13×10−4
+4.38×10−3
+2.81352
+71.20282
+1000
+softmax
+3
+8
+1.48×10−4
+4.77×10−3
+2.74168
+57.43104
+1.48×10−4
+5.75×10−3
+2.64243
+59.30624
+1000
+softmax
+6
+16
+3.25×10−4
+5.11×10−3
+3.02643
+73.32374
+3.82×10−4
+4.56×10−3
+2.86394
+70.68182
+10000
+ReLU
+3
+8
+−4.57×10−5
+2.55×10−3
+2.97780
+601.75565
+3.40×10−4
+3.36×10−3
+2.72480
+523.88725
+10000
+ReLU
+3
+16
+1.72×10−4
+1.82×10−3
+2.91289
+604.06728
+−4.76×10−5
+2.15×10−3
+3.07862
+576.82877
+10000
+ReLU
+9
+32
+−7.86×10−5
+1.50×10−3
+3.03786
+728.00426
+3.47×10−4
+1.42×10−3
+3.00238
+681.45271
+10000
+softmax
+3
+8
+−4.57×10−5
+2.55×10−3
+2.86775
+563.96352
+−9.17×10−5
+3.67×10−3
+2.94847
+578.70264
+10000
+softmax
+6
+16
+−1.61×10−4
+1.58×10−3
+2.96283
+604.99075
+1.75×10−4
+2.33×10−3
+2.84915
+705.97772
+123
+
+Annals of Operations Research (2026) 357:113–157
+155
+Fig. 15 Implied volatilities calculated by σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS), using the
+parameters given in Table 2. Here, σMC, σANN, σ D
+ANN(WIC), σ D
+ANN(DD), and σ D
+ANN(BS) represent the
+implied volatilities calculated by Monte Carlo (MC) simulation, artiﬁcial neural network (ANN) through
+direct mapping M, ANN with WIC correction, ANN using DD model as quasi-process correction, and ANN
+using BS model as quasi-process correction, respectively. The upper left-, upper right-, lower left-, and lower
+right-hand panels display Case A, B, C, and D, respectively. The test data, that is 20% of N = 420,000 (i.e.,
+M = 20,000) is used
+Acknowledgements I express my heartfelt gratitude to Dr. Joerg Kienitz for his invaluable insights and
+enlightening discussions, which greatly contributed to the development of this paper. The author also wish to
+expresses sincere appreciation to the anonymous reviewer and the editors of the Annals of Operations Research
+for their invaluable feedback, which has signiﬁcantly enhanced the quality of the manuscript. I am also grateful
+for the support provided by the JSPS KAKENHI Grant-in-Aid for Young Scientists (B) JP22K13436. Any
+errors or inaccuracies that may remain are entirely my responsibility. The author declares no conﬂicts of
+interest associated with this manuscript
+Declarations
+Conﬂict of interest This study was funded by the JSPS KAKENHI Grant-in-Aid for Young Scientists (B)
+(Grant Number JP22K13436). The author declares no Conﬂict of interest associated with this manuscript.
+This article does not contain any studies with human or animal subjects performed by any of the author.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+123
+
+156
+Annals of Operations Research (2026) 357:113–157
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Aït-Sahalia, Y. (2002). Maximum-likelihood estimation of discretely-sampled diffusions: A closed-form
+approximation approach. Journal of Econometrics, 70(1), 223–262.
+Aït-Sahalia, Y. (2008). Closed-form likelihood expansions for multivariate diffusions. Annals of Statistics, 36,
+906–937.
+Antonov, A., Konikov, M., & Spector, M. (2015). The Free Boundary SABR: Natural Extension to Negative
+Rates. Risk Magazine, September, 68–73.
+Bates, D. S. (1996). Jumps and stochastic volatility: Exchange rate processes implicit in deutsche mark options.
+Review of Financial Study, 9(1), 69–107.
+Brigo, D., & Mercurio, F. (2006). Interest Rate Models: Theory and Practice - with Smile, Inﬂation and Credit
+(2nd ed.). Springer.
+Buccioni, V. (2023). Option pricing with artiﬁcial neural networks and Wiener-Itô chaos expansion approxi-
+mation formulae. Master’s Thesis, Politecnico di Milano.
+Buehler, H., Gonon, L., Teichmann, J., & Wood, B. (2019). Deep hedging. Quantitative Finance, 19(8),
+1271–1291.
+Chen, B., Oosterlee, C. W., & Weide, H. V. D. (2012). A low-bias simulation scheme for the stochastic volatility
+model. International Journal of Theoretical and Applied Finance, 15(2), 1250016.
+Duffy,D.J.(2006).Finitedifferencemethodsinﬁnancialengineering:Apartialdifferentialequationapproach.
+Wiley.
+Dupire, B. (1994). Pricing with a Smile. Risk, January, 18–20.
+Fang, F., & Oosterlee, C. W. (2009). Pricing early-exercise and discrete barrier options by Fourier-cosine series
+expansions. Numerische Mathematik, 114, 27–62.
+Fang, F., & Oosterlee, C. W. (2011). A Fourier-based valuation method for bermudan and barrier options under
+Heston’s model. SIAM Journal on Financial Mathematics, 2(1), 439–463.
+Fouque, J. P., Papanicolaou, G., Sircar, K. R., & Solna, K. (2003). Singular perturbations in option pricing.
+Journal on Applied Mathematics, 63(4), 1648–1681.
+Funahashi, H. (2014). A chaos expansion approximation under hybrid volatility models. Quantitative Finance,
+14(11), 1923–1936.
+Funahashi, H. (2021). Artiﬁcial neural network for option pricing with and without asymptotic correction.
+Quantitative Finance, 21(4), 575–592.
+Funahashi, H. (2021). Replication scheme for the pricing of European options. International Journal of
+Theoretical and Applied Finance, 24(3), 2150014.
+Funahashi, H. (2023). SABR equipped with AI wings. Quantitative Finance, 23(2), 229–249.
+Funahashi, H., & Higuchi, T. (2018). An analytical approximation for single barrier options under stochastic
+volatility models. Annals of Operations Research, 266(1–2), 129–157.
+Funahashi, H., & Kijima, M. (2014). An extension of the chaos expansion approximation for the pricing of
+exotic basket options. Applied Mathematical Finance, 21(2), 109–139.
+Funahashi, H., & Kijima, M. (2015). A chaos expansion approach for the pricing of contingent claims. Journal
+of Computational Finance, 18(3), 27–58.
+Hagan P., Kumar, D., Lesniewski, A., & Woodward, D. (2002). Managing smile risk. Wilmott Magazine,
+September, 84–108.
+Hernandez, A. (2017). Calibration with neural networks. Risk, June, 1–5.
+Heston, S. (1993). A closed form solution for options with stochastic volatility with applications to bond and
+currency options. Review of Financial Studies, 6, 327–343.
+Hornik, K., Stinchcombe, M., & White, H. (1990). Universal approximation of an unknown mapping and its
+derivatives using multilayer feedforward networks. Neural Networks, 3, 551–560.
+Horvath, B., Muguruz, A., & Tomas, M. (2021). Deep learning volatility, a deep neural network perspective
+on pricing and calibration in (rough) volatility models. Quantitative Finance, 21(1), 11–27.
+Hull, J., & White, A. (1987). The pricing of options on assets with stochastic volatilities. Journal of Finance
+and Quantitative Analysis, 3, 281–300.
+Itkin, A. 2019. Deep Learning Calibration of Option Pricing Models: Some Pitfalls and Solutions.
+ArXiv:1906.03507
+Kienitz., J., Acar, S. K., Liang, Q., & Nowaczyk, N. (2020). The CV Makes the Difference: Control Variates
+for Neural Networks. working paper.
+123
+
+Annals of Operations Research (2026) 357:113–157
+157
+Liang, J., Xu, Z., & Li, P. (2021). Deep learning-based least squares forward-backward stochastic differential
+equation solver for high-dimensional derivative pricing. Quantitative Finance, 21(8), 1309–1323.
+Liu, S., Borovykh, A., Grzelak, L., & Oosterlee, C. (2019). A neural network-based framework for ﬁnancial
+model calibration. Journal of Mathematics in Industry, 9(9), 1–28.
+Liu, S., Oosterlee, C. W., & Bohte, S. M. (2019a). Pricing options and computing implied volatilities using
+neural networks. Risk, 7(1), 16.1-16.22.
+Marris, D. (1999). Financial Option Pricing and Skewed Volatility. MPhil thesis, University of Cambridge.
+McGhee, W. A. (2018). An Artiﬁcial Neural Network Representation of the SABR Stochastic Volatility Model.
+Working Paper.
+Nwankpa, C., Ijomah, W., Gachagan, A., & Marshall, S. (2018). Activation Functions: Comparison of trends
+in Practice and Research for Deep Learning. arXiv preprint, arXiv:1811.03378.
+Okatani, T. (2015). Deep learning. Kodansha.
+Rosenblatt, F. (1958). The perceptron: A probabilistic model for information storage and organization in the
+brain. Psychological Review, 65(6), 386–408.
+Rubinstein, M. (1983). Displaced diffusion option pricing. Journal of Finance, 38, 213–217.
+Ruf, J., & Wang, W. (2020). Neural networks for option pricing and hedging: A literature review. Journal of
+Computational Finance, 24(1), 1460–1559.
+Rumelhart, D., Hinton, G., & Williams, R. (1986). Learning representations by back-propagating errors.
+Nature, 323, 533–536.
+Schöbel, R., & Zhu, J. (1999). Stochastic volatility with Ornstein-Uhlenbeck process: An extension. European
+Finance Review, 4, 23–46.
+Takahashi, A. (1999). An asymptotic expansion approach to pricing contingent claims. Asia-Paciﬁc Financial
+Markets, 6, 115–151.
+Valentina, B. (2023). Option pricing with Artiﬁcial Neural Networks and Wiener-Itô Chaos expansion approx-
+imation formulae Master thesis, Polytechnic University of Milan.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

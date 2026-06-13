@@ -1,0 +1,3349 @@
+TITLE: Technical Note—Near-Optimal Bayesian Online Assortment of Reusable Resources
+JOURNAL: Operations_Research
+YEAR: 2024
+DOI: https://doi.org/10.1287/opre.2020.0687
+---
+
+Near-Optimal Bayesian Online Assortment of
+Reusable Resources
+Yiding Feng
+Industrial Engineering and Decision Analytics, Hong Kong University of Science & Technology (HKUST), ydfeng@ust.hk
+Rad Niazadeh
+University of Chicago Booth School of Business, Chicago, IL, rad.niazadeh@chicagobooth.edu
+Amin Saberi
+Management Science and Engineering, Stanford University, Stanford, CA, saberi@stanford.edu
+Motivated by the applications of rental services in e-commerce, we consider revenue maximization in
+online assortment of reusable resources for a stream of arriving consumers with different types. We design
+competitive online algorithms with respect to the optimum online policy in the Bayesian setting, in which
+types are drawn independently from known heterogeneous distributions over time. In the regime where the
+minimum of initial inventories cmin is large, our main result is a near-optimal 1 −min
+
+1
+2,
+p
+log(cmin)/cmin
+
+competitive algorithm for the general case of reusable resources. Our algorithm relies on an expected LP
+benchmark for the problem, solves this LP, and simulates the solution through an independent randomized
+rounding. The main challenge is obtaining point-wise inventory feasibility in a computationally efficient
+fashion from these simulation-based algorithms. To this end, we use several technical ingredients to design
+discarding policies – one for each resource. These policies handle the trade-off between the inventory feasibility
+under reusability and the revenue loss of each of the resources. However, discarding a unit of a resource
+changes the future consumption of other resources. To handle this new challenge, we also introduce post-
+processing assortment procedures that help with designing and analyzing our discarding policies as they
+run in parallel, which might be of independent interest. As a side result, by leveraging techniques from the
+literature on prophet inequality, we further show an improved near-optimal 1 −1/√cmin + 3 competitive
+algorithm for the special case of non-reusable resources. We finally evaluate the performance of our algorithms
+using the numerical simulations on the synthetic data.
+1. Introduction
+Assortment planning refers to the decision of a revenue-maximizing firm as to which subset of
+products to display to its consumers. In classic retail applications, the focus is mostly on sale;
+however, with the advent of online e-commerce platforms, several applications have emerged where
+the focus is on renting out reusable resources. A reusable resource – also referred to as a rental
+product – leaves the stock for some time duration after being assigned to a consumer, and can be
+reassigned to a new consumer once it is back. Examples are virtual machines in cloud computing
+platforms such as AWS, houses in vacation rental online marketplaces such as Airbnb, and local
+1
+arXiv:2512.06997v1 [cs.DS] 7 Dec 2025
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+2
+professional services in online labor platforms such as Thumbtack. In order to extract more revenue,
+a (personalized) assortment policy can decide to display a different subset of these resources once a
+new consumer interacts with the platform; the task of such a policy is to manage the sequence of
+assortments in long-run given the inventory restrictions.
+Motivated by the above applications, we study the online assortment of reusable resources, in which
+a platform sequentially makes irrevocable assortment decisions for a stream of arriving consumers.
+Each consumer has a type that determines her choice probabilities given each possible assortment –
+referred to as the consumer’s choice model. The platform collects a one-time personalized payment
+each time a consumer rents a product. Different products have different rental fees that are deter-
+mined by the consumer’s type. To model the uncertainty about the duration of a rental, we consider
+a stochastic model where the rental durations are drawn independently each time a product is rented.
+The type of the arriving consumer also determines her rental duration distributions for different
+products. To model the platform’s prior information about its future consumers – which is usually
+formed based on the past consumers’ data in an online platform – we take a Bayesian approach. We
+assume the types are drawn independently over time from known heterogeneous distributions.
+Once a new consumer arrives, the platform observes her realized type from the known type distri-
+bution, displays a new subset of products, and allows the consumer to select a product stochastically
+from this subset based on her choice model. The goal is to design an online assortment algorithm
+in order to maximize the expected total collected rental fees (also known as the revenue) during
+the decision making horizon. Importantly, we consider the setting where each product has an initial
+inventory and the algorithm should always assort an available subset of products. Availabilities are
+determined by the current inventory levels of the products – quantities that decrease as a unit of the
+product is rented and increase as it is returned to the stock.
+Given the sequence of distributions for the entire decision making horizon, a revenue benchmark
+in our problem is an upper-bound on the expected revenue of any feasible online algorithm as the
+platform, where the expectation is over the randomness in the algorithm, the type sequence, and
+the consumers’ choices. We measure the performance of our online algorithms using the notion of
+competitive ratio, i.e., the worst-case ratio between the expected revenue of the online algorithm and
+the targeted revenue benchmark.
+As is common in the literature and practice of assortment optimization, we assume general con-
+sumer choice models that are weak substitute, i.e., assorting a new product only weakly decreases
+the choice probability of another assorted product (see Assumption 1). With no further assumptions,
+even the one-shot assortment optimization can be computationally hard. To resolve this issue, we
+assume having oracle access to a blackbox algorithm that can solve the one-shot assortment opti-
+mization (see Assumption 3). Again, this is a common assumption in the literature to get around
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+3
+the computational issue associated with the one-shot problem when general consumer choice models
+are considered (Golrezaei et al. 2014, Rusmevichientong et al. 2020). In the oracle-access computa-
+tional model, we aim to design polynomial-time competitive online algorithms with respect to an
+appropriate revenue benchmark for our problem.
+In this setting, the question of finding the optimum online policy that maximizes the expected total
+revenue is purely computational, and an exponential-size dynamic programming (DP) can formulate
+the optimum online. While no formal computational hardness is known for computing the optimum
+online in our problem, it is conjectured to be computationally hard, even in the oracle-access model.1
+Therefore, it is natural to consider the expected revenue of the optimum online policy as a revenue
+benchmark, and study whether it is amenable to polynomial-time competitive online algorithms.
+More specifically, we ask the following question in this paper:
+How close a polynomial time online algorithm can be to the optimum online policy in terms
+of expected revenue? In particular, can we obtain constant or near-optimal competitive online
+algorithms with respect to the optimum online policy (when initial inventories are large)?
+A significant progress towards providing a compelling answer to the above question is the result of
+Rusmevichientong et al. (2020), which establishes an approximate dynamic programming approach
+for the exponential-size optimum online DP. They show that a greedy algorithm that uses a linear
+approximation of the optimal revenue-to-go function obtains at least 1
+2 of the expected revenue of the
+optimum online. They further study the setting when rental durations are infinite (i.e., the resources
+are not reusable) and rental fees are type-independent. In this setting, they show how to perform a
+rollout on a simple static policy to obtain 1 −min
+
+1
+2,
+1
+3√cmin
+
+fraction of the expected revenue of the
+optimum online policy, where cmin is the minimum initial inventory across different products.2 This
+last result is essentially a near-optimal competitive algorithm when the initial inventories are large
+and the resources are non-reusable. Note that the large initial inventory regime is relevant in many
+applications of assortment optimization and it is the main focus of our paper as well.
+1.1. Our Contributions
+The main contribution of our paper is the following result.
+(Main Result) For the general case of Bayesian online assortment of reusable resources, we
+propose a polynomial-time online algorithm that obtains a near-optimal competitive ratio of
+1 −min
+  1
+2,ε∗(cmin)
+
+, where ε∗(x) = O
+p
+log(x)/x
+
+.
+1 For example, see Papadimitriou and Tsitsiklis (1987) for PSPACE-hardness of finding the optimum policy in partially
+observable Markov decision processes, and related discussions in Rusmevichientong et al. (2020), Anari et al. (2019).
+2 If rental fees are type-dependent, Rusmevichientong et al. (2020) show the same policy obtains 1 −min
+
+1
+2,
+R
+3√cmin
+
+competitive ratio guarantee, where R is the ratio between maximum and minimum rentals fees across different types.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+4
+The above competitive ratio guarantee holds even when the rental fees, consumer choices, and rental
+duration distributions are type-dependent and vary arbitrarily across different types.
+To obtain the above result, our work diverges from Rusmevichientong et al. (2020) by considering
+a different revenue benchmark. In particular, we consider a linear programming relaxation of the
+optimum online policy, refereed to as the Bayesian expected LP. To define this benchmark, suppose
+a feasible online policy knows the exact realizations of future types, but does not know the realiza-
+tions of consumer choices and rental durations. The optimum such policy, known as the clairvoyant
+optimum online, clearly provides a revenue benchmark. Now consider a relaxation of this policy by
+only requiring the inventory feasibility constraints of reusable resources to hold in expectation over
+the randomness in types, consumer choices, and rental durations. Given the sequence of type distri-
+butions, this relaxation is encoded by an LP with exponential number of variables and polynomial
+number of time-varying packing constraints to ensure the inventory feasibility of reusable resources
+in-expectation. See Section 2.2 for details.
+It turns out that we can simply solve the Bayesian expected LP in polynomial-time by solving
+its dual program using the ellipsoid method – given access to the offline assortment oracle. Given
+the LP solution, a simple but powerful technique in the Bayesian online optimization is to use a
+simulation-based rounding algorithm to mimic the optimal solution of this LP (for examples of this
+approach, refer to Alaei et al. 2012, Devanur et al. 2012, Ma et al. 2018, Gallego et al. 2016, Wang
+et al. 2018, Dickerson et al. 2018, Baek and Ma 2019). After observing the type of the arriving
+consumer, this algorithm independently samples an assortment from a distribution over subsets of
+products that comes from the LP solution, ignoring the inventory constraints. This algorithm has
+no loss in terms of the expected revenue compared to the LP solution; however, it only respects the
+inventory constraints of each product in expectation – and not necessarily under every sample path
+of the existing randomness.
+Our main technical contribution is providing techniques to transform the simulation-based algo-
+rithm into a point-wise feasible online algorithm in polynomial-time, with constant or negligible
+multiplicative loss in the expected revenue. To this end, we run a separate procedure over time –
+one for each product – together with the simulation-based policy. After an assortment is sampled
+at each time, each procedure decides whether or not to discard the corresponding product if it is in
+the sampled subset to maintain the inventory feasibility of this product. This specific architecture
+of sampling according to the LP solution and then using product-specific discarding rules have been
+explored in the past, e.g., see Alaei et al. (2012), Gallego et al. (2016), Wang et al. (2018), Dickerson
+et al. (2018), Baek and Ma (2019).3 Similarly, we aim to design polynomial-time online discarding
+3 See specifically the “Primal Routing Algorithm” in Section 7 of Gallego et al. (2016) and the “Separation Algorithm”
+in Section 4.2 of Wang et al. (2018).
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+5
+policies (and other necessary algorithmic constructs) that handle the trade-off between maintaining
+the inventory feasibility and the discarding revenue loss for each product. The main new challenges
+specific to our problem is that (i) products are reusable, (ii) products are weak-substitute — and
+hence discarding a product increases the choice probability of other products, and (iii) discarding
+can be potentially randomized — which combined with reusability creates complicated correlation
+structures among selection indicator random variables across time and makes it challenging to argue
+about point-wise feasibility of policies. In what follows, we sketch our main technical contributions
+and how they overcome these challenges.
+(I) General rental duration distributions/ near-optimal discarding (Section 3.2): The main idea
+behind our near-optimal discarding procedure is discarding each available sampled product indepen-
+dently at random with a small probability. This is a simple yet reasonable approach (cf. Hajiaghayi
+et al. 2007) as the simulation-based algorithm respects the inventory constraints of each product
+in expectation. By independent randomized discarding with probability γ > 0, we leave some slack
+in the inventory feasibility constraint by ensuring that the expected value of the number of units
+of the product under rental is at most (1 −γ) times its initial inventory amount at any time. If
+this quantity as a sum of independent rental indicator random variables concentrates around its
+expectation, we will then avoid violation of the inventory constraint with high probability when
+γ = O
+p
+log(cmin)/cmin
+
+. Moreover, it only loses γ fraction of the expected revenue form this prod-
+uct, as desired.
+However, the above simple approach does not work as described, because (i) the resources are
+reusable and the inventories are limited, hence the rental indicator random variable of a product at
+some time τ < t can be correlated with the rental indicator random variable of the same product
+at time t if the rental duration of time τ is at least t −τ and the last unit of the product is rented
+at τ; (ii) once a discarding procedure drops a product from the sampled assortment, there will
+be less cannibalization of other products – as the consumer choices are weak substitute. This in
+turn increases the probability of other products being chosen by the arriving consumer, and hence
+increases the expected number of units of different products under rental in future for the resulting
+algorithm – compared to what is expected from the simulation-based algorithm.
+We fix the above issues by proposing a post-processing step after the independent randomized
+discarding, which we refer to as sub-assortment sampling. In a nutshell, the goal of the sub-assortment
+sampling is to find a distribution over available subsets, so that the products which are not discarded
+will be rented with exactly the same probability as in the optimal solution of the Bayesian expected
+LP. It is not even clear a priori whether such a distribution exists; nevertheless, we show it does and
+provide a polynomial-time construction to sample from this distribution. Using the properties of the
+sub-assortment sampling, we propose a coupling trick to show our desired concentration despite the
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+6
+fact that the rental indicator random variables are correlated across time. Note that the task of sub-
+assortment sampling is quite general, and it might be of independent interests in other applications.4
+(II) General rental duration distributions/ 1
+2-competitive discarding (Section 3.3): As an alterna-
+tive discarding policy for the general case of reusable resources, consider an exponential-size DP that
+keeps track of the state of each unit of the product (i.e., when each unit returns to the inventory)
+and solves the discarding task optimally. We introduce an approximate version of this DP, which we
+also refer to as optimistic DP, that can be solved in polynomial-time. The goal is to maximize the
+per-unit revenue-to-go of the product when the inventory is automatically replenished by an exoge-
+nous process every time we make a discarding decision, so that the entire inventory of the product
+is always available on-hand. This new DP is inventory independent and thus is polynomial-size. We
+then consider a discarding algorithm that makes the same decisions as the optimistic DP. The result
+is a non-adaptive thresholding discarding rule, that is, an available product is only discarded if its
+rental fee is below a certain threshold. These thresholds are computed upfront and only depend on
+the product, time, and the realized type.
+The main intuition behind why the above discarding algorithm is a reasonable approximation is
+as follows. We can show the expected revenue-to-go of this algorithm is a concave function of the
+inventory level – i.e., the higher the inventory level, the lower the per-unit expected revenue-to-go.
+As a result, when there is no replenishment in reality, it obtains at least the same expected per-
+unit revenue-to-go as the DP with replenishment. We then analyze the worst-case ratio between the
+value of this inventory independent DP and the per-unit revenue of the expected LP using a “factor
+revealing linear program” and its dual. This approach establishes a lower-bound of 1
+2 for this ratio.
+It is worth noting that similar proof techniques based on dual-fitting have been used in the literature
+for other problems with non-reusable resources (e.g., see Zhang and Adelman 2009, Adelman 2007,
+Alaei et al. 2012, Gallego et al. 2016, Wang et al. 2018). Our work extends the existing analysis to
+prove performance guarantees for LP-based discarding policies when resources are reusable.
+We highlight that our DP for designing the above approximate discarding policy given the expected
+LP solution shares similar but not completely identical recursive structures with the approximate
+dynamic programming approach in Rusmevichientong et al. (2020) for directly approximating the
+optimum online policy; in fact, in contrast to their approach, the Bellman update equation of our DP
+uses the the solution of the expected LP (the optimal assortment sampling probabilities). Therefore,
+while both DPs provide the same approximation factor of
+1
+2, ours is with respect to the stronger
+benchmark of expected LP, versus theirs that is with respect to the optimum online policy. This subtle
+4 We would like to highlight that after appearance of an online version of our paper, through a personal communica-
+tion with authors of Goyal et al. (2020a), we were informed that this paper (which was not available online at the
+time) independently and concurrently discovered a procedure similar to our sub-assortment sampling for settings with
+adversarial arrival and reusable resources.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+7
+difference turns out to be the key in combining the performance guarantees of our two algorithms
+in Section 3.2 and Section 3.3, in order to obtain a simple hybrid algorithm that achieves the
+theoretical “best of both worlds” competitive ratio guarantee with respect to the stronger expected
+LP benchmark (and as we observe later, improved performance in numerical simulations).
+(III) Hybrid simulation-based algorithm (Section 3.4): Having access to the above simulation-
+based algorithms with different discarding rules, we aim to define a hybrid algorithm that enjoys
+the competitive ratios of both small and large inventory regimes. To this end, we make an upfront
+decision on which discarding policy to use for each product. In particular, we use the value function of
+the optimistic DP for each product separately to calculate the ratio Ri between the expected revenue-
+to-go of following the optimistic DP for this product and the contribution of this product to the
+expected-LP’s objective. We then compare this ratio with 1−ε∗(ci) (see (1) for definition of function
+ε∗(·)) to partition the products into large inventory (i.e., when Ri + ε∗(ci) < 1) and small inventory
+(i.e., when Ri + ε∗(ci) > 1). For each large inventory product, we run the randomized discarding
+policy in Section 3.2, and for each small inventory product we run the optimistic DP discarding policy
+in Section 3.3. We also use the sub-assortment sampling procedure for post-processing to correct
+the resulting increase in choice probabilities of non-discarded products due to weak-substitution. By
+using the facts that (i) the competitive ratio analyses of both algorithms decouple across products,
+(ii) both analyses compare the expected revenue obtained from each product with the contribution
+of that product to the expected-LP’s objective, and that (iii) sub-assortment sampling corrects the
+choice probabilities of non-discarded products, we show the resulting hybrid policy combines the two
+competitive ratios.5 While this hybrid algorithm attains the best of both worlds competitive ratio of
+1 −min
+  1
+2,ε∗(cmin)
+
+, it is also likely to outperform both policies in practical scenarios; the results of
+our numerical simulations in Section EC.8 empirically support this claim. We also present a second
+hybrid algorithm using the method of conditional expectations. See Section 3.4 for more details.
+We also complement our results by considering the special case of non-reusable resources. By lever-
+aging techniques from the literature on prophet inequality and extending them to the Bayesian assort-
+ment optimization problem, we provide a near-optimal improved competitive ratio of
+
+1 −
+1
+√cmin+3
+
+with respect to the expected LP in this setting. See Section EC.3 and Section EC.7 for more details.
+(iii) Numerical simulations (Section EC.8): We finally provide numerical justification for the
+revenue performance of our proposed policies. Adapting the setups of the numerical experiments
+in Golrezaei et al. (2014), Rusmevichientong et al. (2020) to our setting, we compare the revenue
+of our proposed policies — i.e., the hybrid algorithm and the simulation with optimal discarding
+under infinite rental durations — with other policies in the literature. In our numerical simulations,
+5 It is worth noting that the
+1
+2-competitive approximate DP algorithm of Rusmevichientong et al. (2020) cannot be
+combined using this approach with our near-optimal discarding policy, as this approximate DP algorithm competes
+with the optimum online policy and not the expected-LP.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+8
+we consider various scenarios with both general rental duration distributions and infinite rental
+durations. In all of these scenarios, our policies noticeably outperform the other policies in terms of
+the expected revenue.
+2. Preliminaries
+We first formalize our problem, the model, and all the required assumptions in Section 2.1. We then
+briefly explain various aspects of our expected LP benchmark in Section 2.2.
+2.1. Model and Problem Definition
+The platform offers n different rental products, indexed by [n] = {1,2,...,n}. Each rental product
+i has an initial inventory of ci ∈Z+. Consumers who are interested to rent these products arrive
+sequentially at times t = 1,2,...,T. Consumer t has type zt ∈Zt, where Zt denotes the (discrete)
+space of possible types at time t. We assume types are drawn independently from known probability
+distributions Ft : Zt →[0,1] at times t = 1,...,T.
+Upon the arrival of consumer t, her type zt is revealed to the platform. Given this type and the
+history up to time t, the platform offers an assortment of available products St ∈S from its inventory,
+where S ⊆2[n] is the collection of all feasible assortments that can be offered ignoring the inventory
+availability. Given the assortment St, the consumer chooses a rental product it ∈St, pays a rental
+fee to the platform, and keeps the product for a stochastic rental duration dt ∈Z+.
+We consider the setting where the consumer choice behavior, rental fees of different products, and
+rental duration distributions of different products depend on the type zt at each time t. Formally, a
+consumer type z is defined as a tuple ⟨ϕz,rz,Gz⟩, so that:
+• The choice of a consumer with type z is modeled by a general choice model function ϕz :
+S × [n] →[0,1], where ϕz(S,i) is the probability that consumer with type z chooses product i
+to rent when assortment set S ∈S is offered.
+• For a consumer with type z, rz = (rz
+1,rz
+2,...,rz
+n) ∈Rn, where rz
+i denotes the rental fee of product
+i. Moreover, Gz = (Gz
+1,Gz
+2,...,Gz
+n), where Gz
+i denotes the c.d.f. of rental duration of product i
+for type z. We use gz
+i : [T] →[0,1] to denote the p.d.f. of rental duration of product i for type z.
+Moreover, let ¯Gz
+i (·) ≜1 −Gz
+i (·).
+Note that we assume rental durations are independent across time, that is, if at time t a consumer of
+type z chooses a product i, a fresh sample dt ∼Gz
+i is realized as the rental duration of this product.
+We further impose the following assumptions on our choice models and feasible assortments, which
+are common in previous literature (cf. Golrezaei et al. 2014, Rusmevichientong et al. 2014)
+Assumption 1 (Weak substitutability). For all t ∈[T],z ∈Zt and i ∈[n], ϕz(∅,i) = 0. Moreover,
+for all S ∈S and j ∈[n]/{i}, ϕz(S,i) ≥ϕz(S ∪{j},i).
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+9
+Assumption 2 (Downward-closed feasibility). If S ∈S and S′ ⊆S then S′ ∈S, i.e., a feasible
+assortment will remain feasible after removing any subset of its offered products.
+Remark 1. In online hospitality services such as Airbnb, users report the duration of their stay
+to the platform before platform shows them a listing. In such a variation, the platform makes the
+assortment decision by using the exact realizations of current rental times for the arriving type.
+Indeed, this is a special case of our model where the rental time distributions are point mass.
+Given type distributions {Ft}T
+t=1, the goal is to design online algorithms – playing the role of the
+platform – that maximize the expected revenue granted from rental fees; here, the expectation is over
+randomness of the algorithm (if randomized) and the environment, i.e., types, consumer choices, and
+rental durations. A revenue benchmark for this problem is defined to be any upper-bound on the
+expected revenue obtained by any feasible online algorithm (which might or might not be achievable
+by a feasible online algorithm). Fixing a revenue benchmark, we evaluate the performance of any
+online algorithm by its competitive ratio against this benchmark. Informally speaking, competitive
+ratio is the worst-case ratio between the expected total revenue of the online algorithm and the
+benchmark, where the worst-case is over all possible type distributions.
+Definition 1 (Competitive Ratio). An online algorithm A is α-competitive against a given rev-
+enue benchmark if
+inf
+T ≥1
+inf
+{Ft}T
+t=1
+RevA[{Ft}T
+t=1]
+OPT[{Ft}T
+t=1] ≥α ,
+where RevA[·] is the expected revenue of algorithm A and OPT[·] is the given revenue benchmark.
+For a general consumer choice model, the exact or even approximate offline assortment optimiza-
+tion can be computationally hard (K¨ok et al. 2008). In order to avoid this obstacle when designing
+polynomial time online algorithms for general consumer choice models, we assume having access
+to an algorithm that solves the offline assortment problem. For simplicity, we assume the solver is
+exact throughout the paper, but all of our results still hold with a multiplicative degrade of β in the
+competitive ratios if the solver is a β-approximation algorithm for some 0 < β < 1.
+Assumption 3 (Offline oracle). For all t ∈[T],z ∈Zt, and ˆR ∈Rn
++, we have oracle access to an
+algorithm that finds a subset ˆS ∈S such that:
+ˆS ∈arg max
+S∈S
+Xn
+i=1
+ˆRiϕz(S,i)
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+10
+2.2. Bayesian Expected LP Benchmark
+A key ingredient in all of our algorithms is the Bayesian expected LP benchmark – a concept com-
+monly used in previous literature on online allocations, mechanism design, and assortment opti-
+mization to remedy issues of the above benchmarks (e.g., see Chawla et al. 2010, Alaei 2014, Ma
+et al. 2018, Gallego et al. 2016, Wang et al. 2018, Anari et al. 2019). This benchmark, denoted by
+Expected-LP[{Ft}T
+t=1], uses linear programming to capture the optimum algorithm that only requires
+to satisfy the inventory constraints in expectation, where expectation is taken over randomness in
+rental durations and consumer types given type distributions {Ft}T
+t=1:
+max
+y≥0
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S
+Xn
+i=1 Ft(zt)rzt
+i ϕzt(S,i)yS,t,zt
+s.t.
+Xt
+τ=1
+X
+zτ ∈Zτ
+X
+S∈S Fτ(zτ) ¯Gzτ
+i (t −τ)ϕzτ (S,i)yS,τ,zτ ≤ci
+i ∈[n], t ∈[T]
+X
+S∈S yS,t,zt ≤1
+t ∈[T], zt ∈Zt
+(Expected-LP[{Ft}T
+t=1])
+Here, variables {yS,t,zt}t∈[T ],S∈S,zt∈Zt correspond to probabilities that assortment S is offered to con-
+sumer t given type zt is realized, and first constraint shows inventory feasibility in expectation.
+A few explanations are in order. First, the optimal objective value of this LP is an upper-
+bound on the expected revenue of the clairvoyant optimum online benchmark, and hence the
+weaker non-clairvoyant optimum online (Proposition 1; see Section EC.4 for the proof). Second,
+Expected-LP[{Ft}T
+t=1] can be solved efficiently using an oracle for the offline assortment (Proposi-
+tion 2; see Section EC.4 for the proof). We use this computational block as a pre-processing step in
+all of our algorithms.6
+Proposition 1. For any type distributions {Ft}T
+t=1, the expected total revenue of the clairvoyant
+optimum online benchmark is upper-bounded by Expected-LP[{Ft}T
+t=1].
+Proposition 2. Given an algorithm for offline assortment (Assumption 3), an optimal assignment
+{y∗
+S,t,zt} of Expected-LP[{Ft}T
+t=1] can be computed efficiently in time Poly(n,T,P
+t∈[T ]|Zt|). Moreover,
+{y∗
+S,t,zt} has no more than Poly(n,T,P
+t∈[T ]|Zt|) non-zero entries.
+In Section EC.2, we compare the Bayesian expected LP benchmark with other benchmarks con-
+sidered in the literature.
+6 In fact, one needs to run the ellipsoid method for the dual of this LP using the offline assortment solver as the
+separation oracle in order to find the optimal solution. In practice, to obtain a faster algorithm, one can use cutting
+plane methods such as Vaidya (1996) or even faster almost-linear-time cutting plane methods such as Lee et al. (2015)
+that use the separation oracle more efficiently.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+11
+3. Near-optimal Algorithm for General Rental Durations
+In this section, we present our main result – a near-optimal online simulation-based algorithm with
+competitive ratio at least max
+  1
+2,1 −ε∗(cmin)
+
+against Bayesian expected LP benchmark, where
+ε∗(x) ≜min
+γ∈[0,1] 1 −(1 −γ)
+
+1 −exp
+
+−γ2x
+2 −γ
+
+(1)
+Let γ∗(cmin) be the optimal assignment of γ in Equation (1). It is not hard to verify that ε∗(cmin) =
+O
+p
+log(cmin)/cmin
+
+and is achieved at γ∗(cmin) = O
+p
+log(cmin)/cmin
+
+. We first sketch our approach
+in Section 3.1. We then introduce a simulation-based algorithm with competitive ratio 1−ε∗(cmin) in
+Section 3.2, and a different simulation-based algorithm to guarantee a competitive ratio of at least 1
+2
+(even for small cmin) in Section 3.3. We finally present two simple hybrid algorithms that can obtain
+the best of two competitive ratios in Section 3.4.
+3.1. High-level Sketch of Our Approach
+Let {y∗
+S,t,zt} be the optimal assignment of Expected-LP[{Ft}T
+t=1]. As ∅∈S, without loss of generality
+we can only consider optimal assignments where:
+X
+S∈S y∗
+S,t,zt = 1
+∀t ∈[T], zt ∈Zt
+All of our simulation-based online algorithms in this paper follow four steps:
+- At time t = 0 (before starting):
+(i) Pre-processing: Compute an optimal assignment {y∗
+S,t,zt} of Expected-LP[{Ft}T
+t=1] by
+invoking the offline oracle described in Assumption 3. Also, compute any other offline
+parameters that are occasionally needed by the algorithm.
+- At each time t = 1,2,...,T:
+(ii) Simulation: Upon realizing consumer type zt at time t, an outer procedure suggests ˆS ∈S
+to be assorted by sampling ˆS from the distribution {y∗
+S,t,zt}S∈S over S.
+(iii) Discarding: For each product i ∈ˆS, a separate inner discarding procedure decides whether
+to remove this product from the final assortment, given the history up to time t and
+realized type zt. If no units of product i is available on-hand, it is discarded automatically
+to guarantee inventory feasibility. Otherwise, the inner procedure of product i decides to
+discard or not. Let ¯S ⊆ˆS be the set of undiscarded products.
+(iv) Post-processing: Given zt, ˆS and ¯S, pick a probability distribution Fzt, ˆS, ¯S over all subsets
+of ¯S. Then sample an assortment ˜S ∼Fzt, ˆS, ¯S and offer it to the consumer.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+12
+In the above four-step layout, step (ii) is a loss-less randomized rounding for the optimal solution
+of Expected-LP[{Ft}T
+t=1]; however the resulting assortment only guarantees inventory feasibility of
+each product in expectation. The role of step (iii) and step (iv) is to identify a (randomized) subset
+of this feasible in-expectation assortment, to not only guarantee inventory feasibility in each sample
+path, but to also guarantee that the expected loss due to discarded products is small.
+3.2.
+Large Initial Inventory: Towards Competitive Ratio 1 −ε∗(cmin)
+The main idea behind the algorithm of this subsection is discarding each product independently at
+random with probability γ = O(
+p
+log(cmin)/cmin) in step (iii) at each time t. Intuitively speaking,
+this discarding tries to leave enough probability for not violating any of the inventory constraints at
+each time t. To see this, if discarding a product does not change the choice probability of another
+assorted product, the expected number of unavailable units of each product i at each time t is at
+most (1 −γ)ci – due to the feasibility in-expectation of sampled sets in step (ii). Now consider the
+rental indicator random variables of product i, i.e., random variables indicating whether this product
+is rented at each time or not. If these random variables are mutually independent across time, then
+we can use simple concentration bounds for the sum of independent random variables to prove our
+claim.
+There are two major issues with the above approach:
+(I) Under weak substitutability (Assumption 1), discarding product i weakly increases the choice
+probability of another assorted product j ̸= i. Therefore, the probability of an available unit of
+product j being rented at each time τ < t becomes larger than expected, which in turn increases
+the expected number of unavailable units of this product at time t if we only simulate the
+expected LP’s optimal solution and discard each product independently with probability γ.
+(II) As resources are reusable and inventories are limited, the rental indicator random variable of
+product i at time τ < t is possibly positively correlated with the rental indicator random variable
+of the same product at time t; in fact, first indicator forces the second indicator to be zero when
+the realized rental duration dτ at time t is no smaller than t −τ, last unit of the product is
+rented at time τ, and no units of the product return during [τ + 1,t].
+We address the first issue in Section 3.2.1 by changing the algorithm, and address the second issue
+in Section 3.2.2 by modifying the analysis.
+3.2.1. Sub-assortment Sampling
+To fix the first issue, we propose the sub-assortment sam-
+pling procedure – a post-processing procedure to be used in step (iv). This procedure ensures that
+products which were not discarded in step (ii) are rented by the arriving consumer with exactly
+the same probability as in the optimal solution of the expected LP benchmark. More formally, the
+sub-assortment sampling induces a distribution Fzt, ˆS, ¯S over subsets of ¯S at each time t, so that
+∀i ∈¯S :
+E ˜S∼Fzt, ˆ
+S, ¯
+S
+h
+ϕzt( ˜S,i)
+i
+= ϕzt( ˆS,i) .
+(2)
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+13
+It is not clear a priori whether such a distribution Fzt, ˆS, ¯S exists, yet alone can be sampled from in
+polynomial time (polynomial in number of products n); nevertheless, for any general choice model
+satisfying weak substitutability (Assumption 1) and downward-closed feasibility (Assumption 2), we
+show such a distribution Fzt, ˆS, ¯S exists and we introduce Procedure 1 that recursively samples a set
+from Fzt, ˆS, ¯S in polynomial time.7
+Procedure 1: Sub-assortment Sampling
+Input: choice model ϕ, assortment S = {1,2,...,m}, target probabilities {pi}i∈S
+1 Let σ : [m] →[m] be a permutation such that 1 ≥
+pσ(1)
+ϕ(S,σ(1)) ≥
+pσ(2)
+ϕ(S,σ(2)) ≥··· ≥
+pσ(m)
+ϕ(S,σ(m)) ≥0
+/* Define
+pσ(j)
+ϕ(S,σ(j)) = 1 if ϕ(S,σ(j)) = 0 or S = ∅. */
+2 if
+pσ(m)
+ϕ(S,σ(m)) = 1 then
+3
+return ˜S ←S
+4 else
+5
+Let q0 = 1 −
+pσ(1)
+ϕ(S,σ(1)), qm =
+pσ(m)
+ϕ(S,σ(m)), and qj =
+pσ(j)
+ϕ(S,σ(j)) −
+pσ(j+1)
+ϕ(S,σ(j+1)) for j = 1,...,m −1
+/* Note that Pm
+j=0 qj = 1 */
+6
+Sample j∗∼{qj}m
+j=0
+7
+if j∗= 0 then
+8
+return ∅
+9
+if j∗= m then
+10
+return S
+11
+Let S′ ←{σ−1(j)}j∗
+j=1
+12
+return ˜S ←Sub-assortment Sampling(ϕ,S′,{ϕ(S,i)}i∈S′)
+Proposition 3. For any weak substitutable and downward-closed feasible choice model ϕ, any
+assortment S ∈S, and any target probabilities {pi}i∈S such that pi ≤ϕ(S,i) for all i ∈S, Proce-
+dure 1 outputs a randomized assortment ˜S that satisfies (i) ˜S ⊆S; (ii) E ˜S
+h
+ϕ( ˜S,i)
+i
+= pi for all i ∈S.
+Moreover, it runs in time Poly(n).
+Remark 2. To guarantee Equation (2) given any (zt, ˆS, ¯S) at step (iv), we invoke Proposition 3 by
+setting ϕ ←ϕzt, S ←¯S, and pi ←ϕzt( ˆS,i) for all i ∈¯S. Note that pi = ϕzt( ˆS,i) ≤ϕzt( ¯S,i) for all i ∈¯S,
+simply because of weak substitutability and the fact that ¯S ⊆ˆS.
+Proof of Proposition 3. Without loss of generality, we assume σ is the identity permutation, i.e.,
+σ(i) = i for i ∈[m]. To show the polynomial running time, observe that (a) the running time in each
+7 It is noteworthy that Goyal et al. (2020a) independently and concurrently discovered an idea similar to our sub-
+assortment sampling for settings with adversarial arrival and reusable resources.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+14
+recursion is Poly(n); and (b) the number of iterations of this recursive algorithm is at most n, since
+|S| ≤n at the beginning and the size of the S′ that is the input of the next recursive call shrinks by
+1 at each iteration, i.e., |S′| ≤|S| −1.
+Property (i) holds by construction. We show property (ii) by induction on m = |S|, i.e., size of
+assortment S. In this induction, we use another simple property (iii) that ϕ(S,i)
+Pm
+j=i qj
+
+= pi for
+all i ∈S, which immediately hold by construction.
+Base Case (m = 1). In this case Procedure 1 randomly outputs ∅or S. By property (iii), the induction
+statement holds.
+Inductive
+step
+(m > 1).
+Fix
+an
+arbitrary
+product
+i ∈S.
+Notice
+that
+by
+construction
+E ˜S
+h
+ϕ( ˜S,i) | j∗< i
+i
+= 0, and E ˜S
+h
+ϕ( ˜S,i) | j∗= m
+i
+= ϕ(S,i). For any realized value j∗= i,...,m −1,
+and its corresponding S′ = {1,...,j∗}, we can use the induction hypothesis for the assortment S′
+with probabilities p′
+i = ϕ(S,i) for each i ∈S′. This is true simply because |S′| ≤m −1 and that
+ϕ(S,i) ≤ϕ(S′,i) for each i ∈S′ as the choice model ϕ is weak substitute. By invoking the induction
+hypothesis when we use S′ in the next recursive call, we have E ˜S
+h
+ϕ( ˜S,i) | j∗= j
+i
+= ϕ(S,i) for all
+j = i,...,m −1. Thus, invoking property (iii),
+E ˜S
+h
+ϕ( ˜S,i)
+i
+=
+m
+X
+j=0
+qjE ˜S
+h
+ϕ( ˜S,i) | j∗= j
+i
+=
+ m
+X
+j=i
+qj
+!
+ϕ(S,i) = pi
+which completes the inductive step and finishes the proof.
+□
+3.2.2. The Algorithm and Analysis
+Now we present our first simulation-based algorithm
+(Algorithm 2) with its competitive ratio guarantee (Theorem 1). We defer the formal proof of The-
+orem 1 to Section EC.5.
+Theorem 1. By setting γ = γ∗(cmin), the competitive ratio of Algorithm 2 against the Bayesian
+expected LP benchmark Expected-LP[{Ft}T
+t=1] is at least 1−ε∗(cmin) = 1−O
+p
+log(cmin)/cmin
+
+. More-
+over, it runs in time Poly(n,T,P
+t∈[T ]|Zt|) given oracle access to an offline algorithm for assortment
+optimization (Assumption 3).
+Before presenting the proof sketch of Theorem 1, we first discuss how to use a simple concentration
+argument to obtain a competitive ratio upper bound of 1 −O
+p
+log(cminnT)/cmin
+
+for a slightly
+modified version of Algorithm 2. The simple concentration argument works as follows: consider a
+modified version of Algorithm 2 where the random discarding step is fully correlated. Namely, instead
+of flipping an independent coin for each product i ∈¯St, we flip a single coin, and set ¯St as all available
+products in ˆSt with probability γ, and empty set otherwise. Consider this modified Algorithm 2 until
+the first time that one of the sampled products is not available. Note that before such a bad event
+happens, all allocations are independent over consumers, and the sub-assortment sampling step is
+trivial (i.e., return ˜St = ¯St deterministically). We can bound the probability of this bad event at
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+15
+Algorithm 2: Simulation-based Algorithm with Random Discarding
+Input: discarding probability γ ∈[0,1]
+1 Pre-processing: Compute the optimal assignment {y∗
+S,t,zt} of Expected-LP[{Ft}T
+t=1] by invoking
+the offline assortment oracle (Assumption 3)
+2 for t = 1 to T do
+/* consumer t with type zt ∼Ft arrives */
+3
+Simulation: Upon realizing consumer type zt, sample ˆSt ∼{y∗
+S,t,zt}S∈S
+4
+Discarding: Initialize ¯St ←ˆSt
+5
+for each product i ∈ˆSt do
+6
+Flip an independent coin and remove i from ¯St with probability γ
+7
+if there is no available unit of product i then
+8
+Remove i from ¯St
+9
+Post-processing: Let ˜St ←Sub-assortment Sampling
+
+ϕzt, ¯St,{ϕ( ˆSt,i)}i∈¯St
+
+/* Send a query call to Procedure 1 with appropriate input arguments */
+10
+Offer assortment ˜St to consumer t
+each time and for each product by an exponentially small probability in cmin due to the Chernoff
+bound. Applying union bound for every time t ∈[T] and every i ∈[n], and using the fact that when
+such a bad event happens we have no control over the revenue, the resulting competitive ratio can
+be upper-bounded by 1 −O
+p
+log(cminnT)/cmin
+
+. Note that this competitive ratio has an extra
+p
+log(nT) dependence, and thus is strictly worse than the competitive ratio 1 −ε∗(cmin) stated in
+Theorem 1, which is independent of the number of products n and the number of consumers T.
+To prove Theorem 1 with the competitive ratio 1 −ε∗(cmin) that is independent of the number of
+products n and the number of consumers T, we use a careful coupling argument in our analysis of
+Algorithm 2 that couples the rental indicator random variables of our algorithm with an alternative
+hypothetical algorithm. This hypothetical algorithm ignores inventory constraints of all the products
+and only simulates the expected LP’s optimal solution combined with independent discarding of each
+product with probability γ. This algorithm generates an independent sequence of rental indicator
+random variables, allowing us to use simple concentration bounds. Importantly, this coupling trick
+is only possible because of the guarantee of the sub-assortment sampling procedure in Equation (2)
+(see the formal proof in Section EC.5).
+Remark 3. Our analysis in this section mainly focuses on the asymptotic regime where cmin is large;
+however, we can still plot the competitive ratio 1 −ε∗(cmin) of Algorithm 2 for small values of cmin
+by numerically evaluating ε∗(cmin) using Equation (1). See the black solid curve in Figure 1.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+16
+1
+50
+100
+0.25
+0.5
+0.75
+1
+cmin
+competitive ratio
+Figure 1
+Competitive ratio of simulation-based algorithms: Black solid curve corresponds to Algorithm 2; blue
+dashed curve corresponds to the hybrid between Algorithm 2 and Algorithm 3 (see Section 3.4).
+3.3.
+Small Initial Inventory: Towards Competitive Ratio 1
+2
+In this subsection, we propose our second simulation-based algorithm. The main difference between
+this algorithm and Algorithm 2 is in the discarding step: if no units of product i is available on-
+hand, it is discarded automatically to guarantee inventory feasibility; otherwise, it is only selected in
+the final assortment if rzt
+i ≥P zt
+i,t, where P zt
+i,t are non-adaptive thresholds computed by the algorithm
+up-front (will be discussed later). The aim of this discarding procedure is to to guarantee that only
+available products with high enough rental fees are assorted.
+Technically speaking, for each product i one can consider a separate DP to optimally make dis-
+carding decisions. This DP will maximize per-unit revenue-to-go of assorted units of product i over
+the finite time horizon [1 : T], given the randomized suggestion of step (ii) (recall Section 3.1). The
+drawback is the need for a high-dimensional state variable that keeps track of the on-hand product
+inventories, as well the inventory of units of the product that are in use (and will return to inventory
+at different times). A major ingredient of our algorithm is to replace this high-dimensional DP with
+a simple one that is inventory independent, and uses an optimistic upper-bound of ci on the actual
+inventory in the Bellman equation for updating optimal per-unit revenue-to-go of product i.
+3.3.1. Dynamic Programming for Per-unit Revenue-to-go with Replenishment.
+In
+the rest of this subsection, let XS,t,zt ≜y∗
+S,t,ztFt(zt) for every S,t and zt. Suppose at each time t, a
+new independent consumer type zt ∼Ft is realized. Let ˆS ∼XS,t,zt denote the randomized subset
+sampled in step (ii)(simulation step). Fix a product i ∈[n], with initial inventory of ci units. Now,
+consider a hypothetical scenario where an exogenous process replenishes the inventory at each time
+to guarantee we always have ci units of the product on-hand, no matter how many units are currently
+under rental. In this new problem, the goal is to design an online policy to discard or accept units of
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+17
+the reusable product once suggested in step (ii), in order to maximize the per-unit revenue-to-go of
+renting this product. We can formulate this problem using a simple dynamic programming, where
+Vi,t is the optimal per-unit revenue-to-go of product i during time interval [t : T]. Compared to the
+original high-dimensional DP for solving the optimum discarding, this DP is optimistic in that it
+“imagines” the deficiency in inventory is replenished every period.
+As a convention, let Vi,T +1 = 0. To write the Bellman update equation of the optimistic DP at
+time t using backward induction, suppose type zt is realized and ˆS = S (which happens w.p. XS,t,zt).
+If optimal policy decides to discard product i, then per-unit revenue-to-go will be Vi,t+1. If optimal
+policy decides to not discard i, then with probability (1 −ϕzt(S,i)) the per-unit revenue-to-go will
+still be Vi,t+1.8 However, with probability ϕzt(S,i) consumer rents one of the ci units (remember that
+inventory will always be full), and therefore generates a total revenue-to-go of (ci −1)Vi,t+1 (i.e., due
+to contribution of units not rented at time t; these units will transfer to the inventory at time t + 1)
+plus rzt
+i + Vi,t+d upon realization of rental time d ∼Gzt
+i (i.e., due to contribution of the rented unit).
+To summarize, we will have the following Bellman update equation:
+Vi,t =
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+× max
+
+Vi,t+1 , (1 −ϕzt(S,i))Vi,t+1 + ϕzt(S,i)
+ 1
+ci
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d) + ci −1
+ci
+Vi,t+1
+
+(3)
+Note the update rule of the above dynamic programming can be simplified by rearranging the
+terms; Interestingly, the rule will be independent of ci and ϕzt(S,i) as they cancel out:
+h
+At time t with type zt, i ∈ˆS will be accepted
+i
+⇐⇒rzt
+i ≥Vi,t+1 −
+X
+d gzt
+i (d)Vi,t+d
+(4)
+Remark 4. Later in Section EC.3 and EC.7, we will replace this simple DP with a slightly modified
+one that has inventory dependent state, but is still low dimensional when rental times are infinite.
+This allows us to obtain (an almost) optimal competitive ratio for this special case.
+3.3.2. The Algorithm and Analysis
+We now present our second simulation-based algorithm
+(Algorithm 3), with its competitive ratio guarantee (Theorem 2). 9
+Theorem 2. The competitive ratio of Algorithm 3 against offline Bayesian expected LP benchmark,
+i.e., Expected-LP[{Ft}T
+t=1], is at least 1/2. Moreover, it runs in time Poly(n,T,P
+t∈[T ]|Zt|) given
+oracle access to an offline algorithm for assortment optimization (Assumption 3).
+8 In this hypothetical scenario, we assume that the probability that the consumer select product i equals ϕzt(S,i)
+regardless of whether another product i′ is discarded from S.
+9 The competitive ratio in Theorem 2 is optimal even if rental times are infinite. Consider the following example: there is
+a single non-reusable product with a single unit. There are two time periods T = 2. Consumer 1 has a deterministic type
+that deterministically purchases this item with fee 1. With probability ϵ, consumer 2 has a type that deterministically
+purchases this item with fee 1/ϵ. Otherwise (i.e., with probability 1−ϵ), consumer 2 has a type that purchases nothing.
+In this example, the expected revenue of the Bayesian Expected LP benchmark as well as the clairvoyant policy is 2−ϵ,
+while the expected revenue of any online policy is at most 1.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+18
+Algorithm 3: Simulation-based Algorithm with Non-adaptive Per-unit Revenue Thresholds
+1 Pre-processing:
+• Compute the optimal assignment {y∗
+S,t,zt} of Expected-LP[{Ft}T
+t=1] by invoking the offline
+assortment oracle (Assumption 3)
+• Set XS,t,zt ≜y∗
+S,t,ztFt(zt) for every S,t and zt where optimal assignment has a non-zero entry
+• Solve the dynamic programming with Bellman update described in eq. (3) and boundary
+condition Vi,T +1 = 0 for every product i to obtain {Vi,t}i∈[n],t∈[T ]
+• Let P zt
+i,t ≜Vi,t+1 −
+X
+d gzt
+i (d)Vi,t+d, for all i ∈[n],t ∈[T],zt ∈Zt.
+for t = 1 to T do
+/* consumer t with type zt ∼Ft arrives */
+2
+Simulation: Upon realizing consumer type zt, sample ˆSt ∼{y∗
+S,t,zt}S∈S
+3
+Discarding: Initialize ¯St ←ˆSt
+4
+for each product i ∈ˆSt do
+5
+if rzt
+i < P zt
+i,t or there is no available unit of product i then
+6
+Remove i from ¯St
+/* Per-unit revenue thresholds {P zt
+i,t} are computed once, i.e., are non-adaptive */
+7
+Post-processing: Let ˜St ←Sub-assortment Sampling
+
+ϕzt, ¯St,{ϕ( ˆSt,i)}i∈¯St
+
+/* Send a query call to Procedure 1 with appropriate input arguments */
+8
+Offer assortment ˜St to consumer t
+Proof sketch of Theorem 2. The running time is proved by Proposition 2, and the fact that the
+simple DP in Section 3.3.1 can be solved in polynomial time. The analysis of the competitive ratio
+can be decoupled across products. For each fixed product i, we do the analysis in two parts, each
+sketched below (see the full details in Section EC.6):
+• Part (i) – Section EC.6.1: we first compare Algorithm 3 with the simple optimistic dynamic
+programming described in Section 3.3.1 and show the total expected revenue of Algorithm 3
+due to rentals of product i is at least ciVi,1. We prove this claim using induction, and the fact
+that showing a subset ˜St of sampled assortment ˆSt can only increase the revenue-to-go of the
+discarding policy that follows the thresholds of the optimistic DP (as in the algorithm).
+• Part (ii) – Section EC.6.2: We then compare this simple dynamic programming with expected
+LP benchmark and show for each product i, ciVi,1 is at least 1/2 of the contribution of product i
+to the optimal objective value of Expected-LP[{Ft}T
+t=1] (Part (ii)). In order to prove this part,
+we use the connection between the optimistic DP of Section 3.3.1 and a related factor-revealing
+LP that characterizes the competitive ratio of the optimistic DP. This connections leads us to
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+19
+apply duality arguments to find a lower-bound on the ratio of ciVi,1 and the contribution of
+product i to the optimal objective value of Expected-LP[{Ft}T
+t=1].
+3.4. Hybrid between Algorithm 2 and Algorithm 3
+Best of both worlds discarding. In both Algorithm 2 and Algorithm 3, we have discarding policies
+(one for each of the products) that run independently form each other. Also, both competitive ratio
+analyses essentially decouple across different products, as we analyze the revenue performances of
+these discarding policies for each product separately. Moreover, in both analyses, we compare the
+expected revenue of each product i with the contribution of that product in the expected-LP.
+Considering all of the above design and analysis aspects of our two algorithms, we can propose a
+hybrid algorithm where we decide on the choice of the discarding policy for each product i based on its
+initial inventory ci upfront. Once we finalize these choices, we run the (possibly different) discarding
+algorithms in parallel and separately for different products during the discarding step of our final
+hybrid algorithm. In order to achieve the best of both worlds revenue performance guarantees of
+small and large inventory regimes, we partition the set of products into those with large initial
+inventory and those with small initial inventory (will be formally defined later) at the beginning.
+Given this partition, we assign a “randomized discarding” policy (as described in in Algorithm 2)
+to make discarding decisions of product i across times t ∈[T] if ci is large, and we use a “discarding
+with per-unit revenue thresholds” (as described in in Algorithm 3) if ci is small.
+To distinguish between large and small ci, we first solve the dynamic programming of the optimistic
+DP discarding policy in Section 3.3 for each product i ∈[n], by using its Bellman update equation
+(described in Equation (3)). We then use the value function Vi,1 of the optimistic DP for product i to
+label this product as either large or small inventory. In particular, define Ri to be the ratio between
+between the expected revenue-to-go of the optimistic DP for product i and the contribution of this
+product to the expected-LP’s objective, i.e.,
+Ri ≜
+ciVi,1
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)rzt
+i
+Note that Ri ∈[0.5,1] from Theorem 2. Also note that ε∗(c) is continuous and monotone increasing
+in c, ε∗(0) = 1, and ε∗(+∞) = 0 — see Equation (1) for the definition ε∗(·). We next compare the
+ratio Ri with 1−ε∗(ci). In fact, if Ri +ε∗(ci) < 1, we then except the competitive ratio of randomized
+discarding to be no smaller than that of the optimistic DP, and hence we label the product as “large
+inventory”. Otherwise, we expect the optimistic DP to beat the randomized discarding in terms of
+the competitive ratio, and hence we label the product as “small invenotry”. Finally, we perform
+the sub-assortment sampling as a post-processing step in order to correct the choice probabilities of
+non-discarded products (which might have been increased due to weak-substitution and that other
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+20
+products are either discarded or not even selected in the assortment as they were not available at
+the first place). We denote the resulting algorithm by Sim+Hybrid(i).
+Theorem 3. The competitive ratio of Sim+Hybrid(i) against offline Bayesian expected LP bench-
+mark, i.e., Expected-LP[{Ft}T
+t=1], is at least 1 −min
+  1
+2,ε∗(cmin)
+
+(see Figure 1).
+Proof sketch. As it can be seen by following the lines of both the proof of Theorem 1 in Sec-
+tion 3.2.2 and the proof of Theorem 2 in Section EC.6, the arguments for the revenue performance of
+the corresponding discarding policies for each product i (and also the resulting competitive ratio) is
+independent of how discarding of another product i′ is handled, and therefore the competitive ratio
+guarantees of the randomized discarding and the optimistic DP from these theorems still hold for
+the hybrid algorithm. For brevity, we do not repeat these proofs. We conclude that the proposed
+hybrid algorithm has a competitive ratio of at least max
+  1
+2,1 −ε∗(cmin)
+
+.
+□
+Monte-Carlo simulation to help. In principle, given the sequence of type distributions {Ft}T
+t=1,
+one can simulate both Algorithm 2 and Algorithm 3 and estimate their expected future revenues
+using Monte-Carlo simulation, starting at any time t ∈[T] (given any history up to time t). Now, a
+simple hybrid algorithm can switch to the algorithm with the higher expected revenue and runs this
+algorithm for the next time step given the current history of rental products. By repeatedly applying
+this method at each time t given the history up to this time – a techniques known as the method
+of conditional expectation – we end up with an alternative hybrid algorithm that essentially is the
+Be-The-Leader policy among the two policies at each time, meaning that its expected future revenue
+at each time is at least the expected future revenue of each of the two policies (which can be proved
+using induction). Hence, this hybrid algorithm clearly obtains the best of both worlds competitive
+ratio of 1 −min
+  1
+2,ε∗(cmin)
+
+similar to our previous hybrid algorithm. Such a policy can also choose
+to switch at a lower frequency; but no matter what frequency it picks, it is expected to outperform
+both policies in expectation, both in theory and practice. We use this alternative hybrid algorithm,
+which is denoted by Sim+Hybrid(ii), in our numerical simulations in Section EC.8 as well.
+Theorem 4. The competitive ratio of Sim+Hybrid(ii) against offline Bayesian expected LP bench-
+mark, i.e., Expected-LP[{Ft}T
+t=1], is at least 1 −min
+  1
+2,ε∗(cmin)
+
+(see Figure 1).
+Proof sketch. Consider the following backward induction. The induction hypothesis is that given
+current state J (i.e., the number of available units of each product in the inventory, as well as the
+return time of each allocated unit of every product), and time period t, the expected revenue from
+time t to time T in Hybrid-Sim(ii) is weakly higher than Algorithm 2 and Algorithm 3. Base case
+t = T is straightforward. Suppose the induction hypothesis is correct for t + 1,...,T. Consider the
+inductive step for time t and current state J. Suppose Monte-Carlo simulation suggests that given
+state J, Algorithm 2 achieves higher expected revenue from time t to time T, and its induced new
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+21
+state is J′ (the analysis for the other case is similar). In this case, we know that the expected revenue
+in Hybrid-Sim(ii) from time t to time T can be decomposed into the following two terms: (i) the
+expected revenue in Hybrid-Sim(ii) at time t, and (ii) the expected revenue in Hybrid-Sim(ii)
+from time t+1 to time T under state J′. By construction, term (i) equals to the expected revenue in
+Algorithm 2 at time t. By our induction hypothesis for time t + 1 with state J′, term (ii) is weakly
+higher than the expected revenue in Algorithm 2 from time t + 1 to time T given state J′. Hence,
+the expected revenue in Hybrid-Sim(ii) from time t to time T given state J is weakly higher than
+Algorithm 2 and Algorithm 3 as well, which concludes the backward induction.
+□
+Remark 5. We would like to highlight that while both Sim+Hybrid(i) and Sim+Hybrid(ii) attain
+the theoretical best of both worlds competitive ratio that was mentioned earlier, and as we see in
+our numerical simulations in Section EC.8 they both outperforms other existing policies in practical
+scenarios of our problem, they differ in terms of computational requirements. In fact, Sim+Hybrid(i)
+can easily make upfront decisions for the choice of discarding policy of each product i, with almost no
+extra computation compared to Algorithm 2 and Algorithm 3; nevertheless, Sim+Hybrid(ii) needs
+to run Monte-Carlo simulation several times (depending on the switching frequency) by sampling
+from future types, which makes it less practically appealing.
+4. Conclusion
+We studied designing near-optimal algorithms for the online assortment of reusable resources in
+the Bayesian setting. We proposed an algorithmic framework based on four modular steps: (i) solv-
+ing the expected LP, (ii) simulating the solution, (iii) running a separate discarding procedure
+for each product to maintain point-wise inventory feasibility (while only losing a negligible frac-
+tion of the revenue of each product), and (iv) performing a post-processing step to adjust choice
+probabilities of non-discarded items. Using this framework, we designed an algorithm that is 1 −
+min
+
+1
+2,O
+p
+log(cmin)/cmin
+
+under the general rental duration distributions, and an improved near-
+optimal algorithm with competitive ratio 1−1/
+p
+(cmin + 3) under infinite rental durations. Not only
+our algorithms outperform the existing algorithms in the literature theoretically, we further verified
+their revenue performance advantages through numerical simulations.
+As a road-map for future, it is interesting to study what other practical aspects of a real-world
+assortment problem beyond reusable resources can be modeled, and to what extent mathematical
+programming techniques can be used to design competitive algorithms there. On the technical side,
+the most immediate open problem stemming from our work is finding the optimal competitive ratio
+for the case of general rental duration distributions. In particular, can one shave the logarithmic
+factor in our competitive ratio and obtain a 1 −O(1/√cmin) competitive algorithm, similar to the
+best known competitive ratio in the non-reusable case? As a different yet more ambitious future
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+22
+direction, it would be interesting to study classes of stochastic online optimization similar to the
+Bayesian online assortment further, in order to discover the computational hardness of computing or
+approximating the optimum online policy, i.e., the DP policy. An interesting discovery here would be
+obtaining improved approximations against the optimum online benchmark versus the expected LP
+benchmark through polynomial-time policies, `a la Anari et al. (2019), or proving its impossibility.
+Acknowledgement
+We would like to thanks the anonymous associate editor and the referees for their comments and
+feedback throughout the revision process. Rad Niazadeh’s research is partially supported by an
+Asness Junior Faculty Fellowship from the University of Chicago Booth School of Business.
+References
+Daniel Adelman. Dynamic bid prices in revenue management. Operations Research, 55(4):647–661, 2007.
+Saeed Alaei. Bayesian combinatorial auctions: Expanding single buyer mechanisms to many buyers. SIAM
+Journal on Computing, 43(2):930–972, 2014.
+Saeed Alaei, MohammadTaghi Hajiaghayi, and Vahid Liaghat. Online prophet-inequality matching with appli-
+cations to ad allocation. In Proceedings of the 13th ACM Conference on Electronic Commerce, pages
+18–35. ACM, 2012.
+Nima Anari, Rad Niazadeh, Amin Saberi, and Ali Shameli. Nearly optimal pricing algorithms for production
+constrained and laminar bayesian selection. In Proceedings of the 2019 ACM Conference on Economics
+and Computation, pages 91–92. ACM, 2019.
+Ali Aouad, Vivek Farias, Retsef Levi, and Danny Segev. The approximability of assortment optimization under
+ranking preferences. Operations Research, 66(6):1661–1669, 2018.
+Ali Aouad, Vivek Farias, and Retsef Levi. Assortment optimization under consider-then-choose choice models.
+Management Science, 2020.
+Jackie Baek and Will Ma. Bifurcating constraints to improve approximation ratios for network revenue man-
+agement with reusable resources. Available at SSRN 3482457, 2019.
+Siddhartha Banerjee and Daniel Freund. Uniform loss algorithms for online stochastic decision-making with
+applications to bin packing. In Abstracts of the 2020 SIGMETRICS/Performance Joint International
+Conference on Measurement and Modeling of Computer Systems, pages 1–2, 2020.
+Fernando Bernstein, A G¨urhan K¨ok, and Lei Xie. Dynamic assortment customization with limited inventories.
+Manufacturing & Service Operations Management, 17(4):538–553, 2015.
+Brian Brubach, Nathaniel Grammel, Will Ma, and Aravind Srinivasan. Improved guarantees for offline stochas-
+tic matching via new ordered contention resolution schemes. Advances in Neural Information Processing
+Systems, 34, 2021.
+Carri W Chan and Vivek F Farias. Stochastic depletion problems: Effective myopic policies for a class of
+dynamic optimization problems. Mathematics of Operations Research, 34(2):333–350, 2009.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+23
+Shuchi Chawla, Jason D Hartline, David L Malec, and Balasubramanian Sivan. Multi-parameter mechanism
+design and sequential posted pricing. In Proceedings of the forty-second ACM symposium on Theory of
+computing, pages 311–320, 2010.
+Shuchi Chawla, Nikhil R Devanur, Alexander E Holroyd, Anna R Karlin, James B Martin, and Balasubra-
+manian Sivan. Stability of service under time-of-use pricing. In Proceedings of the 49th Annual ACM
+SIGACT Symposium on Theory of Computing, pages 184–197, 2017.
+Xi Chen, Will Ma, David Simchi-Levi, and Linwei Xin. Assortment planning for recommendations at checkout
+under inventory constraints. Available at SSRN 2853093, 2016.
+Yiwei Chen, Retsef Levi, and Cong Shi. Revenue management of reusable resources with advanced reservations.
+Production and Operations Management, 26(5):836–859, 2017.
+Herman Chernoff et al. A measure of asymptotic efficiency for tests of a hypothesis based on the sum of
+observations. The Annals of Mathematical Statistics, 23(4):493–507, 1952.
+Nikhil R Devanur, Balasubramanian Sivan, and Yossi Azar. Asymptotically optimal algorithm for stochastic
+adwords. In Proceedings of the 13th ACM Conference on Electronic Commerce, pages 388–404, 2012.
+John Dickerson, Karthik Sankararaman, Aravind Srinivasan, and Pan Xu. Allocation problems in ride-sharing
+platforms: Online matching with offline reusable resources. In Proceedings of the AAAI Conference on
+Artificial Intelligence, volume 32, 2018.
+Paul D¨uetting, Michal Feldman, Thomas Kesselheim, and Brendan Lucier. Prophet inequalities made easy:
+Stochastic optimization by pricing non-stochastic inputs. In Foundations of Computer Science (FOCS),
+2017 IEEE 58th Annual Symposium on, pages 540–551. IEEE, 2017.
+Vivek F Farias, Srikanth Jagabathula, and Devavrat Shah. A nonparametric approach to modeling choice with
+limited data. Management science, 59(2):305–322, 2013.
+Moran Feldman, Ola Svensson, and Rico Zenklusen. Online contention resolution schemes. In Proceedings of
+the twenty-seventh annual ACM-SIAM symposium on Discrete algorithms, pages 1014–1033. Society for
+Industrial and Applied Mathematics, 2016.
+Yiding Feng, Rad Niazadeh, and Amin Saberi. Linear programming based online policies for real-time assort-
+ment of reusable resources. Available at SSRN 3421227, 2019.
+Yiding Feng, Rad Niazadeh, and Amin Saberi. Online assortment of reusable resources with exogenous replen-
+ishment. Available at SSRN 3795056, 2021.
+Guillermo Gallego, Garud Iyengar, Robert Phillips, and Abhay Dubey.
+Managing flexible products on a
+network. Available at SSRN 3567371, 2004.
+Guillermo Gallego, Anran Li, Van-Anh Truong, and Xinshang Wang. Online personalized resource allocation
+with customer choice. Working Paper, 2016.
+Vishal Gaur and Doroth´ee Honhon. Assortment planning and inventory decisions under a locational choice
+model. Management Science, 52(10):1528–1543, 2006.
+Negin Golrezaei, Hamid Nazerzadeh, and Paat Rusmevichientong.
+Real-time optimization of personalized
+assortments. Management Science, 60(6):1532–1551, 2014.
+Xiao-Yue Gong, Vineet Goyal, Garud N Iyengar, David Simchi-Levi, Rajan Udwani, and Shuangyu Wang.
+Online assortment optimization with reusable resources. Management Science, 2021.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+24
+Vineet Goyal, Retsef Levi, and Danny Segev. Near-optimal algorithms for the assortment planning problem
+under dynamic substitution and stochastic demand. Operations Research, 64(1):219–235, 2016.
+Vineet Goyal, Garud Iyengar, and Rajan Udwani. Online allocation of reusable resources via algorithms guided
+by fluid approximations. arXiv preprint arXiv:2010.03983, 2020a.
+Vineet Goyal, Garud Iyengar, and Rajan Udwani. Online allocation of reusable resources: Achieving optimal
+competitive ratio. arXiv preprint arXiv:2002.02430, 2020b.
+Martin Gr¨otschel, L´aszl´o Lov´asz, and Alexander Schrijver.
+The ellipsoid method and its consequences in
+combinatorial optimization. Combinatorica, 1(2):169–197, 1981.
+Mohammad Taghi Hajiaghayi, Robert Kleinberg, and Tuomas Sandholm. Automated online mechanism design
+and prophet inequalities. In AAAI, volume 7, pages 58–65, 2007.
+Teck-Hua Ho and Christopher S Tang. Product variety management: research advances, volume 10. Springer
+Science & Business Media, 1998.
+Doroth´ee Honhon, Vishal Gaur, and Sridhar Seshadri. Assortment planning and inventory decisions under
+stockout-based substitution. Operations research, 58(5):1364–1379, 2010.
+John A Howard and Jagdish N Sheth. The theory of buyer behavior. New York, 63, 1969.
+Robert Kleinberg and Seth Matthew Weinberg. Matroid prophet inequalities. In Proceedings of the forty-fourth
+annual ACM symposium on Theory of computing, pages 123–136. ACM, 2012.
+A G¨urhan K¨ok, Marshall L Fisher, and Ramnath Vaidyanathan. Assortment planning: Review of literature
+and industry practice. In Retail supply chain management, pages 99–153. Springer, 2008.
+Ulrich Krengel and Louis Sucheston. On semiamarts, amarts, and processes with finite value. Probability on
+Banach spaces, 4:197–266, 1978.
+Kelvin Lancaster. The economics of product variety: A survey. Marketing science, 9(3):189–206, 1990.
+Euiwoong Lee and Sahil Singla. Optimal online contention resolution schemes via ex-ante prophet inequalities.
+In 26th Annual European Symposium on Algorithms (ESA 2018). Schloss Dagstuhl-Leibniz-Zentrum fuer
+Informatik, 2018.
+Yin Tat Lee, Aaron Sidford, and Sam Chiu-wai Wong. A faster cutting plane method and its implications
+for combinatorial and convex optimization. In 2015 IEEE 56th Annual Symposium on Foundations of
+Computer Science, pages 1049–1065. IEEE, 2015.
+Retsef Levi and Ana Radovanovi´c. Provably near-optimal lp-based policies for revenue management in systems
+with reusable resources. Operations Research, 58(2):503–507, 2010.
+Qian Liu and Garrett van Ryzin. On the choice-based linear programming model for network revenue man-
+agement. Manufacturing & Service Operations Management, 10(2):288–310, 2008.
+Brendan Lucier. An economic view of prophet inequalities. ACM SIGecom Exchanges, 16(1):24–47, 2017.
+Will Ma and David Simchi-Levi. Algorithms for online matching, assortment, and pricing with tight weight-
+dependent competitive ratios. Operations Research, 2020.
+Will Ma, David Simchi-Levi, and Jinglong Zhao. Dynamic pricing under a static calendar. Available at SSRN
+3251015, 2018.
+Vahideh Manshadi and Scott Rodilitz. Online policies for efficient volunteer crowdsourcing. Management
+Science, 2022.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+25
+Aranyak Mehta, Amin Saberi, Umesh Vazirani, and Vijay Vazirani. Adwords and generalized on-line matching.
+In 46th Annual IEEE Symposium on Foundations of Computer Science (FOCS’05), pages 264–273. IEEE,
+2005.
+Rad Niazadeh, Amin Saberi, and Ali Shameli. Prophet inequalities vs. approximating optimum online. In
+International Conference on Web and Internet Economics, pages 356–374. Springer, 2018.
+Zachary Owen and David Simchi-Levi. Price and assortment optimization for reusable resources. Available at
+SSRN 3070625, 2018.
+Christos H Papadimitriou and John N Tsitsiklis. The complexity of markov decision processes. Mathematics
+of operations research, 12(3):441–450, 1987.
+Paat Rusmevichientong, David Shmoys, Chaoxu Tong, and Huseyin Topaloglu. Assortment optimization under
+the multinomial logit model with random choice parameters. Production and Operations Management,
+23(11):2023–2039, 2014.
+Paat Rusmevichientong, Mika Sumida, and Huseyin Topaloglu. Dynamic assortment optimization for reusable
+products with random usage durations. Management Science, 66(7):2820–2844, 2020.
+Ester Samuel-Cahn et al. Comparison of threshold stop rules and maximum for independent nonnegative
+random variables. the Annals of Probability, 12(4):1213–1216, 1984.
+Jennie Si, Andrew G Barto, Warren B Powell, and Don Wunsch.
+Handbook of learning and approximate
+dynamic programming, volume 2. John Wiley & Sons, 2004.
+Stephen A Smith and Narendra Agrawal. Management of multi-item retail inventory systems with demand
+substitution. Operations Research, 48(1):50–64, 2000.
+Kalyan Talluri and Garrett van Ryzin. Revenue management under a general discrete choice model of consumer
+behavior. Management Science, 50(1):15–33, 2004.
+Huseyin Topaloglu. Joint stocking and product offer decisions under the multinomial logit model. Production
+and Operations Management, 22(5):1182–1199, 2013.
+Pravin M Vaidya. A new algorithm for minimizing convex functions over convex sets. Mathematical program-
+ming, 73(3):291–341, 1996.
+Garrett van Ryzin and Siddharth Mahajan. On the relationship between inventory costs and variety benefits
+in retail assortments. Management Science, 45(11):1496–1509, 1999.
+Alberto Vera and Siddhartha Banerjee. The bayesian prophet: A low-regret framework for online decision
+making. Management Science, 67(3):1368–1391, 2021.
+Xinshang Wang, Van-Anh Truong, and David Bank. Online advance admission scheduling for services with
+customer preferences. arXiv preprint arXiv:1805.10412, 2018.
+Dan Zhang and Daniel Adelman. An approximate dynamic programming approach to network revenue man-
+agement with customer choice. Transportation Science, 43(3):381–394, 2009.
+
+Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+26
+This page is intentionally blank. Proper e-companion title
+page, with INFORMS branding and exact metadata of the
+main paper, will be produced by the INFORMS office when
+the issue is being assembled.
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec1
+EC.1. Further Related Work
+Assortment planning for revenue management has an extensively growing literature over the recent
+decades. We refer the reader to related surveys and books (cf. K¨ok et al. 2008, Lancaster 1990, Ho
+and Tang 1998) for a comprehensive study. van Ryzin and Mahajan (1999) study the static model
+which captures the trade-offs between inventory costs and product variety under the multinomial
+logit consumer choice model. Later work have considered assortment under various consumer choice
+models, e.g., demand substitution model (Smith and Agrawal 2000), multinomial logit models (Talluri
+and van Ryzin 2004, Gallego et al. 2004, Liu and van Ryzin 2008, Topaloglu 2013), the Lancaster
+choice model (Gaur and Honhon 2006), ranked-list preference (Honhon et al. 2010, Goyal et al. 2016,
+Aouad et al. 2018), consider-then-choose choice models (Aouad et al. 2020), and non-parametric
+(data-driven) choice models (Farias et al. 2013).
+Online assortment has been studied more recently, both under the prior-free/adversarial and
+the Bayesian settings. For non-reusable products, Bernstein et al. (2015) study a model with two
+products, i.i.d. consumer types and Poisson arrivals. Chan and Farias (2009) study a model with
+non-stationary consumer types and show 1
+2 performance guarantee with respect to the clairvoyant
+optimum online benchmark. Golrezaei et al. (2014) introduce “inventory balancing” algorithms –
+inspired by the seminal work of Mehta et al. (2005) for online ad allocation – and analyze their
+performance guarantee in the prior-free setting using a primal-dual approach. This analysis is later
+improved and generalized by Ma and Simchi-Levi (2020). Chen et al. (2016) consider another variant,
+in which assortments are offered as add-ons with discounted price. The idea of discarding to ensure
+point-wise inventory feasibility is also used in this paper, and they face a similar challenge due to
+product substitution. To overcome this challenge, the authors introduce a sampling procedure with
+error for their specific goal. In contrast, our sub-assortment sampling does not incur any errors and
+can be used for more general purposes.
+For online assortment of reusable products, Levi and Radovanovi´c (2010) study a model that
+assumes independent demands across products, without any choice behavior for the customers with
+infinite selling horizon. A follow up work from Owen and Simchi-Levi (2018) extend this work
+to incorporate customer choice behavior and a finite selling horizon. Chen et al. (2017) study a
+model with multiple units of a single reusable product. They consider stochastic usage durations and
+advance reservations, and obtain data-dependent performance guarantees that are asymptotically
+optimal when the product inventory and the customer arrival rate scale up linearly at the same rate.
+Finally, Rusmevichientong et al. (2020) study the Bayesian setting and Gong et al. (2021), Feng
+et al. (2019, 2021), Goyal et al. (2020b) study the prior-free/adversarial setting where both rental
+fees and rental duration distributions are type-independent and identical across time.
+
+ec2
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+In the Bayesian setting, our problem resembles some aspects of the “prophet inequality” prob-
+lem. This problem is originated from the seminal work of Krengel and Sucheston (1978) in the 70’s,
+and has since been studied quite extensively. Combinatorial generalizations of this problem are also
+studied in the literature. Examples are prophet inequalities for matroids (Samuel-Cahn et al. 1984,
+Hajiaghayi et al. 2007, Kleinberg and Weinberg 2012), matchings (Alaei et al. 2012), and combinato-
+rial auctions (D¨uetting et al. 2017). In these generalizations, the natural dynamic programming for
+computing the optimum online policy are exponential-size (Niazadeh et al. 2018, Anari et al. 2019),
+similar to our problem. See Lucier (2017), for a comprehensive survey.
+Some of our techniques resemble those used for the prophet inequality matching (Alaei et al. 2012),
+the Magician’s problem and online contention resolution schemes (Alaei 2014, Brubach et al. 2021,
+Feldman et al. 2016), the pricing with static calendar problem (Ma et al. 2018), online bipartite
+matching with reusable offline nodes (Dickerson et al. 2018), and the volunteer crowdsourcing prob-
+lem (Manshadi and Rodilitz 2022). The closest to us is the work of (Baek and Ma 2019) for the
+network revenue management problem with reusable resource, in which the authors have indepen-
+dently and concurrently discovered policies similar to our algorithm for the small inventory regime.
+Other expected LP benchmarks have been used in the literature under the name of “ex-ante
+relaxation” for various stochastic online optimization and mechanism design problems. For example,
+see Alaei et al. (2012), D¨uetting et al. (2017), Lee and Singla (2018), Vera and Banerjee (2021), Ma
+et al. (2018), Anari et al. (2019). The factor-revealing technique we use to analyze our DP-based
+thresholding discarding rule resemble the LP-method of Adelman (2007), the dual-fitting methods
+in Alaei (2014), Wang et al. (2018), and also other LP-based methods for approximate dynamic
+programming (see Si et al. (2004) for a comprehensive study).
+Some of our techniques resemble those used for the prophet inequality matching (Alaei et al.
+2012), the Magician’s problem (Alaei 2014), the pricing with static calendar problem (Ma et al.
+2018) (which also studies static assortment policies without reusable resources), and the volunteer
+crowdsourcing problem (Manshadi and Rodilitz 2022). Similar to our Bayesian expected LP, other
+expected LP benchmarks have been used in the literature under the name of “ex-ante relaxation” for
+various stochastic online optimization and mechanism design problems. For example, see Alaei et al.
+(2012), Devanur et al. (2012), Feldman et al. (2016), D¨uetting et al. (2017), Chawla et al. (2017),
+Lee and Singla (2018), Vera and Banerjee (2021), Ma et al. (2018), Anari et al. (2019), Dickerson
+et al. (2018).
+Another interesting line of work related to us is the work of Vera and Banerjee (2021) and Banerjee
+and Freund (2020). The goal here is to obtain improved (additive or regret-based) approximations for
+various stochastic online optimization problems with packing constraints. These papers diverges from
+ours by taking a different technical approach and considering a different regime (i.e., when inventories
+increase with horizon); nevertheless, carrying over their techniques to the reusable resources problem
+stands as an interesting future research direction.
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec3
+EC.2. Comparison Between Different Benchmarks
+Consider the following hierarchy of revenue benchmarks, based on the given information on future
+uncertainty and required computational power:
+1. Optimum offline: the expected revenue of the optimum offline algorithm that has full informa-
+tion about the realized type sequence {zt}T
+t=1, exact realizations of rental durations for each
+type zt and product i, and exact realizations of consumer choices for each possible assortment.
+2. Clairvoyant optimum online: the expected revenue of the optimum online algorithm that has full
+information about the realized type sequence {zt}T
+t=1, but does not know the exact realizations
+of rental durations, nor the consumer choices.
+3. Non-clairvoyant optimum online: the expected revenue of the optimum online algorithm that
+only knows the sequence of type distributions {Ft}T
+t=1.
+Figure EC.1
+Comparing different revenue benchmarks
+Figure EC.1 compares these benchmarks in terms of their expected revenue. No constant compet-
+itive online algorithm exists against optimum offline, even when resources are not reusable; see
+Appendix EC.2.1. (Non-clairvoyant) Optimum online is a weaker benchmark and requires solving an
+exponential-size dynamic programming (Rusmevichientong et al. 2020). Clairvoyant optimum online
+– introduced by Golrezaei et al. (2014) for non-reusable products and extended to reusable products
+by Gong et al. (2021) – is a middle ground benchmark in terms of expected revenue; moreover, it
+has to solve an exponential-size dynamic programming to compute its assortment decisions given
+the extra information {zt}T
+t=1 (which is not provided to a normal online algorithm).
+
+ec4
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+EC.2.1. Unbounded Competitiveness of Optimum Offline
+In this subsection, we construct a simple instance which shows the Bayesian expected LP
+Expected-LP[{Ft}T
+t=1] is at most a O(1/T)-approximation to the optimum offline. Combining with
+Proposition 1, it implies that no online algorithm can achieve a (T-independent) bounded competitive
+ratio against optimum offline.
+Theorem EC.1. The
+Bayesian
+expected
+LP
+Expected-LP[{Ft}T
+t=1]
+is
+at
+most
+a
+O(1/T)-
+approximation to the optimum offline.
+Corollary EC.1. No online algorithm can achieve a (T-independent) bounded competitive ratio
+against optimum offline.
+Proof of Theorem EC.1. Consider the following instance where there is a single product and a
+single consumer type. For this product, its initial inventory is one, reward is one. Once this product
+is allocated, the realized rental duration is one (i.e., becoming available in the next time period)
+with probability 1/2, and infinite otherwise. At every time period t ∈[T], a consumer with this single
+consumer type arrives the platform with probability one. Consumers select this product (if assorted)
+with probability one.
+First, we claim that the expected revenue of the optimum offline is at least T/2. Note that the
+optimum offline observe the realization of rental duration of the product at each time period before
+assorting, and thus it can assort the product whenever the realized rental duration at that time
+period is one. Since the expected number of such time period is T/2, the expected revenue of optimum
+offline is at least T/2.
+Next, we consider the Bayesian expected LP Expected-LP[{Ft}T
+t=1] and its dual program on this
+instance:
+max
+T
+X
+t=1
+yt
+s.t.
+min
+T
+X
+t=1
+θt
+s.t.
+t
+X
+τ=1
+1
+2 yτ ≤1
+t ∈[T] .
+T
+X
+τ=t
+1
+2 θτ ≥1
+t ∈[T] .
+Consider the following feasible dual solution with objective value 2 in the dual program:
+θt = 0, ∀t ∈[T −1],
+θT = 2.
+Invoking the weak duality between the above primal-dual linear programs finishes the proof.
+□
+EC.3. Discussions and Subsidiary Results
+EC.3.1. Static vs. dynamic substitution and sub-assortment sampling.
+In this section, we discuss the connection between the sub-assortment sampling and the assortment
+optimization for both static substitution and dynamic substitution studied in the literature (cf.
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec5
+Ma et al. 2018). We first introduce the definitions of static substitution and dynamic substitution,
+then discuss their connection with the sub-assortment sampling in the offline (single-shot) assort-
+ment problem, and finally we extend the discussion to the online (multi-period) assortment problem
+considered in this paper.
+In our model, the platform can only form assortments of available products. An alternative mod-
+eling assumption is that the platform can form assortments regardless of availability of the products.
+In this alternative model, we distinguish two setups on how consumers make their decision based on
+the displayed assortment and availability of the products.
+• Static substitution: Given assortment S and availability status of all the products, a consumer
+with choice model ϕ chooses item i with probability ϕ(S,i), and the sale is only final if the
+selected product i is available.
+• Dynamic substitution: Given assortment S and availability status of all the products, a consumer
+with choice model ϕ chooses item i with probability ϕ( ˆS,i) where assortment ˆS ⊆S contains
+all available products in S. By definition, the consumer never chooses an unavailable product.
+Notably, in the offline (single-shot) assortment problem, the sub-assortment sampling builds the
+following connection between the static substitution and dynamic substitution.
+Proposition EC.1. For any weak substitutable and downward-closed feasible choice model ϕ, any
+assortment S ∈S, and any possible availability of products, there exists an randomized assortment ˜S
+such that for every product i ∈[n], the probability that product i is allocated under assortment S in
+the static substitution equals to the expected probability (over the randomness of ˜S) that product i is
+allocated under assortment ˜S in the dynamic substitution.
+Proof. Invoking Proposition 3 by setting ϕ ←ϕ, S ←S and pi ←ϕ(S,i) for all i ∈S finishes the
+proof.
+□
+In the online (multi-period) assortment problem, our simulation-based algorithms first samples
+assortment ˆSt based on the optimal assignment of the Bayesian expected LP Expected-LP[{Ft}T
+t=1]
+and then constructs assortment ¯St by removing unavailable products as well as products that the
+discarding procedure suggests to discard. We adapt the definition of static substitution as follows.
+• Static substitution with cancellation: Given assortment S, a consumer with choice model ϕ
+chooses product i with probability ϕ(S,i). After observing the realized choice of the consumer,
+the platform can take back this product i immediately with no cost for the purpose of discarding
+or due to the unavailability.
+Under static substitution with cancellation, we can simplify our simulation-based algorithms (Algo-
+rithm 2 and Algorithm 3) and preserve the same competitive ratio guarantee (Theorem 1 and
+Theorem 2) by modifying the post-processing step as follows: offer assortment ˆSt to consumer t,
+and take back product i selected by consumer t if i ̸∈¯St. The competitive ratio guarantee for the
+
+ec6
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+aforementioned modified Algorithm 3 follows exactly the same argument as before. To see why the
+competitive ratio is preserved for the aforementioned modified Algorithm 2, note that the similar
+argument as the one in Theorem 1 for Algorithm 2 still holds. In particular, we can consider a
+hypothetical scenario where we run the modified Algorithm 2 without inventory constraint and the
+normal run of the modified Algorithm 2; Interestingly, under static substitution with cancellation,
+the coupling between two scenarios this time becomes trivial, and then the concentration argument
+for the hypothetical scenario concludes the argument.
+On the other hand, the online (multi-period) assortment problem with dynamic substitution is
+essentially the exact problem considered in the main text. In this sense, the sub-assortment sampling
+and the coupling argument in the proof of Theorem 1 can be interpreted as a reduction from the
+online assortment problem with dynamic substitution to the online assortment problem with static
+substititution (with cancellation).
+EC.3.2. Improved competitive ratio for non-reusable case.
+As a side result and mainly for the purpose of our numerical simulations, we consider the special
+case of Bayesian online assortment for non-reusable resources in Section EC.7, which was studied
+in Rusmevichientong et al. (2020). We follow our simulation-based approach, and then similar to
+Section 3.3.1 we use a dynamic programming that captures the expected revenue-to-go of the optimal
+discarding policy for this product, when the product receives (probabilistic) suggestions from the
+simulation-based outer algorithm for being placed in the assortment.10 The main difference this time
+is that we can actually compute and run the exact optimum discarding DP. To see this, fix a product
+i ∈[n]. Notice that in the case of infinite rental durations, the current inventory level plays the role
+of the state (which is a monotone decreasing quantity, as units of the product never return to the
+inventory); thus the DP has polynomial-size state space and in principle can be computed efficiently,
+i.e., in polynomial time.
+It turns out that solving this DP is intimately related to the “magician problem”, introduced and
+studied in Alaei (2014), which itself is an special case of online contention resolution schemes for a
+simple uniform matroid environment (Feldman et al. 2016). By leveraging the techniques introduced
+in this paper and extending them to the Bayesian online assortment optimization problem, we show
+that a discarding algorithm that follows the optimum DP loses no more than
+1
+√cmin+3 fraction of
+the expected LP’s revenue (which is the same near-optimal approximation factor as in the magician
+problem).
+Specifically, let EI
+i,t denote the expected revenue-to-go of product i during [t,T] from the optimal
+discarding policy, when I is the remaining inventory at time t. Similar to the discussion about the
+10 This dynamic programming is a generalization of the dynamic programming for prophet inequality matching in Alaei
+et al. (2012).
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec7
+per-unit revenue thresholds in Section 3.3.1, suppose assortment ˆS ∼XS,t,zt is sampled at time t.
+If the DP discarding policy discards the product i from the sampled assortment ˆS, the expected
+revenue-to-go becomes EI
+i,t+1; otherwise, with probability ϕzt( ˆS,i)11 the consumer selects product i
+and the expected revenue-to-go becomes EI−1
+i,t+1 + rzt
+i . With the remaining probability, product i is
+not selected and the expected revenue-to-go is EI
+i,t+1. Hence, we can calculate EI
+i,t using dynamic
+programming (i.e., backward induction), with the following Bellman equation:
+EI
+i,t =
+X
+zt∈Zt
+X
+S∈S XS,t,zt max{EI
+i,t+1,ϕzt(S,i)(rzt
+i + EI−1
+i,t+1) + (1 −ϕzt(S,i))EI
+i,t+1},
+(EC.1)
+After rearranging the terms, it is easy to observe that DP decisions are made by an inventory-
+dependent revenue thresholding rule (that is independent of {ϕzt(S,i)}, as these terms cancel out):
+h
+At time t with type zt and inventory Ii, i ∈ˆS will be accepted
+i
+⇐⇒rzt
+i ≥EIi
+i,t+1 −EIi−1
+i,t+1
+We are now ready to present our refined simulation-based policy with a new discarding rule. This
+rule uses the above inventory-dependent thresholds, where these thresholds are computed upfront,
+but they depend on the product, time, and the current remaining inventory level of the product. See
+Algorithm 4 for details.
+Theorem EC.2. Let cmin = mini∈[n] ci be the smallest inventory. The competitive ratio of Algo-
+rithm 4 against offline Bayesian expected LP benchmark, i.e., Expected-LP[{Ft}T
+t=1] is at least
+
+1 −
+1
+√cmin+3
+
+. Moreover, it runs in time Poly(n,T,P
+t∈[T ]|Zt|) given oracle access to an offline algo-
+rithm for assortment optimization (Assumption 3).
+The proof follows a similar structure as in proof of Theorem 2. See Section EC.7 for details.
+EC.4. Omitted Proofs in Section 2
+Proposition 1. For any type distributions {Ft}T
+t=1, the expected total revenue of the clairvoyant
+optimum online benchmark is upper-bounded by Expected-LP[{Ft}T
+t=1].
+Proof. Let IS,t(z) ∈{0,1} be the indicator that clairvoyant optimum online benchmark offers
+set S at time t for a given type sequence z = {zt}T
+t=1. As clairvoyant optimum online benchmark is
+inventory feasible for any sample path of rental durations d = {dt}T
+t=1, for all i ∈[n], t ∈[T] we have:
+Xt
+τ=1
+X
+S∈S 1{dτ ≥t −τ}ϕzτ (S,i)IS,t(z) ≤ci
+Now, note that random variable dτ is independent from random variable IS,τ(z), as clairvoyant
+optimum online benchmark does not get to see dτ when assorts a set at time τ. Therefore, set-
+ting yS,t,zt = E
+
+IS,t(z)
+zt
+
+results in a feasible assignment in the corresponding linear program
+11 Similiar to Section 3.3.1, here we consider a hypothetical scenario where the probability that the consumer select
+product i equals ϕzt( ˆS,i) regardless whether another product i′ is discarded from ˆS.
+
+ec8
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+Algorithm 4: Simulation-based Algorithm with Inventory-dependent Revenue Thresholds
+1 Pre-processing:
+• Compute the optimal assignment {y∗
+S,t,zt} of Expected-LP[{Ft}T
+t=1] by invoking the offline
+assortment oracle (Assumption 3)
+• Set XS,t,zt ≜y∗
+S,t,ztFt(zt) for every S,t and zt where optimal assignment has a non-zero entry
+• Solve the dynamic programming with Bellman update described in Equation (EC.1) and
+boundary condition EI
+i,T +1 = E0
+i,t = 0 for every product i and I ∈[ci] to obtain {EI
+i,t}I∈[ci]
+i∈[n],t∈[T ]
+• Let QI
+i,t ≜EI
+i,t+1 −EI−1
+i,t+1, for all i ∈[n],t ∈[T],I ∈[ci].
+for t = 1 to T do
+/* consumer t with type zt ∼Ft arrives */
+2
+Simulation: Upon realizing consumer type zt, sample ˆSt ∼{y∗
+S,t,zt}S∈S
+3
+Discarding: Initialize ¯St ←ˆSt
+4
+for each product i ∈ˆSt do
+5
+Let Ii,t be the currently available units of product i for product i.
+6
+if rzt
+i < Q
+Ii,t
+i,t or there is no available unit of product i then
+7
+Remove i from ¯St
+/* Inventory-dependent revenue thresholds {QI
+i,t} are computed once upfront */
+8
+Post-processing: Let ˜St ←Sub-assortment Sampling
+
+ϕzt, ¯St,{ϕ( ˆSt,i)}i∈¯St
+
+/* Send a query call to Procedure 1 with appropriate input arguments */
+9
+Offer assortment ˜St to consumer t
+Expected-LP[{Ft}T
+t=1] for any sequence of type distributions {Ft}T
+t=1; to see this, take expectation of
+the LHS of the above inequality over rental durations first, and then over z considering that types
+are independent. Moreover, the objective value of Expected-LP[{Ft}T
+t=1] under this assignment will
+be equal to the expected revenue of the clairvoyant optimum online benchmark, which finishes the
+proof.
+□
+Proposition 2. Given an algorithm for offline assortment (Assumption 3), an optimal assignment
+{y∗
+S,t,zt} of Expected-LP[{Ft}T
+t=1] can be computed efficiently in time Poly(n,T,P
+t∈[T ]|Zt|). Moreover,
+{y∗
+S,t,zt} has no more than Poly(n,T,P
+t∈[T ]|Zt|) non-zero entries.
+Before proving the above proposition, we first state a technical lemma regarding the ellipsoid
+algorithm and sketch its proof (see Gr¨otschel et al. 1981, for a detailed proof).
+Lemma EC.1. Suppose a primal linear program is bounded and feasible. Moreover, suppose its dual
+has a separation oracle with running time at most τ. Then primal admits an optimal solution that
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec9
+has Poly(τ,m) non-zero entries and can be computed in Poly(τ,m) time, where m is the number of
+dual variables (primal constraints).
+Proof sketch of Lemma EC.1. Because primal LP is feasible and bounded, dual is also feasible
+and bounded. Now consider running ellipsoid algorithm with the separation oracle to solve the dual.
+Ellipsoid can solve the dual in Poly(τ,m) time. Now by looking at the run of ellipsoid and considering
+only dual constraints that ellipsoid returns as violated, we can find Poly(τ,m) many constraints
+in the dual such that the dual value does not change if we throw away the remaining constraints.
+Note that constraints in the dual correspond to variables in the primal. So, we can throw away all
+the variables in the primal except the ones corresponding to the constraints in the dual that the
+separation oracles asks us to keep, and the LP value does not change. Now we have a compact LP
+in the primal, which we can again solve to get the succinct primal solution with Poly(τ,m) non-zero
+entries and in time Poly(τ,m).
+□
+Proof of Proposition 2. Given Lemma EC.1, we are ready to show that expected LP can be
+solved efficiently by the offline oracle. Expected-LP[{Ft}T
+t=1] has exponentially many variables and
+(nT +T) constraints. Hence its dual has only (nT +T) variables and exponentially many constraints.
+Here is the dual LP, with dual variable θi,t and λt:
+min
+θ,λ≥0
+XT
+t=1
+Xn
+i=1 ciθi,t +
+XT
+t=1
+X
+zt∈Zt λt,zt
+s.t.
+λt,zt +
+Xn
+i=1
+XT
+τ=t Ft(zt) ¯Gzt
+i (τ −t)ϕzt(S,i)θi,τ ≥
+Xn
+i=1 rzt
+i Ft(zt)ϕzt(S,i)
+S ∈S, t ∈[T],zt ∈Zt
+Now, fix t ∈[T],zt ∈Zt, and consider the group of dual constraints corresponding to t and zt. In
+order to obtain a separation oracle for this group of constraints, given λt,zt and {θi,τ} one needs to
+find a set ˆS ∈arg max
+S∈S
+Xn
+i=1
+ˆRiϕzt(S,i), where
+ˆRi ≜Ft(zt)
+
+rzt
+i −
+XT
+τ=t
+¯Gzt
+i (τ −t)θi,τ
+
+Then if λt,zt ≥
+Xn
+i=1
+ˆRiϕzt( ˆS,i) these constraints are satisfied and if not the constraint corresponding
+to t,zt, ˆS is a separating hyperplane. Note that because of downward-closeness of S, i.e., Assump-
+tion 2, and weak-substitutability of ϕzt(S,i), i.e., Assumption 1, we can discard products for which
+ˆRi < 0, and hence without loss of generality assume ˆRi ≥0. Therefore, thanks to Assumption 3, one
+can find such a subset ˆS with one call to the oracle. By a polynomial time search over all possi-
+ble t and zt, dual will have a separation oracle with running time Poly(n,T,P
+t∈[T|Zt|). Invoking
+Lemma EC.1 finishes the proof.
+□
+
+ec10
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+EC.5. Omitted Technical Details of Section 3.2 (Large Inventory)
+In this section, we provide the detailed analysis of the competitive ratio of Algorithm 2, stated in
+Theorem 1.
+In Section 3.2, we highlighted the one major issue due to the possibly positive correlation among
+allocations of the same product across time. To work around this issue, we use a careful coupling
+argument in our analysis of Algorithm 2 that couples the rental indicator random variables of our
+algorithm with an alternative hypothetical algorithm. This hypothetical algorithm ignores inventory
+constraints of all the products and only simulates the expected LP’s optimal solution combined with
+independent discarding of each product with probability γ. This algorithm generates an indepen-
+dent sequence of rental indicator random variables, allowing us to use simple concentration bounds.
+Importantly, this coupling trick is only possible because of the guarantee of the sub-assortment
+sampling procedure in Equation (2), which will be clear later in the proof.
+Before the proof of Theorem 1, we recall the multiplicative form of Chernoff concentration
+bound (Chernoff et al. 1952) that is used in the proof.
+Lemma EC.2 (Multiplicative Chernoff Bound). Suppose X1,X2,...,Xt are independent ran-
+dom variables taking values in {0,1}. Let X denote their sum and let µ = E[X] denote the sum’s
+expected value. Then for any δ > 0,
+Pr[X > (1 + δ)µ] ≤exp
+
+−δ2µ
+2 + δ
+
+Proof of Theorem 1. Running time is easily proved by Proposition 2 and Proposition 3. For the
+proof of competitive ratio, we first claim that for any time period t and product i, the probability
+that there exists an available unit of product i is at least 1 −exp
+
+−γ2cmin
+2−γ
+
+. To show this claim,
+define the following indicator random variables and their corresponding events:
+Ii,t : event that a unit of product i is allocated at time t ;
+I(1)
+i,t : event that product i is in assortment ˆSt ;
+I(2)
+i,t : event that product i is not removed from assortment ¯St in line 6 of Algorithm 2 ;
+I(3)
+i,t : event that a unit of product i is available in the inventory at the beginning of time t ;
+I(4)
+i,t : event that product i is in assortment ˜St and selected by consumer t ;
+Ii,τ,t : event that rental duration of product i at time τ is at least t −τ .
+Notice that by definition, Ii,t = I(1)
+i,t · I(2)
+i,t · I(3)
+i,t · I(4)
+i,t . Now, our claim is equivalent to
+Pr
+"X
+τ<t
+Ii,τ · Ii,τ,t ≥ci
+#
+≤exp
+
+−γ2cmin
+2 −γ
+
+,
+(EC.2)
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec11
+for any time t and product i. To show inequality (EC.2), one concern is that {Ii,t} are not independent
+across t. To resolve this issue, consider a hypothetical scenario where we run Algorithm 2 without
+inventory constraints, and define random variables
+n
+z†
+t, ˆS†
+t ,I†
+i,t,I(1)†
+i,t ,I(2)†
+i,t ,I(3)†
+i,t ,I(4)†
+i,t ,I†
+i,τ,t
+o
+i,t,τ exactly
+in the same way as in a normal run of Algorithm 2 with inventory constraints. Note that by definition,
+(i) I(3)†
+i,t
+is deterministically equal to 1; (ii) I†
+i,t = I(1)†
+i,t · I(2)†
+i,t · I(3)†
+i,t · I(4)†
+i,t = I(1)†
+i,t · I(2)†
+i,t · I(4)†
+i,t ; and (iii)
+{I†
+i,τ · I†
+i,τ,t}τ are mutually independent across τ.
+We now use a coupling between this hypothetical scenario and the normal run of Algorithm 2 with
+inventory constraints, in which P
+τ<t I†
+i,τ · I†
+i,τ,t ≥P
+τ<t Ii,τ · Ii,τ,t for all i,t. Clearly, we can define
+the coupling such that z†
+t ←zt, ˆS†
+t ←ˆSt (and therefore I(1)†
+i,t
+= I(1)
+i,t ), I(2)†
+i,t
+←I(2)
+i,t , and I†
+i,τ,t ←Ii,τ,t.
+Additionally, notice that
+Pr
+h
+I(4)
+i,t · I(3)
+i,t = 1 | I(1)
+i,t ,I(2)
+i,t ,I(3)
+i,t
+i
+= ϕzt( ˆSt,i) · I(1)
+i,t · I(2)
+i,t · I(3)
+i,t =ϕz†
+t ( ˆS†
+t ,i) · I(1)†
+i,t · I(2)†
+i,t · I(3)
+i,t
+= Pr
+h
+I(4)†
+i,t · I(3)
+i,t = 1 | I(1)†
+i,t ,I(2)†
+i,t ,I(3)
+i,t
+i
+,
+where the first equality holds due to the guarantee of the sub-assortment sampling in Proposition 3
+and the second equality holds because of the coupling above. Also, the third equality holds automat-
+ically when I(3)
+i,t = 0, and when I(3)
+i,t = 1 it holds because of the guarantee of sub-assortment sampling
+in Proposition 3 and the fact that I(3)
+i,t = I(3)†
+i,t . Again – because of the coupling above – we conclude
+that:
+Pr
+h
+I(4)
+i,t · I(3)
+i,t = 1 | I(1)
+i,t ,I(2)
+i,t
+i
+= Pr
+h
+I(4)†
+i,t · I(3)
+i,t = 1 | I(1)†
+i,t ,I(2)†
+i,t
+i
+.
+Hence, we can further couple random variables I(4)†
+i,t · I(3)
+i,t ←I(4)
+i,t · I(3)
+i,t . Therefore, I(4)†
+i,t · I(3)†
+i,t ≥I(4)†
+i,t ·
+I(3)
+i,t = I(4)
+i,t · I(3)
+i,t , which guarantees that I†
+i,t · I†
+i,τ,t ≥Ii,t · Ii,τ,t for all i,t,τ in this coupling. Thus, it is
+sufficient to show that
+Pr
+"X
+τ<t
+I†
+i,τ · I†
+i,τ,t ≥ci
+#
+≤exp
+
+−γ2cmin
+2 −γ
+
+.
+To show the above bound, we first rewrite the expectation E
+
+I†
+i,τ · I†
+i,τ,t
+
+as follows,
+E
+
+I†
+i,τ · I†
+i,τ,t
+
+= E
+h
+I(1)†
+i,τ · I(2)†
+i,τ · I(4)†
+i,τ · I†
+i,τ,t
+i
+= E
+h
+I(1)†
+i,τ · I(2)†
+i,τ · E
+h
+I(4)†
+i,τ · I†
+i,τ,t | I(1)†
+i,τ ,I(2)†
+i,τ
+ii
+= E
+h
+I(1)†
+i,τ · I(2)†
+i,τ ·
+
+ϕz†
+τ ( ˆS†
+τ,i) · I(1)†
+i,τ · I(2)†
+i,τ · I†
+i,τ,t
+i
+= E
+h
+I(1)†
+i,τ · I(2)†
+i,τ · ϕz†
+τ ( ˆS†
+τ,i) · I†
+i,τ,t
+i
+= (1 −γ)
+X
+zτ ∈Zτ
+X
+S∈S
+Fτ(zτ) ¯Gzτ
+i (t −τ)ϕzt(S,i)y∗
+S,t,zt ,
+where we use the facts that E
+h
+I(4)†
+i,t
+| I(1)†
+i,t ,I(2)†
+i,t
+i
+= ϕz†
+t ( ˆS†
+t ,i) · I(1)†
+i,t
+· I(2)†
+i,t
+by Proposition 3;
+E
+h
+I(2)†
+i,t
+| I(1)†
+i,t
+i
+= (1 −γ)I(1)†
+i,t
+by construction; and random variables I†
+i,τ and I†
+i,τ,t are independent
+conditioned on zτ. Thus,
+E
+"X
+τ<t
+I†
+i,τ · I†
+i,τ,t
+#
+= (1 −γ)
+X
+τ<t
+X
+zτ ∈Zτ
+X
+S∈S
+Fτ(zτ) ¯Gzτ
+i (t −τ)ϕzt(S,i)y∗
+S,t,zt
+
+ec12
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+≤(1 −γ)ci
+We finish the proof of our claim – i.e., tail bound in (EC.2)– by applying the multiplicative form of
+Chernoff bound (Lemma EC.2) for the sequence of independent random variables
+
+I†
+i,τ · I†
+i,τ,t
+ t−1
+τ=1.
+Now, fix any time t and product i. Consider the expected contribution of product i at time period
+t in the revenue of Algorithm 2. By definition, it is equal to
+E[rzt
+i Ii,t] = E
+h
+rzt
+i I(1)
+i,t · I(2)
+i,t · I(3)
+i,t · I(4)
+i,t
+i
+= E
+h
+rzt
+i I(1)
+i,t · I(2)
+i,t · I(3)
+i,t · E
+h
+I(4)
+i,t | I(1)
+i,t ,I(2)
+i,t ,I(3)
+i,t
+ii
+= E
+h
+rzt
+i I(1)
+i,t · I(2)
+i,t · I(3)
+i,t ·
+
+ϕzt( ˆSt,i) · I(1)
+i,t · I(2)
+i,t · I(3)
+i,t
+i
+≥(1 −γ)
+
+1 −exp
+
+−γ2cmin
+2 −γ
+ X
+zt∈Zt
+X
+S∈S
+Ft(zt)rzt
+i ϕzt(S,i)y∗
+S,t,zt
+where the third equality holds by Proposition 3; and the last inequality holds since I(3)
+i,t is mutually
+independent from rzt
+i , I(1)
+i,t , I(2)
+i,t and ˆSt, and the fact that by our tail bound in (EC.2) we have
+E
+h
+I(3)
+i,t
+i
+≥1 −exp
+
+−γ2cmin
+2 −γ
+
+Thus, Algorithm 2 is at least (1 −γ)
+
+1 −exp
+
+−γ2cmin
+2−γ
+
+-competitive against the Bayesian expected
+LP benchmark for any γ ∈[0,1]. Finally, setting γ = γ∗(cmin) finishes the proof.
+□
+EC.6. Omitted Technical Details of Section 3.3 (Small Inventory)
+In this section, we provide the detailed analysis of the competitive ratio of Algorithm 3, stated
+in Theorem 2. The analysis consists of two major parts, as mentioned in the sketch of the proof
+of Theorem 2. We first compare Algorithm 3 with the simple dynamic programming described in
+Section 3.3.1 and show the total expected revenue of Algorithm 3 due to rentals of product i is at
+least ciVi,1 (Part (i), Appendix EC.6.1). We then compare this simple dynamic programming with
+the expected linear programming benchmark and show for each product i, ciVi,1 is at least 1/2 of
+the contribution of product i to the optimal objective value of Expected-LP[{Ft}T
+t=1] (Part (ii),
+Appendix EC.6.2). Combining the two parts finishes the proof of Theorem 2.
+EC.6.1. Part (i) of the Proof: Comparing with the Optimistic DP
+In this part, we use vector variable J = (J1,...,JT) to track the state of inventory of the fixed product
+i, where Jt is the number of copies of product i that will return to inventory at time t. Note that at
+each time t, a possible state J has the form
+J = (0,...,0,Jt,Jt+1,...,JT) ,
+where PT
+τ=t Jt = ci. Now suppose Qi,t(J) denotes the per-unit revenue of product i generated by
+Algorithm 3 from time t to T, when algorithm starts from initial state J at time t.12 As a convention,
+12 Equivalently, Qi,t(J) is equal to the total revenue of product i generated in [t : T] divided by Jt, which is the number
+of on-hand units of product i at the starting time t.
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec13
+let Qi,T +1(J) = 0. We prove the following stronger lemma, which also shows total revenue generated
+from product i is no less than ciVi,1. The intuition behind Lemma EC.3 is as follows: Vi,t is computed
+by an optimistic DP that “imagines” the deficiency in inventory is replenished every period, and the
+expected revenue-to-go is a concave function of inventory level – i.e., the higher the inventory level,
+the lower the per-unit expected revenue-to-go.
+Lemma EC.3. For every t ∈[T] and every possible inventory state J at time t, Qi,t(J) ≥Vi,t.
+Proof. To simplify the proof, we first assume that the algorithm does not perform the sub-
+assortment sampling as the post-processing step (and hence ˜St is the same as ¯St). We finish the
+proof first under this simplifying assumption. Then, we show why the proof still remains intact when
+we replace the assortment set ¯St in the proof with ˜St ⊆¯St, which is the relevant case when use the
+sub-assortment sampling procedure in the post-processing step of Algorithm 3.
+The proof is based on backward induction on t. For the base of induction, Qi,T +1(J) = Vi,T +1 = 0.
+Now suppose for any time in [t + 1 : T] and possible state J the statement of lemma holds. We can
+simply write the following update equation for Qi,t(J) (following exactly the same logic as the update
+rule of the dynamic programming in eq. (3), but considering that only Jt products are on-hand):
+Qi,t(J) =
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+ 
+1
+
+rzt
+i < P zt
+i,t
+ 
+Qi,t+1(J′)
++ 1
+
+rzt
+i ≥P zt
+i,t
+ 
+ 
+ 1 −ϕzt   ¯S,i
+
+Qi,t+1(J′)
++ ϕzt   ¯S,i
+
+Jt
+X
+d gzt
+i (d)
+
+rzt
+i + E
+h
+Qi,t+d(˜J
+(d,d)) + (Jt −1)Qi,t+1(˜J
+(1,d))
+i!!
+(EC.3)
+where ¯S ⊆S is the assortment offered in Algorithm 3 for consumer t after the discarding step,
+J′ ≜(0,...,0,0,Jt + Jt+1,Jt+2,...,JT) is the next state at time t + 1 if no rental happens at time
+t, and ˜J
+(τ,d) is the (randomized) state of Algorithm 3 at time t + τ if a rental happens at time t
+with rental duration d (where the randomness in this state comes from all type realizations and
+consumer choices during future times [t + 1 : t + d −1]). Now, By applying our inductive hypotheses
+to eq. (EC.3) and the weak-substitution (i.e., ϕ(S,i) ≤ϕ( ¯S,i) for all i ∈¯S), we have:
+Qi,t(J) ≥
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+ 
+1
+
+rzt
+i < P zt
+i,t
+ 
+Vi,t+1
++ 1
+
+rzt
+i ≥P zt
+i,t
+ 
+ 
+ 1 −ϕzt   ¯S,i
+
+Vi,t+1 + ϕzt   ¯S,i
+
+Jt
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d + (Jt −1)Vi,t+1)
+!!
+≥
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+ 
+1
+
+rzt
+i < P zt
+i,t
+ 
+Vi,t+1
++ 1
+
+rzt
+i ≥P zt
+i,t
+ 
+(1 −ϕzt (S,i))Vi,t+1 + ϕzt (S,i)
+Jt
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d + (Jt −1)Vi,t+1)
+!
+(EC.4)
+
+ec14
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+Note also that the RHS of above inequality is non-increasing as a function of Jt, simply because if
+1
+Jt increases by additive ϵ > 0 then RHS increases by
+ϵ · 1
+
+rzt
+i ≥P zt
+i,t
+ 
+· ϕzt(S,i) ·
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d −Vi,t+1)
+
+=ϵ · 1
+
+rzt
+i ≥P zt
+i,t
+ 
+· ϕzt(S,i) ·
+ rzt
+i −P zt
+i,t
+
+≥0
+Therefore, as Jt ≤ci, we have
+Qi,t(J) ≥
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+ 
+1
+
+rzt
+i < P zt
+i,t
+ 
+Vi,t+1+
++ 1
+
+rzt
+i ≥P zt
+i,t
+ 
+(1 −ϕzt(S,i))Vi,t+1 + ϕzt(S,i)
+ci
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d + (ci −1)Vi,t+1)
+!
+=
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+× max
+
+Vi,t+1 , (1 −ϕzt(S,i))Vi,t+1 + ϕzt(S,i)
+ 1
+ci
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d) + ci −1
+ci
+Vi,t+1
+
+= Vi,t
+(holds because of Bellman update in eq. (3))
+Now suppose we use the sub-assortment sampling (Procedure 1) in the post-processing step. Per-
+forming this post-processing step does not decrease the revenue guarantee of discarding with “per-
+unit revenue thresholds” P zt
+i,t in Algorithm 3. In fact, showing any subset of ¯S (for example, the
+output ˜S ⊆¯S of the sub-assortment sampling procedure at each time) can only increase the per-unit
+revenue-to-go of the policy that follows the thresholds of the optimistic DP. To be more precise, look
+at the inductive step in the above proof at some time t. When rzt
+i ≥P zt
+i,t, the right-hand-side of the
+first inequality in Equation (EC.4) can only increase if we replace ¯S with ˜S ⊆¯S, simply because
+ϕzt( ¯S,i) < ϕzt( ˜S,i) due to weak-substitution and the coefficient of ϕzt( ¯S,i) in the right-hand-side of
+the first inequality in Equation (EC.4) is non-negative when rzt
+i ≥P zt
+i,t. The rest of the induction
+follows similar to the simplified case, which finishes the final proof.
+□
+EC.6.2. Part (ii): Comparing the Optimistic DP with the Expected-LP
+In order to prove this part, we use the connection between DP of Section 3.3.1 and a related LP.
+This connections leads us to apply simple duality arguments to find a lower-bound on the ratio of
+ciVi,1 and the contribution of product i to the optimal objective value of Expected-LP[{Ft}T
+t=1].
+Note that scaling {rzt
+i } does not change the ratio. Hence, without loss of generality, we normalize
+the contribution of product i to the optimal objective value of Expected-LP[{Ft}T
+t=1], i.e.,
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)rzt
+i = 1
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec15
+Given the above observation and the Bellman update in (3), consider the following primal linear
+program that gives a lower-bound on worst-case value of the ratio:
+min
+r,V≥0
+ciVi,1
+s.t.
+Vi,t ≥
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+∀t
+×max
+n
+Vi,t+1 , (1 −ϕzt(S,i))Vi,t+1 + ϕzt(S,i)
+
+1
+ci
+P
+d gzt
+i (d)(rzt
+i + Vi,t+d) + ci−1
+ci Vi,t+1
+o
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)rzt
+i ≥1
+(EC.5)
+in which we allow both V = {Vi,t}T
+t=1 and r = {rzt
+i }t∈[T ],zt∈Zt to be variables (and this is an important
+feature of this technique). We first relax and simplify this program by switching the outer summation
+and max operator in the RHS of the first constraint (which only makes RHS smaller, hence a
+relaxation). Note also that:
+X
+zt∈Zt
+X
+S∈S XS,t,ztVi,t+1 = Vi,t+1 ≜A,
+and
+X
+zt∈Zt
+X
+S∈S XS,t,zt
+
+(1 −ϕzt(S,i))Vi,t+1 + ϕzt(S,i)
+ 1
+ci
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d) + ci −1
+ci
+Vi,t+1
+
+= 1
+ci
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d) −Vi,t+1
+
++ Vi,t+1 ≜B
+Now, by replacing the new constraint Vi,t ≥max{A,B} with two constraints Vi,t ≥A and Vi,t ≥B,
+we get the following final primal linear programming:
+min
+r,V≥0
+ciVi,1
+s.t.
+Vi,t ≥1
+ci
+X
+zt∈Zt,S∈S XS,t,ztϕzt(S,i)
+X
+d gzt
+i (d)(rzt
+i + Vi,t+d) −Vi,t+1
+
++ Vi,t+1 t ∈[T] ⟨αt⟩
+Vi,t ≥Vi,t+1
+t ∈[T] ⟨βt⟩
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)rzt
+i ≥1
+⟨µ⟩
+(Primal-LP1)
+Now, we write its dual program with dual variable {αt}, {βt} and µ as follows:
+max
+α,β,µ≥0 µ
+s.t.
+µ
+XT
+t=1
+X
+S∈S ϕzt(S,i)XS,t,zt
+
+≤1
+ci
+XT
+t=1
+X
+S∈S ϕzt(S,i)XS,t,ztαt
+
+zt ∈Zt
+⟨rzt
+i ⟩
+αt −αt−1 + βt −βt−1 ≤1
+ci
+X
+zt−1∈Zt−1,S∈S XS,t−1,zt−1ϕzt−1(S,i)αt−1
+−1
+ci
+X
+d<t
+X
+zt−d∈Zt−d,S∈S g
+zt−d
+i
+XS,t−d,zt−dϕzt−d(S,i)αt−d t ∈[2 : T] ⟨Vi,2:T⟩
+α1 + β1 ≤ci
+⟨Vi,1⟩
+(Dual-LP1)
+
+ec16
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+Now, we try to guess a feasible solution for the dual program to obtain our desired lower-bound on
+the optimal primal objective. To this end, let ∀t : αt = µci (therefore, first set of constraints will be
+satisfied automatically) and let all other constraints to be tight. In particular, β1 = ci −α1 = ci(1−µ)
+and for all t ∈[2 : T]:
+βt = βt−1 + 1
+ci
+X
+zt−1∈Zt−1,S∈S XS,t−1,zt−1ϕzt−1(S,i)αt−1
+−1
+ci
+X
+d<t
+X
+zt−d∈Zt−d,S∈S g
+zt−d
+i
+XS,t−d,zt−dϕzt−d(S,i)αt−d
+= βt−1 + µ
+X
+z∈Zt−1,S∈S XS,t−1,zϕz(S,i)
+−µ
+X
+d<t
+X
+z∈Zt−d,S∈S gz
+i XS,t−d,zϕz(S,i)
+(1)
+= β1 −µ
+X
+τ≤t
+X
+z∈Zt,S∈S XS,τ,zϕz(S,i)
+X
+d≥t−τ
+gz
+i (d)
+(2)
+≥ci(1 −µ) −µci = ci(1 −2µ) ,
+where (1) can be obtained by changing the order of summations and rearranging the terms, and
+(2) holds because of inventory feasibility of {y∗
+S,t,zt} in expectation in Expected-LP[{Ft}T
+t=1]. Now,
+setting µ = 1/2 guarantees dual feasibility as ∀t : αt ≥0,βt ≥0, and other constraints of the dual
+are satisfied by construction. By applying weak duality, the desired ratio is at least µ = 1/2, which
+finishes the proof.
+EC.7. Omitted Details for the Special Case of Infinite Rental Durations
+In this section, we consider the setting where the rental times are infinite, i.e., once products are
+purchased by consumers, they never return to the platform. In this setting, the inventory level
+of each product is weakly decreasing over time. This enables us to develop inventory-dependent
+discarding policies in polynomial time using dynamic programming. These discarding policies are
+more refined than the per-unit revenue thresholding policy discussed in Section 3.3.1 and achieve a
+better competitive ratio (i.e., 1 −
+1
+√cmin+3), which is near-optimal when inventories are large.
+Theorem EC.2. Let cmin = mini∈[n] ci be the smallest inventory. The competitive ratio of Algo-
+rithm 4 against offline Bayesian expected LP benchmark, i.e., Expected-LP[{Ft}T
+t=1] is at least
+
+1 −
+1
+√cmin+3
+
+. Moreover, it runs in time Poly(n,T,P
+t∈[T ]|Zt|) given oracle access to an offline algo-
+rithm for assortment optimization (Assumption 3).
+The proof of Theorem EC.2 follows a similar structure as for Theorem 2: we first use induction to
+show {EI
+i,t} are lower-bounds the for future revenue-to-go of Algorithm 4 (Part (i)), then introduce
+a linear program to show Eci
+i,1 is at least 1 −1/√ci + 3 of the contribution of product i to the objective
+value of Expected-LP[{Ft}T
+t=1] (Part (ii)).
+Proof of Theorem EC.2. The running time is proved by Proposition 2, and the fact that the
+simple DP in Section 3.3.1 can be solved in polynomial time. The proof of competitive has two parts:
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec17
+Part (i). Here we show for any product i, time t and inventory I, the future expected revenue in
+Algorithm 4 from product i with current inventory I at time t is at least EI
+i,t by induction on time t
+from T +1 to 1. The base case t = T +1 is satisfied due to our boundary assumption that EI
+i,T +1 = 0.
+Now, suppose from time t + 1 to T + 1, the induction hypothesis holds. Consider the algorithm at
+time t. An assortment ˆS is sampled with probability XS,t,zt. Let ¯S ⊆ˆS be the assortment offered to
+consumer at time t after discarding. For any product i with inventory I, the algorithm discards it
+if EI−1
+i,t+1 + rzt
+i < EI
+i,t+1. By induction hypothesis at time t + 1, it guarantees to gain future expected
+utility at least max{EI
+i,t+1,ϕzt( ¯S,i)(rzt
+i +EI−1
+i,t+1)+(1−ϕzt( ¯S,i))EI
+i,t+1,}. Since the choice model satisfies
+substitutability (Assumption 1), ϕzt( ˆS,i) ≤ϕzt( ¯S,i) for all i ∈¯S. Therefore, by similar calculations
+as in the proof of Lemma EC.3, the induction hypothesis holds at time t, i.e., EI
+i,t lower-bounds the
+future expected revenue from product i with inventory I at time t. Thus, the expected revenue of
+Algorithm 4 from product i from time 1 is at least Eci
+i,1.
+Part (ii). Here we show Eci
+i,1 is at least
+
+1 −
+1
+√ci+3
+
+fraction of the contribution of product i
+to the objective value of Expected-LP[{Ft}T
+t=1]. Note that scaling {rzt
+i } does not change the ratio.
+Hence, without loss of generality, we normalize the contribution of product i to the optimal objective
+value of Expected-LP[{Ft}T
+t=1], i.e.,
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)rzt
+i = 1
+Given the above observation and the Bellman update in (EC.1), consider the following primal linear
+program that gives a lower-bound on worst-case value of the ratio:
+min
+r,E≥0
+Eci
+i,1
+s.t.
+EI
+i,t ≥
+X
+zt∈Zt
+X
+S∈S XS,t,zt max
+n
+EI
+i,t+1,
+ϕzt(S,i)(rzt
+i + EI−1
+i,t+1) + (1 −ϕzt(S,i))EI
+i,t+1
+o
+t ∈[T], I ∈[ci]
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S rzt
+i ϕzt(S,i)XS,t,zt ≥1
+(EC.6)
+where the variables are {rzt
+i } and {EI
+i,t}. To prove our result, it is sufficient to show that for all
+inventory feasible {XS,t,zt} (i.e., P
+t,zt,S XS,t,ztϕzt(S,i) ≤ci), the value of program (EC.6) is at least
+1 −
+1
+√ci+3. To see this, we relax the first constraint in (EC.6) by switching the outer summation and
+max operator, which provides a relaxed linear program as follows,
+min
+r,E≥0
+Eci
+i,1
+s.t.
+EI
+i,t ≥
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)(rzt
+i + EI−1
+i,t+1)
++
+
+1 −
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)
+
+EI
+i,t+1 t ∈[T], I ∈[ci] ⟨αI
+t⟩
+EI
+i,t ≥EI
+i,t+1
+t ∈[T], I ∈[ci] ⟨βI
+t ⟩
+XT
+t=1
+X
+zt∈Zt
+X
+S∈S rzt
+i ϕzt(S,i)XS,t,zt ≥1
+⟨µ⟩
+
+ec18
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+We write its dual program with dual variable αI
+t, βI
+t and γ as follows
+max
+α,β,µ≥0
+µ
+s.t.
+αci
+1 + βci
+1 ≤1
+⟨Eci
+i,1⟩
+αI
+1 + βI
+1 ≤0
+I ∈[ci −1]
+⟨EI
+i,1⟩
+αI
+t+1 + βI
+t+1 ≤
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)αI+1
+t
++
++
+
+1 −
+X
+zt∈Zt
+X
+S∈S XS,t,ztϕzt(S,i)
+
+αI
+t + βI
+t t ∈[T −1], I ∈[ci] ⟨EI
+i,t+1⟩
+XT
+t=1
+X
+S∈S ϕzt(S,i)XS,t,ztµ
+≤
+XT
+t=1
+X
+S∈S
+
+ϕzt(S,i)XS,t,zt
+Xci
+I=1 αI
+t
+
+zt ∈Z
+⟨rzt
+i ⟩
+By weak duality, any feasible dual solution offers a lower bound for the primal.
+Let qt ≜P
+zt∈Zt
+P
+S∈S XS,t,ztϕzt(S,i). By definition, PT
+t=1 qt ≤ci. Now, suppose we are interested
+in generating a feasible dual assignment where the all the constraints corresponding are tight, i.e., a
+solution assignment for the following program (EC.7).
+max
+α,β,µ≥0
+µ
+s.t.
+αci
+1 + βci
+1 = 1
+αI
+1 + βI
+1 = 0
+I ∈[ci −1]
+αI
+t+1 + βI
+t+1 = qtαI+1
+t
++ (1 −qt)αI
+t + βI
+t t ∈[T −1], I ∈[ci]
+µ =
+Xci
+I=1 αI
+t
+z ∈Z
+(EC.7)
+Notice that Lemma EC.4 below is sufficient to finish the proof of Theorem EC.2.
+Lemma EC.4. For any non-negative sequence {qt}T
+t=1 such that PT
+t=1 qt ≤ci, the objective value of
+program (EC.7) is at least 1 −
+1
+√ci+3.
+To show Lemma EC.4, we use a technical lemma (Definition EC.1, Lemma EC.5) developed in Alaei
+(2014) described below.
+Definition EC.1 (Sand/Barrier Process, Alaei 2014). Consider a tape of infinite length
+with one unit of infinitely divisible sand at position 0 and a barrier at position 1. A sequence of
+q1,...,qT (with all qt ∈[0,1]) and a parameter γ ∈(0,1) are given as the input. The sand and the
+barrier are gradually moved to the right in T rounds. At the t-th round the following takes place.
+The left most γ fraction of the sand on the tape is selected and the qt fraction of this sand is moved
+one position to the right. This can be defined formally as follows. Let sj
+t denote the amount of sand
+at postition j at the beginning of round t and let yj
+t ∈[0,1] denote the fraction of sand selected from
+position j during round t. yj
+t are chosen such that P
+i sj
+tyj
+t = γ and such that for some integer θt,
+yj
+t = 1 for any j < θt, and yj
+t = 0 for any j > θt. So during round t, a qtyj
+tsj
+t amount of sand is moved
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec19
+from each position j to position j + 1. The barrier is moved one position to the right at the end of
+any round when the total amount of sand at the position of the barrier is more than 1 −γ. We will
+use λt to denote the position of the barrier at the beginning of round t.
+Lemma EC.5 (Sand/Barrier Process, Alaei 2014). For any γ and any sequence q1,...,qn,
+throughout the sand/barrier process the position of the barrier at the beginning of round t, i.e., λt,
+satisfies
+λt ≤
+t−1
+X
+τ=1
+qτγ + 1 −γλt
+1 −γ .
+Proof of Lemma EC.4. We now construct such a feasible solution of program (EC.7) by using
+the sand/barrier argument. Let {sj
+t},{yj
+t}, and {λt} be variables defined in sand/barrier process of
+Definition EC.1, with parameter T, {qt}t∈[T ] and γ = 1 −
+1
+√ci+3. Think of different inventory levels
+as different positions on the tape of sands, but in reveres order. In other words, position ci −I
+corresponds to inventory level I (basically, sand moves from higher to lower inventory levels). We
+have T number of rounds of sand/barrier process. At round t of the process, there is a total of sci−I
+t
+unit of sand at each position ci −I for I ∈[ci]. The amount of sand sci−I
+t
+is divided into selected
+sand sci−I
+t
+yci−I
+t
+that determines αI
+t, and non-selected sand sci−I
+t
+(1 −yci−I
+t
+), that determines βI
+t . In
+summary, we construct the dual solution as follows,
+µ = γ, αI
+t = sci−I
+t
+yci−I
+t
+, and βI
+t = sci−I
+t
+(1 −yci−I
+t
+).
+Note that all constraint in program (EC.7) is satisfied by above dual construction. Based on the
+description of sand/barrier process in Definition EC.1, only ci positions of tape will have sand (and
+hence this construction is well-defined) if the barrier never passes position ci, i.e., λT +1 ≤ci. Invoking
+Lemma EC.5 and rearranging the terms finish the proof.
+□
+EC.8. Numerical Experiments
+Experimental setup. In our test problems, we have six products indexed by {1,2,3,4,5,6}. Each
+product has an initial inventory ci = 30. We consider consumers who choose from their own “con-
+sideration sets”
+(Howard and Sheth 1969, Aouad et al. 2020). Given the consideration set of a
+consumer, we assume she chooses a product from this set based on a Multinomial Logit (MNL) choice
+model. More specifically, we have six types of consumers. Consumer of type j ∈{1,2,3,4,5,6} con-
+siders products [1 : j]. Given assortment set S, she chooses product i ∈S with probability ϕj(S,i) =
+αj
+i/(αj
+0 + P
+l∈S αj
+l ). For a consumer of type j, αj
+i = 0 for i > j (i.e., she does not pick a product
+outside of her consideration set). Each non-zero αj
+i is drawn independently and uniformly at random
+from interval [0.9,1.1]. To give consumers the possibility of picking an outside option, we set αj
+0 so
+
+ec20
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+that αj
+0/(αj
+0 + P
+l∈[1:j] αj
+l ) = 0.1. Note that consumers of type 1 are the most choosy ones (single-
+minded), while the consumers of type 6 are the least choosy ones. For a consumer of type j, the
+rental fee rj
+i of product i is drawn uniformly at random from the interval [10 · η(j,κ),25 · η(j,κ)]
+where η(j,κ) ≜1 + 2κ · 6−j
+5 , and κ ≥0 is a parameter that varies in our simulation cases (will be
+specified later). After generating rental fees rj = (rj
+1,...,rj
+6) for consumer of type j, we reorder them
+so that rj
+1 ≥rj
+2 ≥... ≥rj
+6.
+We consider a discrete-time selling/renting horizon of length T = 300, and a non-stationary model
+for the arrival of different types in a similar fashion to Rusmevichientong et al. (2020). Roughly
+speaking, in order to have worst-case sequence of type distributions, we intend to have an arrival
+ordering where choosy consumers arrive later in the selling horizon. In this way, policies need to
+either carefully preserve enough inventories for these consumers (in case of no rental), or take finite
+rental durations of products into account and carefully manage in a way that enough items return to
+the inventory when choosy consumers arrive (in case of rentals). To capture this style of arrival, we
+divide the selling horizon into chunks of equal length τ = T/6. Let τ j = (6−j)τ +1 for j = 1,2,...,6.
+At each time t, a consumer of type j arrives with probability proportional to e−0.001κ|t−τj|, i.e.,
+Probability of type j arriving at time t =
+e−0.001κ|t−τj|
+P6
+l=1 e−0.001κ|t−τl| ,
+(EC.8)
+Note that κ = 0 corresponds to i.i.d. arrival of types from the uniform distribution. As κ increases,
+the arrival becomes more heterogeneous (converging towards a deterministic arrival in a descending
+order of types).
+We consider two categories of scenarios: first without rentals (see Figure EC.2) and second with
+rentals (see Figure EC.3). For each category, we consider four test scenarios corresponding to κ ∈
+{0,1,2,3}. In the first case, we set initial inventory ci = 30 for each product i. In the second case,
+we set initial inventory ci = 20 for each product i and consider stochastic rental durations. The
+rental duration of a product i for a consumer of type j is set to be the random variable T/10 + Xj,
+where Xj is geometrically distributed with a mean that is drawn uniformly at random from interval
+[20 · η(7 −j,κ),30 · η(7 −j,κ)] at the beginning of the simulation.
+In order to measure the expected revenue of different policies in each scenario, we consider running
+the target policy over independent sample paths of the input (including type realizations, consumer
+choices, and rental durations) by doing 50 iterations of Monte-Carlo simulation. We then record
+the generated revenues of all runs/sample paths, and use “box and whisker” plots to demonstrate
+the median revenues and the resulting confidence intervals for these quantities (Figure EC.2 and
+Figure EC.3). Moreover, we compute average revenue over all runs/sample paths as an estimate for
+expected revenue of each policy (Table EC.1 and Table EC.2).
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec21
+Policies. In our numerical experiments, we compare the expected revenue of eleven different poli-
+cies/benchmarks that are proposed in this paper or previous work:
+1. Inventory Balancing (IB): an adaptation of the inventory balancing algorithm in Golrezaei
+et al. (2014) by keeping track of inventory levels of reusable products. For our experiments, we
+consider a variant that uses exponential penalty function Ψ(x) = e1−x−e
+1−e .
+2. Myopic greedy policy (GR): given available products at each time, GR offers the (myopic) optimal
+assortment at this time. This policy is a special case of IB when Ψ(x) = 1{x > 0}.
+3. Greedy with linear approximate of value-to-go (GR-APXLinValue): this policy is the approximate
+DP policy suggested in Rusmevichientong et al. (2020), which is essentially a greedy myopic
+policy with respect to a linear approximation of optimal revenue-to-go function. See Section 3
+of Rusmevichientong et al. (2020) for more details.
+4. Rollout policy (Rollout): this policy is obtained by applying rollout13 on the static policy
+propsoed in Section 4 of Rusmevichientong et al. (2020).
+5. Decomposition (Decomp): this policy is another approximate DP policy suggested in Liu and van
+Ryzin (2008), which first decomposes the original DP across the products and then constructs
+value function approximations by solving a separate DP for each product. This policy is a widely
+used heuristics in practice, but has no theoretical performance guarantees.
+6. Simulation-based policy with random discarding (Sim+Random): this policy is the simulation-
+based policy that randomly discard each product with probability γ and is discussed in Sec-
+tion 3.2 (Algorithm 2). For our experiments, we set γ = 0.1.
+7. Simulation-based policy with per-unit revenue thresholds (Sim+Infusion): this policy is the
+simulation-based policy that assumes infusion/replenishment of inventories to compute its dis-
+carding rule and is discussed in Section 3.3 (Algorithm 3).
+8. Simulation-based policy with inventory-dependent revenue thresholds (Sim+OPTDis): this policy
+is designed for the special case of no rentals. It combines an exact randomized rounding of
+expected LP with the optimum online discarding rules for each product to maintain inventory
+feasibility of all the products. We implement this policy for the no-rental scenario. See its formal
+description in Section EC.7 (Algorithm 4).
+9. Simulation-based policy with hybrid discarding rules (Sim+Hybrid(i)): this policy is the first
+type of simulation-based hybrid policy discussed in Section 3.4. Specifically, for each product, it
+compares the approximation guarantees for different discarding policies, i.e., random discarding
+in Algorithm 2 and per-unit revenue thresholds in Algorithm 3 (as well as inventory-dependent
+revenue thresholds in Algorithm 4 for the no rental scenario). Then it chooses the discarding
+policy with higher approximation guarantee for each product separately.
+13 In this context, rollout of a static policy is computed by first computing the revenue-to-go function of the static
+policy using bakward induction, and then greedily picking the best assortment at each time assuming future revenues
+are equal to the computed revenue-to-go values of the static policy.
+
+ec22
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+10. Simulation-based policy with hybrid by Monte-Carlo simulation (Sim+Hybrid(ii)): this policy
+is the second type of simulation-based hybrid policy discussed in Section 3.4. Specifically, after
+every 10 periods, it estimates the expected future revenue of Algorithm 2 and Algorithm 3 (as
+well as Algorithm 4 for the no rental scenario) by doing 20 iterations of Monte-Carlo simulation;
+and switches to the policy with higher estimated future revenue.
+11. Bayesian expected LP: this benchmark is the Bayesian LP benchmark Expected-LP[{Ft}T
+t=1]
+defined in Section 2. It provides an upper-bound on the expected revenue of any feasible online
+policy (when the expectation is taken over the randomness of types, consumer choices, and
+rental durations, as well as internal randomness of the policy).
+Table EC.1
+Comparing average revenue of different policies; No rentals and ∀i : ci = 30; Policies/benchmarks with
+∗are proposed or analyzed in this paper.
+κ = 0
+κ = 1
+κ = 2
+κ = 3
+Expected-LP∗
+3540.84 7156.37 11277.60 14898.52
+IB
+3217.19 6061.12
+8983.46
+11223.27
+GR
+3010.94 5312.55
+7587.48
+9097.80
+GR-APXLinValue
+2985.39 5297.21
+7203.79
+9310.97
+Rollout
+3127.90 5514.05
+7606.67
+9406.78
+Decomp
+3054.57 5785.07
+8521.41
+10227.28
+Sim+Random∗
+3185.99 6382.40 10455.97 13741.67
+Sim+Infusion∗
+3353.12 6715.98 10415.32 13718.31
+Sim+OPTDis∗
+3339.37 6389.41
+9905.52
+13723.17
+Sim+Hybrid(i)∗
+3358.77 6392.97 10537.14 13799.11
+Sim+Hybrid(ii)∗3345.92 6774.01 10827.79 14286.46
+Table EC.2
+Comparing average revenue of different policies; With rentals and ∀i : ci = 20; Policies/benchmarks
+with ∗are proposed or analyzed in this paper.
+κ = 0
+κ = 1
+κ = 2
+κ = 3
+Expected-LP∗
+5224.14 10142.05 15163.47 17552.75
+IB
+4600.11
+7864.58
+10577.72 12096.74
+GR
+4321.88
+7052.60
+9191.56
+10387.23
+GR-APXLinValue
+3860.43
+5968.55
+8148.01
+9234.32
+Rollout
+3970.43
+6373.85
+8828.02
+10012.41
+Decomp
+4417.60
+7148.10
+9484.07
+10580.31
+Sim+Random∗
+4405.69
+8110.84
+12139.91 13531.74
+Sim+Infusion∗
+4576.72
+8025.13
+11531.98 13253.71
+Sim+Hybrid(i)∗
+4583.40
+8228.66
+12109.57 13578.05
+Sim+Hybrid(ii)∗4590.80
+8540.15
+12683.29 14223.66
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec23
+(a) κ = 0
+(b) κ = 1
+(c) κ = 2
+(d) κ = 3
+Figure EC.2
+Box and whisker comparison of different policies in terms of expected revenue when there is no rental.
+Results are based on 50 iterations of Monte-Carlo simulation.
+Results. To summarize our findings from simulations we have run in this section, we consider the
+two categories mentioned above separately:
+1. No rentals: in this case, it is clear from both Table EC.1 and Figure EC.2 that Sim+Hybrid(i)
+and Sim+Hybrid(ii) have better performance than others for all κ. Specifically, compare other
+policies with our hybrid policies by averaging over scenarios κ ∈{0,1,2,3}: Sim+Hybrid(ii)
+achieves 15.90%, 34.59%, 35.92%, 31.01%, 23.35%, 4.67%, 4.52%, 3.08%, 2.97% higher
+performance than IB, GR, GR+APXLinValue, Rollout, Decomp, Sim+Random, Sim+Infusion,
+Sim+OPTDis,
+Sim+Hybrid(i)
+on
+average,
+respectively.14
+Notably,
+both
+hybrid
+policies
+14 An important point to mention is that Rusmevichientong et al. (2020) reports a better performance for Rollout
+compared to IB in a very similar simulation setup. While this looks contradictory at the surface level, we verified the
+
+ec24
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+(a) κ = 0
+(b) κ = 1
+(c) κ = 2
+(d) κ = 3
+Figure EC.3
+Box and whisker comparison of different policies in terms of expected revenue when there are type-
+dependent rentals with stochastic durations. Results are based on 50 iterations of Monte-Carlo sim-
+ulation.
+Sim+Hybrid(i) and Sim+Hybrid(ii) are better than their components, i.e., Sim+Random,
+Sim+Infusion and Sim+OPTDis in almost all parameter regimes. In Sim+Hybrid(i), on average
+there are 58.9% products using the uniform discarding procedure, and the remaining 41.1%
+products using inventory-dependent revenue threshold discussed in Section EC.7. The running
+times of two hybrid policies differ significantly. Specifically, the running time of Sim+Hybrid(i)
+is almost the same as all other policies except Sim+Hybrid(ii) whose running time is 766.39x
+slower due to its Monte-Carlo simulation. See Table EC.3.
+reason behind this discrepancy is that they recompute the approximate values used by Rollout every 100 time periods,
+which improves its performance. We did not recompute any of the parameters for the sake of having a fair comparison.
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec25
+2. Stochastic and finite rentals: in this case, it is clear from both Table EC.2 and Figure EC.3
+that both Sim+Hybrid(i) and Sim+Hybrid(ii) perform noticeably better than other poli-
+cies for all κ. Specifically, Sim+Hybrid(ii) achieves 11.47%, 25.56%, 42.92%, 33.84%, 22.89%,
+4.77%, 5.17%, 3.36% higher performance than IB, GR, GR+APXLinValue, Rollout, Decomp,
+Sim+Random, Sim+Infusion, Sim+Hybrid(i) on average, respectively. Notably, both hybrid poli-
+cies Sim+Hybrid(i) and Sim+Hybrid(ii) are better than their components, i.e., Sim+Random
+and Sim+Infusion. In Sim+Hybrid(i), on average there are 57.0% products using the uniform
+discarding procedure, and the remaining 43.0% products using per-unit revenue threshold dis-
+cussed in Section 3.3. The running times of two hybrid policies differ significantly. Specifically,
+the running time of Sim+Hybrid(i) is similar to all other policies except Sim+Hybrid(ii) whose
+running time is 511.18x slower due to its Monte-Carlo simulation. See Table EC.3.
+Table EC.3
+Comparing normalized average running time of different policies; Policies/benchmarks with ∗are
+proposed or analyzed in this paper.
+no rentals stochastic rentals
+IB
+1.06
+0.96
+GR
+1.04
+0.92
+GR-APXLinValue
+1.10
+0.94
+Rollout
+1.10
+0.95
+Decomp
+4.57
+1.85
+Sim+Random∗
+0.98
+0.98
+Sim+Infusion∗
+1.00
+0.97
+Sim+OPTDis∗
+0.99
+Sim+Hybrid(i)∗
+1
+1
+Sim+Hybrid(ii)∗
+766.39
+511.18
+EC.9. Application of Sub-Assortment Sampling in Advanced Booking of
+Upgrades
+To demonstrate the power of our framework and to show why the sub-assortment sampling pro-
+cedure (Algorithm 1) can be helpful in other related problems, we introduce and briefly sketch a
+variation of our model which we call “advanced booking of upgrades” in this section. This variation
+has applications in hotel upsell revenue management.
+Advanced booking of upgrades model. Suppose a hotel booking management system would like to
+sell upgrade options to the users who have already booked rooms. These upgrade options should be
+thought of as a combination of reusable resources (e.g., upgrade to a suite, or access to parking) and
+non-reusable resources (e.g., breakfast at the hotel). Each arriving booking request at time t encodes
+a check-in time st ≥t, and customer type zt. We assume (st,zt) is drawn from known distribution
+{Ft}T
+t=1. Customer type zt specifies the rental fees, duration distributions and choice model as our
+
+ec26
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+original model. After observing the request at time t, the platform immediately display an assortment
+of possible upgrade options, the customer selects one upgrade option based on her choice model given
+by type zt. Then at time st when the customer actually checks in, the platform finalizes the decision
+of whether or not to fulfill the customer’s selected option. If the upgrade is allocated, the platform
+collects the reward. Note that at the check-in time st, the platform makes the decision to finalize
+the upgrade options based on the realized requests between t and st as well as their realized selected
+options.
+Bayesian expected LP benchmark. In this model, there exists a Bayesian expected LP benchmark
+as follows
+max
+y,x≥0
+XT
+t=1
+XT
+st=t
+X
+zt∈Zt
+X
+S∈S
+Xn
+i=1 Ft(stzt)rzt
+i yS,t,st,zt,i
+s.t.
+Xt
+τ=1
+XT
+st=t
+X
+zt∈Zt
+X
+S∈S Fτ(sτ,zτ) ¯Gzτ
+i (t −sτ)yS,τ,sτ ,zτ ,i ≤ci
+i ∈[n], t ∈[T]
+X
+S∈S xS,t,st,zt ≤1
+t ∈[T], st ∈[t : T], zt ∈Z
+yS,t,st,zt,i ≤ϕzt(S,i)xS,t,st,zt
+i ∈[n],t ∈[T], st ∈[t : T], zt ∈Z
+(Expected-LP-AdvBooking[{Ft}T
+t=1])
+Here, variables {xS,t,st,zt} correspond to the probabilities that assortment S is offered to consumer t
+given check-in time st and type zt is realized; and variables {yS,t,st,zt,i} correspond to the probabilities
+that assortment S is offered to consumer t and upgrade option i is allocated at check-in time st given
+check-in time st and type zt is realized.
+Similar to Proposition 1, the Bayesian expected LP benchmark Expected-LP-AdvBooking[{Ft}T
+t=1]
+is an upper bound on the clairvoyant optimum online benchmark, and hence the weaker non-
+clairvoyant optimum online.15
+Proposition EC.2. For any distributions Ft
+T
+t=1, the expected total revenue of the clairvoyant opti-
+mum online benchmark is upper-bounded by Expected-LP-AdvBooking[{Ft}T
+t=1].
+Simulation-based Algorithm. We construct a simulation-based algorithm given the optimal solution
+of above benchmark and using random discarding and sub-assortment sampling as follows:
+• at time t, for consumer t with check-in time st and type zt
+1. sample assortment ˆSt based on {xS,t,st,zt}S∈S;
+2. randomly discard each option with probability γ, and obtain assortment ¯St ⊆ˆSt;
+3. use sub-assortment sampling to match probability y ˆSt,t,st,zt,i, and obtain assortment ˜St;
+4. offer assortment ˜St to consumer t;
+15 All the analysis in this section for advanced booking of upgrades model is similar to the ones in our original model.
+We omit them to avoid repetition.
+
+e-companion to Feng, Niazadeh, Saberi: Near-Optimal Bayesian Online Assortment of Reusable Resources
+ec27
+Algorithm 5: Simulation-based Algorithm for Advanced Booking of Upgrades
+Input: discarding probability γ ∈[0,1]
+1 Pre-processing: Compute the optimal assignment {x∗
+S,t,st,zt,y∗
+S,t,st,zt,i} of
+Expected-LP-AdvBooking[{Ft}T
+t=1]
+2 for t = 1 to T do
+/* consumer t with check-in time st, type zt such that (st,zt) ∼Ft arrives */
+3
+Simulation: Upon realizing consumer check-in time st and type zt, sample ˆSt ∼{x∗
+S,t,st,zt}S∈S
+4
+Discarding: Initialize ¯St ←ˆSt
+5
+for each product i ∈ˆSt do
+6
+Flip an independent coin and remove i from ¯St with probability γ
+7
+if there is no available unit of product i then
+8
+Remove i from ¯St
+9
+Post-processing: Let ˜St ←Sub-assortment Sampling
+
+ϕzt, ¯St,{y∗
+ˆSt,t,st,zt,i}i∈¯St
+
+/* Send a query call to Procedure 1 with appropriate input arguments */
+10
+Offer assortment ˜St to consumer t, and fulfill consumer t’s selected option if it is still
+available at check-in time st
+• at check-in time st, fulfill the customer t’s selected option with probability one if it is still
+available
+See the formal description of the simulation-based algorithm in Algorithm 5.
+Similar to the analysis in Theorem 1, our simulation-based algorithm achieves near-optimal com-
+petitive ratio in the advanced booking of upgrades model when the initial inventory is large. As the
+proof is almost identical, we omit the details for brevity.
+Theorem EC.3. By setting γ = γ∗(cmin), the competitive ratio of Algorithm 5 against the
+Bayesian expected LP benchmark Expected-LP-AdvBooking[{Ft}T
+t=1] is at least 1 −ε∗(cmin) = 1 −
+O
+p
+log(cmin)/cmin
+
+.

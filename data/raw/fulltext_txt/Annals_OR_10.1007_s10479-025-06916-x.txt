@@ -1,0 +1,1634 @@
+TITLE: Multi-view graph learning based on efficient neighbors
+JOURNAL: Annals_OR
+YEAR: 2025
+DOI: https://doi.org/10.1007/s10479-025-06916-x
+---
+
+ORIGINAL RESEARCH
+Received: 20 December 2023 / Accepted: 21 October 2025
+© The Author(s) 2025
+ 
+ Vicenç Torra
+vtorra@cs.umu.se
+1 
+Department of Computing Science, Umeå University, MIT Building, 901 87 Umeå, 
+Västerbotten, Sweden
+Multi-view graph learning based on efficient neighbors
+Fatemeh Sadjadi1
+ · Vicenç Torra1
+Annals of Operations Research
+https://doi.org/10.1007/s10479-025-06916-x
+Abstract
+In multi-view machine learning problems we have multiple descriptions of the same 
+objects. Multi-view clustering is about finding cluster structures from these multi-view 
+descriptions. The goal is to integrate the complementary information that is found in 
+these different views. In this work, we develop a graph-based approach for multi-view 
+clustering. In particular, we introduce the Joint Multiple Efficient Neighbors and Graph 
+(JMEG) learning method for multi-view clustering. Our objective is to find a good balance 
+between sparsity and connectivity. To do so, we introduce a post-processing technique. 
+Then, JMEG also employs partition space and consensus graph learning to uncover data 
+structures effectively. The whole clustering process is defined in terms of an optimization 
+problem, which is solved using an iterative alternating algorithm. We illustrate the useful­
+ness of our approach with experiments that outperform state-of-the-art methods. We also 
+discuss in this paper the computational cost of JMEG.
+Keywords  Multi-view clustering · Efficient neighborhood · Connectivity and sparsity · 
+Fusion graph
+1  Introduction
+The amount of data currently available is increasing. This has fostered the development 
+of machine learning methods. As data increase, the amount of data referring to the same 
+objects also increase. For example, the same document is expressed in different languages, 
+the same object is photographed from different angles, an the same person can be identified 
+through photographs, signatures, and fingerprints.
+Multi-view data refer to multiple-descriptions of the same objects. Multi-view clustering 
+(Li et al., 2017; Zhang et al., 2021), refers to clustering when we have these multi-view data. 
+Most multi-view clustering algorithms use graph-based models (Wang et al., 2019; Sadjadi 
+1 3
+
+Annals of Operations Research
+et al., 2024, 2025). That is, they build a graph representing the information existing for a 
+given view, and then create either a fused graph or a low-dimensional spectral embedding. 
+The goal of this process is to summarize the most relevant information in the different views 
+in a single structure. Once this single structure is built, we can apply a clustering algorithm 
+to detect the clusters. Clustering on the summarized graph can be e.g. k-means and spectral 
+clustering.
+Multi-view graph learning (Pan & Kang, 2021; Kang et al., 2020; Wang et al., 2019a, 
+b; Zhan et al., 2018) mostly uses graph-based models. In these models, data is represented 
+as a graph or network. Each node represents an entity and each edge represents a relation­
+ship between two entities. In multi-view clustering, we can have multiple graphs, one for 
+each view. Naturally, a fundamental aspect is the construction of the graph, and, from them, 
+the construction of the aggregated graph. This graph, when weighted, is called a similarity 
+matrix and also affinity matrix. Different methods to build these matrices exist. They differ 
+on e.g. the evaluation of similarity. Sparsity and connectivity are key properties of a graph 
+that affect any learning process. Ideally, we want nodes in a cluster to be well connected, 
+while nodes in different clusters we want them not to be connected at all (i.e., implying 
+sparsity in the matrix). Different graph construction procedures lead to graphs with differ­
+ent sparsity levels. Then, it is of relevance to find a good trade-off between sparsity and 
+connectivity.
+Because of this, the challenges of multi-view graph learning are: 
+1. The construction of a graph for each view so that the similarity matrix has a good trade-
+off between connectivity and sparsity,
+2. The effective combination of the information from different views to achieve a single 
+clustering structure.
+In this paper we deal with these problems by means of 
+(i) Obtaining neighbourhoods for each data based on second-order connections,
+(ii) Defining similarity matrices based on efficient neighbourhoods in each view,
+(iii) Combining all similarity matrices of the multi-view data.
+The process is defined as an optimization problem, and then the problem is solved using 
+an alternating optimization problem. Our approach is similar to Li et al. (2021), with the 
+difference that we compute explicitly the aggregated similarity matrix, and then we build 
+segmentation matrix directly from the aggregated similarity matrix. This common segmen­
+tation matrix is close to the segmentation matrix of each view. Also, the way to build the 
+similarity matrix is different because we exploit the neighbors of the nodes.
+In the paper we conduct extensive experiments on six real-world data sets to validate the 
+effectiveness of our idea.
+This work is a revised and extended version of a previous paper (Sadjadi & Torra, 2023) 
+we presented at IUKM 2023. In particular, we have expanded Sects. 2 and 3, and include in 
+the present work the proofs related to our main proposition in Sect. 3.
+The paper starts in the next section with the preliminaries and principal concepts. In 
+Sect. 3, we explain the proposed method based on an optimization problem. We also provide 
+1 3
+
+Annals of Operations Research
+our main theoretical result that explains how the solution is actually solved. In Sect. 4, we 
+describe our experiments, including data sets as well as parameters selected.
+2  Preliminaries and related works
+We begin this section describing the notation we use. Let {X1, X2, . . . , XV } denote a 
+multi-view data set containing V views of n samples (i.e., each sample appears in each 
+view). More particularly, Xν
+i ∈Rdν with 1 ⩽ν ⩽V represents the i-th data point (i.e., 
+the i-th row) in the ν-th view. We use dν to represent the dimension of the ν-th view and, 
+naturally, 1 ⩽i ⩽n. In addition, let {W 1, W 2, . . . , W V } denote the weight matrices for 
+the multi-view data set where W ν ∈Rn×n, ν = 1, . . . , V .
+In this paper we also consider graphs. They are expressed as usual as a pair of vertices 
+and nodes. We will construct graphs from data sets. Then, each vertex represents a row of 
+the data set. Then, for a matrix X we use V(X) to represent the set of vertices associated 
+to X and E the set of edges (a subset of pairs of vertices). Using this notation, a graph is 
+GX = (V (X), E). In general terms, we assume that two vertices are connected by an edge 
+if the two records are sufficiently similar in X. In occasions, a similarity matrix will provide 
+the information about the similarity of each pair. We will use W ν or Aν to denote these 
+similarity matrices in each view. For example, for an edge between nodes i and j in E, we 
+use wijν > 0 to represent their similarity in the matrix Xν.
+There are different ways to build a graph from a matrix X (To simplify the exposition, 
+consider a single view), as well as different ways to build a similarity matrix. For example, 
+we can define a complete graph G = (V (X), E) with E = V (X) × V (X), and define the 
+similarity matrix W in terms of the Euclidean distance. I.e., wij = d(xi, xj). An alternative 
+is to define connected vertices in terms of the k-nearest neighbor (knn). I.e., the graph is 
+not complete. In this case we use the Euclidean distance only for those edges that are in the 
+graph. If D is the degree matrix corresponding to the similarity matrix W of a graph (i.e., 
+dii = ∑n
+j=1 wij), then L = D −W is the so-called Laplacian matrix.
+If A is an adjacency matrix then dii is naturally the degree of node i, and also A2 ∈Rn×n 
+represents the 2-nd order adjacency matrix. That is, A2 is the matrix containing the number 
+of paths of length 2 between data points. In other words, it indicates the count of common 
+neighbors. Additionally, for each view ν in the set ν = 1, 2, . . . , V , we define Aν
+2 as the 2nd-
+order matrix, corresponding to an unweighted undirected connected graph.
+We will use this additional notation. Let S = [sij] be a matrix, then si is its i-th row. Its 
+transpose, trace, inverse and Frobenius norm are ST , Tr(S), S−1, and ∥S ∥F , respectively. 
+Also, if v is a vector, we define the l2-norm as ∥v ∥2, and I and 1 are the identity matrix and 
+a column vector with all elements as one, respectively.
+2.1  Construction of similarity matrices
+We use the following expression to compute the similarity between vertices and, thus, com­
+pute weight matrices W ν for each view ν.
+1 3
+
+Annals of Operations Research
+ 
+wν
+ij =
+2e−∥xi −xj∥2
+λ
+∑
+h̸=i e−∥xi −xh∥2
+λ
++ ∑
+h̸=j e−∥xh −xj∥2
+λ
+,
+(1)
+Here, λ is a regularization parameter. This definition appears (Bai & Liang, 2020) as a solu­
+tion of a subspace clustering problem with the entropy norm. Its fundamental principle is to 
+calculate the similarity between two points while considering their similarities with other 
+points. Specifically, the Gaussian kernel similarity between xi and xj is used, but weakened 
+if the similarity between xi and all other points (including xj) is higher than their direct 
+similarity. Conversely, if the similarities between xi and other points are minimal, more 
+similarity is attributed to the similarity between xi and xj. This is conveyed through the 
+terms ∑
+h̸=i e−∥xi −xh∥2
+λ
+ and ∑
+h̸=j e−∥xh −xj∥2
+λ
+ in the equation. This similarity is 
+used to derive the matrices Aν using the γ-efficient neighborhood. We describe this below. 
+It is based on 2nd-order connections.
+2.2  Second-order connections
+We establish the concept of mth-order connections between vertices, and review a theorem 
+about the corresponding adjacency matrix.
+Definition 1  Duncan (2004) Consider a graph G = (V, E) and vertices vi, vj ∈V . A mth-
+order connection exists between vertices vi and vj if there is a path of length m connecting 
+them. We naturally define the first-order connection matrix as follows:
+ 
+A′(i, j) =
+{ 1
+if vi and vj are connected ;
+0
+otherwise .
+Obviously, the first-order connection matrix A′ is the adjacency matrix.
+Taking into account common neighbors would provide a better analysis of the graph.
+It has been proved that the information about paths can be derived from the power of the 
+adjacency matrix. This permits us to compute the 2nd-order matrix from A′. More precisely, 
+we have the following theorem.
+Theorem 1  Duncan (2004) Let G be a connected graph. The number of paths of length 
+ξ existing between two vertices i and j is given by the element i, j of the ξ-th power of the 
+adjacency matrix, A′.
+2.3  Graph-based multi-view clustering
+The topic of graph-based multi-view clustering has gained popularity due to its efficiency 
+in capturing the complex structures and relationships present in multimedia data. However, 
+existing methods have limitations. Firstly, they may be inefficient or fail when dealing with 
+large-scale graph learning due to the involved graph construction and eigendecomposition. 
+Secondly, they struggle to effectively utilize complementary information and spatial struc­
+1 3
+
+Annals of Operations Research
+tures inherent in the graphs of different views. To overcome these challenges and maximize 
+the potential of complementary information, as well as to address scalability problems in 
+graph-based multi-view clustering, we propose the following approach.
+MLAN (Nie et al., 2017) is a prominent method for multi-view clustering based on graph 
+learning. It employs manifold learning to adaptively learn a commonly shared graph for all 
+views, presenting multi-view learning with adaptive neighbors. Despite effectively explor­
+ing local intrinsic characteristics of data, a major drawback MLAN and other graph-based 
+methods is their inefficiency or failure when dealing with large-scale problems. This is due 
+to the computational intensity associated with constructing a full-size graph and eigende­
+composition of the Laplacian matrix. The computational complexity of MLAN is O(n2K) 
+for graph construction and O(n3) for eigendecomposition of the Laplacian matrix, where 
+n and K represent the number of data points and clusters, respectively. In many real-world 
+applications, n can be very large, making computational challenges a critical concern.
+MLAN formulated the problem in terms of the following optimization problem.
+ 
+min
+W
+V
+
+ν=1
+
+
+
+
+n
+
+i,j=1
+∥xν
+i −xν
+j ∥2
+2 wij + α ∥W ∥2
+F
+s.t.wT
+i 1 = 1, wij ≥0, rank(LW ) = n −K
+
+(2)
+where W ∈Rn×n is the similarity matrix, and LW is the Laplacian matrix of W.
+Although the initial results of clustering using model (2) are promising as discussed 
+above, the method fails to to handle large-scale multi-view data in real-world situations. 
+Moreover, the optimization problem (Eq. 2) is unable to take advantage of the complemen­
+tary information we have in each view. In general, each view contains distinct characteris­
+tics of each sample, and W is just a kind of aggregate of all this information.
+To address the mentioned issues, various methods have been proposed (Jiang & Liu, 
+2022; Wu et al., 2022; Zhao et al., 2022), but they often overlook the importance of connec­
+tivity, sparsity, and computational complexity in dealing with large-scale multi-view data 
+and extracting complementary information from different views. It is worth emphasizing 
+that, within the scope of our work, these factors play a crucial role.
+2.4  Multi-view spectral clustering
+Multi-view spectral clustering is a popular method for clustering multi-view data, where 
+each view represents a different aspect of the same underlying data. The approach aims to 
+integrate information from multiple views to improve clustering performance.
+The method is based on spectral clustering, a popular approach for clustering data using 
+graph theory. In spectral clustering, a similarity graph (W) is constructed from the data, 
+and the eigenvectors of the graph Laplacian matrix are used to embed the data in a low-
+dimensional space where clustering is performed.
+In the case of multi-view spectral clustering, a similarity graph is constructed for each 
+view (W ν), and the eigenvectors of each view’s Laplacian matrix are used to embed the 
+data from that view in a low-dimensional space. Then, the embeddings from all views are 
+concatenated into a single representation, which is used for clustering. Multi-view spectral 
+1 3
+
+Annals of Operations Research
+clustering has been shown to outperform traditional single-view spectral clustering methods 
+(Chen et al., 2016).
+The objective function of multi-view spectral clustering is defined as follows:
+ 
+min
+F
+V
+∑
+ν=1
+Tr(F T Lν
+W F)
+s.t.
+F T F = I,
+
+(3)
+where Lν
+W is Laplacian of similarity matrix W in ν-th view. In this problem, we set the num­
+ber of columns for matrix F to K, as we are going to cluster the records of Xν in K clusters.
+Let G be the solution of this optimization problem
+(i.e., G = arg minF
+∑V
+ν=1 Tr(F T Lν
+W F) with the constraints above). Note that this 
+matrix is of dimension n × K, and the dimension of LW ν is n × n. Then, this matrix G, 
+called the segmentation matrix, has K eigenvectors of ∑V
+ν=1 Lν
+W (where ν = 1, 2, . . . , V ) 
+as its columns. Also, its rows represent the data points. If we apply K-means on the rows 
+of matrix G, then we have performed clustering on the data set. In some cases, for better 
+results, one may replace Lν with its normalized form Lν = I −Dν −1
+2 W νDν −1
+2 .
+Kang et al. (2020) proposed another method that obtains the eigenvectors of the graph 
+Laplacian matrix for each view, (F 1, F 2, . . . , F V ) together with a common matrix (that 
+combines all F ν). This is formalized as:
+ 
+min
+F,F ν
+V
+∑
+ν=1
+Tr(F νT Lν
+W F ν)+ ∥FF T −F νF νT ∥2
+F
+s.t.
+F T F = I, F νT F ν = I.
+
+(4)
+In this case, the aim is to find a segmentation matrix F that gives clusters as close as 
+possible to the clusters of each F ν. Since clusters may be indicated in different arrange­
+ments in F ν, a direct comparison of each F ν with the desired consensus F is not pos­
+sible. To overcome this problem, the authors in Kang et al. (2020) suggested using 
+minF
+∑V
+ν=1 ∥FF T −F νF νT ∥2
+F instead of minF
+∑V
+ν=1 ∥F −F ν ∥2
+F , which would be 
+the direct comparison. In this case, F νF νT measures the similarity between all points of the 
+data set represented as rows of F ν.
+The following result used in spectral clustering, will be used also in this paper.
+Theorem 2  Von Luxburg (2007) Let L be the Laplacian matrix of the similarity matrix W . 
+For any segmentation matrix F ∈Rn×k, let F(i,:) ∈Rk denote the i-th row of F. Then:
+ 
+Tr(F T LF) =
+∑
+i,j
+1
+2∥F(i,:) −F(j,:)∥2wij.
+(5)
+1 3
+
+Annals of Operations Research
+2.5  Sparsity and connectivity
+The sparsity and connectivity of the similarity matrix are crucial factors in spectral cluster­
+ing, as they greatly affect the performance of the clustering algorithm. Ideally, the nodes 
+in a cluster should be well connected while the others not. There are numerous methods 
+proposed in the literature to enhance the connectivity of clusters, such as utilizing different 
+norms and regularization terms in subspace problems. In our proposed algorithm, we adopt 
+the γ-efficient neighborhood approach defined in Definition 2 (which choose among the 
+k-nearest neighborhood in its definition). Then, for a given k, we would obtain the value γ so 
+that the solutions are γ-efficient for all pairs of neighbors xi and xj. The selection of k plays 
+a vital role in controlling the sparsity and connectivity of the similarity graph.
+To assess the connectivity of a similarity graph W, we utilize the second smallest eigen­
+value of the normalized graph Laplacian, which is a widely used and effective method for 
+calculating algebraic connectivity. More particularly, we compute the restriction of this 
+matrix W for each of the clusters. So, we have W 1 that is the similarity matrix when we 
+only considers records in X that have been assigned to the first cluster, W 2 the similarity 
+matrix for only those records in the second cluster, and so on until W V . Then, we compute 
+the second smallest eigenvalue for each of the K subgraphs Xi. This permits to compare 
+the connectivities across all clusters. Then, we can evaluate the overall connectivity of our 
+method by computing the average of all clusters’ connectivities. This is the “connectivity” 
+metric.
+ 
+connectivity := 1
+K
+K
+∑
+i=1
+λ(i)2,
+(6)
+where λ(i)2 is the second eigenvalue of i-th subgraph
+3  Proposed method
+In this section we introduce our novel learning method for multi-view clustering. We call it 
+joint multiple efficient neighbors and graph (JMEG) learning method for multi-view clus­
+tering. JMEG comprises two key components once the similarity matrices W ν are built 
+using Eq. (1) from Xν. (1) Apply a post-processing technique to optimize sparsity and 
+connectivity by means of identifying efficient neighbors. This process results into matrices 
+Aν from W ν. (2) Apply unified partition space learning F and consensus graph learning ¯S. 
+Component (1) is to establish critical connections among samples within a cluster so that 
+samples have both large affinity coefficients and strong connections to each other. These two 
+key components are combined together in a single optimization problem as we will see later 
+in this section. In Sect. 3.1, we describe what it means to compute Aν, but the actual process 
+of computing Aν is given in Sect. 3.2 where it is combined with the computation of ¯S.
+The rationale is that the partition is more robust to noise, and graph learning helps 
+uncover data structures. Specifically, JMEG iteratively constructs local graph matrices 
+(i.e., the matrices F 1, . . . , F V associated to each view), generates partition matrices, and 
+stretches them to produce a unified partition matrix F. This is employed to learn a consensus 
+1 3
+
+Annals of Operations Research
+graph matrix ¯S. For the sake of efficiency, JMEG adaptively allocates a large weight to the 
+stretched base partition that is close to the unified partition, determines the parameters, and 
+imposes a low-rank constraint on graphs. Finally, clusters can be obtained directly from the 
+consensus graph.
+In the experiment section we show that a small number efficient neighbors can effec­
+tively recover the clusters, and that the proposed post-processing step of identifying efficient 
+neighbors complements most existing multi-view clustering algorithms. We do experiments 
+on five benchmark datasets to demonstrate that the proposed algorithm outperforms state-
+of-the-art methods with negligible additional computation cost.
+In Fig. 1, we visually describe our method for the construction of consensus graph ¯S.
+3.1  Finding k-nearest neighborhood and γ-efficient neighborhood
+Utilizing the symmetric nonnegative weight matrix W ν, as obtained from Eq. (1), we derive 
+a set of new similarity matrices {A1, A2, . . . , AV }. To obtain the new similarity matrix for 
+each view, we initially calculate the k-nearest neighbors for each dataset and subsequently 
+select the γ-efficient neighborhood from them.
+In order to ensure sparsity, the pruning process of selecting samples with top k coefficients 
+in wij for xi is commonly used. This is because larger wij values indicate stronger similar­
+ity between xi and xj. However, this approach does not take into account the connectivity 
+property, which may result in intra-cluster samples not forming a connected component 
+in the affinity graph. The limitation of simply considering the maximum k edges for each 
+sample is that it may fail to handle noise-corrupted data, as wrong connections are preserved 
+due to the sensitivity of max edges to noise, outliers, and samples near the intersection of 
+two clusters. Therefore, in order to ensure both sparsity and connectivity properties in graph 
+multi-view learning, we propose a method in this paper that defines "efficient neighbors" for 
+each sample in each view to establish crucial latent connections within a graph.
+In this paper, we propose a definition of a γ-efficient neighborhood for every data in 
+each view, which is a neighbor that has at least µ common neighbors within the local 
+neighborhood.
+Instead of simply preserving the k largest entries of wi, we preserve γ-efficient neighbors 
+from the k-neighbors, where k > γ, for each sample. By doing so, the connectivity within 
+each subspace is enhanced, as detailed in Sect. 4.
+Fig. 1  Illustration of constructed common graph ¯S
+ 
+1 3
+
+Annals of Operations Research
+Definition 2  Let γ and µ be natural numbers. Then, xj is considered a γ-efficient neighbor 
+of xi if the following conditions are met:
+ 
+●
+for all k ≥γ, we have that xj belongs to the k-nearest neighborhood of xi;
+ 
+●
+xj and xi have at least µ common neighbors.
+So, if we consider single view data set X, xj is a γ-efficient neighbor of k-nearest neighbor­
+hood xi if they have at least µ common neighbors (where µ < k). Without loss of generality, 
+this definition can be extended to a multi-view dataset {X1, . . . , XV }, where each view is 
+independent with others.
+This definition ensures a maximally sparse and connected neighborhood relationship, 
+which is analyzed in Sect. 4 for sparsity and connectivity, respectively. By exploring effi­
+cient neighbors, we obtain complementary information that enhances the robustness of the 
+method against noise-corrupted data, resulting in clustering with both sparsity and con­
+nectivity properties. Throughout the paper, we use ℵ∈Rn×γ to determine the collection of 
+efficient neighbors, where n is the number of data samples, and k and γ are used to control 
+the sparsity and connectivity, respectively.
+For this scenario, we can obtain the adjacency matrix of the k-neighborhoods based on 
+the weight matrix Eq. (1). By taking the power of 2 of this matrix, we can determine which 
+data points have at least µ common neighbors. This is because if there is one path of length 
+2 between xi and xj, it means that they share one common neighbor. In this paper, we con­
+sider different µ for every data, and k is related to a number of data. Now, we can obtain mul­
+tiple similarity graph {A1, A2, . . . , AV } based on extraction efficient neighbors of weight 
+matrices {W 1, W 2, . . . , W V }, i.e.,
+ 
+min
+Aν
+n
+∑
+i,j=1,i,j∈ℵ
+wν
+ijaν
+ij + α ∥Aν ∥2
+F
+s.t.
+Aν ≥0, Aν1 = 1, ν = 1, . . . , V.
+
+(7)
+where Aν ≥0 mean that aν
+i,j ≥0 for all i, j.
+Instead of just solving this problem, and then building an aggregate of the matrices Aν, 
+we define an optimization problem that builds at the same time the matrices Aν and the 
+aggregate A. This is explained in the next section.
+3.2  Consensus graph construction
+Our aim is to obtain both the similarity matrices discussed in the previous section as well as 
+segmentation matrices. More particularly, we are interested in finding the matrices Aν and 
+segmentation matrices F ν. In addition, and as a difference with respect to Li et al. (2021), 
+we also consider a consensus similarity matrix A and a consensus segmentation matrix F. 
+While F was present in Li et al. (2021), A was not. Then, here we require F and A to be 
+closely related. While in Li et al. (2021), F was put in direct relation to F ν, in our approach 
+A is minimizing ||Aν −A|| (i.e., A is in a way a barycenter of Aν), and F and A minimize 
+Tr(F T LAF). These additional terms do not appear in Li et al. (2021).
+1 3
+
+Annals of Operations Research
+ 
+min
+Aν,A,F ν,ων,Γν,F
+V
+∑
+ν=1
+(
+n
+∑
+i,j=1
+wν
+ijaν
+ij + α ∥Aν ∥2
+F +2λ1Tr(F νT LAνF ν)
++ Γν ∥Aν −A ∥2
+F +ων ∥FF T −F νF νT ∥2
+F ) + 2λ2Tr(F T LAF)
+s.t.
+Aν ≥0, Aν1 = 1, F νT F = I, F T F = I,
+
+(8)
+where α, λ1, Γν, λ2, and ων are regularization term.
+Now, let us consider the explicit requirement of having a consensus graph ¯S that should 
+be a unified partition representation of F. This requirement also appears in Li et al. (2021). 
+Joint learning of the unified partition matrix and the consensus graph can be accomplished 
+modifying the optimization problem. Since graph ¯S is shared across all views, clustering 
+results can be obtained directly without additional clustering techniques. However, the uni­
+fied partition Q obtained from Eq. (10) alone is insufficient for this purpose. To capture the 
+local manifold structure, an adaptive neighbor strategy can be applied while learning ¯S. 
+Hence, we derive ¯S from F using the following equation:
+ 
+min
+¯S,Q
+n
+∑
+i,j=1
+∥Fi −Fj ∥2
+2 ¯
+sij + β ∥¯S ∥2
+F +2λ3Tr(QT L ¯SQ)
+s.t.
+F T F = I, QT Q = I, ¯S ≥0, ¯sii = 0, ¯S1 = 1,
+
+(9)
+where β, and λ3 are regularization term.
+With combination of Eqs. (8) and (9) we have the following optimization problem:
+ 
+min
+Aν,A,F ν,ων,Γν,F, ¯S,Q
+V
+∑
+ν=1
+(
+n
+∑
+i,j=1
+wν
+ijaν
+ij + α ∥Aν ∥2
+F +2λ1Tr(F νT LAνF ν)
++ Γν ∥Aν −A ∥2
+F +2λ2Tr(F T LAF) + ων ∥FF T −F νF νT ∥2
+F )
++
+n
+∑
+i,j=1
+∥Fi −Fj ∥2
+2 ¯
+sij + β ∥¯S ∥2
+F +2λ3Tr(QT L ¯SQ)
+s.t.
+aν
+ii = 0, Aν ≥0, Aν1 = 1, F νT F = I, F T F = I, QT Q = I,
+¯S ≥0, ¯sii = 0, ¯S1 = 1, α ≥0, β ≥0.
+ (10)
+The optimization problem presented in Eq. (10) is not jointly convex. Therefore, obtaining a 
+globally optimal solution it is a challenging task. The usual approach is to use an alternating 
+strategy, in this case, this leads to several subproblems, each of them convex. The following 
+Proposition establishes the solutions of these problems.
+Proposition 1  Considering an alternating strategy to solve the optimization problem 
+described in Eq. (10) we have that the optimal solutions of each of the eight problems, one 
+for each of the variables in the problem, are as follows:
+(1) 
+ 
+aν
+ij =
+1
+2(α + Γν)I(wij −2λ1hν
+ij + Γνaij + µν
+iiδij + ξν),
+(11)
+1 3
+
+Annals of Operations Research
+ 
+where hν
+ij =∥f ν
+i −f ν
+j ∥2
+2, fi = F(i,:) and δij is indicator function µν
+ii, and ξν are 
+Lagrange coefficients.
+(2) 
+ 
+aij =
+−λ2fij −∑V
+ν=1 Γνaν
+ij
+∑V
+ν=1 Γν
+,
+(12)
+ 
+ 
+ 
+where fij =∥fi −fj ∥2
+2.
+(3) F ν is the eigenvector matrix of 
+ 
+M =
+V
+∑
+ν=1
+2λ1LAν −2ωνFF T + 2ωνI,
+(13)
+ 
+ 
+ 
+corresponding to the K smallest eigenvalue.
+(4) F is the eigenvector matrix of 
+ 
+G =
+V
+∑
+ν=1
+2ων(In −F νF νT ) + L ¯S + 2
+V
+∑
+ν=1
+λ2LA,
+(14)
+ 
+ 
+ 
+corresponding to the K smallest eigenvalue.
+(5) 
+ 
+¯sij = −(fij + 2λ3ζij) + τ + µii
+2βI
+,
+(15)
+ 
+ 
+ 
+where ζij =∥qi −qj ∥2
+2.
+(6) The optimal solution of Q is the original spectral clustering of the Laplacian matrix 
+L ¯S, i.e: 
+ 
+min
+Q 2λ3Tr(QT L ¯SQ),
+s.t.QT Q = I,
+
+(16)
+(7) For Updating ων we have: 
+ 
+ων =
+1
+∥F T F −F νT F ν ∥F
+.
+(17)
+(8) For Updating Γν we have: 
+ 
+Γν =
+1
+∥Aν −A ∥F
+.
+(18)
+The optimization problem in Eq. (10) is decomposed into eight subproblems, each cor­
+responding to one variable, while holding the others fixed. The solution to each subprob­
+lem follows from standard techniques such as Lagrangian formulation, KKT conditions, 
+1 3
+
+Annals of Operations Research
+and spectral decomposition. We provide a complete derivation of all optimal solutions in 
+Appendix A.
+Taking into account the results of this proposition, we can express our method as outlined 
+in Algorithm 1. To bootstrap the process, we need to initialize some variables. In particular, 
+we define F and F ν initially with a random matrix (size n × n), where each element is a 
+number between −1 and 1. Γν and ων are both defined as Γν = 1
+V and ων = 1
+V .
+Algorithm 1  Joint multiple efficient neighbors and Graph (JMEG) learning method
+3.3  Complexity analysis
+Based on the given information, it can be inferred that solving Eq. (10) requires three steps 
+which consist of (1) obtaining V weight matrices, (2) selecting k nearest neighbors, and (3) 
+computing γ-efficient neighbors. This takes O
+(
+kγ n2
+2
+)
+ for each view. Then, there are eight 
+distinct parts that require computation. These parts include updating Aν (ν = 1, 2, . . . , V ), 
+which takes O(V nγ) time, where V is the number of views, n is the number of data points, 
+and γ is the number of efficient neighbors and updating A takes O(V n2). Additionally, com­
+puting the eigenvectors of Laplacian matrices for {F 1, F 2, . . . , F ν} requires O(KV n2) 
+time, and for F takes O(Kn2) where K is the number of clusters. The process of updating 
+Q has a time complexity of O(Kn2), while updating ω1, . . . , ων takes O(V n2) time. The 
+learning of ¯S requires O(nγ) time.
+Furthermore, initializing Aν (ν = 1, 2, . . . , V ) takes O(V nγdν) time, where dν is the max­
+imum number of dimensions among all views. The initialization of {F 1, F 2, . . . , F ν}, ¯S, and 
+Q also requires O(kV n2), O(nγ), and O(kn2) time, respectively, for their updates. Assuming 
+there will be t iterations before the iteration stops, the overall time complexity can be expressed 
+as O(kω n2
+2 + (V nγ + kV n2 + nk + (2k + V )n2)t + V nkd + kV n2 + nγ + kn2). Note 
+that V is less than or equal to n, k is at most n, γ is at most n, and t is at most n. If V and k, γ 
+are small, the time complexity can be simplified to O(kγV n2).
+1 3
+
+Annals of Operations Research
+3.4  Convergence analysis
+The function presented in Eq. (10) is not jointly convex and obtaining a globally optimal 
+solution for it is a challenging task. However, by using an alternating strategy, the same as 
+Proposition 1 we can transform Eq. (10) into several sub-problems, each of which is convex. 
+This allows us to find the optimal solution for each sub-problem, and their convergence can 
+be demonstrated as follows.
+ 
+●
+To update A1, . . . , Aν, we use Eq. (21), which is a convex function since its second-
+order derivative with respect to aν
+ij is 2α + 2 > 0 where α > 0. As a result, it will 
+monotonically decreasing with each iteration.
+ 
+●
+To update A, we use Eq. (24), which is a convex function since its second-order de­
+rivative with respect to aij is 1. As a result, it will monotonically decrease with each 
+iteration.
+ 
+●
+To update F 1, . . . , F ν, we use the SVD of M in Eq. (26) to obtain each F ν. We want to 
+show that the algorithm used to optimize Eq. 26 (which is typically an iterative method 
+that updates F ν to minimize the objective function) converges to a solution. It is enough 
+to see that the objective function in Eq. 26 is a quadratic form that can be written as 
+F νT MF ν, where M is a symmetric positive semi-definite matrix. Then, naturally, the 
+problem is convex, and the algorithm will converge to a solution.
+ 
+●
+In Eq. (28), we obtain F through the SVD of P (the same as the last item).
+ 
+●
+To update ω1, . . . , ων, we use Eq. (35), which is a linear function with a closed-form 
+solution presented in Eq. (36). So, it is convex and convergence is ensured.
+ 
+●
+To update Γ1, . . . , Γν, we use Eq. (37), which is a linear function with a closed-form 
+solution presented in Eq. (38). So, it is also convex and convergence is ensured.
+ 
+●
+In Eq. (32), we update ¯S, which is also a convex function, as its second-order derivative 
+with respect to ¯sij equals β where β > 0. Hence, it will decrease monotonically with 
+each iteration.
+ 
+●
+Finally, we update Q in Eq. (33), which can be obtained using the SVD of L ¯S.
+4  Experimental setting
+This section of our study focuses on evaluating the effectiveness of the JMEG approach that 
+we have proposed. To compare its performance against other baseline methods, we conduct 
+experiments on six multi-view datasets. These experiments are carried out using the Python 
+3.9.10 development environment, and we utilize several libraries such as sklearn, numpy, 
+and scipy.
+4.1  Data sets
+Table 1 shows six commonly used multi-view benchmark datasets that we use to experi­
+mentally evaluate our proposed JMEG approach. These datasets provide information about 
+the total number of data samples n, the number of views V, the number of classes K, and the 
+number of dimensions of samples in the v-th view dν. The benchmark datasets that we use 
+are Reuters1200, Handwriting, 100Leaves, ORL, Caltech101-7, and Caltech101-20.
+1 3
+
+Annals of Operations Research
+4.2  Comparison methods
+The following seven methods were compared to our proposed JMEG method:
+ 
+●
+Auto-weighted multiple graph learning (AMGL) (Nie et al., 2016).
+ 
+●
+Multi-view Low-Rank Sparse Subspace Clustering (MLRSSC) (Brbić & Kopriva, 
+2018).
+ 
+●
+Multi-view Subspace Clustering with Intactness-aware Similarity (MSCIAS) (Wang et 
+al., 2019).
+ 
+●
+Large-scale Multi-view Subspace Clustering in Linear Time (LMVSC) (Kang et al., 
+2020).
+ 
+●
+Partition Level Multi-view Subspace Clustering (PMSC) (Kang et al., 2020).
+ 
+●
+Multi-graph Fusion for Multi-view Spectral Clustering (FGSC) (Kang et al., 2021).
+ 
+●
+Incomplete Multi-view Clustering with Joint Partition and Graph Learning (JPG) (Li 
+et al., 2021).
+To perform the comparisons, we downloaded the algorithms from their respective websites 
+and ran them using their default parameter settings. We then reported their best clustering 
+results. All the multi-view methods and our proposed method were implemented in the 
+Python development environment.
+4.3  Parameters setting
+We apply grid search on parameters to gain good results. λ1, λ2, and λ3 were set in the range 
+[0.1, 0.001, 1, 10, 20] and reported their best clustering results. In our experience, when 
+λ1 = 1, λ2 = 0.1, and λ3 = 10 we achieved ACC = 0.78 for the Caltech101-7 data set 
+which is the best result among approaches. Also, our gained ACC = 57 for Caltech101-20 
+whenever λ1 = 0.1, λ2 = 10, and λ3 = 0.001 and also λ1 = {1, 10, 0, 1, 0, 001}, 
+λ2 = {1, 10, 0.1, 1}, and λ3 = {0.001, 20, 1, 0.1} for Reuters 1200, HW, 100Leaves, and 
+ORL respective.
+For JMEG, based on our experiment and observation the best result was obtained when 
+we consider the number of neighborhood equal to 15. So, we set k empirically to 15. The 
+initial values of all entries of parameter α, β is 1 and ων and Γν values were adaptively 
+tuned in the optimization procedure of the objective function for each view. Three common 
+metrics were used to evaluate the clustering performance: Accuracy (ACC), Normalized 
+Mutual Information (NMI), and Purity (PUR). To randomize the experiments, we ran each 
+method ten times and reported the means for the metrics.
+Data sets
+n
+V
+Classes dν(ν = 1, 2, . . . , V )
+Reuters 1200
+1200
+5
+6
+(2000, 2000, 2000, 2000, 2000)
+HW
+2000
+6
+10
+(216, 76, 64, 6, 240, 47)
+100Leaves
+1600
+3
+100
+(64, 64, 64)
+ORL
+400
+4
+40
+(256, 256, 256, 256)
+Caltech101-7
+1474
+6
+7
+(48, 40, 254, 1984, 512, 928)
+Caltech101-20
+2386
+6
+20
+(48, 40, 254, 1984, 512, 928)
+Table 1  Detail of the six multi-
+view data sets
+ 
+1 3
+
+Annals of Operations Research
+4.4  Experimental results and analysis
+The multi-view datasets were used to conduct experiments and evaluate the performance 
+of various methods, and Tables 2, 3, 4, and 5 present the results obtained. The results are 
+indicated as average metric values. The best results have been highlighted in bold. Based on 
+the table, several observations can be made.
+ 
+●
+Compared to the multi-view methods, our proposed JMEG method exhibits superior 
+performance. Across all datasets, JMEG outperforms the other methods in terms of 
+ACC, NMI, and PUR. These results provide strong evidence that our JMEG method has 
+significant potential as a multi-view clustering approach.
+ 
+●
+The performance of the multi-view methods reveals that JMEG outperforms other mul­
+ti-view methods (PMSC, GFSC, JPG). The primary reason behind this result is that our 
+JMEG methods consider the segmentation matrix F based on all of the segmentation 
+matrices of all views and all of the similarity matrices and construct a graph based on 
+F, and can better exploit the complementary information provided by multiple views. It 
+is worth noting that JPG consistently performs better than other multi-view clustering. 
+However, all of these methods are inferior to our proposed JMEG method.
+ 
+●
+The experimental results demonstrate that connectivity in JMEG outperforms other 
+Table 2  ACC values of different methods on the six multi-view data sets
+Data sets
+AMGL
+MLRSSC
+MSCIAS
+LMVSC
+PMSC
+FGSC
+JPG
+JMEG
+Reuters1200
+0.16 (0.00)
+0.45 (2.08)
+0.49 (1.81)
+0.58 (2.00)
+0.40 
+(0.00)
+0.44 
+(1.66)
+0.59 
+(1.01)
+0.61 
+(0.01)
+Hw
+0.84 (2.10)
+0.76 (1.00)
+0.80 (0.00)
+0.91 (3.84)
+0.83 
+(1.05)
+0.75 
+(0.00)
+0.92 
+(1.00)
+0.94 
+(0.00)
+100Leaves
+0.18 (0.00)
+0.24 (1.11)
+0.28 (0.05)
+0.32 (0.03)
+0.31 
+(0.00)
+0.34 
+(0.00)
+0.78 
+(0.00)
+0.80 
+(0.00)
+ORL
+0.26 (0.00)
+0.28 (0.00)
+0.33 (0.00)
+0.36 (0.00)
+0.40 
+(0.08)
+0.38 
+(0.00)
+0.81 
+(1.56)
+0.85 
+(0.31)
+Caltech101-7
+0.45 (1.89)
+0.37 (0.00)
+0.38 (0.00)
+0.72 (2.70)
+0.75 
+(0.00)
+0.77 
+(0.00)
+0.76 
+(0.00)
+0.78 
+(0.00)
+Caltech101-20
+0.30 (0.00)
+0.28 (0.00)
+0.31 (0.00)
+0.53 (1.36)
+0.54 
+(0.00)
+0.39 
+(0.00)
+0.55 
+(0.21)
+0.57 
+(1.12)
+Table 3  NMI values of different methods on the six multi-view data sets
+Data sets
+AMGL
+MLRSSC
+MSCIAS
+LMVSC
+PMSC
+FGSC
+JPG
+JMEG
+Reuters1200
+–
+0.22 (0.02)
+0.27 (0.01)
+0.33 (1.03)
+0.21 (0.00)
+0.25 
+(0.02)
+0.44 
+(1.51)
+0.45 
+(0.80)
+Hw
+0.87 
+(0.01)
+0.74 (0.02)
+0.77 (0.01)
+0.84 (0.01)
+0.82 (0.06)
+0.82 
+(0.04)
+0.86 
+(0.01)
+0.89 
+(1.00)
+100Leaves
+–
+0.19 (0.01)
+0.23 (1.02)
+0.27 (0.03)
+0.26 (0.00)
+0.30 
+(0.00)
+0.86 
+(0.01)
+0.90 
+(1.05)
+ORL
+0.18 
+(0.00)
+0.31 (0.01)
+0.45 (2.91)
+0.38 (1.01)
+0.56 (0.02)
+0.44 
+(0.46)
+0.85 
+(0.01)
+0.89 
+(1.30)
+Caltech101-7
+0.42 
+(0.03)
+0.21 (0.01)
+0.23 (0.00)
+0.51 (0.02)
+0.55 (0.01)
+0.58 
+(2.36)
+0.61 
+(0.01)
+0.65 
+(0.20)
+Caltech101-20
+0.40 
+(0.01)
+0.26 (0.00)
+0.31 (0.01)
+0.52 (0.01)
+0.57 (0.01)
+0.58 
+(2.01)
+0.62 
+(1.00)
+0.65 
+(0.04)
+1 3
+
+Annals of Operations Research
+multi-view clustering methods. The superior performance of JMEG can be attributed to 
+its ability to consider the γ-efficient neighbors, which is constructed based on k-nearest 
+neighborhood extracted from our similarity matrix. By constructing new similarity ma­
+trices that of them are sparse, JMEG is better equipped to leverage the complementary 
+information provided by multiple views.
+4.4.1  Computational efficiency
+Our proposed JMEG method is evaluated for computational efficiency in this section using 
+running time as a metric. To measure the running time, we conducted experiments on two 
+datasets. Each method was tested for 5 runs under the same computing environment, and 
+the average running time was recorded. Figure 2 presents the results, indicating that our 
+method performs the best among the multi-view methods. Multi-view clustering algorithms 
+need to handle multiple views simultaneously, which can make them slower when dealing 
+with cases where only a subset of the data is chosen as an efficient neighborhood instead 
+of considering all the data. For this reason, among all the multi-view clustering algorithms, 
+our JMEG method outperforms the others. Although the JMEG method needs to optimize 
+multiple variables alternately, the algorithm converges quickly, as discussed in the next sec­
+tion. As discussed in Subsection 3.3, the time complexity of our JMEG method is around 
+O(kγV n2).
+Table 4  PUR values of different methods on the six multi-view data sets
+Data sets
+AMGL
+MLRSSC
+MSCIAS
+LMVSC
+PMSC
+FGSC
+JPG
+JMEG
+Reuters1200
+–
+0.55 (1.02)
+0.66 (0.01)
+0.61 (0.01)
+0.60 (0.00)
+0.59 
+(0.01)
+0.72 
+(0.01)
+0.75 
+(0.01)
+Hw
+0.87 
+(0.01)
+0.87 (0.01)
+0.86 (2.01)
+0.91 (0.01)
+0.87 (2.00)
+0.68 
+(1.01)
+0.91 
+(0.00)
+0.94 
+(0.00)
+100Leaves
+0.53 
+(0.02)
+0.47 (0.01)
+0.61 (0.02)
+0.68 (0.01)
+0.73 (0.00)
+0.79 
+(0.00)
+0.80 
+(0.01)
+0.82 
+(0.00)
+ORL
+0.61 
+(0.00)
+0.63 (0.01)
+0.58 (0.01)
+0.65 (0.02)
+0.70 (0.01)
+0.78 
+(0.01)
+0.75 
+(0.00)
+0.78 
+(0.00)
+Caltech101-7
+0.75 
+(0.01)
+0.41 (0.01)
+0.44 (0.01)
+0.75 (0.01)
+0.84 (0.00)
+0.89 
+(0.00)
+0.90 
+(1.01)
+0.93 
+(1.09)
+Caltech101-20
+0.31 
+(0.01)
+0.30 (0.01)
+0.33 (0.00)
+0.58 (0.02)
+0.57 (0.00)
+0.58 
+(0.00)
+0.79 
+(0.01)
+0.81 
+(0.00)
+Table 5  Conn values of different methods on the six multi-view data sets
+Data sets
+AMGL
+MLRSSC
+MSCIAS
+LMVSC
+PMSC
+FGSC
+JPG
+JMEG
+Reuters1200
+–
+0.07
+0.09
+0.08
+0.17
+0.16
+0.18
+0.22
+Hw
+–
+0.07
+0.09
+0.11
+0.19
+0.17
+0.20
+0.25
+100Leaves
+–
+0.04
+0.07
+0.06
+0.09
+0.07
+0.15
+0.18
+ORL
+–
+0.06
+0.05
+0.06
+0.07
+0.13
+0.09
+0.15
+Caltech101-7
+–
+0.07
+0.15
+0.08
+0.11
+0.16
+0.19
+0.21
+Caltech101-20
+–
+0.09
+0.15
+0.21
+0.18
+0.58
+0.22
+0.27
+1 3
+
+Annals of Operations Research
+4.4.2  Convergence analysis
+In order to demonstrate the efficacy of the optimization strategy utilized for the objective 
+function of our proposed JMEG method, we present the convergence curves of JMEG 
+across two data sets, as illustrated in Fig. 3. The x-axis of each subfigure denotes the number 
+of iterations, while the y-axis denotes the value of the objective function, as defined in Eq. 
+(10) above. It is evident from the graphs that JMEG converges rapidly for all two datasets, 
+achieving convergence within only 10 iterations for the Caltech101-7 and Caltech101-20 
+data sets. This suggests that the proposed JMEG method provides an optimized solution that 
+is highly efficient.
+5  Conclusion and future work
+This research paper introduces a novel approach, JMEG, for multi-view graph learning 
+that aims to address the poor connectivity problem in sparse multi-view clustering. JMEG 
+utilizes a pre-processing technique that generates multiple similarity matrices by consider­
+ing γ-efficient neighbors for each data point. Also, these matrices are then combined with 
+segmentation matrices to create a higher-quality graph structure. Our experimental results 
+on real-world data demonstrate the effectiveness of JMEG in improving clustering perfor­
+mance. Future research can explore the potential of combining JMEG with other multi-view 
+methods to enhance clustering quality, as well as investigate its application in incomplete 
+multi-view clustering. JMEG provides a promising approach to addressing the poor con­
+nectivity issue in multi-view clustering.
+Fig. 3  Convergence curves on the two data sets
+ 
+Fig. 2  Running time evaluation of the proposed JMEG method and other comparison methods on the two 
+data sets
+ 
+1 3
+
+Annals of Operations Research
+In addition, we aim to enhance the clustering performance of mixed data that contains 
+various data types, including texts, images, and videos, in the original data space. To achieve 
+this, we plan to extend the current JMEG method into a deep neural network in the future. 
+Furthermore, we aim to develop a more efficient approach that can handle large-scale appli­
+cations by adaptively determining the number of clusters and minimizing the impact of the 
+k and γ values through the utilization of bipartite graph learning.
+ The code associated to this paper is available here: https://github.com/Fatemehsadjadi.
+Proof of Proposition 1
+In this appendix, we provide the complete derivation and proof of Proposition 1. The proof 
+involves decomposing the main optimization problem into eight subproblems and solving 
+each one individually.
+Proof  The proof of this proposition follows the same structure as the proof of most multi-
+view and single-view clustering algorithms. That is, we define eight optimization subprob­
+lems one for each variable. Naturally, each subproblem consists of fixing seven variables 
+and solving the problem for the eighth one. 
+(1) We reformulate the problem (10) with respect to Aν. This yields to the following opti­
+mization objective: 
+ 
+min
+Aν
+V
+∑
+ν=1
+n
+∑
+i,j=1
+wν
+ijaν
+ij + α ∥Aν ∥2
+F +2λ1Tr(F νT LAνF ν) + Γν ∥Aν −A ∥2
+F
+s.t.
+∀ν,
+aν
+ii = 0,
+Aν ≥0,
+Aν1 = 1.
+
+(19)
+ Next, we express the Lagrangian formulation as: 
+ 
+L =
+V
+∑
+ν=1
+(
+n
+∑
+i,j=1
+wν
+ijaν
+ij + α ∥Aν ∥2
+F +2λ1Tr(F νT LAνF ν) + Γν ∥Aν −A ∥2
+F +
+n
+∑
+i=1
+µν
+iiaν
+ii +
+n
+∑
+j=1
+ην
+j Aν
+ij + ξν(1T Aν −1)
+)
+,
+ (20)
+ where µν
+ii, ην
+j , and ξν are Lagrange coefficients. To proceed, we will apply Theorem 2 and 
+rewrite the expression using hνT
+ij as equal to hνT
+ij =∥f ν
+i −f ν
+j ∥2
+2. Then, utilizing the sta­
+tionarity condition (Karush–Kuhn–Tucker conditions) by taking the derivative of Eq. (20) 
+with respect to Aν and setting it to zero, we obtain: 
+ 
+wij + 2αaν
+ij + 2λ1hν
+ij + 2Γν(aν
+ij −aij) + µν
+iiδij + ην
+j + ξν = 0,
+aν
+ij =
+1
+2I(α + Γν)I (
+wij −2λ1hν
+ij + 2Γνaij + µν
+iiδij + ην
+j + ξν)
+,
+(21)
+1 3
+
+Annals of Operations Research
+ The complementary slackness condition gives: 
+ 
+µν
+iiaν
+ii = 0,
+ην
+j Aν
+ij = 0,
+ξν(1T Aν −1) = 0.
+
+(22)
+ Thus, we deduce that ην
+j = 0, and the final expression is: 
+ 
+aν
+ij =
+1
+2I(α + Γν)I (
+wij −2λ1hν
+ij + 2Γνaij + µν
+iiδij + ξν)
+.
+(2) Consider the subproblem derived from the optimization problem (10) with respect to 
+the matrix A: 
+ 
+min
+A
+V
+∑
+ν=1
+Γν ∥Aν −A ∥2
+F +2λ2Tr(F T LAF)
+s.t.
+A ≥0.
+
+(23)
+ By leveraging Theorem 2, where fij =∥Fi −Fj ∥2
+2, and employing the derivative with 
+respect to A while setting it equal to zero, we derive the following expression: 
+ 
+V
+∑
+ν=1
+(−2Γν(aν
+ij −aij)) + 2λ2fij = 0,
+aij =
+−λ2fij + ∑V
+ν=1 Γνaν
+ij
+∑V
+ν=1 Γν
+.
+
+(24)
+(3) The new subproblem of the problem (10) with respect to F ν is 
+ 
+min
+F ν 2λ1
+V
+∑
+ν=1
+Tr(F νT LAνF ν) +
+V
+∑
+ν=1
+ων ∥FF T −F νF νT ∥2
+F )s.t.
+∀νF νT F ν = I. (25)
+ If A is an arbitrary matrix, we have ∥A ∥2
+F = Tr(AT A). So, we can obtain 
+ 
+min Tr(F νT (2λ1LAν −2ωνFF T + 2ωνI)F ν).
+(26)
+ We consider M = 2λ1LAν −2ωνFF T + 2ωνI and, then, the problem min Tr(F νT MF ν) 
+is original spectral clustering. The optimal solution of F ν is obtained by the K eigenvector 
+of M corresponding to the K smallest eigenvalues.
+(4) We rewrite the problem (10) with respect to F, so we have 
+1 3
+
+Annals of Operations Research
+ 
+min
+F
+V
+∑
+ν=1
+2λ2Tr(F T LAF) + ων ∥FF T −F νF νT ∥2
+F ) +
+n
+∑
+i,j=1
+∥Fi −Fj ∥2
+F ¯
+sij
+s.t.
+F T F = I
+ (27)
+ this problem is equal to 
+ 
+min
+F
+Tr(F T (2
+V
+∑
+ν=1
+ων(In −F νT F ν) + L ¯S +
+V
+∑
+ν=1
+2λ2LA)F).
+(28)
+ Considering P = ∑V
+ν=1 ων(In −2F νT F ν) + L ¯S + ∑V
+ν=1 2λ2LA, this problem is the 
+ordinary spectral clustering and the optimal solution of F is obtained by the K eigenvector 
+of P corresponding to the K smallest eigenvalues.
+(5) We rewrite the problem (10) with respect to ¯S, so we have 
+ 
+min
+¯S
+n
+∑
+i,j=1
+∥Fi −Fj ∥2
+2 ¯
+sij + β ∥¯S ∥2
+F +2λ3Tr(QT L ¯SQ)
+
+(29)
+ 
+s.t.
+¯S ≥0, ¯S1 = 1, ¯sii = 0
+
+(30)
+ we set fij =∥Fi −Fj ∥2
+2, ζij =∥qi −qj ∥2
+2 and construct its Lagrange formulation. Then, 
+we have: 
+ 
+L =
+n
+∑
+i,j=1
+∥Fi −Fj ∥2
+2 ¯
+sij + β ∥¯S ∥2
+F +2λ3Tr(QT L ¯SQ) + µ ¯S + τ( ¯S1 −1) + µii¯sii. (31)
+ Now, we compute the derivation of subproblem (31) with respect to ¯S and by making it 
+equal zero, we have 
+ 
+fij + 2λ3ζij + 2β¯sij + τ + µii = 0,
+¯sij = −(fij + λ3ζij)
+2β
+.
+
+(32)
+ Then ¯sij = −(fij + 2λ3ζij) + τ + µii
+2βI
+ where ζT
+ij =∥qi −qj ∥2
+2 and fij =∥fi −fj ∥2
+2.
+(6) Let us fix the variables in the problem (10) except Q. Then, we need to solve the follow­
+ing problem 
+ 
+min
+Q 2λ3Tr(QT L ¯SQ),
+s.t.QT Q = I,
+
+(33)
+1 3
+
+Annals of Operations Research
+ the optimal solution of Q is obtained by the K eigenvector of L ¯S corresponding to the K 
+smallest eigenvalues.
+(7) Let us fix the variables in the problem (10) except ων. Then, we need to solve the fol­
+lowing problem 
+ 
+min
+ων
+V
+∑
+ν=1
+ων ∥FF T −F νF νT ∥2
+F .
+(34)
+ It can be seen that each ων can be updated independently. Equation (34) can be written as 
+ 
+min
+ων ων ∥FF T −F νF νT ∥2
+F .
+(35)
+ This means that ων should be: 
+ 
+ων =
+1
+∥F T F −F νT F ν ∥F
+,
+(36)
+ In other words, it is a weight that is the inverse of the distance. If the distance between the 
+two terms in the fusion process has a large difference, there will be a small weight for the 
+corresponding view.
+(8) We do the same as in the previous proof. We need to solve the following problem 
+ 
+min
+Γν
+V
+∑
+ν=1
+Γν ∥Aν −A ∥2
+F .
+(37)
+ This means that for given Aν and A, we have 
+ 
+Γν =
+1
+∥Aν −A ∥F
+. (38)
+As all eight expressions of the 
+proposition have been proven, the proof is complete. 
+□ 
+Funding  Open access funding provided by Umea University. This work was partially supported by the Wal­
+lenberg AI, Autonomous Systems and Software Program (WASP) funded by the Knut and Alice Wallenberg 
+Foundation.
+Declarations
+Conflict of interest  The authors declare that they have no Conflict of interest.
+Open Access  This article is licensed under a Creative Commons Attribution 4.0 International License, 
+which permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as 
+you give appropriate credit to the original author(s) and the source, provide a link to the Creative Commons 
+licence, and indicate if changes were made. The images or other third party material in this article are 
+1 3
+
+Annals of Operations Research
+included in the article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. 
+If material is not included in the article’s Creative Commons licence and your intended use is not permitted 
+by statutory regulation or exceeds the permitted use, you will need to obtain permission directly from the 
+copyright holder. To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Li, S., Liu, H., Tao, Z., & Fu, Y. (2017). Multi-view graph learning with adaptive label propagation. In Big 
+Data (Big Data). IEEE International Conference on, IEEE, 110–115.
+Zhang, C., Fu, H., Hu, Q., Cao, X., Xie, Y., Tao, D., & Xu, D. (2021). Generalized latent multi-view subspace 
+clustering. IEEE Transactions on Pattern Analysis and Machine Intelligence, 42(1), 86–99.
+Wang, H., Yang, Y., Liu, B., & Fujita, H. (2019). A study of graph-based system for multi-view clustering. 
+Knowledge-Based Systems, 163, 1009–1019.
+Sadjadi, F., Jamshidi, M., & Kang, Z. (2024). Multi-view subspace clustering using drop out technique on 
+points. International Journal of Machine Learning and Cybernetics, 15(5), 1841–1854.
+Sadjadi, F., Jamshidi, M., & Asadi, A. (2025). Multi-view clustering via consensus coefficient matrix and 
+separate segmentation matrices. Journal of Information and Telecommunication. ​h​t​t​p​s​:​/​/​d​o​i​.​o​r​g​/​1​0​.​1​0​
+8​0​/​2​4​7​5​1​8​3​9​.​2​0​2​5​.​2​4​7​9​8​9​8
+Pan, E., & Kang, Z. (2021). Multi-view contrastive graph clustering. Advances in Neural Information Pro­
+cessing Systems, 34, 2148–2159.
+Kang, Z., Shi, G., Huang, S., Chen, W., Pu, X., Zhou, J. T., & Xu, Z. (2020). Multi-graph fusion for multi-
+view spectral clustering. Knowledge-Based Systems, 189, 105–102.
+Wang, H., Yang, Y., Liu, B., & Fujita, H. (2019). A study of graph-based system for multi-view clustering. 
+Knowledge-Based Systems, 163, 1009–1019.
+Wang, H., Yang, Y., & Liu, B. (2019). Graph-based multi-view clustering. IEEE Transactions on Knowledge 
+and Data Engineering, 32(6), 1116–1129.
+Zhan, K., Nie, F., Wang, J., & Yang, Y. (2018). Multiview consensus graph clustering. IEEE Transactions on 
+Image Processing, 28(3), 1261–1270.
+Li, L., Wan, Z., & He, H. (2021). Incomplete multi-view clustering with joint partition and graph learning. 
+IEEE Transactions on Knowledge and Data Engineering, 35(1), 589–602.
+Sadjadi, F., & Torra, V. (2023). Joint multiple efficient neighbors and graph learning for multi-view cluster­
+ing. IUKM, 2, 25–36.
+Bai, L., & Liang, J. (2020). Sparse subspace clustering with entropy-norm. In International conference on 
+machine learning. 561–568.
+Duncan, A. (2004). Powers of the adjacency matrix and the walk matrix. The Collection, 9, 4–11.
+Nie, F., Cai, G., & Li, X. (2017). Multi-view clustering and semi-supervised classification with adaptive 
+neighbors. In Proceedings of the AAAI conference on artificial intelligence, 31(1).
+Jiang, Z., & Liu, X. (2022). Adaptive KNN and graph-based auto-weighted multi-view consensus spectral 
+learning. Information Sciences, 609, 1132–1146.
+Wu, D., Lu, J., Nie, F., Wang, R., & Yuan, Y. (2022). Efficient multi-view graph clustering with comprehen­
+sive fusion. 3566–3572.
+Zhao, P., Wu, H., & Huang, S. (2022). Multi-view graph clustering by adaptive manifold learning. Mathemat­
+ics, 10(11), 1821.
+Chen, X., Wang, Z., Wang, C., Zhang, L., & Zhang, H. (2016). Multi-view spectral clustering with inter-view 
+embedding regularization. In Proceedings of the 24th ACM international conference on Multimedia, 
+475–479.
+Kang, Z., Zhao, X., Peng, C., Zhu, H., Zhou, J. T., Peng, X., Chen, W., & Xu, Z. (2020). Partition level mul­
+tiview subspace clustering. Neural Networks, 122, 279–288.
+Von Luxburg, U. (2007). A tutorial on spectral clustering. Statistics and Computing, 17, 395–416.
+Nie, F., Li, J. & Li, X. (2016). Parameter-free auto-weighted multiple graph learning: a framework for mul­
+tiview clustering and semi-supervised classification, 1881–1887.
+Brbić, M., & Kopriva, I. (2018). Multi-view low-rank sparse subspace clustering. Pattern Recognition, 73, 
+247–258.
+Wang, X., Lei, Z., Guo, X., Zhang, C., Shi, H., & Li, S. Z. (2019). Multi-view subspace clustering with 
+intactness-aware similarity. Pattern Recognition, 88, 50–63.
+Kang, Z., Zhou, W., Zhao, Z., Shao, J., Han, M., & Xu, Z. (2020). Large-scale multi-view subspace cluster­
+ing in linear time. Proceedings of the AAAI Conference on Artificial Intelligence, 34(4), 4412–4419.
+1 3
+
+Annals of Operations Research
+Kang, Z., Shi, G., Huang, S., Chen, W., Pu, X., Zhou, J. T., & Xu, Z. (2021). Multi-graph fusion for multi-
+view spectral clustering. Knowledge-Based Systems, 189, 102–105.
+Li, L., Wan, Z., & He, H. (2021). Incomplete multi-view clustering with joint partition and graph learning. 
+IEEE Transactions on Knowledge and Data Engineering, 35(1), 589–602.
+Publisher's Note  Springer Nature remains neutral with regard to jurisdictional claims in published maps and 
+institutional affiliations.
+1 3

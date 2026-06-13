@@ -1,0 +1,3679 @@
+TITLE: Mixed-Projection Conic Optimization: A New Paradigm for Modeling Rank Constraints
+JOURNAL: Operations_Research
+YEAR: 2021
+DOI: https://doi.org/10.1287/opre.2021.2182
+---
+
+Mixed-Projection Conic Optimization:
+A New Paradigm for Modeling Rank Constraints
+Dimitris Bertsimas
+Sloan School of Management and Operations Research Center, Massachusetts Institute of Technology, Cambridge, MA, USA.
+ORCID: 0000-0002-1985-1003
+dbertsim@mit.edu
+Ryan Cory-Wright
+Operations Research Center, Massachusetts Institute of Technology, Cambridge, MA, USA,
+ORCID: 0000-0002-4485-0619
+ryancw@mit.edu
+Jean Pauphilet
+London Business School, London, UK,
+ORCID: 0000-0001-6352-0984
+jpauphilet@london.edu
+We propose a framework for modeling and solving low-rank optimization problems to certiﬁable optimality.
+We introduce symmetric projection matrices that satisfy Y 2 = Y , the matrix analog of binary variables that
+satisfy z2 = z, to model rank constraints. By leveraging regularization and strong duality, we prove that
+this modeling paradigm yields tractable convex optimization problems over the non-convex set of orthogonal
+projection matrices. Furthermore, we design outer-approximation algorithms to solve low-rank problems to
+certiﬁable optimality, compute lower bounds via their semideﬁnite relaxations, and provide near optimal
+solutions through rounding and local search techniques. We implement these numerical ingredients and, for
+the ﬁrst time, solve low-rank optimization problems to certiﬁable optimality. Our algorithms also supply
+certiﬁably near-optimal solutions for larger problem sizes and outperform existing heuristics, by deriving an
+alternative to the popular nuclear norm relaxation which generalizes the perspective relaxation from vectors
+to matrices. Using currently available spatial branch-and-bound codes, not tailored to projection matrices,
+we can scale our exact (resp. near-exact) algorithms to matrices with up to 30 (resp. 600) rows/columns.
+All in all, our framework, which we name Mixed-Projection Conic Optimization, solves low-rank problems
+to certiﬁable optimality in a tractable and uniﬁed fashion.
+Key words : rank minimization, semideﬁnite optimization, global optimization, discrete optimization,
+outer-approximation, regularization, perspective relaxation, matrix completion, nuclear norm
+Subject classiﬁcations: programming: non-linear: quadratic, algorithms, applications
+Area of review : Optimization
+1. Introduction
+Many central problems in optimization, machine learning, and control theory are equivalent to optimiz-
+ing a low-rank matrix over a convex set. For instance, low-rank constraints successfully model notions of
+minimal complexity, low dimensionality, or orthogonality in a system. However, while rank constraints
+oﬀer unparalleled modeling ﬂexibility, no generic code currently solves these problems to certiﬁable op-
+timality at even moderate sizes. This state of aﬀairs has led inﬂuential works on low-rank optimization
+1
+arXiv:2009.10395v2 [math.OC] 2 Apr 2021
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+2
+(Cand`es and Plan 2010, Recht et al. 2010) to characterize low-rank optimization as intractable and
+advocate convex relaxations or heuristics which do not enjoy assumption-free optimality guarantees.
+The manner in which rank constrained optimization is regarded today is reminiscent of how mixed-
+integer conic optimization (MICO), which can model NP-complete problems, was originally considered.
+After decades of research eﬀort, however, algorithms and software for MICO are now widely available
+(see, e.g., Bonami et al. 2008, Coey et al. 2020) and solve large instances of disparate non-convex
+problems such as best subset selection (Bertsimas and Van Parys 2020) or sparse portfolio selection
+(Frangioni and Gentile 2007, Zheng et al. 2014, Bertsimas and Cory-Wright 2018) to certiﬁable opti-
+mality. Unfortunately, rank constraints cannot be represented using mixed-integer convex optimization
+(Lubin et al. 2021, Lemma 4.1) and do not beneﬁt from these advances.
+In this work, we characterize the complexity of rank constrained optimization and propose a new,
+more general framework, which we term Mixed-Projection Conic Optimization (MPCO). Our proposal
+generalizes MICO, by replacing binary variables z which satisfy z2 = z with symmetric orthogonal
+projection matrices Y which satisfy Y 2 = Y , and oﬀers the following advantages over existing state-
+of-the-art methods: First, it supplies certiﬁcates of (near) optimality for low-rank problems. Second,
+it demonstrates that some of the best ideas in MICO, such as decomposition methods, cutting-planes,
+relaxations, and random rounding schemes, admit straightforward extensions to MPCO. Finally, we im-
+plement a near-optimal rounding strategy and a globally optimal cutting-plane algorithm that improve
+upon the state-of-the-art for matrix completion and sensor location problems. We hope that MPCO
+gives rise to exciting new challenges for the optimization community to tackle.
+1.1. Scope of the Framework
+Formally, we consider the problem:
+min
+X∈Rn×m
+⟨C,X⟩+ λ · Rank(X)
+s.t.
+AX = B, Rank(X) ≤k, X ∈K,
+(1)
+where λ (resp. k) prices (bounds) the rank of X, (A,B) ∈Rℓ×n × Rℓ×m deﬁnes an aﬃne subspace,
+and K is a proper cone in the sense of Boyd and Vandenberghe (2004), i.e., closed, convex, solid and
+pointed. Observe that Problem (1) oﬀers signiﬁcant modeling ﬂexibility, as it allows arbitrary conic
+constraints on X. As a result, linear, convex quadratic, semideﬁnite, exponential, and power constraints
+and objectives can be captured by letting K be an appropriate product of the non-negative orthant and
+the second order, semideﬁnite, exponential, and power cones.
+We now introduce our notation and present some central problems from the optimization and machine
+learning literature which admit low-rank formulations and fall within our framework.
+Notation:
+We let nonbold face characters such as b denote scalars, lowercase bold-faced characters
+such as x denote vectors, uppercase bold-faced characters such as X denote matrices, and calligraphic
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+3
+uppercase characters such as Z denote sets. We let [n] denote the set of running indices {1,...,n}. We
+let e denote a vector of all 1’s, 0 denote a vector of all 0’s, and I denote the identity matrix.
+We also use an assortment of matrix operators. We let σi(X) denote the ith largest singular value
+of a matrix X, ⟨·,·⟩denote the Euclidean inner product between two vectors or matrices of the same
+dimension, X† denote the Moore-Penrose pseudoinverse of a matrix X, ∥· ∥F denote the Frobenius
+norm of a matrix, ∥· ∥σ denote the spectral norm of a matrix, and ∥· ∥∗denote the nuclear norm of a
+matrix; see Horn and Johnson (1985) for a general theory of matrix operators.
+Finally, we use a wide variety of convex cones. We let Sn denote the n×n cone of symmetric matrices,
+and Sn
++ denote the n × n positive semideﬁnite cone.
+1.1.1. Low-Rank Matrix Completion
+Given a sub-sample (Ai,j : (i,j) ∈I ⊆[n] × [m]) of a
+matrix A ∈Rn×m, the matrix completion problem is to recover the entire matrix, by assuming A is low
+rank and seeking a rank-k matrix X which approximately ﬁts the observed values. This problem arises
+in recommender system applications at Netﬂix and Amazon and admits the formulation:
+min
+X∈Rn×m
+1
+2
+X
+(i,j)∈I
+(Xi,j −Ai,j)
+2
+s.t.
+Rank(X) ≤k.
+(2)
+Since there are (n + m)k degrees of freedom in a singular value decomposition of a rank-k matrix
+X ∈Rn×m, Problem (2) is not well-deﬁned unless |I| ≥(n + m)k.
+1.1.2. Minimum Dimension Euclidean Distance Embedding
+Given a set of pairwise dis-
+tances di,j, the Euclidean Distance Embedding (EDM) problem is to determine the lowest dimensional
+space which the distances can be embedded in, such that the distances correspond to Euclidean dis-
+tances. As discussed by Blekherman et al. (2012) Theorem 2.49, a set of distances di,j can be embedded
+in a Euclidean space of dimension k if and only if there exists some Gram matrix G ⪰0 of rank k such
+that d2
+i,j = Gi,i + Gj,j −2Gi,j, on all pairs (i,j) where di,j is supplied. Denoting Di,j = d2
+i,j, we write
+these constraints in matrix form, D = Diag(G)e⊤+ eDiag(G)⊤−2G, where the equality is implicitly
+imposed only for pairs (i,j) where di,j is supplied. This is equivalent to:
+min
+G∈Sn
++
+Rank(G)
+s.t.
+Diag(G)e⊤+ eDiag(G)⊤−2G = D.
+(3)
+1.1.3. Quadratically Constrained Quadratic Optimization
+A quadratically constrained
+quadratic optimization problem (QCQO) seeks an x ∈Rn which solves:
+min
+x∈Rn x⊤Q0x + q⊤
+0 x
+s.t.
+x⊤Qix + q⊤
+i x ≤ri
+∀i ∈[m],
+(4)
+where Q0, Qi ,q0 qi, ri are given problem data. We assume that Q0,Qi are symmetric matrices, but do
+not assume that they are positive semideﬁnite. Therefore, this problem is non-convex, and encompasses
+binary quadratic optimization (Goemans and Williamson 1995) and alternating current optimal power
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+4
+ﬂow problems (Lavaei and Low 2011). The fundamental diﬃculty in Problem (4) is the potential non-
+convexity of the outer product xx⊤. However, we can isolate this non-convexity by introducing a
+rank-one matrix X to model the outer product xx⊤. This leads to the following reformulation:
+min
+x∈Rn,X∈Sn ⟨Q0,X⟩+ ⟨q0,x⟩
+s.t.
+⟨Qi,X⟩+ ⟨qi,x⟩≤ri
+∀i ∈[m], Rank
+
+1 x⊤
+x X
+
+= 1.
+(5)
+We have established that QCQOs are rank constrained problems. Notably however, the converse
+is also true: rank constrained problems with linear, second-order cone, or semideﬁnite constraints are
+QCQOs. Indeed, the constraint Rank(X) ≤k is equivalent to requiring that X = UV ⊤: U ∈Rn×k,V ∈
+Rm×k, i.e., imposing m×n non-convex quadratic equalities. As modern solvers such as Gurobi can now
+solve non-convex QCQOs to global optimality, this QCQO formulation can be used to solve low-rank
+problems, although it is not particularly scalable; we expand on this point in Section 4.1.2.
+1.2. Background and Literature Review
+Our work arises at the intersection of three complementary areas of the low-rank optimization literature:
+(a) global optimization algorithms for non-convex quadratically constrained problems, (b) the interplay
+of convex relaxations and their dual side, randomized rounding methods, and (c) heuristics which
+provide high-quality solutions to non-convex problems in an eﬃcient fashion.
+1.2.1. Global Optimization Techniques
+Branch-and-bound: A broad class of global optimization algorithms have been proposed for QCQOs,
+since McCormick (1976) observed that convex envelopes of non-convex regions supply globally valid
+lower bounds. This gives rise to a numerical strategy where one recursively partitions the QCQO’s
+feasible region into subregions, constructs convex envelopes for each subregion and uses these envelopes
+to construct iteratively improving lower bounds. This approach is known as spatial branch-and-bound;
+see Lee and Zou (2014) for a scheme which decomposes a matrix into a sparse matrix plus a low-rank
+matrix, Kocuk et al. (2016) for a modern implementation in alternating current optimal power ﬂow,
+and Bertsimas et al. (2017) for an exact branch-and-bound approach to low-rank factor analysis.
+Branch-and-cut: In a complementary direction, several branch-and-cut methods (Audet et al. 2000,
+Linderoth 2005) have been proposed for solving non-convex QCQOs, by borrowing decomposition
+schemes from the mixed-integer nonlinear optimization literature (Duran and Grossmann 1986). While
+often eﬃcient in practice, a common theme in these methods is that the more eﬃcient decomposition
+schemes used for MINLOs cannot be applied out-of-the-box, because they may fail to converge to a
+globally optimal solution (see Grossmann 2002, for a counterexample). As a result, non-convex prob-
+lems need to be preprocessed in an expensive fashion. This preprocessing step has inhibited the use of
+global optimization methods for low-rank problems; indeed, we are not aware of any works which apply
+branch-and-cut techniques to solve low-rank problems to certiﬁable optimality.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+5
+Complementarity: In an opposite direction, several authors have proposed applying general nonlinear
+optimization techniques to address low-rank problems, since Ding et al. (2014) observed that a low-rank
+constraint is equivalent to a complementarity constraint over the positive semideﬁnite cone, and thus
+can be addressed by general techniques for mathematical programs with equilibrium constraints (see
+Luo et al. 1996, for a general theory). Among others, Bai et al. (2016) invoked the complementarity
+observation to design a completely positive reformulation of low-rank SDOs, and Bi et al. (2020)
+developed a multi-stage convex relaxation of the complementarity constraint. We are not aware of any
+works which use these ideas to solve low-rank problems exactly where say n ≥10.
+Algebraic: By taking an algebraic view of rank constraints, several algebraic geometry techniques
+have been proposed for addressing low-rank SDOs. Among others, d’Aspremont (2003) proposed re-
+formulating low-rank constraints as systems of polynomial equations which can be addressed via the
+sum-of-squares hierarchy (Lasserre 2001). More recently, Naldi (2018) proposed a semi-algebraic refor-
+mulation of rank-constrained SDOs, which can be optimized over via Gr¨obner basis computation (Cox
+et al. 2013). Unfortunately, algebraic approaches do not scale well in practice. Indeed, as observed by
+Recht et al. (2010), it seems unlikely that algebraic approaches can solve low-rank SDOs when n > 10.
+1.2.2. Convex Relaxations and Random Rounding Methods for Low-Rank Problems
+Convex relaxations: A number of authors have studied convex relaxations of low-rank problems, since
+Fazel (2002) observed that the nuclear norm of a matrix is the convex envelope of a rank constraint on
+the set of matrices with spectral norm at most M, i.e.,
+Conv
+ 
+X ∈Rn×m : ∥X∥σ ≤M,Rank(X) ≤k
+ 
+=
+
+X ∈Rn×m : ∥X∥σ ≤M,∥X∥∗≤kM
+ 
+.
+(6)
+Because the epigraph of a nuclear norm is semideﬁnite representable, this gives rise to semideﬁnite
+relaxations of low-rank problems which can be computed in polynomial time.
+Rounding methods: A complementary line of work aims to supply certiﬁably near-optimal solutions
+to low-rank problems, by rounding their semideﬁnite relaxations. Initiated by Goemans and Williamson
+(1995) in the context of binary quadratic optimization, who established that randomly rounding an
+SDO relaxation supplies a 0.878-approximation, it has evolved into a successful framework for solving
+rank-one optimization problems; see Nemirovski et al. (1999) for a uniﬁed approach in the rank-one
+case. However, this line of work has a key drawback. Namely, existing rounding methods do not address
+rank-k problems such as matrix completion, due to the analytic diﬃculty of constructing a rounding
+mechanism which preserves both feasibility and near-optimality in the rank-k case.
+1.2.3. Heuristic Methods
+Due to the computational diﬃculty of solving Problem (1) to certiﬁ-
+able optimality, and the analytic diﬃculty of deriving a high-quality randomized rounding procedure,
+a variety of heuristic methods have been proposed for solving Problem (1), originating with methods
+for solving low-rank linear matrix inequalities in the optimal control literature (Boyd et al. 1994).
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+6
+Although slow and somewhat ad-hoc in their original implementations, heuristic methods were moved
+front-and-center by the works of Fazel (2002), Burer and Monteiro (2003, 2005). Fazel (2002) observed
+that low-rank positive semideﬁnite matrices lie on the boundary of the PSD cone, and used this ob-
+servation to justify a “log-det” heuristic, where a rank minimization objective is replaced with the
+function log det(X + δI). Burer and Monteiro (2003, 2005) proposed implicitly modeling a rank con-
+straint Rank(X) ≤k by applying the non-linear reformulation X = UV ⊤, where U,V ∈Rn×k and
+eliminating X, to obtain a problem which is non-convex in (U,V ). Although originally solved using
+augmented Lagrangian techniques, modern implementations of the Burer-Monterio heuristic typically
+use alternating minimization (Jain et al. 2013), to enhance the methods scalability and ensure conver-
+gence towards a second-order critical point.
+The modern era of heuristics methods for low-rank matrix optimization was initiated by matrix
+completion and the Netﬂix competition (Bell and Koren 2007). The magnitude of the data made
+available, challenged the aforementioned methods and led to new techniques such as Wen et al. (2012),
+who proposed a nonlinear successive over-relaxation approach that scales to 10,000 × 10,000 matrices,
+Recht and R´e (2013), who proposed a stochastic gradient descent method which scales to 1,000,000 ×
+1,000,000 matrices; see Udell et al. (2016), Nguyen et al. (2019) for reviews of heuristic approaches.
+1.3. Contributions and Structure
+The key contributions of the paper are threefold: First, we propose using orthogonal projection matrices
+which satisfy Y 2 = Y , the matrix analogue of binary variables which satisfy z2 = z, to model low-
+rank constraints via the non-linear equation X = Y X. Under this lens, low-rank problems admit
+reformulations as optimization problems where some decision variables comprise a projection matrix.
+We term this family of problems Mixed-Projection Conic Optimization (MPCO), in reference to mixed-
+integer optimization. To our knowledge, our approach is the ﬁrst mathematical framework which solves
+low-rank optimization problems to certiﬁable optimality. Second, by leveraging regularization and strong
+duality we rewrite low-rank optimization problems as saddle-point problems over the space of orthogonal
+projection matrices, and propose an outer-approximation method to solve the saddle-point problem to
+certiﬁable optimality. Third, by analyzing the saddle-point problem, we derive new convex relaxations
+and rounding schemes which provide certiﬁably near optimal solutions in polynomial time in theory
+and rapidly in practice. Using a generic spatial branch-and-bound code, we are able to solve low-rank
+optimization problems exactly for matrices with 30 rows and columns, and ﬁnd near-exact solutions for
+matrices with up to 600 rows and columns. We believe branch-and-bound schemes tailored to the set of
+projection matrices and dedicated semi-deﬁnite codes for the relaxations have to potential to increase
+the numerical scalability of MPCO even further and constitute an exciting future research direction.
+We note that the idea of using projection matrices to model low-rank constraints is not entirely new,
+as Peng and Xia (2005) have proposed reformulating k-means clustering as a semideﬁnite optimization
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+7
+problem over the set of orthogonal projection matrices. However, our proposal has several key points
+of diﬀerence. Namely, (1) we consider optimizing over projection matrices directly, while Peng and Xia
+(2005) use projection matrices as a vehicle to derive semideﬁnite relaxations, and (2) we use projection
+matrices to solve low-rank optimization problems that do not admit mixed-integer reformulations, while
+k-means clustering certainly admits a mixed-integer reformulation (Gr¨otschel and Wakabayashi 1989).
+The rest of the paper is laid out as follows:
+In Section 2, we show that projection matrices are a natural generalization of binary vectors to
+matrices. Inspired by a common tactic in cardinality constrained optimization, namely introducing
+binary variables to encode the support of the decision vector, we propose introducing a projection matrix
+to encode the image of the decision matrix and thereby model rank. We also investigate the complexity
+of low-rank optimization problems and show that rank minimization is as hard as the existential theory
+of the reals (i.e., deciding whether a semi-algebraic set is non-empty), and thus in PSPACE.
+In Section 3, we derive the MPCO formulations of the aforementioned rank optimization problems.
+By introducing a constraint on the spectral norm of X or a penalty on its Frobenius norm - the matrix
+analogs of big-M constraints and perspective formulations (G¨unl¨uk and Linderoth 2012) respectively,
+we leverage strong duality, reformulate Problem (1) as a saddle-point problem, and prove the resulting
+optimization problem admits a convex objective.
+We propose numerical algorithms to solve these MPCO problem to provable (near) optimality in
+Section 4, by extending some of the most successful techniques from MICO. First, we propose an outer-
+approximation scheme for solving Problem (1) exactly. Then, we obtain valid lower-bounds from solving
+its convex relaxations and propose an alternating minimization algorithm to do so. In addition, we
+prove that a singular value decomposition (SVD) followed by greedily rounding the eigenvalues provides
+certiﬁably near-optimal solutions in polynomial time. Finally, we propose a local-search strategy to
+improve the quality of the greedily rounded solution.
+In Section 5, we implement and numerically evaluate our proposed algorithms. On examples from
+matrix completion and sensor location, we demonstrate that methods proposed in this paper solve
+instances of Problem (1) to certiﬁable optimality in minutes for n in the tens. To our knowledge, our
+work is the ﬁrst to demonstrate that moderately sized rank constrained problems can be solved to
+provable optimality in a tractable fashion. For n in the hundreds, our proposal scales and provides in
+minutes solutions of higher quality than existing heuristics, such as nuclear norm minimization.
+2. From Cardinality to Rank: A Unifying Nonlinear Perspective
+Low rank constraints Rank(X) ≤k are a natural generalization of cardinality constraints ∥x∥0 ≤k from
+vectors to matrices. Indeed, if X is a diagonal matrix then Rank(X) ≤k if and only if ∥X∥0 ≤k, and
+more generally Rank(X) ≤k if and only if ∥σ(X)∥0 ≤k, where σ(X) is the vector of singular values
+of X. However, while cardinality and rank constraints are intimately linked, they are addressed using
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+8
+diﬀerent algorithms. Namely, we can solve cardinality constrained problems with 100,000s of variables
+to optimality (Bertsimas and Van Parys 2020), while low-rank problems are dramatically harder and
+have not yet been solved to certiﬁable optimality for n > 10 (Naldi 2018).
+In our opinion, the diﬀerence between the community’s understanding of cardinality and rank con-
+straints has arisen because of two algorithmic barriers. The ﬁrst barrier is that rank constraints belong
+to a harder complexity class. The second barrier arises because cardinality constraints can be repre-
+sented using binary variables, while rank constraints cannot (Lubin et al. 2021, Corollary 4.1). This
+presents a challenge for researchers, who have developed scalable methods for cardinality constraints
+by exploiting advances in mixed-integer conic optimization (MICO), but cannot use these advances to
+address rank constraints. In this section, we question these barriers by characterizing the complexity
+of low-rank problems and proposing a new framework for modeling rank that generalizes (MICO).
+2.1. On the Complexity of Rank-Constrained Optimization
+Existing studies of Problem (1) typically claim that it is intractable, and support this claim by proving
+that it is NP-hard, by reduction from an NP-complete problem such as Boolean linear programming (see,
+e.g., Vandenberghe and Boyd 1996, Section 7.3). In our opinion, this argument needs to be revisited,
+for two separate reasons. First, NP-hardness is a worst-case analysis statement. In practice, NP-hard
+optimization problems are often tractable. For instance, sparse regression can usually be solved to
+certiﬁable optimality with 100,000s of features in minutes (Bertsimas and Van Parys 2020). Second,
+there is no evidence that Problem (1) is even in NP. Indeed, Problem (1) cannot be represented using
+mixed-integer convex optimization (Lubin et al. 2021, Corollary 4.1), while all 21 of Karp’s NP-complete
+problems can, and the best-known algorithms for Problem (1) run in EXPTIME (Chistov and Grigoriev
+1984, Naldi 2018).
+In this section, we provide a more complete characterization of Problem (1)’s complexity than is
+currently available in the literature. First, we demonstrate that it belongs to a diﬀerent class than
+NP. In particular, it is existential theory of the reals-hard (∃R-hard; see Renegar (1992) for a general
+theory), i.e., as hard as any polynomial optimization problem, which implies that, if NP⫋∃R, Problem
+(1) is strictly harder than NP-complete problems. Second, we prove that Problem (1) is actually in ∃R.
+We now demonstrate that Problem (1) is existential theory of the reals complete (i.e., ∃R-complete).
+We begin by reminding the reader of the deﬁnition of the ∃R complexity class (c.f. Schaefer 2013):
+Definition 1. A decision problem belongs to the existential theory of the reals complexity class if
+it reduces to deciding whether a statement “(∃x1,...,xn)φ(x1,...,xn)” is true or false, where φ(·) is a
+quantiﬁer-free Boolean formula involving polynomials equalities and inequalities, for instance, deciding
+the emptiness of a semi-algebraic set. We say a problem is ∃R-hard if any problem in ∃R reduces to it.
+Note that 3-SAT ∈∃R, so NP⊆∃R, and any statement in ∃R can be decided in PSPACE (Canny
+1988), so ∃R ⊆PSPACE. To establish that Problem (1) is ∃R hard, we require the following proposition,
+which is essentially a restatement of (Schaefer 2013, Theorem 3.1) in the language of optimization.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+9
+Proposition 1. Let G := (V,E) be a graph, and ℓ(e) be the length of edge e. Then, deciding if G can
+be embedded in R2 is ∃R complete, even when all edges have unit length.
+By reducing Proposition 1’s planar embedding problem to a Euclidean Distance Embedding problem,
+we obtain the following result (proof deferred to Appendix A.1):
+Theorem 1. Problem (1) is ∃R-hard.
+Theorem 1 demonstrates that Problem (1) is, from a traditional complexity theory perspective, at
+least as hard as any problem in ∃R. However, its complexity status remains unresolved. Indeed, while
+Cand`es and Plan (2010) have observed that Problem (1) is in EXPTIME, it seems likely that ∃R ⊂
+EXPTIME. We now address this matter, by proving that if K represents the semideﬁnite cone then
+Problem (1) is in ∃R, and hence ∃R-complete; note that the examples listed in Section 1.1 can all
+be rewritten as low-rank SDOs, so this result applies to all of the aforementioned examples (proof of
+theorem deferred to Appendix A.2).
+Theorem 2. Let K = Sn
++ denote the n×n positive semideﬁnite cone. Then, Problem (1) is in ∃R, and
+hence ∃R-complete.
+Remark 1. Since ∃R ⊆PSPACE ⊆EXPTIME, this upper bound improves upon the EXPTIME bound
+on Problem (1)’s complexity stated by Recht et al. (2010), Cand`es and Plan (2010) among others.
+Moreover, it seems unlikely to us that this bound can be further improved without settling fundamental
+questions in complexity theory (e.g., characterizing NP vs. ∃R vs. PSPACE vs. EXPTIME).
+Remark 2. Imposing an additional integrality constraint dramatically changes the complexity of Prob-
+lem (1). Indeed, under the constraint X ∈Zn×n, we can use a reduction from Hilbert’s 10th problem
+to show that we cannot decide in ﬁnite time whether Problem (1)’s optimal objective is 0, even if we
+know the objective is binary; see Appendix A.3 for a proof.
+2.2. Projection Matrices for Modeling Rank
+As previously discussed, rank constraints can be seen as a generalization to the matrix case of cardinality
+constraints. For a vector x ∈Rn, the cardinality constraint ∥x∥0 ≤k ensures that at most k coordinates
+of x are non-zero, and can be modeled by introducing a vector of binary variables since
+∥x∥0 ≤k ⇐⇒∃z ∈{0,1}n : e⊤z ≤k, x = z ◦x,
+(7)
+where z ◦x denotes the component-wise product of z and x. Actually, non-linear constraints of the
+form “x = z ◦x” where z is binary and x is continuous occur in a variety of mixed-integer optimization
+problems, far beyond cardinality constrained optimization. Bertsimas et al. (2019) observed that such
+non-linear constraints “x = z ◦x” actually lead to tractable optimization problems, provided that
+the overall objective is appropriately regularized. In particular, big-M constraints (Glover 1975) and
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+10
+perspective reformulations (G¨unl¨uk and Linderoth 2012) can be seen as appropriate regularizers. By
+building upon this observation and the work of several other authors (Fischetti et al. 2017, Bertsimas
+and Van Parys 2020), they successfully solve cardinality constrained problems at scale via a combination
+of branch-and-cut, randomized rounding and heuristic methods.
+Unfortunately, rank constraints cannot be modeled using mixed-integer convex optimization (Lubin
+et al. 2021, Corollary 4.1) and therefore MICO techniques cannot be applied “out-of-the-box” to address
+rank constraints. Therefore, we now propose a new framework to model rank in optimization problems.
+Instead of a binary vector z to encode the support of x, we introduce a projection matrix Y to capture
+the column space of X and obtain a similar non-linear reformulation.
+Definition 2. A matrix Y ∈Rn×n is called a projection matrix if it satisﬁes the equality Y 2 = Y . In
+addition, if Y is symmetric, Y is called an orthogonal projection matrix.
+As symmetric matrices, orthogonal projection matrices are diagonalizable and their eigenvalues satisfy
+λ2
+i = λi, i.e., are binary. As a result, the Moore-Penrose pseudoinverse of an orthogonal projection Y
+is Y itself (Y = Y †). In addition, since its eigenvalues are binary, the trace of Y equals the number of
+non-zero eigenvalues, i.e., Rank(Y ) = tr(Y ). We are now in a position to link projection matrices and
+rank constraints.
+Proposition 2. For any X ∈Rn×m, Rank(X) ≤k ⇐⇒∃Y ∈Yn : tr(Y ) ≤k, X = Y X, where Yn :=
+{P ∈Sn : P 2 = P } is the set of n × n orthogonal projection matrices.
+Proof of Proposition 2
+We prove the two implications successively.
+• Let X = UΣV ⊤, with U ∈Rn×k, Σ ∈Rk×k, V ∈Rm×k, be a singular value decomposition of X
+and deﬁne Y = U (U ⊤U)
+−1 U ⊤= UU ⊤. By construction, X = Y X, since U ⊤U = I. Moreover,
+tr(Y ) = rank(Y ) = rank(X) ≤k.
+• Since X = Y X, rank(X) ≤rank(Y ) = tr(Y ) ≤k.
+□
+Remark 3. In Proposition 2, the rank constraint is expressed via a trace constraint on Y , the orthogo-
+nal projection onto the image or column space of X. Alternatively, one could model the rank constraint
+via a matrix Y ′ ∈Ym such that tr(Y ′) ≤k and X = XY ′. In this case, Y ′ encodes the projection onto
+the row space of X. In practice, one could introduce both Y and Y ′ and obtain tighter formulations,
+at the price of introducing additional notation. We explore this idea in Appendix B.
+Proposition 2 suggests that projection matrices are to rank constraints what binary variables are
+to cardinality constraints. Indeed, similarities between the two are evident: binary variables z are
+idempotent scalars which solve z2 = z, while projection matrices Y are idempotent matrices which solve
+Y 2 = Y . Also, if X and Y are diagonal, Proposition 2 recovers cardinality constrained optimization.
+Over the past decades, extensive eﬀorts have been devoted to improving the scalability of mixed-
+integer optimization. We believe that similar achievements can be obtained for rank constrained prob-
+lems by adapting techniques from MICO to MPCO. In this direction, Table 1 establishes a dictionary
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+11
+linking cardinality and rank constraints, and demonstrates that many of the techniques developed for
+binary convex optimization admit generalizations to MPCO, including the main results from our recent
+work (Bertsimas et al. 2019). Note that we have not yet established most of the connections claimed
+in Table 1; this is the focus of the next two sections of the paper.
+Table 1
+Analogy between mixed-integer conic and mixed-projection conic optimization.
+Framework
+Bertsimas et al. (2019)
+This paper
+Parsimony concept
+cardinality
+rank
+Non-convex outer set
+binaries
+orthogonal projection matrices
+Strongly convex regularizer
+ℓ2
+2 penalty
+Frobenius norm squared
+Boundedness regularizer
+ℓ∞norm
+spectral norm
+Non-linear formulation
+x = x ◦z; z ∈{0,1}n
+X = Y X, Y ∈Yn
+Big-M formulation
+−Mz ≤x ≤Mz
+
+MY
+X
+X⊤MI
+
+⪰0
+Perspective formulation
+
+θi xi
+xi zi
+
+⪰0
+
+θ
+X
+X⊤Y
+
+⪰0
+Convex relaxation complexity linear/second-order cone semideﬁnite
+Greedy rounding mechanism
+coordinate-wise
+singular value decomposition
+3. Regularization and a Saddle-Point Reformulation
+In this section, we prove that (9) can be reformulated as a saddle-point mixed-projection problem by
+leveraging regularization terms analogous to the big-M and ridge regularization techniques from MICO,
+and derive their semideﬁnite relaxations, as summarized in Table 1.
+Throughout this paper, we let Yn := {P ∈Sn : P 2 = P } denote the set of n×n orthogonal projection
+matrices and Yk
+n := {P ∈Sn : P 2 = P ,tr(P ) ≤k} denote projection matrices with rank at most k.
+Although Yn and Yk
+n do not commonly appear in the optimization literature, their convex hulls are
+well-studied, as we now remind the reader, by restating (Overton and Womersley 1992, Theorem 3):
+Lemma 1. Let Yn denote the n×n orthogonal projection matrices and Yk
+n denote the low-rank orthogo-
+nal projection matrices. Then, Conv(Yn) = {P : 0 ⪯P ⪯I} and Conv(Yk
+n) = {P : 0 ⪯P ⪯I,tr(Y ) ≤k}.
+Moreover, the extreme points of Conv(Yn) are Yn, and the extreme points of Conv(Yk
+n) are Yk
+n.
+3.1. A Regularization Assumption
+By invoking Proposition 2, we rewrite Problem (1) as the following mixed-projection conic problem:
+min
+Y ∈Ykn
+min
+X∈Rn×m
+⟨C,X⟩+ λ · tr(Y )
+s.t.
+AX = B, X = Y X, X ∈K.
+(8)
+Observe that Problem (8) has a two-stage structure which involves ﬁrst selecting a low-rank projection
+matrix Y and second selecting a matrix X under the constraint X = Y X. Moreover, selecting an
+optimal X given Y is easy, because it involves solving a conic optimization problem under the linear
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+12
+constraint X = Y X, while selecting an optimal Y is hard, because Yk
+n is a non-convex set. Therefore,
+our modeling framework isolates the hardness of Problem (8) in Yk
+n.
+To cope with the non-linear constraints X = Y X in a tractable fashion, we augment the objective
+function in (8) with a regularization term. Namely, we consider
+min
+Y ∈Ykn
+min
+X∈Rn×m
+⟨C,X⟩+ Ω(X) + λ · tr(Y )
+s.t.
+AX = B, X = Y X, X ∈K.
+(9)
+where the regularization term Ω(X) satisﬁes the following assumption:
+Assumption 1. In Problem (9), the regularization term Ω(X) is one of:
+• A spectral norm penalty, Ω(X) = 0 if ∥X∥σ ≤M and Ω(X) = +∞otherwise.
+• A Frobenius norm penalty, Ω(X) =
+1
+2γ∥X∥2
+F.
+As we demonstrate in Section 3.2, Assumption 1 is crucial for developing eﬃcient low-rank algorithms,
+for the regularizer drives the convexity (see Theorem 3) and smoothness (see Lemma 3) of the problem,
+and also make computationally cheap to evaluate subgradients readily accessible (Table 2). The idea of
+leveraging regularization to optimize possibly non-smooth functions by obtaining computationally useful
+subgradients is classical (Nesterov 2005, 2007) and therefore its eﬀectiveness should not be surprising.
+The two regularizers are matrix analogues of the popular big-M constraints (constraints on the ℓ∞
+norm of the continuous variables) and ridge regularization (penalty on the ℓ2
+2 norm) for vectors. In
+mixed-integer optimization, such regularization terms can eﬃciently cope with non-linear constraints
+between continuous and binary variables (Bertsimas et al. 2019) and motivate our current approach.
+Practically speaking, regularization can be a natural component of the original problem (8), otherwise
+we advocate for introducing it artiﬁcially, for it leads to tractable algorithms with moderate impact on
+the resulting solution. For instance, if M is large enough so that the optimal solution to Problem (8),
+X⋆, satisﬁes ∥X⋆∥σ ≤M, Problems (9) and (8) are equivalent.In Section 3.5, we develop a disciplined
+technique for computing such an M. With the Frobenius norm penalty, the gap between Problem (9)’s
+and (8)’s objective is at most
+1
+2γ∥X⋆∥2
+F, which can certainly be bounded whenever tr(X) is bounded,
+as often occurs in practice.
+For ease of notation, we let
+g(X) = ⟨C,X⟩+
+(
+0,
+if AX = B, X ∈K,
++∞,
+otherwise,
+denote the unregularized second-stage cost for a given X. Therefore, Problem (9) can be written as:
+min
+Y ∈Ykn
+f(Y ) + λ · tr(Y ),
+(10)
+where f(Y ) :=
+min
+X∈Rn×m g(X) + Ω(X)
+s.t.
+X = Y X
+(11)
+yields a best choice of X given Y . As we establish in this section, this turns out to be a computationally
+useful reformulation, for f is convex in Y (see Theorem 3) and Lipschitz continuous (see Lemma 3),
+and therefore the non-convexity in the problem has been isolated within the set Yk
+n.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+13
+Observe that both regularizers are coercive (i.e., “blow up” to +∞as ∥X∥→∞), and therefore render
+all unbounded solutions infeasible and ensure the compactness of the level sets of X 7→g(X) + Ω(X).
+This alleviates two of the major issues with conic duality (Ben-Tal and Nemirovski 2001, Theorem 2.4.1).
+First, regularization ensures that optimal solutions to conic problems are attained (see Blekherman
+et al. 2012, Example 2.27, for a regularization-free counterexample). Second, regularization ensures that
+infeasibility of a conic system is certiﬁable1, i.e., there is either a feasible solution or a certiﬁcate of
+infeasibility. In general, such a procedure is not possible because a conic system could be infeasible but
+asymptotically feasible, i.e.,
+∄X : AX = B,X ∈K but ∃{Xt}∞
+t=1 : Xt ∈K
+∀t with ∥AXt −B∥→0.
+Here, the regularization term ensures that the set of feasible X (with objective at most θ0 ∈R) is a
+closed convex compact set. Therefore, f(Y ) cannot generate an asymptotically feasible problem.
+Finally, the two regularization functions in Assumption 1 satisfy a non-trivial property which turns
+out to be crucial in both proving that f(Y ) is convex and deriving our overall algorithmic strategy:
+Lemma 2. Consider a regularization function Ω(X) satisfying Assumption 1. There, there exists a
+Fenchel conjugate Ω⋆(see, e.g., Boyd and Vandenberghe 2004, Chap. 3.3.1) such that, for any projection
+matrix Y ∈Yn and any matrix α, we have
+min
+X {Ω(Y X) + ⟨α,Y X⟩} = max
+V11,V22 −Ω⋆(α,Y ,V11,V22),
+and Ω⋆is linear in Y (see Table 2 for its explicit deﬁnition).
+Proof of Lemma 2
+We start with the Frobenius regularization case, Ω(X) =
+1
+2γ∥X∥F
+and
+minX {Ω(Y X) + ⟨α,Y X⟩} =
+1
+2γ∥Y X∥F + ⟨α,Y X⟩. Any solution to the minimization problem satis-
+ﬁes the ﬁrst-order condition 1
+γY X +Y α = 0. Hence, since Y 2 = Y , X⋆= −γY α satisﬁes the ﬁrst-order
+condition and the optimal objective value is −Ω⋆(α,Y ,V11,V22) = −γ
+2⟨α,Y α⟩.
+The spectral case is technically more challenging and detailed proofs are deferred to Appendix B. In
+the rectangular case, Lemma B.2 with Y ′ = Im yields
+min
+X {Ω(Y X) + ⟨α,Y X⟩} = max
+V11,V22 −M
+2 ⟨Y ,V11⟩+ M
+2 ⟨Im,V22⟩s.t.
+
+V11 α
+α⊤V22
+
+⪰0.
+In the symmetric case, Lemma B.3 states that
+min
+X {Ω(Y X) + ⟨α,Y X⟩} =
+max
+V11,V22⪰0 −M⟨Y ,V11 + V22⟩s.t. α = V11 −V22.
+□
+1 Unless the conic dual is also infeasible, this case is unimportant for our purposes, because it only arises when the original
+problem is itself infeasible for any Y , which can be checked a priori.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+14
+Table 2
+Regularization penalties and conjugates, as deﬁned in Lemma 2.
+Penalty
+Ω(X)
+Ω⋆(α,Y ,V11,V22)
+∂
+∂Yi,j Ω⋆(α,Y ,V11,V22)
+Spectral norm (X rectangular)
+(
+0,
+if ∥X∥σ ≤M,
++∞,
+o.w.,
+M
+2 ⟨Y ,V11⟩+ M
+2 ⟨Im,V22⟩
+M
+2 V11,i,j.
+s.t.
+
+V11 α
+α⊤V22
+
+⪰0,
+Spectral norm (X symmetric)
+(
+0,
+if ∥X∥σ ≤M,
++∞,
+o.w.,
+M⟨Y ,V11 + V22⟩
+M(V11 + V22)i,j.
+s.t. α = V11 −V22,
+V11,V2,2 ⪰0,
+Frobenius norm
+1
+2γ∥X∥2
+F
+γ
+2⟨α,Y α⟩
+γ
+2⟨αi,αj⟩
+3.2. A Saddle-Point Reformulation
+We now reformulate Problem (9) as a saddle-point problem. This reformulation is signiﬁcant for two
+reasons. First, as shown in the proof of Theorem 3, it leverages the nonlinear constraint X = Y X by
+introducing a new matrix of variables V ∈Rn×m such that V = Y X, giving:
+f(Y ) = min
+V ,X{g(V ) + Ω(Y X) : V = Y X},
+a substitution reminiscent of the Douglas-Rachford splitting technique for composite convex optimiza-
+tion problems (Douglas and Rachford 1956, Eckstein and Bertsekas 1992)—the proof of Theorem 3
+shows that this substitution does not change the optimal objective value. Second, it proves that the
+regularizer Ω(X) drives the convexity and smoothness of f(Y ). To derive the problem’s dual, we require:
+Assumption 2. For each subproblem (11) generated by f(Y ) where Y ∈Yk
+n, either the optimization
+problem is infeasible, or strong duality holds.
+Assumption 2 holds under Slater’s constraint qualiﬁcation (Boyd and Vandenberghe 2004, Section
+5.2.3). By invoking Assumption 2, the following theorem reformulates (10) as a saddle-point problem:
+Theorem 3. Suppose that Assumption 2 holds and Ω(·) is either the spectral or Frobenius regularizer.
+Then, the following two optimization problems are equivalent:
+f(Y ) :=
+min
+X∈Rn×m
+g(X) + Ω(X)
+s.t.
+X = Y X,
+(12)
+=
+max
+α,V11,V22
+h(α) −Ω⋆(α,Y ,V11,V22),
+(13)
+where h(α) :=
+max
+Π:C−α−A⊤Π∈K⋆⟨b,Π⟩, K⋆:= {W : ⟨W ,X⟩≥0
+∀X ∈K} denotes the dual cone to K,
+and Ω⋆(α,Y ,V11,V22) is deﬁned in Table 2.
+Proof of Theorem 3
+Let us ﬁx Y ∈Yk
+n, and suppose that strong duality holds for the inner mini-
+mization problem which deﬁnes f(Y ). To progress, we introduce a matrix V ∈Rn×m such that V = Y X
+and obtain the relaxation:
+min
+X,V g(V ) + Ω(Y X)
+s.t. V = Y X.
+(14)
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+15
+Let us verify that this relaxation is a valid substitution, i.e., that Problems (12) and (14) have the same
+optimal objective, f(Y ). If X is feasible for (12), then (V = X,X) is obviously feasible for (14) with
+same objective value. Similarly, let (V ,X) be feasible for (14). Y V = Y 2X = Y X = V since Y 2 = Y .
+Hence, V is feasible for (12) with same objective value.
+Now, let α denote the dual variables associated with the coupling constraints V = Y X. The mini-
+mization problem is then equivalent to its dual problem, which is given by:
+f(Y ) = max
+α
+h(α) + min
+X [Ω(Y X) + ⟨α,Y X⟩],
+where h(α) := infV g(V )−⟨V ,α⟩is, up to a sign, the Fenchel conjugate of g. By a standard application
+of Fenchel duality, it follows that
+h(α) = max
+Π ⟨b,Π⟩+
+(
+0,
+if C −α −A⊤Π ∈K⋆,
++∞,
+otherwise.
+Finally, from Lemma 2 we have min
+X {Ω(Y X) + ⟨α,Y X⟩} = max
+V11,V22 −Ω⋆(α,Y ,V11,V22), which con-
+cludes the proof.
+Alternatively, under either penalty, if the inner minimization problem deﬁning f(Y ) is infeasible,
+then its dual problem is unbounded by weak duality.2.
+□
+Remark 4. In the unregularized case, i.e., Ω(X) = 0, we can derive a similar reformulation:
+min
+Y ∈Ykn
+max
+α∈Rn×m
+h(α) + λ · tr(Y ) s.t.
+Y α = 0.
+(15)
+Under this lens, regularization of the primal problem is equivalent to a relaxation in the dual formula-
+tion: the hard constraint Y α = 0 is penalized by −Ω⋆(α,Y ,V11,V22).
+Remark 5. By Theorem 3 and Lemma 2, f(Y ) is convex as the point-wise maximum of functions
+which are linear in Y .
+By Theorem 3, when we evaluate f( ˆY ), one of two alternatives occur. The ﬁrst is that we have
+f( ˆY ) < +∞and there is some optimal (α,V11,V22). In this case, we construct the lower approximation
+f(Y ) ≥f( ˆY ) + ⟨H,Y −ˆY ⟩,
+where Hi,j =
+∂
+∂Yi,j Ω⋆(α,Y ,V11,V22) (see Table 2 for closed-form expression of the partial derivatives,
+which follow readily from Danskin’s theorem (see, e.g., Bertsekas 2016, Prop. B.22)). The second alter-
+native is that f( ˆY ) = +∞, in which case, by the conic duality theorem (see Ben-Tal and Nemirovski
+2001, Chapter 2) there exists a (α,Π) such that
+C −α −A⊤Π ∈K⋆, and ⟨b,Π⟩> ⟨−H, ˆY ⟩.
+(16)
+2 Weak duality implies that the dual problem is either unfeasible or unbounded. Since the feasible set of the maximization
+problem does not depend on Y , it is always feasible, unless the original problem is itself infeasible. Therefore, we assume
+without loss of generality that it is unbounded.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+16
+Under this alternative, we can separate ˆY from the set of feasible Y ’s by imposing the cut 0 ≥⟨b,Π⟩+
+⟨H,Y ⟩. Under either alternative, we obtain a globally valid ﬁrst-order underestimator of the form
+zf(Y ) ≥h + ⟨H,Y −ˆY ⟩,
+(17)
+where z, h are deﬁned as
+z =
+(
+1,
+if f( ˆY ) < +∞,
+0,
+if f( ˆY ) = +∞,
+and
+h =
+(
+f( ˆY ),
+if f( ˆY ) < +∞,
+⟨b,Π⟩+ ⟨H, ˆY ⟩,
+if f( ˆY ) = +∞.
+(18)
+This observation suggests that a valid numerical strategy for minimizing f(Y ) is to iteratively minimize
+and reﬁne a piecewise linear underestimator of f(Y ) deﬁned by the pointwise supremum of a ﬁnite
+number of underestimators of the form zf(Y ) ≥h + ⟨H,Y −Y ⟩. Indeed, as we will see in Section 4,
+this strategy gives rise to the global optimization algorithm known as outer-approximation.
+Smoothness We now demonstrate that f(Y ) is smooth, in the sense of Lipschitz continuity, under a
+boundedness assumption on the size of the dual variables, which is a crucial property for ensuring the
+convergence of our global optimization methods and bounding the quality of our semideﬁnite relaxation
+and greedy rounding methods. Formally, the following result follows directly from Theorem 3.
+Lemma 3. Let Y ,Y ′ ∈Conv(Yk
+n) be on the convex hull of the orthogonal projection matrices. Then
+f(Y ) −f(Y ′) ≤Ω⋆(α⋆(Y ),Y ′ −Y ,V ⋆
+11(Y ),V ⋆
+22(Y )).
+Moreover, suppose α⋆(Y ),V ⋆
+11(Y ),V ⋆
+22(Y ) can be bounded independently from Y , i.e., ∥α⋆(Y )∥σ ≤L1,
+∥V ⋆
+11(Y )∥σ ≤L2, ∥V ⋆
+22(Y )∥σ ≤L2. Then, under spectral regularization we have
+f(Y ) −f(Y ′) ≤M⟨V ⋆
+11(Y ),Y ′ −Y ⟩≤ML2∥Y ′ −Y ∥∗,
+(19)
+and under Frobenius regularization we have
+f(Y ) −f(Y ′) ≤γ
+2⟨α⋆⊤(Y )α⋆(Y ),Y ′ −Y ⟩≤γ
+2L2
+1∥Y ′ −Y ∥∗,
+(20)
+where the bounds involving L1,L2 follow from Holder’s inequality3.
+Remark 6. Section 3.5 develops disciplined techniques for computing an M such that the constraint
+∥X∥σ ≤M in the primal does not alter the optimal objective. The same technique, applied to the dual,
+yields explicit bounds on L1. Moreover, since there exists an optimal pair (V11, V22) which is an explicit
+functions of an optimal α, this translates into explicit bounds on L2.
+3.3. Semideﬁnite Relaxations
+To lower bound (10)’s objective, we invoke Lemma 1 to relax the non-convex constraint Y ∈Yk
+n to
+Y ∈Conv
+ Yk
+n
+
+= {Y ∈Sn : 0 ⪯Y ⪯I,tr(Y ) ≤k}.
+3 Namely, |⟨X,Y ⟩| ≤∥X∥σ∥Y ∥∗, since the ∥· ∥σ and ∥· ∥∗, as the matrix analogs of the ℓ∞and ℓ1 norms, are dual.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+17
+This yields the saddle-point problem
+min
+Y ∈Conv(Ykn)
+max
+α,V11,V22∈Sm h(α) −Ω⋆(α,Y ,V11,V22) + λ · tr(Y ).
+(21)
+Problem (21) can in turn be reformulated as an SDO. Indeed, under Assumption 2, we obtain
+a semideﬁnite formulation by taking Problem (21)’s dual with respect to α. Formally, we have the
+following results (proofs deferred to Appendix A.4 and A.5 respectively):
+Lemma 4. Suppose that Assumption 2 holds. Then, strong duality holds between:
+min
+Y ∈Conv(Ykn)
+max
+α∈Rn×m
+h(α) −γ
+2⟨α,Y α⟩+ λ · tr(Y ),
+(22)
+min
+Y ∈Conv(Ykn)
+min
+X∈Rn×m,θ∈Sn
+g(X) + 1
+2γ tr(θ) + λ · tr(Y )
+s.t.
+
+θ
+X
+X⊤Y
+
+⪰0.
+(23)
+Lemma 5. Suppose that Assumption 2 holds. Then, strong duality holds between:
+min
+Y ∈Conv(Ykn)
+max
+α∈Sn,V11,V22⪰0
+h(α) −M⟨Y ,V11 + V22⟩+ λ · tr(Y )
+s.t.
+α = V11 −V22,
+(24)
+min
+Y ∈Conv(Ykn)
+min
+X∈Sn
+g(X) + λ · tr(Y )
+s.t.
+−MY ⪯X ⪯MY .
+(25)
+We now oﬀer some remarks on these bi-dual problems:
+• We can derive a more general version of Lemma 5 without the symmetry assumption on X in much
+the same manner, via the Schur complement lemma.
+• Problem (23)’s formulation generalizes the perspective relaxation from vectors to matrices. This sug-
+gests that (23) is an eﬃcient formulation for addressing rank constraints, as perspective formulations
+eﬃciently address cardinality constrained problems with conic quadratic (G¨unl¨uk and Linderoth
+2012) or power cone (Akt¨urk et al. 2009) objectives, indeed, they provide a theoretical basis for scal-
+able algorithms for sparse regression (Bertsimas and Van Parys 2020, Hazimeh et al. 2020), sparse
+portfolio selection (Zheng et al. 2014, Bertsimas and Cory-Wright 2018) and network design (Fischetti
+et al. 2017) problems among others..
+3.4. Convex Penalty Interpretations of Relaxations
+In this section, we consider instances where rank is penalized in the objective only and interpret the
+above convex relaxations as penalty functions, in the tradition of Fazel (2002), Recht et al. (2010). In
+the presence of the Frobenius penalty, our ﬁrst result generalizes the reverse Huber penalty of Pilanci
+et al. (2015), Dong et al. (2015) from cardinality to rank objectives (proof deferred to Appendix A.7).
+Lemma 6. Suppose that Assumption 2 holds. Then, the following problems are equivalent:
+min
+Y ∈Conv(Yn)
+min
+X∈Rn×m,θ∈Sn
+g(X) + 1
+2γ tr(θ) + λ · tr(Y )
+s.t.
+
+θ
+X
+X⊤Y
+
+⪰0,
+(26)
+min
+X∈Rn×m
+g(X) +
+n
+X
+i=1
+min
+ s
+2λ
+γ σi(X),λ + σi(X)2
+2γ
+!
+.
+(27)
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+18
+Remark 7.
+Since
+min
+0≤θ≤1
+
+λθ + t2
+θ
+
+=
+(
+2
+√
+λ|t|,
+if |t| ≤
+√
+λ,
+t2 + λ,
+otherwise,
+the proof of Lemma 6 reveals that Problems (26)-(27) are equivalent to minimizing
+min
+X∈Rn×m,θ∈Rn: 0≤θ≤e
+g(X) +
+n
+X
+i=1
+
+λθi + σi(X)2
+2γθi
+
+,
+(28)
+which applies the smooth penalty t →λθ +
+t2
+2γθ : 0 ≤θ ≤1 to model the non-convex cost t →λ∥t∥0 + t2
+2γ
+incurred by each singular value of X. Indeed, this smooth penalty is precisely the convex envelope of
+the non-convex cost function (see, e.g., G¨unl¨uk and Linderoth 2012). Compared to other penalties for
+low-rank problems (Fan and Li 2001, Zhang 2010), this generalized Huber penalty is convex, amenable
+to eﬃcient alternating minimization procedures (see Section 4.2.2) and could be of independent interest
+to the statistical learning community.
+Lemma 6 proposes an alternative to the nuclear norm penalty for approximately solving low-rank
+problems. This is signiﬁcant, as many low-rank problems have constraints X ⪰0,tr(X) = k (e.g. sparse
+PCA (d’Aspremont et al. 2007), k-means clustering (Peng and Wei 2007)), and under these constraints
+a nuclear norm cannot encourage low-rank solutions (Zhang et al. 2013), while Lemma 6’s penalty can.
+Our next results relate rank minimization problems with a spectral regularizer to the nuclear norm
+penalty, in both the square symmetric and the rectangular case (proofs deferred to Appendix A.6):
+Lemma 7. Suppose that Assumption 2 holds. Then, the following problems are equivalent:
+min
+Y ∈Conv(Yn) min
+X∈Sn
+g(X) + λ · tr(Y )
+s.t.
+−MY ⪯X ⪯MY ,
+(29)
+min
+X∈Sn
+g(X) + λ
+M ∥X∥∗
+s.t.
+∥X∥σ ≤M.
+(30)
+Lemma 8. Suppose that Assumption 2 holds. Then, the following problems are equivalent:
+min
+Y ∈Conv(Yn),Y ′∈Conv(Ym)
+min
+X∈Rn×m
+g(X) + λ
+2 tr(Y ) + λ
+2 tr(Y ′)
+s.t.
+
+MY
+X
+X⊤MY ′
+
+⪰0,
+(31)
+min
+X∈Rn×m
+g(X) + λ
+M ∥X∥∗
+s.t.
+∥X∥σ ≤M.
+(32)
+3.5. Bounding the Spectral Penalty
+We now present techniques for computing an M such that the optimal values of (8) and (9) agree;
+these are essentially a generalization of similar techniques for logically constrained MICOs (Bertsimas
+et al. 2016, Section 2.3). We ﬁrst consider the positive semideﬁnite case, then develop the general case.
+Note that the Ms obtained here are not, in general, the smallest possible—computing this quantity is
+NP-hard even for MICOs (Kleinert et al. 2020).
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+19
+Positive semideﬁnite case. Let X ∈Sn
++. Then, since tr(X) = Pn
+i=1 λi(X) ≥λ1(X), the optimal value
+of the following problem gives a valid bound on M:
+Mtr := max
+X∈Sn
++
+tr(X) s.t. AX = B,X ∈K.
+(33)
+Alternatively, since the volume of X and its spectral radius are related, we can maximize
+X⋆= arg
+max
+X∈Sn
++:AX=B,X∈Klog det(X).
+(34)
+We have det(X) ≤(λmax(X))
+n, which implies we can set Mdet =
+np
+det(X⋆). Alternatively, we could
+solve both (33) and (34) and set M = min(Mtr,Mdet), which also gives a valid bound.
+General case Let X ∈Rn×m. Then, computing a valid M is more expensive, because ∥X∥σ, ∥X∥F,
+and ∥X∥∗are not mixed-integer convex representable when maximizing (Lubin et al. 2021, Corollary
+4.1). To progress, let us evaluate n · m values Mi,j, each computed by solving two conic problems:
+Mi,j :=
+max
+X∈R⋉×⋗:AX=B,X∈K |Xi,j|
+(35)
+Then, a valid M is given by P
+i,j Mi,j, since P
+i,j Mi,j ≥∥X∥1 ≥∥X∥σ (Boyd and Vandenberghe 2004).
+Unbounded interpretation. We remind the reader that interpreting the case where M = +∞requires
+caution. Indeed, when a feasible X and extreme ray W give an unbounded direction such that
+rank(X + λW ) ≤k
+∀λ ≥0
+we have a certiﬁcate that no valid bound on M exists. Alternatively, when rank(X + λW ) ≥k + 1,
+we don’t actually know whether a valid M exists, since the set {X ∈Sn
++ : AX = B,X ∈K} could be
+unbounded, even while its intersection with a low-rank set is bounded. This diﬃculty also arises in the
+sparsity-constrained (MICO) case however, and therefore should not be unexpected; it can be dealt
+with by cross-validating M/γ, which is usually acceptable since A,B are usually estimated from data.
+4. Eﬃcient Algorithmic Approaches
+In this section, we present an eﬃcient numerical approach to solve Problem (1) and its convex re-
+laxations. The backbone is an outer-approximation strategy, embedded within a non-convex QCQO
+branch-and-bound procedure to solve the problem exactly. We also propose rounding heuristics to ﬁnd
+good feasible solutions, and semideﬁnite free methods for optimizing over (1)’s convex relaxations.
+The primary motivations for developing an outer-approximation procedure and solving mixed-
+projection problem as saddle-point problems are twofold. First, we are not aware of any exact solvers
+which address mixed-projection problems with semideﬁnite constraints. Instead, a decomposition strat-
+egy like outer-approximation can be readily implemented using a conjunction of Gurobi (to solve non-
+convex quadratically constrained master problems) and Mosek (to solve conic subproblems). Second,
+decomposition schemes for mixed-integer semideﬁnite problems typically outperform one-shot strategies
+(Belotti et al. 2013), so we expect - and observe in Section 5.3 - a similar comparison for mixed-
+projection optimization, hence connecting the frameworks in both theory (see Table 1) and practice.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+20
+4.1. A Globally Optimal Cutting-Plane Method
+The analysis in the previous section reveals that evaluating f(Y ) yields a globally valid ﬁrst-order
+underestimator of f(·). Therefore, a numerically eﬃcient strategy for minimizing f(Y ) is to itera-
+tively minimize and reﬁne a piecewise linear underestimator of f(Y ). This strategy is known as outer-
+approximation (OA), and was originally proposed by Duran and Grossmann (1986). OA iteratively
+constructs underestimators of the following form at each iterate t + 1:
+ft+1(Y ) = max
+1≤i≤t{f(Yi) + ⟨Hi,Y −Yi⟩}.
+(36)
+By iteratively minimizing ft+1(Y ) and imposing the resulting cuts when constructing the next under-
+estimator, we obtain a non-decreasing sequence of underestimators ft(Yt) and non-increasing sequence
+of overestimators mini∈[t] f(Yi) which converge to an ϵ-optimal solution within a ﬁnite number of iter-
+ations; see also Section 3.2 for details on cut generation. Indeed, since Conv (Yk
+n) is a compact set and
+f(·) is an L-Lipschitz continuous function in Y , OA never visits a ball of radius
+ϵ
+L twice.
+We now formalize this numerical procedure in Algorithm 1, and state its convergence properties
+(proof of convergence deferred to Appendix A.8):
+Algorithm 1 An outer-approximation method for Problem (10)
+Require: Initial solution Y1
+t ←1
+repeat
+Compute Yt+1,θt+1 solution of
+min
+Y ∈Ykn,θ θ + λ · tr(Y )
+s.t. ziθ ≥hi + ⟨Hi,Y −Yi⟩
+∀i ∈[t].
+Compute f(Yt+1), Ht+1, zt+1, dt+1
+until f(Yt) −θt ≤ε
+return Yt
+Theorem 4. Suppose that Assumptions 1-2 hold, and that there exists some Lipschitz constant L such
+that for any feasible Y ,Y ′ ∈Conv(Yk
+n) we have: |f(Y ) −f(Y ′)| ≤L∥Y −Y ′∥F, and for any feasibility
+cut ⟨Hi,Y −Yi⟩+ hi ≤0 we have |⟨Hi,Y −Y ′⟩| ≤L∥Y −Y ′∥F. Let Yt ∈Yk
+n be a feasible solution
+returned by the tth iterate of Algorithm 1, where
+t ≥
+Lk
+ϵ + 1
+n2
+.
+Then, Yt is an ϵ-optimal and ϵ-feasible solution to Problem (9). Moreover, suppose that we set ϵ →0.
+Then, any limit point of {Yt}∞
+t=1 solves (9).
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+21
+4.1.1. Optimizing Over Orthogonal Projection Matrices
+To successfully implement Algo-
+rithm 1, we need to repeatedly solve optimization problems of the form
+min
+Y ∈Ykn,θ θ + λ · tr(Y )
+s.t. ziθ ≥hi + ⟨Hi,Y −Yi⟩
+∀i ∈[t],
+(37)
+which requires a tractable representation of Yk
+n. Fortunately, Gurobi 9.0 contains a globally optimal
+spatial branch-and-bound method for general QCQOs which recursively partitions the feasible region
+into boxes and invokes the ubiquitous McCormick inequalities to obtain valid upper and lower bounds
+on each box—see Achterberg and Towle (2020) for a discussion of Gurobi’s bilinear solver, Belotti et al.
+(2013) for a general theory of spatial branch-and-bound. Therefore, we represent Y by introducing a ma-
+trix U ∈Rn×k and requiring that Y = UU ⊤and U ⊤U = I. This allows Algorithm 1 to be implemented
+by iteratively solving a sequence of QCQOs and conic optimization problems. Moreover, to decrease
+the amount of branching required in each iteration of Algorithm 1, we impose an outer-approximation
+of the valid constraint Y ⪰UU ⊤. Speciﬁcally, we strengthen the formulation by imposing second-order
+cone relaxations of the PSD constraint. First, we require that the 2 × 2 minors in Y are non-negative
+, i.e., Y 2
+i,j ≤Yi,iYj,j ∀i,j ∈[n], as proposed in Ahmadi and Majumdar (2019), Bertsimas and Cory-
+Wright (2020). Second, we require that the on-diagonal entries of Y ⪰UU ⊤are non-negative i.e., Yi,i ≥
+Pk
+i=1 U 2
+i,t ∀i ∈[n]. Finally, we follow Atamt¨urk and Gomez (2019, Proposition 5) in taking a second-order
+cone approximation of the 2× 2 minors in Y ⪰UU ⊤i.e., 0 ≥∥Ui ± Uj∥2
+2 ± 2Yi,j −Yi,i −Yj,j, ∀i,j ∈[n].
+All told, we have4:
+min
+Y ∈Sn,U∈Rn×k,θ
+θ + λ · tr(Y )
+s.t. ziθ ≥hi + ⟨Hi,Y −Yi⟩
+∀i ∈[t],
+Y = UU ⊤,U ⊤U = I,Yi,iYj,j ≥Y 2
+i,j ∀i,j ∈[n],Yi,i ≥
+k
+X
+t=1
+U 2
+i,t ∀i ∈[n],tr(Y ) = k,
+0 ≥∥Ui + Uj∥2
+2 −2Yi,j −Yi,i −Yj,j, 0 ≥∥Ui −Uj∥2
+2 + 2Yi,j −Yi,i −Yj,j
+∀i,j ∈[n].
+(38)
+Finally, for a given Y ,U, we strengthen this formulation by imposing second-order cone cuts of the
+form ⟨Y −UU ⊤,uu⊤⟩≥0, where u is the most negative eigenvector of Y −UU ⊤, as proposed by
+Sherali and Fraticelli (2002).
+As described, a linear optimization problem over the set of orthogonal projection matrices is solved at
+each iteration, hence building a new branch-and-bound tree each time. We refer to this implementation
+as a “multi-tree” method. Although ineﬃcient if implemented naively, multi-tree methods beneﬁt from
+gradually tightening the numerical tolerance of the solver as the number of cuts increases.
+To improve the eﬃciency of Algorithm 1, one can integrate the entire procedure within a single
+branch-and-cut tree using lazy callbacks, as originally proposed in the context of MICO by Quesada and
+Grossmann (1992). Henceforth, we refer to this implementation as a “single-tree” method. However, the
+4 It should be noted that this formulation is rather complicated because non-convex QCQO solvers such as Gurobi currently
+do not model PSD constraints. If they did, we would supplant the second-order cone constraints with Y ⪰UU ⊤and
+thereby obtain a simpler master problem.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+22
+beneﬁt from using multi-tree over single-tree is not straightforward for it depends on how the method
+is engineered. We benchmark both implementations in Section 5.3.
+4.1.2. A Simple Benchmark
+We now lay out a simple approach for solving low-rank problems
+exactly, which we will compare against in our numerical experiments. Rather than introducing an
+orthogonal projection matrix Y , we let X = UV ⊤where U ∈Rn×k and V ∈Rm×k, and U, V are both
+bounded in absolute value by big-M constraints of the form |Ui,j| ≤1,|Vi,j| ≤M. Assuming that the
+objective and constraints are QCQO representable, as occurs for all of the examples mentioned in the
+introduction, this formulation can then be optimized over using Gurobi’s piecewise linear reformulation
+technique for general QCQOs. Formally, a rank constraint Rank(X) ≤k leads to:
+min
+X∈Rn×m,U∈Rn×k,V ∈Rm×k
+Ω(X) + g(X)
+s.t.
+X ≥UV ⊤−ϵE,X ≤UV ⊤+ ϵE, ∥Ui∥2 ≤1
+∀i ∈[n],∥V ∥∞≤M,
+where E is a matrix of all ones. Note however that, as we observe in Section 5, this approach is
+signiﬁcantly less eﬃcient than the previously described cutting-plane approaches.
+4.2. Lower bounds via Semideﬁnite Relaxations
+To certify optimality, high-quality lower bounds are of interest and can be obtained by relaxing the non-
+convex constraint Y ∈Yk
+n to Y ∈Conv (Yk
+n) to obtain a semideﬁnite relaxation as discussed in Lemma
+1. In addition to a valid lower bound on (10)’s objective, the optimal solution to the relaxation Y ⋆is
+a natural candidate for a random rounding strategy, for stronger convex relaxations lead to superior
+random rounding strategies. We will explore such rounding strategies in detail in the next section.
+The convex relaxation yields the optimization problem (21) which can be solved using a cutting-plane
+method (see Section 4.2.1), an alternating minimization method (see Section 4.2.2) or reformulated
+as an SDO and solved as such. Since Algorithm 1 is also an outer-approximation scheme, solving
+the convex relaxation via a cutting-plane method has the additional beneﬁt of producing valid linear
+lower-approximations of f(Y ) to initialize Algorithm 1 with.
+4.2.1. Cutting-Plane Methods for Improving the Root Node Bound
+As mentioned pre-
+viously, Problem (21) can be solved by a cutting-plane method such as Kelley’s algorithm (see Kelley
+1960), which is a continuous analog of Algorithm 1 that solves Problem (10) over Conv(Yk
+n), rather
+than Yk
+n. The main beneﬁt of such a cutting-plane method is that the cuts generated are valid for
+both Conv(Yk
+n) and Yk
+n, and therefore can be used to initialize Algorithm 1 and ensure that its initial
+lower bound is equal to the semideﬁnite relaxation. As demonstrated by Fischetti et al. (2017) in the
+context of MICO and facility location problems, this approach often accelerates the convergence of
+decomposition schemes by orders of magnitude. We present pseudocode in Appendix D.1
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+23
+0
+500
+1000
+1500
+-1000
+-750
+-500
+-250
+0
+Time(s)
+Objective value
+Kelley LB
+Kelley UB
+In-out LB
+In-out UB
+cuts=21
+cuts=82
+100.0 
+100.5 
+101.0 
+101.5 
+102.0 
+102.5 
+0.0
+0.3
+0.6
+0.9
+Time(s)
+Lower Bound
+Kelley
+In-out
+In-out+SOC
+nc=22,850
+nc=18,187
+nc=3,270
+Figure 1
+Convergence behavior of Kelley’s method and the in-out method for solving the semideﬁnite relaxation of
+a synthetic matrix completion instance where n = 100 (left), and lower bounds generated by a single-tree
+implementation of Algorithm 1 for a synthetic matrix completion instance where n = 10 (right).
+Figure 1’s left panel illustrates the convergence of Kelley’s method and the in-out method for solving
+the semideﬁnite relaxation of a noiseless matrix completion problem5. Note that in our plot of the
+in-out method on the continuous relaxation we omit the time required to ﬁrst solve the SDO relaxation;
+this is negligible (38.4s) compared to the time required for either approach to solve the relaxation using
+cutting planes. Observe that the in-out method’s lower bound is both initially better and converges
+substantially faster to the optimal solution than Kelley’s method. This justiﬁes our use of the in-out
+method over Kelley’s method for a stabilizing cut loop in numerical experiments.
+Once the relaxation is solved, the generated cuts are used to initialize Algorithm 1. Figure 1’s right
+panel displays the convergence proﬁle of the lower bound of Algorithm 1 initialized with cuts from
+Kelley’s or the in-out method (with a limit of 100 cuts). We use a single-tree implementation of
+Algorithm 16 and again a noiseless matrix completion setting7. We also consider the impact of using
+the SOC inequalities Y 2
+i,j ≤Yi,iYj,j in the master problem formulation. Using the in-out method and
+imposing the SOC inequalities are both vitally important for obtaining high-quality lower bounds from
+Algorithm 1. Accordingly, we make use of both ingredients in our numerical experiments.
+4.2.2. Solving the Semideﬁnite Relaxation at Scale via Alternating Minimization
+In
+preliminary numerical experiments, we found that modern IPM codes such as Mosek 9.0 cannot optimize
+over the Frobenius/nuclear norm penalties when n > 200 on a standard laptop. As real-world low-rank
+problems are often large-scale, we now explore more scalable alternatives for optimizing over these
+penalties. As scalable alternatives for the nuclear norm penalty have been studied, we focus on the
+5 The data generation process is detailed in Section 5.2. Here, n = 100, p = 0.25, r = 1, and γ = 20
+p .
+6 We warm-start the upper bound with greedy rounding and the Burer-Monterio local improvement heuristic described
+in Section 4.3. To mitigate against numerical instability, we opted to be conservative with our parameters, and therefore
+turned Gurobi’s heuristics oﬀ, set FuncPieceError and FuncPieceLength to their minimum possible values (10−5 and 10−6),
+set the MIP gap to 1% and the time limit for each solve to one hour.
+7 Here, n = 10, p = 0.25, r = 1, and γ = 5
+p.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+24
+Frobenius penalty, and refer to (Recht et al. 2010) for nuclear norm minimization. We begin our analysis
+with the following result (proof deferred to Appendix A.9):
+Lemma 9. For any ﬁxed Xt in Problem (23), an optimal choice of θ is given by θ⋆= X⊤
+t (Y ⋆)†Xt,
+where Y ⋆= Pn
+i=1 ρ⋆
+i uiu⊤
+i , Xt = UΣV ⊤is an SVD of Xt, and ρ⋆is an optimal solution to the following
+second order cone problem:
+min
+ρ∈[0,1]n: e⊤ρ≤k λ · e⊤ρ +
+n
+X
+i=1
+σ(Xt)2
+2γρi
+.
+(39)
+As optimizing over X for a ﬁxed Yt is straightforward, Lemma 9 suggests a viable approach for
+optimize over the Frobenius norm penalty is alternating minimization (AM; see Beck and Teboulle 2009,
+for a modern implementation). By specializing Beck and Teboulle (2009)’s implementation of AM to
+the Frobenius norm penalty, we obtain an eﬃcient numerical strategy for obtaining an optimal solution
+to (23), which we present in Algorithm 2; we note that since ⟨XX,Y †⟩is jointly convex in X,Y
+(this follows directly from Lemma 4), alternating minimization converges to an optimal solution to the
+semideﬁnite relaxation under standard convergence conditions for block coordinate descent techniques
+for convex programs (see, e.g., Bertsekas 2016, Section 3.7) such as the introduction of a proximal term.
+We now discuss some enhancements to Algorithm 2 which improve its rate of convergence in practice.
+• Imposing a proximal regularization term in the objective, namely + τ
+2∥X −Xt∥2
+F, improves the rate
+of convergence of the method by stabilizing the iterates; we make use of this in our experiments.
+• The method stalls when the eigenvalues of Yt are near zero (a) due to numerical instability and (b)
+because Yt is near the boundary of Conv(Yk
+n). Therefore, to accelerate convergence, we require that
+λmin(Y ) ≥K
+t at the tth iterate, where K ≊10−2. In practice, this introduces very little error.
+• Selecting an optimal W t+1 is generally much cheaper than selecting an optimal V t+1, since the
+former problem involves optimizing over n eigenvalues, rather than n2 variables. Therefore, eﬃcient
+implementations of Algorithm 2 necessarily require eﬃcient methods for obtaining V t+1. In the case
+of matrix completion, g(X) is a quadratic form, which implies that obtaining V t+1 is equivalent to
+solving a linear system, which we do iteratively in our numerical experiments.
+• We solve for V t+1 by solving the ﬁrst-order optimality condition using a successive over-relaxation
+linear technique, or in rare instances where the linear system solver fails to converge we use Ipopt
+to solve the QP’s ﬁrst-order optimality condition.
+To conﬁrm that Algorithm 2 has indeed converged (at least approximately) to an optimal solution,
+we require a dual certiﬁcate. As optimizing over the set of dual variables α for a ﬁxed Yt does not
+supply such a bound, we now invoke strong duality to derive a globally valid lower bound. Formally,
+we have the following result (proof deferred to Appendix A.10):
+Lemma 10. Suppose that Assumption 2 holds. Then, strong duality holds between:
+min
+Y ∈Conv(Ykn)
+max
+α∈Rn×m
+h(α) −γ
+2
+n
+X
+i=1
+n
+X
+j=1
+Yi,j⟨αi,αj⟩,
+(40)
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+25
+Algorithm 2 An Accelerated Alternating Minimization Algorithm (c.f. Beck and Teboulle 2009)
+Require: Initial solution X1,τ1 ←1
+t ←1,Tmax
+repeat
+Compute W t+1 solution of argminY ∈Conv(Ykn) g(Xt) + 1
+2γ⟨XtX⊤
+t ,Y †⟩
+Set Y t+1 = W t +
+τt−1
+τt+1 (Wt −Wt−1)
+Compute V t+1 solution of argminX∈Rn×m g(X) + 1
+2γ⟨XX⊤,Y †
+t ⟩
+Set Xt+1 = V t +
+τt−1
+τt+1 (Vt −Vt−1)
+Set τt+1 =
+1+√
+1+4τ2
+t
+2
+If t mod 20 = 0 compute dual bound at Y t+1 via Equation (41).
+t ←t + 1
+until t > Tmax or duality gap ≤ϵ
+return Xt,Yt
+max
+α∈Rn×m,
+U⪰0,t≥0
+h(α) −tr(U) −kt
+s.t.
+U + It ⪰γ
+2αα⊤.
+(41)
+Lemma 10 demonstrates that Problem (1)’s semideﬁnite relaxation is equivalent to maximizing the dual
+conjugate h(α), minus the k largest eigenvalues of γ
+2αα⊤. Moreover, as proven in the special case of
+sparse regression by Bertsimas et al. (2020), one can show that if the kth and k+1th largest eigenvalues
+of αα⊤in a solution to (40) are distinct then Problem (40)’s lower bound is tight.
+4.3. Upper Bounds via Greedy Rounding
+We now propose a greedy rounding method for rounding Y ⋆, an optimal Y in a semideﬁnite relaxation
+of Problem (9), to obtain certiﬁably near-optimal solutions to Problem (9) quickly. Rounding schemes
+for approximately solving low-rank optimization problems by rounding their SDO relaxations have
+received a great deal of attention since they were ﬁrst proposed by Goemans and Williamson (1995).
+Our analysis is, however, more general than typically conducted when solving low-rank problems, as it
+involves rounding a projection matrix Y , rather than rounding X, and therefore is able to generalize
+to the rank-k case for k > 1, which has historically been challenging.
+Observe that for any feasible Y ∈Conv(Yn), 0 ≤λi(Y ) ≤1 for each eigenvalue of Y , and Y is a
+projection matrix if and only if its eigenvalues are binary. Combining this observation with the Lipschitz
+continuity of f(Y ) in Y suggests that high-quality feasible projection matrices can be found in the
+neighborhood of a solution to the semideﬁnite relaxation, and a good method for obtaining them is to
+greedily round the eigenvalues of Y . Namely, let Y ⋆denote a solution to the semideﬁnite relaxation
+(21), Y ⋆= UΛ⋆U ⊤be a singular value decomposition of Y ⋆such that Λ is a diagonal matrix with
+on-diagonal entries Λi,i, and Λgreedy be a diagonal matrix obtained from rounding up (to 1) k of the
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+26
+highest diagonal coeﬃcients of Λ⋆, and rounding down (to 0) the n −k others, with diagonal entries
+Λi,i := (Λgreedy)i,i. We then let Ygreedy = UΛgreedyU ⊤. We now provide guarantees on the quality of the
+greedily rounded solution (proof deferred to Appendix A.11):
+Theorem 5. Let Y ⋆denote a solution to the semideﬁnite relaxation (21), Y ⋆= UΛU ⊤be a singular
+value decomposition of Y ⋆, R denote the indices of strictly fractional diagonal entries in Λ, and α⋆(Y )
+denote an optimal choice of α for a given Y , i.e.,
+α⋆(Y ) ∈arg max
+α
+
+max
+V11V22 h(α) −Ω⋆(α,Y ,V11,V22)
+
+.
+Suppose that for any Y ∈Yk
+n, we have σmax(α⋆(Y )) ≤L. Then, any valid rounding of Y ⋆which preserves
+the relaxation’s eigenbasis, i.e., Yrounded = UΛroundedU ⊤where Y ⋆= UΛU ⊤and Λrounded is a diagonal
+matrix with binary diagonal entries Λrounded
+i,i
+such that tr(Λrounded) ≤k, satisﬁes
+f(Yrounded) −f(Y ⋆) ≤γ
+2L2|R|
+max
+β≥0:∥β∥1≤1
+X
+i∈R
+(Λ⋆
+i,i −Λrounded
+i,i
+)βi,
+(42)
+under the Frobenius penalty and
+f(Yrounded) −f(Y ⋆) ≤ML|R|
+max
+β≥0:∥β∥1≤1
+X
+i∈R
+(Λ⋆
+i,i −Λrounded
+i,i
+)βi,
+(43)
+for the spectral penalty. Moreover, let Ygreedy = UΛgreedyU ⊤be an instance of Yrounded obtained by
+setting Λi,i = 1 for k of the highest diagonal coeﬃcients in Λ⋆. Then, the above bounds imply that 0 ≤
+f(Ygreedy)−f(Y ⋆) ≤ϵ, where ϵ = MLmin(|R|,n−k) for the spectral penalty and ϵ = γ
+2 min(|R|,n−k)L2
+for the Frobenius penalty.
+This result calls for multiple remarks:
+• When the relaxation gap f(Ygreedy) −f(Y ⋆) = 0, and the optimal solution to the relaxation, Y ⋆, is
+unique, |R| = 0. This justiﬁes retaining R in the bound, rather than replacing it with n.
+• The techniques introduced in Section 3.5 for computing an M so that an optimal solution X⋆obeys
+∥X⋆∥σ ≤M, also apply to computing an explicit L such that ∥α⋆∥σ ≤L in the above bound.
+• The rounding technique is robust, because it minimizes the worst-case Lipschitz upper bound, under
+the assumption σmax(α⋆) ≤L (i.e., we have no information about which coordinate8 has the largest
+Lipschitz upper bound). For instance, under Frobenius regularization the bound is
+f(Yrounded) −f(Y ⋆) ≤γ
+2L2|R|
+max
+β≥0:∥β∥1≤1
+X
+i∈R
+(Λ⋆
+i,i −Λrounded
+i,i
+)βi,
+(44)
+which is minimized over Λrounded : tr(Λrounded) ≤k by solving:
+min
+λ∈Skn
+max
+β≥0:∥β∥1≤1
+γ
+2L2|R|
+X
+i∈R
+(Λ⋆
+i,i −λi)βi,
+(45)
+i.e., rounding greedily. This interpretation suggests that greedy rounding never performs too badly.
+8 If we had this information then, as the proof of Theorem 5 suggests, we would greedily round to one k of the indices with
+the largest values of LiΛ⋆
+i,i.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+27
+To improve the greedily rounded solution, we implement a local search strategy which obtains even
+higher quality warm-starts. Namely, a variant of the popular Burer-Monterio (BM) heuristic (Burer and
+Monteiro 2003), which seeks low-rank solutions X by applying a non-linear factorization X = UV ⊤,
+where U ∈Rn×l,V ∈Rm×k and iteratively optimizing over U for a ﬁxed V (resp. V for a ﬁxed U) until
+convergence to a local optima occurs. This strategy improves our greedily rounded solution because we
+initially set U to be the square root of Ygreedy and optimize over V ; recall that if Y is a projection
+matrix we have Y = UU ⊤and X = UΣV ⊤for some singular value decomposition U,Σ,V ⊤.
+5. Numerical Experiments
+In this section, we evaluate the algorithmic strategies derived in the previous section, implemented in
+Julia 1.3 using JuMP.jl 0.20.1, Gurobi 9.0.1 to solve the non-convex QCQO master problems9, and
+Mosek 9.1 to solve the conic subproblems/continuous relaxations. Except where indicated otherwise,
+all experiments were performed on a Intel Xeon E5—2690 v4 2.6GHz CPU core using 32 GB RAM.
+To bridge the gap between theory and practice, we have made our code freely available on Github at
+github.com/ryancorywright/MixedProjectionSoftware.
+We evaluate the diﬀerent ingredients of our numerical strategy on a matrix completion example:
+First, we solve the semideﬁnite relaxation by implementing Algorithm 2 and demonstrate its increased
+scalability over Mosek’s IPM in Section 5.1. From the solution of the relaxation, our rounding and
+local search heuristics then provide near-optimal solutions that outperform state-of-the-art heuristic
+methods, as discussed in Section 5.2. We implement Algorithm 1, benchmark its performance and, for
+the ﬁrst time, solve low-rank matrix completion to certiﬁable optimality in Section 5.3. In Section 5.4,
+we explore the role which regularization plays in our numerical strategy, by showing that increasing
+the amount of regularization in Problem (1) decreases the relative gap, the problem’s complexity, and
+the amount of time required to solve the problem to optimality. Finally, in Section 5.5 we solve sensor
+location problems to certiﬁable optimality.
+5.1. Exploring the Scalability of the Convex Relaxations
+In this section, we explore the relative scalability of Mosek’s interior point method and Algorithm 2.
+We consider convex relaxations of matrix completion problems. Similarly to Cand`es and Plan (2010),
+we generate two low-rank matrices ML,MR ∈Rn×r with i.i.d. N(0,1) entries, and attempt to recover
+the matrix M = MLM ⊤
+R given a proportion p of its observations. Here, we ﬁx p = 0.25 and k = r = 5,
+vary n, and set γ = 20
+p where we scale γ proportionally to 1/p so that the relative importance of ∥X∥2
+F
+and P
+(i,j)∈Ω(Xi,j −Ai,j)2 remains constant with p.
+9 We remark that Gurobi solves the non-convex QCQO master problems by translating them to piecewise linear optimiza-
+tion problems. Since rank constraints are not MICO representable, this introduces some error. To mitigate against this
+error, we set the Gurobi parameters FuncPieceError and FuncPieceLength to their minimum possible values (10−6 and
+10−5 respectively). Additionally, we set NonConvex to 2, and otherwise use default Gurobi/Mosek parameters.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+28
+We solve the continuous relaxation
+min
+X∈Rn×n,Y ∈Conv(Ykn),θ∈Sn
+1
+2γ tr(θ) +
+X
+(i,j)∈Ω
+(Xi,j −Ai,j)2
+s.t.
+
+θ
+X
+X⊤Y
+
+⪰0.
+(46)
+Table 3 reports the time required by Algorithm 2 to obtain a solution with a relative duality gap
+of 0.1%. To evaluate numerical stability, we also report the relative MSE of the greedily rounded
+solution; experiments where n ≤250 were run on a standard MacBook pro with 16GB RAM, while
+larger experiments were run on the previously described cluster with 100GB RAM.
+Table 3
+Scalability of convex relaxations, averaged over 5 matrices. Problem is regularized with Frobenius norm and
+γ = 20
+p . “-” indicates an instance could not be solved with the supplied memory budget.
+n
+Mosek
+Algorithm 2
+n
+Algorithm 2
+Relative MSE
+Time (s)
+Relative MSE
+Time (s)
+Relative MSE
+Time (s)
+50
+0.429
+2.28
+0.438
+17.28
+350
+0.058
+6,970
+100
+0.138
+47.20
+0.139
+79.01
+400
+0.056
+8,096
+150
+0.082
+336.1
+0.081
+228.7
+450
+0.055
+26,350
+200
+0.0675
+1,906
+0.067
+841.7
+500
+0.054
+28,920
+250
+-
+-
+0.062
+1,419
+550
+0.0536
+39,060
+300
+-
+-
+0.059
+2,897
+600
+0.0525
+38,470
+Our results demonstrate the eﬃciency of Algorithm 2: the relative MSE is comparable to Mosek’s, but
+computational time does not explode with n. Since it does not require solving any SDOs and avoids the
+computational burden of performing the Newton step in an IPM, Algorithm 2 scales beyond n = 600
+(1,440,000 decision variables), compared to n = 200 for IPMs (80,000 decision variables).
+5.2. Numerical Evaluation of Greedy Rounding on Matrix Completion Problems
+In this section, we compare the greedy rounding method with state-of-the-art heuristic methods, and
+demonstrate that, by combining greedy rounding with the local search heuristic of (Burer and Monteiro
+2003), our approach outperforms state-of-the-art heuristic methods and therefore should be considered
+as a viable and eﬃcient warm-start for Algorithm 1.
+We consider the previous matrix completion problems and assess the ability to recover the low-rank
+matrix M (up to a relative MSE of 1%), for varying fraction of observed entries p and rank r, with
+n = 100 ﬁxed. Note that, other than the inclusion of a Frobenius regularization term, this is the same
+experimental setup considered by Cand`es and Recht (2009), Recht et al. (2010) among others.
+We compare the performance of four methods: the greedy rounding method, both with and without
+the local improvement heuristic from Burer and Monteiro (2003), against the local improvement heuris-
+tic alone (with a thresholded-SVD initialization point) and the nuclear norm approach. Speciﬁcally, the
+greedy rounding method takes the solution of the previous convex relaxation with γ = 500
+p
+and rounds
+its singular values to generate a feasible solution Ygreedy. For the local improvement heuristic, we solve:
+min
+X∈Rn×n,U,V ∈Rn×k
+1
+2γ ∥X∥2
+2 +
+X
+(i,j)∈Ω
+(Xi,j −Ai,j)2
+s.t.
+X = UV ⊤,
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+29
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(a) Greedy Rounding
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(b) Nuclear Norm
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(c) SVD+Local Improvement
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(d) Greedy+Local Improvement
+Figure 2
+Prop. matrices recovered with ≤1% relative MSE (higher is better), for diﬀerent values of p (x-axis) and
+r(2n −r)/pn2 ∝1/n (y-axis), averaged over 25 rank-r matrices.
+for γ = 500
+p and k = r, and iteratively optimize over U and V using Mosek. We provide an initial value
+for U by either taking the ﬁrst k left-singular vectors of a matrix A where unobserved entries are
+replaced by 0, or taking the square root of Ygreedy. For the nuclear norm regularization strategy, since
+our observations are noiseless, we solve: minX∈Rn×n ∥X∥∗s.t. Xi,j = Ai,j
+∀(i,j) ∈Ω.
+Figure 2 depicts the proportion of times the matrix was recovered exactly (averaged over 25 samples
+per tuple of (n,p,r)), while Figure 3 depicts the relative average MSE over all instances. As in Cand`es
+and Recht (2009), Recht et al. (2010), we vary p between 0 and 1 and consider all possible ranks
+r such that r(2n −r) ≤pn2.
+From this set of experiments, we make several observations: First,
+greedy rounding and the local improvement heuristic outperform nuclear norm minimization both in
+terms of average relative MSE and amount of data required to recover the matrix. Second, the local
+improvement heuristic improves upon greedy rounding. In terms of its ability to recover the underlying
+matrix exactly, it performs equally well with either initialization strategy. However, initialization with
+the greedy rounding supplies dramatically lower average MSEs in instances where no approach recovers
+the true matrix exactly. This suggests that initialization strategies for the Burer-Monterio heuristic
+should be revisited and greedy rounding considered as a viable and more accurate alternative than
+selecting a random feasible point.
+5.3. Benchmarking Algorithm 1 on Synthetic Matrix Completion Problems
+We now benchmark Algorithm 1 on matrix completion problems where n ∈{10,20,30}.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+30
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(a) Greedy Rounding
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(b) Nuclear Norm
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(c) SVD+Local Improvement
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(d) Greedy+Local Improvement
+Figure 3
+Average relative MSE (lower is better), averaged over 25 rank-r matrices. We cap the relative MSE at 1.0.
+We ﬁrst compare the two diﬀerent implementations of Algorithm 1, single- and multi-tree, with
+solving the problem directly as a QCQO in Gurobi 9.0 (Section 4.1.2). In Algorithm 1, the lower
+bounds are warm-started with 200 cuts from the in-out method, and greedy rounding with local search
+improvement is used for the upper bounds; if a single-tree instance fails to ﬁnd a feasible solution (due
+to numerical instability in Gurobi) we return the gap between the warm-start and the semideﬁnite
+relaxation. At the tth iteration, we impose a time limit of 10t seconds for generating the new cut so
+as to increase numerical precision as the solver progresses. We also impose a limit of 20 cuts for the
+multi-tree approach, a time limit of 30,000s for the single-tree approach10, a time limit of 3,600s for
+Gurobi, and an optimality gap of 1%11. Average runtime, number of nodes, and optimality gap are
+reported in Table 4. Note that the same random instances were solved by all three approaches (by ﬁxing
+the random seeds), to facilitate a less noisy comparison.
+We observe that Algorithm 1 drastically improves upon Gurobi both in terms of computational time
+(reduced by up to an order of magnitude) and accuracy (absolute gap reduced by around an order of
+10 We require a larger time limit than 3,600s, since Gurobi often fails to ﬁnd any feasible solutions within this time limit
+due to the numerical diﬃculties inherent in integrating lazy constraint callbacks and a non-convex master problem.
+11 We report the absolute gap between the better of Gurobi’s lower bound and the semideﬁnite lower bound, compare
+to the objective value which we evaluate directly; this is sometimes 1 −2% even when Gurobi reports that it has found
+an optimal solution, due to numerical instability in Gurobi. Note that we report the absolute, rather than relative, gap
+since the relative gap depends on the quality of Gurobi’s approximation of Yk
+n, which is controlled by the parameter
+FuncPieceError and cannot be set lower than 10−6; also note that the objective values are on the order of 0.5-5.0 for the
+problems reported in Table 4.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+31
+magnitude). Multi-tree dominates single-tree and Gurobi in terms of runtime and the quality of the
+solution found, although single-tree occasionally has a smaller gap at termination. Moreover, multi-tree
+consistently ﬁnds high-quality feasible solutions earlier than single tree and accepts our warm-start
+more consistently, which suggests it may scale better to high-dimensional settings.
+Table 4
+Scalability of Algorithm 1 vs. Gurobi for solving rank-1 matrix completion problems to certiﬁable optimality,
+averaged over 20 random matrices per row. In multi-tree, Nodes denotes the number of nodes expanded in the ﬁnal
+branch-and-cut tree, while Nodes (t) denotes the number of nodes expanded over all trees for the multi-tree
+implementation.
+Gurobi (direct)
+Algorithm 1 (single-tree)
+Algorithm 1 (multi-tree)
+n
+p
+γ
+Time(s)
+Nodes
+Gap
+Time(s)
+Nodes
+Gap
+Cuts
+Time(s)
+Nodes
+Nodes (t)
+Gap
+Cuts
+10
+0.1
+20/p
+> 3,600
+313,700
+0.0301
+10,310
+40,060
+0.0004
+23,460
+252.3
+630.2
+10,099
+0.0019
+2.95
+10
+0.2
+20/p
+> 3,600
+299,200
+0.0854
+19,440
+28,430
+0.0229
+19,370
+1,672
+2,277
+28,895
+0.0104
+11.0
+10
+0.3
+20/p
+> 3,600
+274,500
+0.1167
+20,368
+25,480
+0.0433
+20,290
+2,319
+2,684
+30,906
+0.0317
+15.4
+10
+0.1
+100/p
+> 3,600
+281,800
+0.0068
+18,580
+62,680
+0.0015
+42,200
+239.5
+405
+7,499
+0.0003
+3.20
+10
+0.2
+100/p
+> 3,600
+271,300
+0.0178
+27,990
+39,330
+0.0492
+31,060
+1,269
+1,931
+21,420
+0.0042
+8.40
+10
+0.3
+100/p
+3,239
+237,000
+0.0178
+25,750
+29,350
+0.0434
+23,390
+2,472
+2,134
+32,196
+0.0098
+19.6
+20
+0.1
+20/p
+> 3,600
+80,760
+0.8915
+> 30,000
+13,110
+0.741
+13,070
+2,917
+413.2
+4,835
+0.0166
+18.5
+20
+0.2
+20/p
+> 3,600
+65,310
+4.094
+> 30,000
+7,023
+0.1816
+7,008
+3,512
+143.0
+1,746
+0.247
+20.0
+20
+0.3
+20/p
+> 3,600
+64,850
+4.745
+28,700
+6,914
+0.1066
+6,828
+3,287
+204.9
+2,081
+0.253
+19.6
+20
+0.1
+100/p
+> 3,600
+60,830
+0.428
+> 30,000
+13,790
+0.7714
+13,799
+3,013
+508.0
+6,152
+0.0072
+17.6
+20
+0.2
+100/p
+> 3,600
+43,850
+1.421
+> 30,000
+6,395
+0.0543
+6,395
+3,106
+80.9
+1,027
+0.0903
+17.6
+20
+0.3
+100/p
+> 3,600
+55,150
+2.810
+29,530
+6,538
+0.0271
+6,510
+2,910
+62.7
+744.2
+0.1368
+17.0
+Next, we evaluate the performance of the multi-tree implementation of Algorithm 1 on a more
+extensive test-set, including instances where Rank(M) > 1, in Table 5. Note that when r = 1 we use
+the same experimental setup (although we impose a time limit of 30t seconds, or 7200 seconds if there
+has been no improvement for two consecutive iterations, a cut limit of 50 cuts when n > 20), and when
+r > 1 we increase the time limit per iteration to 300t seconds (or 7200 seconds if there has been no
+improvement for two consecutive iterations), and allow up to 100 PSD cuts per iteration to be added at
+the root node via a user cut callback, in order to strengthen the approximation of the PSD constraint
+Y ⪰0. We observe that the problem’s complexity increases with the rank, although not too excessively.
+Moreover, when r > 1 the bound gap is actually smaller when γ = 100
+p than when γ = 20
+p . We believe this
+is because Gurobi cannot represent the SDO constraint Y ⪰0 and its SOC approximation is inexact
+(even with PSD cuts), and in some cases reﬁning this approximation is actually harder than reﬁning
+our approximation of g(X).
+Note that the main bottleneck inhibiting solving matrix completion problems where n ≥50 is Gurobi
+itself, as the non-convex solver takes increasing amounts of time to process warm-starts (sometimes in
+the 100s or 1000s of seconds) when n increases. We believe this may be because of the way Gurobi
+translates orthogonal projection matrices to a piecewise linear formulation. Encouragingly, this suggests
+that our approach may successfully scale to 100 × 100 matrices as Gurobi improves their solver.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+32
+Table 5
+Scalability of Algorithm 1 (multi-tree) for solving low-rank matrix completion problems to certiﬁable
+optimality, averaged over 20 random matrices per row.
+Rank-1
+Rank-2
+Rank-3
+n
+p
+γ
+Time(s)
+Nodes
+Gap
+Cuts
+Time(s)
+Nodes
+Gap
+Cuts
+Time(s)
+Nodes
+Gap
+Cuts
+10
+0.1
+20/p
+182.1
+9,755
+0.0005
+2.56
+24,220
+35,670
+0.0034
+5.78
+37,780
+39,870
+0.0071
+9.28
+10
+0.2
+20/p
+3,508
+21,060
+0.0026
+10.8
+209,900
+108,000
+0.0252
+35.3
+135,260
+35,870
+0.031
+26.2
+10
+0.3
+20/p
+5,488
+30,970
+0.0039
+13.1
+302,200
+70,500
+0.0866
+50.0
+302,100
+31,870
+0.0197
+50.0
+10
+0.1
+100/p
+656.5
+28,870
+0.0001
+2.14
+676.1
+25,493
+0.0009
+1.83
+842.7
+20,700
+0.0024
+1.79
+10
+0.2
+100/p
+1,107
+10,010
+0.0009
+4.29
+2,065
+42,490
+0.0019
+5.61
+57,530
+36,910
+0.0124
+10.7
+10
+0.3
+100/p
+3,364
+48,730
+0.0022
+6.30
+272,300
+33,150
+0.0195
+44.7
+249,700
+35,530
+0.0499
+42.2
+20
+0.1
+20/p
+2,017
+4,756
+0.0061
+8.20
+253,900
+8,030
+0.0279
+42.7
+255,400
+3,015
+0.0309
+43.2
+20
+0.2
+20/p
+6,369
+6,636
+0.0136
+15.0
+298,700
+3,342
+0.549
+50.0
+295,500
+236.5
+0.879
+50.0
+20
+0.3
+20/p
+6,687
+4,187
+0.0082
+18.4
+296,500
+3,175
+1.123
+50.0
+291,100
+41.35
+2.147
+50.0
+20
+0.1
+100/p
+1,266
+8,792
+0.0087
+8.35
+211,700
+6,860
+0.0073
+34.24
+171,900
+2,350
+0.0131
+29.8
+20
+0.2
+100/p
+1,220
+2,710
+0.0104
+7.80
+302,800
+2,426
+0.123
+50.0
+298,800
+221.4
+0.123
+50.0
+20
+0.3
+100/p
+1,272
+1,837
+0.0064
+3.14
+299,000
+2,518
+0.264
+50.0
+293,500
+43.0
+0.659
+50.0
+30
+0.1
+20/p
+300,300
+2,735
+0.0905
+50.0
+304,300
+164.0
+0.790
+50.0
+303,100
+1.10
+0.365
+50.0
+30
+0.2
+20/p
+298,700
+1,511
+0.136
+50.0
+301,700
+9.62
+3.105
+50.0
+302,600
+1.00
+5.581
+50.0
+30
+0.3
+20/p
+183,800
+1,743
+0.0476
+36.9
+303,000
+1.63
+5.232
+50.0
+305,000
+0.70
+14.60
+50.0
+30
+0.1
+100/p
+305,600
+2,262
+0.0273
+50.0
+302,800
+97.40
+0.0973
+50.0
+305,000
+1.90
+0.0967
+50.0
+30
+0.2
+100/p
+246,300
+3,285
+0.0315
+43.6
+304,300
+6.17
+0.697
+50.0
+302,600
+1.00
+1.419
+50.0
+30
+0.3
+100/p
+25,970
+11,020
+0.0089
+17.1
+304,000
+1.00
+0.923
+50.0
+304,700
+1.00
+3.221
+50.0
+0.1
+0.2
+0.3
+0.4
+0.00
+0.25
+0.50
+0.75
+1.00
+Proportion of entries sampled
+Average Relative MSE
+NN
+GD
+BM
+OA
+(a) n = 25
+0.1
+0.2
+0.3
+0.4
+0.0
+0.2
+0.4
+0.6
+0.8
+1.0
+1.0
+Proportion of entries sampled
+Average Relative MSE
+NN
+GD
+BM
+OA
+(b) n = 50
+Figure 4
+Average relative MSE for nuclear norm (NN), greedy rounding (GD), Burer-Monterio (BM), and outer-
+approximation (OA) when imputing a rank-1 n × n matrix. All results are averaged over 25 matrices.
+Finally, we compare the solution from the exact formulation (9) solved using Algorithm 1 (multi-
+tree) with the initial warm-start we proposed and two state-of-the-art heuristics, namely nuclear norm
+minimization and the Burer-Monterio approach, as in Section 5.2. Here, we take n ∈{25,50}, r = 1, p
+ranging from 0 to 0.4, and γ = 100
+p . Figure 4 depicts the average relative MSE over the entire matrix,
+averaged over 25 random instances per value of p. When p ≥0.2, the exact method supplies an out-of-
+sample relative MSE around 0.6% lower than Burer-Monterio12.
+12 Because we ran all methods on the same random instances, this diﬀerence is statistically signiﬁcant, with a p-value of
+2 × 10−51 (resp. 2 × 10−129) that the relative MSE is lower for the exact method when n = 25 (resp. n = 50).
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+33
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(a) Relative in-sample bound gap (γ = 0.5
+p )
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(b) Relative in-sample bound gap (γ = 5
+p)
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(c) Relative in-sample bound gap (γ = 50
+p )
+0.2
+0.4
+0.6
+0.8
+1.0
+0.2
+0.4
+0.6
+0.8
+1.0
+p
+r(2n- r)/pn^2
+0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.7
+0.8
+0.9
+1.0
+(d) Relative in-sample bound gap (γ = 500
+p )
+Figure 5
+Average relative in-sample bound gap (%), averaged over 25 rank-r matrices.
+5.4. Exploring the Impact of Regularization on Problem Complexity
+We now examine the impact of the regularization term
+1
+2γ∥X∥2
+F on the problem complexity, as captured
+by the relative in-sample duality gap between the semideﬁnite relaxation and the objective value of
+the greedy solution with a BM local improvement heuristic. We generate the problem data in the same
+manner as the previous experiment, and display results for four values of γ in Figure 5. Observe that as γ
+increases, both the duality gap and the problem’s complexity increase.This observation conﬁrms similar
+results on the impact of regularization in mixed-integer conic optimization problems (c.f. Bertsimas and
+Cory-Wright 2018, Bertsimas et al. 2019). Additionally, when γ = 500
+p in Figure 5(d), the region where
+the in-sample duality gap is zero corresponds to exactly recovering the underlying matrix with high
+probability, while a strictly positive duality gap corresponds to instances with partial recovery only (see
+Figure 2). This suggests a deep connection between relaxation tightness and statistical recovery.
+While the relative in-sample semideﬁnite relaxation gap is a theoretical measure of problem diﬃculty,
+it does not indicate how fast Algorithm 1 converged in practice. In this direction, we solve the 20
+synthetic matrix completion problems considered in Table 4 where n ∈{10,20}, r = 1, p ∈{0.2,0.3} for
+20 diﬀerent values of γ ∈[100,104] (distributed uniformly on a log-scale), and compare the relative in-
+sample semideﬁnite gap (greedily rounded solution vs. semideﬁnite bound) with Algorithm 1’s runtimes
+in Figure 6, for the single-tree (left panel) and multi-tree (right panel) implementation. Results are
+averaged over 20 random synthetic instances per value of γ. We observe that the relaxation gap does
+correlate with runtime for single-tree. Yet, the relationship between the relaxation gap and runtime
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+34
+is less straightforward for multi-tree, as it depends on how Gurobi balances cut generation and node
+expansion, and the conditioning of the problem.
+Figure 6
+Average runtime against relative semideﬁnite relaxation gap for Algorithm 1 single-tree (left) and multi-tree
+(right) over 20 synthetic matrix completion instances per data point, where p ∈{0.2,0.3}, r = 1, n ∈{10,20}.
+The regularizer γ also impact the bias term
+1
+2γ∥X∥2
+F added to the objective function, hence the
+suboptimality of the solution. To further illustrate the impact of the regularizer γ on solve times and
+the trade-oﬀbetween tractability and sub-optimality, Figure 7 reports the average runtime and MSE
+for the previously solved instances, as a function of γ. Figure 7 illustrates how γ balances tractability
+(runtime, top row) and optimality of the solution (MSE, bottom row). Also, single-tree (left panel)
+is one order of magnitude slower than multi-tree (right panel), and is also more numerically instable
+when γ increases, largely because of the diﬃculty of combining a non-convex master problem and lazy
+constraint callbacks (which imposes many cuts, without processing the implications of these cuts as
+quickly). Echoing our ﬁndings in the previous section, this suggests that, while in MICO single-tree
+typically outperforms multi-tree, at the current state of technology multi-tree should be considered as a
+viable and potentially more eﬃcient alternative for matrix completion problems which have non-convex
+master problems. However, as the algorithmic implementations of non-convex QCQOP solvers mature,
+this ﬁnding should be revisited.
+5.5. Benchmarking Algorithm 1 on Synthetic Coordinate Recovery Problems
+We now benchmark the performance of Algorithm 1 on anchor-free synthetic coordinate recovery prob-
+lems, as previously studied by Biswas and Ye (2004), Luo et al. (2010) among others.
+Speciﬁcally, we sample n coordinates xi uniformly over [−0.5,0.5]k for k ∈{2,3}, and attempt to
+recover a noisy Gram matrix G ∈Sn
++ of the xi’s, given a subset of observations of the underlying matrix.
+Similarly to Biswas and Ye (2004), we supply the distance between the points Di,j = ∥xi −xj∥2
+2 + z,
+where z ∼N(0,0.01), if and only if the radio range between the two points is such that Di,j ≤d2
+radio.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+35
+Figure 7
+Average runtime (top) and MSE (bottom) vs. γ for Algorithm 1 single-tree (left) and multi-tree (right)
+implementations over 20 synthetic matrix completion instances where p ∈{0.2,0.3}, r = 1 and n ∈{10,20}.
+The same random seeds were used to generate random matrices completed by single-tree and multi-tree.
+Note that we solve these problems in precisely the same fashion as the largest matrix completion
+problems solved in the previous section (multi-tree, with a limit of 50 cut passes etc.)
+Formally, in order to account for noise in the observed entries, we solve the following problem:
+min
+Y ∈Ykn
+min
+G∈Sn
++
+1
+2γ ∥G∥2
+F + tr(G) + λ · ∥ξ∥1
+s.t.
+Gi,i + Gj,j −2Gi,j + ξi,j = Di,j ∀(i,j) ∈Ω, G = Y G,
+where λ > 0 is a penalty term which encourages robustness, and the Frobenius norm objective likewise
+encourages robustness against noise in G. The performance of Algorithm 1 (multi-tree) on various
+synthetic instances is reported in Table 6, for γ,n,dradio,k varying.
+We observe that the problem’s complexity increases with the rank and with the dimensionality of the
+Gram matrix, although not too excessively. Indeed, Algorithm 1 can solve coordinate recovery problems
+with tens of data points to certiﬁable optimality in hours.
+5.6. Summary of Findings from Numerical Experiments
+Our main ﬁndings from the numerical experiments in this section are as follows:
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+36
+Table 6
+Scalability of Algorithm 1 (multi-tree) for solving sensor location problems to certiﬁable optimality, averaged
+over 20 random instances per row. A “-” denotes an instance that cannot be solved within the time budget, because
+Gurobi fails to accept our warm-start and cannot ﬁnd a feasible solution. We let λ = n2 for all instances.
+Rank-2
+Rank-3
+n
+dradio
+γ
+Time(s)
+Nodes
+Gap
+Cuts
+Time(s)
+Nodes
+Gap
+Cuts
+10
+0.1
+1/p
+135.3
+6,926
+0.0001
+1.00
+45.14
+0.02
+0.0000
+1.00
+10
+0.2
+1/p
+3,189
+5,249
+0.0024
+11.5
+216.8
+7,819
+0.0022
+1.00
+10
+0.1
+100/p
+76.2
+1,155
+0.0000
+1.00
+140.6
+950
+0.0000
+1.00
+10
+0.2
+100/p
+480.6
+0.05
+0.0001
+21.7
+92.6
+139
+0.0000
+1.14
+20
+0.1
+1/p
+3,475
+4,548
+0.0007
+13.0
+3,090
+9,740
+0.0001
+1.00
+20
+0.2
+1/p
+73,000
+0.50
+0.0149
+50.0
+7,173
+5,313
+0.0038
+1.20
+20
+0.1
+100/p
+1,878
+0.00
+0.0000
+3.91
+64.9
+0.00
+0.0000
+1.07
+20
+0.2
+100/p
+67,530
+0.20
+0.0044
+50.0
+55.7
+0.00
+0.0002
+1.00
+• As demonstrated in Section 5.1, Algorithm 2 successfully solves convex relaxations of low-rank prob-
+lems where n = 100s, in a faster and more scalable fashion than state-of-the-art interior point codes
+such as Mosek.
+• As demonstrated in Section 5.2, the following strategy is almost as eﬀective as solving a low-rank
+problem exactly: solving the convex relaxation using Algorithm 2, greedily rounding the solution to
+the convex relaxation, and using this greedily rounded solution as a warm-start for a local method
+such as the method of Burer and Monteiro (2003, 2005). The success of this strategy can be explained
+because solving a relaxation and rounding is a global strategy which matches the low-order moments
+of the set of optimal solutions to obtain a solution near an optimal solution, while local methods
+polish a solution by seeking the best solution within some neighborhood of an initial point.
+• As demonstrated in Section 5.4, increasing the amount of regularization in a low-rank problem by
+decreasing γ decreases the duality gap between a low-rank problem with Frobenius or spectral norm
+problem, and its convex relaxation. Therefore, increasing the amount of regularization makes the
+problem easier in a practical sense (although not necessarily in a complexity-theoretic sense).
+• As demonstrated in Sections 5.3, 5.5, Algorithm 1 scales to solve problems where n is in the tens,
+i.e., hundreds or thousands of decision variables, in hours. Moreover, the main bottleneck inhibiting
+solving problems where n is in the hundreds or thousands is that we solve our master problems
+using Gurobi, a QCQO solver which translates the orthogonal projection matrix constraint into many
+piecewise linear constraints. This suggests that a custom branch-and-bound solver which explicitly
+models orthogonal projection matrices constitutes a promising area for future work.
+6. Conclusion
+In this paper, we introduced Mixed-Projection Conic Optimization, a new framework for modeling
+rank constrained optimization problems that, for the ﬁrst time, solves low-rank problems to certiﬁable
+optimality at moderate problem sizes. We also provided a characterization of the complexity of rank
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+37
+constraints, and proposed new convex relaxations and rounding methods that lead to viable and more
+accurate solutions than those obtained via existing techniques such as the log-det or nuclear norm
+heuristics. Inspired by the collective successes achieved in mixed-integer optimization, we hope that
+MPCO constitutes an exciting new research direction for the optimization community. For instance,
+we believe that custom branch-and-bound solvers that explicitly model orthogonal projection matrices
+could further enhance the scalability of the MPCO framework.
+Acknowledgments:
+We thank the two anonymous referees and the associate editor for many
+valuable comments which improved the paper substantially.
+References
+T. Achterberg and E. Towle. Gurobi webinar: Non-convex quadratic optimization. https://www.gurobi.com/resource/
+non-convex-quadratic-optimization/, 2020. Accessed: 2021-02-09.
+A. A. Ahmadi and A. Majumdar. DSOS and SDSOS optimization: More tractable alternatives to sum of squares and
+semideﬁnite optimization. SIAM J. Appl. Alg. Geom., 3(2):193–230, 2019.
+M. S. Akt¨urk, A. Atamt¨urk, and S. G¨urel.
+A strong conic quadratic reformulation for machine-job assignment with
+controllable processing times. Oper. Res. Letters, 37(3):187–191, 2009.
+A. Atamt¨urk and A. Gomez. Rank-one convexiﬁcation for sparse regression. arXiv:1901.10334, 2019.
+C. Audet, P. Hansen, B. Jaumard, and G. Savard. A branch and cut algorithm for nonconvex quadratically constrained
+quadratic programming. Math. Prog., 87(1):131–152, 2000.
+L. Bai, J. E. Mitchell, and J.-S. Pang. On conic QPCCs, conic QCQPs and completely positive programs. Math. Prog.,
+159(1):109–136, 2016.
+A. Beck and M. Teboulle. A fast iterative shrinkage-thresholding algorithm for linear inverse problems. SIAM J. Imag.
+Sci., 2(1):183–202, 2009.
+R. M. Bell and Y. Koren. Lessons from the Netﬂix prize challenge. Technical report, AT&T Bell Laboratories, 2007.
+P. Belotti, C. Kirches, S. Leyﬀer, J. Linderoth, J. Luedtke, and A. Mahajan. Mixed-integer nonlinear optimization. Acta
+Numerica, 22:1, 2013.
+W. Ben-Ameur and J. Neto. Acceleration of cutting-plane and column generation algorithms: Applications to network
+design. Networks, 49(1):3–17, 2007.
+A. Ben-Tal and A. Nemirovski. Lectures on modern convex optimization, volume 2. SIAM, 2001.
+D. P. Bertsekas. Nonlinear programming. Athena Scientiﬁc Belmont, 3rd edition, 2016.
+D. Bertsimas and R. Cory-Wright. A scalable algorithm for sparse portfolio selection. arXiv preprint arXiv:1811.00138,
+2018.
+D. Bertsimas and R. Cory-Wright.
+On polyhedral and second-order cone decompositions of semideﬁnite optimization
+problems. Oper. Res. Lett., 48(1):78–85, 2020.
+D. Bertsimas and B. Van Parys. Sparse high-dimensional regression: Exact scalable algorithms and phase transitions.
+Annals of Statistics, 48(1):300–323, 2020.
+D. Bertsimas, A. King, and R. Mazumder. Best subset selection via a modern optimization lens. Ann. Stat., pages 813–852,
+2016.
+D. Bertsimas, M. S. Copenhaver, and R. Mazumder. Certiﬁably optimal low rank factor analysis. J. Mach. Learn. Res.,
+18(1):907–959, 2017.
+D. Bertsimas, R. Cory-Wright, and J. Pauphilet. A uniﬁed approach to mixed-integer optimization problems with logical
+constraints. arXiv preprint arXiv:1907.02109, 2019.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+38
+D. Bertsimas, J. Pauphilet, and B. van Parys. Sparse regression: Scalable algorithms and empirical performance. Statistical
+Science, 35(4):555–578, 2020.
+S. Bi, S. Pan, and D. Sun. A multi-stage convex relaxation approach to noisy structured low-rank matrix recovery. Math.
+Prog. Comp., 12(4):569–602, 2020.
+P. Biswas and Y. Ye. Semideﬁnite programming for ad hoc wireless sensor network localization. In Proceedings of the 3rd
+international symposium on Information processing in sensor networks, pages 46–54. ACM, 2004.
+G. Blekherman, P. A. Parrilo, and R. R. Thomas. Semideﬁnite optimization and convex algebraic geometry. Society for
+Industrial and Applied Mathematics, Philadelphia, PA, 2012.
+P. Bonami, L. T. Biegler, A. R. Conn, G. Cornu´ejols, I. E. Grossmann, C. D. Laird, J. Lee, A. Lodi, F. Margot, N. Sawaya,
+and A. W¨achter. An algorithmic framework for convex mixed integer nonlinear programs. Disc. Optim., 5(2):186–204,
+2008.
+S. Boyd and L. Vandenberghe. Convex Optimization. Cambridge University Press, Cambridge, UK, 2004.
+S. Boyd, L. El Ghaoui, E. Feron, and V. Balakrishnan. Linear matrix inequalities in system and control theory, volume 15.
+SIAM Philadelphia, PA, 1994.
+S. Burer and R. D. Monteiro. A nonlinear programming algorithm for solving semideﬁnite programs via low-rank factor-
+ization. Math. Prog., 95(2):329–357, 2003.
+S. Burer and R. D. Monteiro. Local minima and convergence in low-rank semideﬁnite programming. Math. Prog., 103(3):
+427–444, 2005.
+E. J. Cand`es and Y. Plan. Matrix completion with noise. Proceedings of the IEEE, 98(6):925–936, 2010.
+E. J. Cand`es and B. Recht. Exact matrix completion via convex optimization. Found. Comp. Math., 9(6):717, 2009.
+J. Canny. Some algebraic and geometric computations in PSPACE. In Proc. Symp. T. Comp., pages 460–467. ACM, 1988.
+A. L. Chistov and D. Y. Grigoriev. Complexity of quantiﬁer elimination in the theory of algebraically closed ﬁelds. In
+International Symposium on Mathematical Foundations of Computer Science, volume 176 of Lecture Notes in Computer
+Science, pages 17–31. Springer Verlag, 1984.
+C. Coey, M. Lubin, and J. P. Vielma. Outer approximation with conic certiﬁcates for mixed-integer convex problems.
+Math. Prog. Comp., 12:249–293, 2020.
+D. Cox, J. Little, and D. O’Shea. Ideals, varieties, and algorithms: an introduction to computational algebraic geometry
+and commutative algebra. Springer Science & Business Media, 2013.
+A. d’Aspremont.
+A semideﬁnite representation for some minimum cardinality problems.
+In 42nd IEEE International
+Conference on Decision and Control, volume 5, pages 4985–4990. IEEE, 2003.
+A. d’Aspremont, L. El Ghaoui, M. I. Jordan, and G. R. Lanckriet. A direct formulation for sparse pca using semideﬁnite
+programming. SIAM Rev., 49(3):434–448, 2007.
+C. Ding, D. Sun, and J. Y. Jane. First order optimality conditions for mathematical programs with semideﬁnite cone
+complementarity constraints. Math. Prog., 147(1):539–579, 2014.
+H. Dong, K. Chen, and J. Linderoth. Regularization vs. relaxation: A conic optimization perspective of statistical variable
+selection. arXiv:1510.06083, 2015.
+J. Douglas and H. H. Rachford. On the numerical solution of heat conduction problems in two and three space variables.
+Transactions of the American mathematical Society, 82(2):421–439, 1956.
+M. A. Duran and I. E. Grossmann. An outer-approximation algorithm for a class of mixed-integer nonlinear programs.
+Math. Prog., 36(3):307–339, 1986.
+J. Eckstein and D. P. Bertsekas. On the Douglas—Rachford splitting method and the proximal point algorithm for maximal
+monotone operators. Math. Prog., 55(1):293–318, 1992.
+J. Fan and R. Li. Variable selection via nonconcave penalized likelihood and its oracle properties. Journal of the American
+statistical Association, 96(456):1348–1360, 2001.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+39
+M. Fazel. Matrix rank minimization with applications. PhD thesis, Stanford University, 2002.
+M. Fischetti, I. Ljubi´c, and M. Sinnl. Redesigning Benders decomposition for large-scale facility location. Mang. Sci., 63
+(7):2146–2162, 2017.
+A. Frangioni and C. Gentile. SDP diagonalizations and perspective cuts for a class of nonseparable MIQP. Oper. Res.
+Lett., 35(2):181–185, 2007.
+F. Glover. Improved linear integer programming formulations of nonlinear integer problems. Mang. Sci., 22(4):455–460,
+1975.
+M. X. Goemans and D. P. Williamson. Improved approximation algorithms for maximum cut and satisﬁability problems
+using semideﬁnite programming. Journal of the ACM (JACM), 42(6):1115–1145, 1995.
+I. E. Grossmann. Review of nonlinear mixed-integer and disjunctive programming techniques. Opt. & Eng., 3(3):227–252,
+2002.
+M. Gr¨otschel and Y. Wakabayashi. A cutting plane algorithm for a clustering problem. Math. Prog., 45(1-3):59–96, 1989.
+O. G¨unl¨uk and J. Linderoth. Perspective reformulation and applications. In Mixed Integer Nonlinear Programming, pages
+61–89. Springer, 2012.
+H. Hazimeh, R. Mazumder, and A. Saab. Sparse regression at scale: Branch-and-bound rooted in ﬁrst-order optimization.
+arXiv preprint arXiv:2004.06152, 2020.
+R. A. Horn and C. R. Johnson. Matrix analysis. Cambridge University Press, New York, 1985.
+P. Jain, P. Netrapalli, and S. Sanghavi. Low-rank matrix completion using alternating minimization. In Proc. forty-ﬁfth
+ACM symp. T. Comput., pages 665–674, 2013.
+R. C. Jeroslow. There cannot be any algorithm for integer programming with quadratic constraints. Oper. Res., 21(1):
+221–224, 1973.
+J. E. Kelley, Jr. The cutting-plane method for solving convex programs. J. Soc. Ind. Appl. Math., 8(4):703–712, 1960.
+T. Kleinert, M. Labb´e, F. a. Plein, and M. Schmidt. There’s no free lunch: on the hardness of choosing a correct big-M in
+bilevel optimization. Oper. Res., 68(6):1716–1721, 2020.
+B. Kocuk, S. S. Dey, and X. A. Sun. Strong SOCP relaxations for the optimal power ﬂow problem. Oper. Res., 64(6):
+1177–1196, 2016.
+J. B. Lasserre. Global optimization with polynomials and the problem of moments. SIAM J. Opt., 11(3):796–817, 2001.
+J. Lavaei and S. H. Low. Zero duality gap in optimal power ﬂow problem. IEEE Trans. Power Sys., 27(1):92–107, 2011.
+J. Lee and B. Zou. Optimal rank-sparsity decomposition. J. Glob. Opt., 60(2):307–315, 2014.
+J. Linderoth. A simplicial branch-and-bound algorithm for solving quadratically constrained quadratic programs. Math.
+Prog., 103(2):251–282, 2005.
+M. Lubin, I. Zadik, and J. P. Vielma. Mixed-integer convex representability. Math. Oper. Res., to appear, 2021.
+Z.-Q. Luo, J.-S. Pang, and D. Ralph. Mathematical programs with equilibrium constraints. Cambridge University Press,
+1996.
+Z.-Q. Luo, W.-K. Ma, A. M.-C. So, Y. Ye, and S. Zhang. Semideﬁnite relaxation of quadratic optimization problems.
+IEEE Sig. Proc. Mag., 27(3):20–34, 2010.
+G. P. McCormick. Computability of global solutions to factorable nonconvex programs: Part i—convex underestimating
+problems. Math. Prog., 10(1):147–175, 1976.
+A. Meenakshi and C. Rajian. On a product of positive semideﬁnite matrices. Lin. Alg. Appl., 295(1-3):3–6, 1999.
+A. Mutapcic and S. Boyd. Cutting-set methods for robust convex optimization with pessimizing oracles. Opt. Meth. Soft.,
+24(3):381–406, 2009.
+S. Naldi. Solving rank-constrained semideﬁnite programs in exact arithmetic. J. Symb. Comput., 85:206–223, 2018.
+A. Nemirovski, C. Roos, and T. Terlaky. On maximization of quadratic form over intersection of ellipsoids with common
+center. Math. Prog., 86(3):463–473, 1999.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+40
+Y. Nesterov. Smooth minimization of non-smooth functions. Mathematical programming, 103(1):127–152, 2005.
+Y. Nesterov. Smoothing technique and its applications in semideﬁnite optimization. Mathematical Programming, 110(2):
+245–259, 2007.
+L. T. Nguyen, J. Kim, and B. Shim. Low-rank matrix completion: A contemporary survey. IEEE Access, 7:94215–94237,
+2019.
+M. L. Overton and R. S. Womersley. On the sum of the largest eigenvalues of a symmetric matrix. SIAM J. Matr. Anal.
+Appl., 13(1):41–45, 1992.
+J. Peng and Y. Wei. Approximating k-means-type clustering via semideﬁnite programming. SIAM J. Opt., 18(1):186–205,
+2007.
+J. Peng and Y. Xia. A new theoretical framework for k-means-type clustering. In Found. Adv. data mining, pages 79–96.
+Springer, 2005.
+M. Pilanci, M. J. Wainwright, and L. El Ghaoui. Sparse learning via boolean relaxations. Math. Prog., 151(1):63–87, 2015.
+S. Puntanen and G. P. H. Styan. Historical introduction: Issai Schur and the early development of the Schur complement.
+In F. Zhang, editor, The Schur Complement and Its Applications, pages 1–16. Springer US, Boston, MA, 2005.
+I. Quesada and I. E. Grossmann. An LP/NLP based branch and bound algorithm for convex MINLP optimization problems.
+Computers & Chemical Engineering, 16(10-11):937–947, 1992.
+B. Recht and C. R´e. Parallel stochastic gradient algorithms for large-scale matrix completion. Math. Prog. Computation,
+5(2):201–226, 2013.
+B. Recht, M. Fazel, and P. Parrilo. Guaranteed minimum-rank solutions of linear matrix equations via nuclear norm
+minimization. SIAM Rev., 52(3):471–501, 2010.
+J. Renegar. On the computational complexity and geometry of the ﬁrst-order theory of the reals. part i-iii. J. Symb.
+Comp., 13(3):255–352, 1992.
+M. Schaefer. Realizability of graphs and linkages. In J. Pach, editor, Thirty Essays on Geometric Graph Theory, pages
+461–482. Springer New York, New York, NY, 2013.
+H. D. Sherali and B. M. Fraticelli. Enhancing RLT relaxations via a new class of semideﬁnite cuts. J. Glob. Opt., 22(1-4):
+233–261, 2002.
+M. Udell, C. Horn, R. Zadeh, and S. Boyd. Generalized low rank models. Foundations and Trends® in Machine Learning,
+9(1):1–118, 2016.
+L. Vandenberghe and S. Boyd. Semideﬁnite programming. SIAM Review, 38(1):49–95, 1996.
+Z. Wen, W. Yin, and Y. Zhang. Solving a low-rank factorization model for matrix completion by a nonlinear successive
+over-relaxation algorithm. Math. Prog. Comp., 4(4):333–361, 2012.
+H. Wolkowicz, R. Saigal, and L. Vandenberghe. Handbook of semideﬁnite programming. Springer US, 2012.
+C.-H. Zhang. Nearly unbiased variable selection under minimax concave penalty. Ann. Stat., 38(2):894–942, 2010.
+H. Zhang, Z. Lin, and C. Zhang. A counterexample for the validity of using nuclear norm as a convex surrogate of rank.
+In Euro. Conf. Mach. Learn. Know. Disc. Data., pages 226–241. Springer, 2013.
+X. Zheng, X. Sun, and D. Li. Improving the performance of MIQP solvers for quadratic programs with cardinality and
+minimum threshold constraints: A semideﬁnite program approach. INFORMS J. Comput., 26(4):690–703, 2014.
+A. Omitted Proofs
+In this section, we supply omitted proofs of the results stated in the manuscript, in the order in which
+the results were stated.
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+41
+A.1. Proof of Theorem 1
+Proof of Theorem 1
+By (Blekherman et al. 2012, Theorem 2.49), a set of distances di,j can be
+embedded in a Euclidean space of dimension k if and only if there exists some Gram matrix G such
+that D = Diag(G)e⊤+ eDiag(G)⊤−2G where G ⪰0 and Rank(G) ≤k. Therefore, Proposition 1’s
+∃R-hard problem is a special case of:
+min
+G∈Sn
++
+Rank(G)
+s.t.
+Diag(G)e⊤+ eDiag(G)⊤−2G = D,
+where k = 2, Di,j = 1 ∀(i,j) ∈E, and we do not impose the (i,j)th equality otherwise.
+□
+A.2. Proof of Theorem 2
+Proof of Theorem 2
+To establish this result, it suﬃces to perform a reduction from the following
+feasibility system to a polynomially sized system of polynomial equalities and inequalities:
+∃X :
+Rank(X) ≤k,
+⟨Ai,X⟩= bi
+∀i ∈[m],
+X ⪰0,
+because testing the feasibility of the above system a polynomial number of times for k ∈[n] certainly
+solves Problem (9).
+By Proposition 2, this system is feasible if and only if the following system is also feasible:
+∃X,Y :
+Y 2 = Y ,
+X = XY ,
+tr(Y ) ≤k, ⟨Ai,X⟩= bi
+∀i ∈[m],
+X ⪰0,
+The result then follows by observing that semideﬁnite constraints are indeed semialgebraic con-
+straints, by the Tarski-Seidenberg theorem (see Blekherman et al. 2012, Chapter A.4.4), and therefore
+this system is equivalent to a polynomially sized system of polynomial equalities and inequalities.
+□
+A.3. Complexity of Low-Rank Integer Optimization and Hilbert’s 10th Problem
+We now demonstrate that imposing the constraint X ∈Zn×n changes Problem (1)’s complexity status,
+by making it undecidable. Formally, we have:
+Theorem 6. The following problem is undecidable, even when k = 1 and its objective is binary:
+min
+X∈Zn×n
+⟨C,X⟩
+s.t.
+⟨Ai,X⟩= bi
+∀i ∈[m], Rank(X) ≤k, X ⪰0.
+Remark 8. Theorem 6’s reduction does not hold in the presence of a regularizer. Indeed, imposing
+either a spectral or Frobenius norm regularizer ensures the boundedness of the problem’s level sets,
+which allows the problem to be solved in ﬁnite time via branch-and-bound. Nonetheless, Theorem 6
+shows that imposing an integrality constraint makes Problem (1) much harder.
+Proof of Theorem 6
+We perform a reduction from integer optimization with quadratic constraints,
+which is undecidable when the objective is binary (Jeroslow 1973), by reduction from Hilbert’s 10th
+problem. Recall that integer optimization with quadratic constraints is deﬁnitionally:
+min
+x∈Zn
+⟨c,x⟩
+s.t.
+⟨x,Qix⟩+ ⟨ai,x⟩≤bi
+∀i ∈[m].
+(47)
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+42
+We now show that this problem is equivalent to:
+min
+x∈Zn,X∈Zn×n
+⟨c,x⟩
+s.t.
+⟨Qi,X⟩+ ⟨ai,x⟩≤bi
+∀i ∈[m],
+Rank
+
+1 x⊤
+x X
+
+≤1,
+
+1 x⊤
+x X
+
+⪰0.
+To establish the result, it suﬃces to show that X = xx⊤in any feasible solution to the second
+problem. We now show this, by appealing to the Guttman rank identity (see Lemma C.2). We remind
+the reader that an equivalent form of the Guttman rank formula is the identity:
+Rank
+
+1 x⊤
+x X
+
+= Rank(X) + Rank(X −xx⊤),
+Since X ⪰0 and the left hand side of the above expression is either 0 or 1, this formula implies that
+either X = xx⊤or X = 0. However, the latter case can only hold if x = 0, since X ⪰xx⊤by Schur
+complements. Therefore, X = xx⊤and the result holds.
+□
+A.4. Proof of Lemma 4
+Proof of Lemma 4
+Let us ﬁx Y ∈Conv (Yn). Then, we have that:
+max
+α
+h(α) −γ
+2 ⟨α,Y α⟩= max
+α,β h(α) −γ
+2 ⟨β,Y β⟩s.t. β = α,
+= max
+α,β min
+X
+h(α) −γ
+2 ⟨β,Y β⟩−⟨X,β −α⟩,
+= min
+X
+max
+α
+[h(α) + ⟨X,α⟩]
+|
+{z
+}
+(−h)⋆(X)=g(X)
++max
+β
+−γ
+2 ⟨Y β,β⟩−⟨X,β⟩
+
+.
+Finally, the optimality condition with respect to β is Y β = −1
+γ X, which implies the later term is
+max
+W
+ 1
+2γ ⟨X,Y †X⟩−1
+2⟨X,(I −Y †Y )W ⟩
+
+= max
+W
+ 1
+2γ ⟨X,Y †X⟩−1
+2⟨W ,(I −Y †Y )X⟩
+
+=
+
+
+
+1
+2γ
+
+X,Y †X
+
+if Y ∈Span(X),
++∞
+otherwise.
+We therefore conclude that the later term is equal to
+1
+2γ
+
+X,Y †X
+
+whenever the constraint Y †Y X = X
+holds. By the generalized Schur complement lemma C.1, this expression is equivalent to introducing a
+new matrix θ, imposing the term
+1
+2γtr(θ) and requiring that
+
+θ
+X
+X⊤Y
+
+⪰0.
+□
+A.5. Proof of Lemma 5
+Proof of Lemma 5
+Let us ﬁx Y ∈Conv (Yn). Then, we have that:
+max
+α∈Sn,W+,W−⪰0 h(α) −M ⟨Y ,W+ −W−⟩
+s.t.
+α = W+ −W−
+=
+max
+α∈Sn,W+,W−⪰0 min
+X∈Sn h(α) −M ⟨Y ,W+ −W−⟩+ ⟨X,α −W+ + W−⟩
+= min
+X∈Sn
+max
+α∈Sn,W+,W−⪰0 h(α) −M ⟨Y ,W+ −W−⟩+ ⟨X,α −W+ + W−⟩
+= min
+X∈Sn max
+α∈Sn [h(α) + ⟨X,α⟩]
+|
+{z
+}
+(−h)⋆(X)=g(X)
++
+max
+W+,W−⪰0[−M ⟨Y ,W+ −W−⟩+ ⟨X,−W+ + W−⟩].
+Finally, the optimality conditions with respect to W+,W−imply that −MY ⪯X ⪯MY .
+□
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+43
+A.6. Proof of Lemmas 7 and 8
+Proof of Lemma 7
+In Problem (29), it is not too hard to see that for any X an optimal choice
+of Y is Y =
+1
+M X+ +
+1
+M X−, where X+,X−are orthogonal positive semideﬁnite matrices such that
+X = X+ −X−. Therefore, the result follows by observing that tr(X+ + X−) = ∥X∥∗.
+□
+Proof of Lemma 8
+In Problem (31), for any feasible X we have ∥X∥σ ≤M. Under this constraint,
+it follows that for any X an optimal choice of Y ,Y ′ is Y = UΣU ⊤, Y ′ = V ΣV ⊤, where X = UΣV ⊤
+is an SVD of X. The result follows as tr(Y ) = tr(Σ) = ∥X∥∗.
+□
+A.7. Proof of Lemma 6
+Proof of Lemma 6
+Observe that, by the Generalized Schur Complement Lemma (see, e.g., lemma
+C.1), an optimal choice of θ in Problem (26) is θ = XY †X⊤. Therefore, we can eliminate θ from
+Problem (26), to obtain the equivalent objective:
+min
+Y ∈Conv(Yn)
+min
+X∈Rn×m
+λ · tr(Y ) + g(X) + 1
+2γ ⟨XX⊤,Y †⟩.
+Moreover, by the rank-nullity theorem (see, e.g., Horn and Johnson 1985, Chapter 0.2.3), we can split
+the columns of Y into columns in the span of the columns of X and columns orthogonal to the columns
+of X. Since the columns orthogonal to the columns of X do not aﬀect the objective value, it follows
+that we can write Y † = Pn
+i=1
+1
+θi uiu⊤
+i without loss of optimality, where XX⊤= UΣU ⊤is an SVD of
+XX⊤, and 0 ≤θi ≤1 for each θi, because Y ∈Conv(Yn). Problem (26) then becomes:
+min
+X∈Rn×m,θ∈Rn: 0≤θ≤e
+g(X) +
+n
+X
+i=1
+
+λθi + σi(X)2
+2γθi
+
+.
+The result then follows because, for any λ > 0, (c.f. Pilanci et al. 2015, Equation (30))
+min
+0≤θ≤1
+
+λθ + t2
+θ
+
+=
+(
+2
+√
+λ|t|,
+if |t| ≤
+√
+λ,
+t2 + λ,
+otherwise.
+□
+A.8. Proof of Theorem 4
+Proof of Theorem 4
+We only detail the proof of ϵ-optimality; the proof of ϵ-feasibility is almost
+identical (see Mutapcic and Boyd 2009).
+Suppose that at some iteration k > 1, Algorithm 1 has not converged. Then,
+θk −f(Yk) < −ϵ,
+and
+θk ≥f(Yi) + ⟨Hi,Yk −Yi⟩∀i < k.
+But θk ≤f(Yi), since θk and f(Yi) are respectively valid lower and upper bounds on the optimal
+objective. Therefore, ⟨Hi,Yk −Yi⟩≥0. Putting the two inequalities together then implies that
+f(Yk) −f(Yi) > ϵ + ⟨Hi,Yk −Yi⟩≥ϵ, or equivalently
+ϵ < f(Yk) −f(Yi) ≤L∥Yi −Yk∥F,
+where the second inequality holds by Lipschitz continuity. Rearranging this inequality implies that
+∥Yi −Yk∥F > ϵ
+L, i.e., Algorithm 1 never visits any point within a ball of radius
+ϵ
+L (with respect to the
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+44
+Frobenius norm) twice. Moreover, by iteration k, Algorithm 1 visits k points within non-overlapping
+balls with combined volume
+k
+π
+n2
+2
+Γ( n2
+2 + 1)
+ ϵ
+L
+n2
+,
+and these balls are centered at feasible points, i.e., contained within a ball of radius K + ϵ
+L with volume
+π
+n2
+2
+Γ( n2
+2 + 1)
+
+K + ϵ
+L
+n2
+.
+That is, if Algorithm 1 has not converged at iteration k, we have: k <
+  LK
+ϵ + 1
+n2
+, which implies that
+we converge to an ϵ-optimal solution within k ≤
+  LK
+ϵ + 1
+n2
+iterations.
+□
+A.9. Proof of Lemma 9
+Proof of Lemma 9
+The equality θ⋆= X⊤
+t (Y ⋆)†Xt is immediate from the Schur complement lemma
+C.1. Therefore, we focus on deriving an optimal Y for a ﬁxed Xt.
+From the second equality in the Schur complement lemma C.1, we must have X = Y Y †X for
+feasibility. Therefore, span(X) ⊆span(Y ). Moreover, columns of Y which are in null(X) do not con-
+tribute to the optimal objective and can therefore be omitted without loss of optimality. Therefore,
+Y = Pn
+i=1 ρiuiu⊤
+i for some ρ, where Xt = UΣV ⊤is an SVD of Xt. The result follows from observing
+that 0 ≤ρ ≤e and e⊤ρ ≤k, since Y ∈Conv(Yk
+n).
+□
+A.10. Proof of Lemma 10
+Proof of Lemma 10
+As Assumption 2 holds, we can exchange the minimization and maximization
+operators in Problem (40). Therefore, Problem (40) has the same optimal objective as:
+max
+α h(α) −
+max
+Y ∈Conv(Ykn)
+γ
+2
+n
+X
+i=1
+n
+X
+j=1
+Yi,j⟨αi,αj⟩.
+(48)
+Therefore, to establish the result, it suﬃces to show that we obtain Problem (41) after taking the dual of
+Problem (48)’s inner problem. This is indeed the case, because Conv(Yk
+n) is a convex compact set with
+non-empty relative interior, and therefore strong duality holds between the following two problems:
+max
+Y ⪰0
+γ
+2
+n
+X
+i=1
+n
+X
+j=1
+Yi,j⟨αi,αj⟩
+s.t.
+Y ⪯I, [U] ⟨I,Y ⟩≤k, [t],
+min
+U⪰0,t≥0
+tr(U) + kt
+s.t.
+U + It ⪰γ
+2αα⊤.
+□
+A.11. Proof of Theorem 5
+Proof of Theorem 5
+To establish the result, we establish the ﬁrst half of the following inequalites:
+f(Yrounded) −f(Y ⋆)≤γ
+2L2
+max
+β≥0:∥β∥∞≤1
+X
+i∈R
+ Λ⋆
+i,i −Λrounded
+i,i
+
+βi ≤γ
+2L2|R|
+max
+β≥0:∥β∥1≤1
+X
+i∈R
+(Λ⋆
+i,i −Λrounded
+i,i
+)βi,
+under the Frobenius penalty and
+f(Yrounded) −f(Y ⋆)≤ML
+max
+β≥0:∥β∥∞≤1
+X
+i∈R
+ Λ⋆
+i,i −Λrounded
+i,i
+
+βi ≤ML|R|
+max
+β≥0:∥β∥1≤1
+X
+i∈R
+(Λ⋆
+i,i −Λrounded
+i,i
+)βi,
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+45
+for the spectral penalty—the second half of both inequalities follows readily from the fact that ∥β∥1 ≤
+|R|∥β∥∞≤|R| which allows us to replace ∥β∥∞≤1 with ∥β∥1 ≤|R| and move |R| outside the bound.
+Indeed, after establishing these inequalities, the result follows by observing that Ygreedy minimizes the
+right-hand-side of (42)-(43) over the class of projection matrices Yrounded.
+Under a Frobenius penalty, by Lipschitz continuity, we have
+f(Yrounded) −f(Y ⋆) ≤γ
+2⟨α⋆(Y )α⋆(Y )⊤,U(Λ⋆−Λrounded)U ⊤⟩= γ
+2⟨U ⊤α⋆(Y )α⋆(Y )⊤U,Λ⋆−Λrounded⟩.
+Moreover, since Λ⋆−Λrounded is a diagonal matrix we need only include the diagonal terms in the inner
+product. Therefore, since
+(U ⊤α⋆(Y )α⋆(Y )⊤U)i,i = ⟨α⋆(Y )⊤α⋆(Y ),UiU ⊤
+i ⟩≤λmax(α⋆(Y )⊤α⋆(Y )) ≤L2,
+where the second-to-last inequality holds because ∥Ui∥2 = 1, the bound on f(Yrounded) −f(Y ⋆) holds.
+Alternatively, under spectral norm regularization, by Lipschitz continuity we have
+f(Yrounded) −f(Y ⋆) ≤M⟨V ⋆
+11(Y ) + V ⋆
+22(Y ),U(Λ⋆−Λrounded)U ⊤⟩
+= M⟨U ⊤(V ⋆
+11(Y ) + V ⋆
+22(Y ))U,Λ⋆−Λrounded⟩.
+Moreover, Λ⋆−Λrounded is a diagonal matrix and therefore
+(U ⊤(V ⋆
+11(Y ) + V ⋆
+22(Y ))U)i,i = ⟨UiU ⊤
+i ,V ⋆
+11(Y ) + V ⋆
+22(Y )⟩≤λmax(α⋆(Y )) ≤L,
+where the last inequality follows since V11,V22 are orthogonal at optimality, meaning V11 +V22’s leading
+eigenvalue equals α⋆’s leading singular value. Therefore, the bound on f(Yrounded) −f(Y ⋆) holds.
+□
+B. Derivations for the conjugate of the regularizer
+In this section, we derive the conjugates of the penalties stated in Table 2, in order to complete
+our proof of Lemma 2. We ﬁrst derive our results for rectangular matrices under the formulation X =
+Y XY ′ for appropriate projection matrices Y ,Y ′, before specializing our results by setting Y ′ = I. For
+completeness, we ﬁrst prove that this reformulation is indeed a valid reformulation of a rank constraint.
+Proposition 3. For any X ∈Rn×m, Rank(X) ≤k ⇐⇒∃Y ∈Yn,Y ′ ∈Ym
+s.t.
+tr(Y ),tr(Y ′) ≤
+k and X = Y XY ′, where Yn := {P ∈Sn : P 2 = P } is the set of projection matrices.
+Proof of Proposition 3
+We prove the two implications successively.
+( =⇒) Let X = UΣV ⊤be a singular value decomposition of X. Since Rank(X) ≤k, we can let
+U ∈Rn×k,Σ ∈Rk×k,V ∈Rk×m without loss of generality. Deﬁne Y = U(U ⊤U)−1U and Y ′ =
+V (V ⊤V )−1V . By construction, Y XY ′ = X. In addition, tr(Y ) = rank(Y ) = rank((U)) ≤k, and
+tr(Y ′) = rank(Y ′) = rank((V )) ≤k.
+( ⇐= ) Since X = Y XY ′, rank(X) ≤min(rank(Y ),rank(Y ′)) ≤min(tr(Y ),tr(Y ′)) ≤k.
+□
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+46
+B.1. Rectangular Case
+In this section, we derive a dual reformulation for the conjugate of the regularization term in (9). More
+precisely, for all regularizers of interest Ω(·), we show that for any matrix α of similar dimension as X
+and any projection matrices Y ∈Yk
+n and Y ′ ∈Yk
+m,
+min
+X [Ω(Y XY ′) + ⟨α,Y XY ′⟩] = max
+V11,V22 −Ω⋆(α,Y ,Y ′,V11,V22),
+where Ω⋆(·) is notably linear in Y ,Y ′.
+Lemma B.1 Let A ∈Rn×m be a rectangular matrix, Y ∈Yn, Y ′ ∈Ym be projection matrices and γ > 0
+be a positive scalar. Then
+min
+X∈Rn×m
+1
+2γ ∥Y XY ′∥2
+F + ⟨A,Y XY ′⟩= −γ
+2tr(Y AY ′A⊤).
+Proof of Lemma B.1
+Any solution to the minimization problem satisﬁes the ﬁrst-order condition
+1
+γY XY ′ + Y AY ′ = 0. Hence, X⋆= −γY AY ′ is optimal and the objective is −γ
+2tr(Y AY ′A⊤).
+□
+Lemma B.2 Let A ∈Rn×m be a rectangular matrix, Y ∈Yn, Y ′ ∈Ym be projection matrices and
+M > 0 be a positive scalar. Then
+min
+X∈Rn×m:∥Y XY ′∥σ≤M ⟨A,Y XY ′⟩= max
+V11,V22
+−M
+2 ⟨V11,Y ⟩−M
+2 ⟨V22,Y ′⟩
+s.t.
+
+V11 A
+A⊤V22
+
+⪰0,
+Proof of Lemma B.2
+Since the trace is invariant by cyclic permutation and the matrices Y and Y ′
+are symmetric,
+min
+X∈Rn×m:∥Y XY ′∥σ≤M ⟨A,Y XY ′⟩=
+min
+X∈Rn×m:∥Y XY ′∥σ≤M ⟨Y AY ′,X⟩.
+The spectral norm penalty is equivalent to
+∥Y XY ′∥σ ≤M ⇐⇒Y XY ′Y ′X⊤Y ⪯M 2In
+⇐⇒(Y XY ′)Y ′(Y ′X⊤Y ) ⪯M 2In
+⇐⇒(Y XY ′)Y ′(Y ′X⊤Y ) ⪯M 2Y ,
+where the last inequality follows from the fact that the matrix on the left-hand side is equal to zero
+over Im(Y )⊤. By Schur complements, the ﬁnal semideﬁnite inequality is equivalent to
+
+MY
+Y XY ′
+Y ′X⊤Y
+MY ′
+
+⪰0
+
+W11 W12
+W ⊤
+12 W22
+
+.
+We associate a matrix of dual variables in square brackets. Therefore, the dual problem is
+max
+W11,W12,W22
+−M⟨W11,Y ⟩−M⟨W22,Y ′⟩
+s.t.
+Y AY ′ = 2Y W12Y ′,
+
+W11 W12
+W ⊤
+12 W22
+
+⪰0,
+or equivalently,
+max
+V11,V22
+−M
+2 ⟨V11,Y ⟩−M
+2 ⟨V22,Y ′⟩s.t.
+
+V11 A
+A⊤V22
+
+⪰0.
+□
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+47
+B.2. Square and Symmetric Case
+When the matrix X is square and symmetric we can take Y = Y ′ and apply the previous results.
+Alternatively, for the spectral norm penalty, we can further simplify
+Lemma B.3 Let A ∈Rn×n be a square symmetric matrix and Y ∈Yn be a projection matrix. Then
+min
+X∈Sn:∥Y XY ∥σ≤M ⟨A,Y XY ⟩=
+max
+V+,V−⪰0
+−M⟨V+ + V−,Y ⟩
+s.t.
+A = V+ −V−.
+Proof of Lemma B.3
+The constraint ∥Y XY ∥σ ≤M can be rewritten as −MY ⪯Y XY ⪯MY .
+By strong semideﬁnite duality (which holds as the minimization problem has non-empty interior; see
+(Wolkowicz et al. 2012, Chapter 4.1)):
+min
+X∈Sn:∥Y XY ∥σ≤M ⟨A,Y XY ⟩=
+max
+W+,W−⪰0−M⟨Y ,W+ + W−⟩
+s.t.
+Y AY = Y W+Y −Y W−Y .
+The decision variables in the maximization problem decompose the symmetric matrix Y AY into a
+positive and negative deﬁnite parts, W+ and W−respectively. Without loss of optimality we can restrict
+our attention to W+ = Y V+Y and W−= Y V−Y where A = V+ −V−.
+□
+C. A Collection of Useful Matrix Identities
+In this work, we have repeatedly used some technical matrix identities. In order to keep this paper self
+contained, we now state these identities formally.
+The following result generalizes the well-known Schur complement lemma to the case where neither
+on-diagonal block matrix is positive deﬁnite (see Boyd et al. 1994, Equation 2.41)
+Lemma C.1 (Generalized Schur Complement Lemma) Let A,B,C be components of
+X :=
+
+A B
+B⊤C
+
+of appropriate dimension. Then, X is positive semideﬁnite if and only if the following conditions hold:
+(i) A ⪰0,
+(ii) (I −AA†)B = 0,
+(iii) C ⪰B⊤A†B.
+The following result characterizes the rank of a block submatrix in terms of the rank of the entire
+matrix (see, e.g., Puntanen and Styan 2005, Section 0.9):
+Lemma C.2 (Guttman Rank Identity) Let A,B,C be components of the matrix
+X :=
+
+A B
+B⊤C
+
+of appropriate dimension. Then, we have the identity: Rank(X) = Rank(A) + Rank(C −BC†B⊤).
+In general, a product of positive semideﬁnite matrices may not be positive semideﬁnite, indeed, it
+may not even be symmetric. However, the following result demonstrates that a symmetric product of
+PSD matrices is indeed PSD (see Meenakshi and Rajian 1999, for a proof):
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+48
+Lemma C.3 (A Symmetric Product of PSD Matrices is PSD) Let X,Y ∈Sn
++ be matrices of
+appropriate size, and let Z := XY . Suppose that Z = Z⊤is a symmetric matrix. Then, Z ⪰0.
+The following result demonstrates that evaluating the nuclear norm of a matrix via semideﬁnite
+optimization yields a singular value decomposition (see Recht et al. 2010, Proposition 2.1, for a proof)
+Lemma C.4 (Nuclear norm minimization and the SVD of a matrix) An optimal solution to
+min
+W1∈Rn×n,W2∈Rm×m
+tr(W1) + tr(W2)
+s.t.
+
+W1 X
+X⊤W2
+
+⪰0,
+is attained by W1 = UΣU ⊤and W2 = V ΣV ⊤, where X = UΣV ⊤is a singular value decomposition.
+D. Additional Results
+D.1. Pseudocode for the In-out Method
+Our main points of diﬀerence from Fischetti et al. (2017)’s implementation are twofold. First, we
+optimize the outer problem over Conv(Yk
+n), rather than the Boolean polytope. Second, we recognize that
+the purpose of the method is to warm-start Algorithm 1’s lower bound, rather than to solve Problem
+(21). In this spirit, we accelerate the in-out method by ﬁrst solving Problem (21) in one shot using
+an interior point method and second using the optimal solution Y ⋆as a stabilization point. Note that
+a similar method was proposed for sparse portfolio selection problems and MICO by Bertsimas and
+Cory-Wright (2018).
+Algorithm 3 The in-out method of Ben-Ameur and Neto (2007).
+Require: Stabilization point Y ⋆, ϵ ←10−10,λ ←0.1,δ ←2ϵ, t ←1
+repeat
+Compute Y0,θ0 solution of
+min
+Y ∈Conv(Ykn),θ
+θ + λ · tr(Y )
+s.t.
+ziθ ≥hi + ⟨Hi,Y −Yi⟩∀i ∈[t].
+if Y0 has not improved for 5 consecutive iterations then
+Set λ = 1
+if Y0 has not improved for 10 consecutive iterations then
+Set δ = 0
+end if
+end if
+Set Yt+1 ←λY0 + (1 −λ)Y ⋆+ δI; project Yt+1 onto Conv(Yk
+n).
+Compute f(Yt+1),Ht+1,zt+1,dt+1.
+until f(Y0) −θ0 ≤ε
+return Yt
+
+Bertsimas, Cory-Wright, and Pauphilet: Mixed-Projection Conic Optimization
+49
+D.2. Number of cuts generated vs. γ
+Figure 8
+Average number of cuts vs. γ for Algorithm 1 single-tree (left) and multi-tree (right) implementations over
+20 synthetic matrix completion instances where p ∈{0.2,0.3}, r = 1 and n ∈{10,20}. The same random seeds
+were used to generate random matrices completed by single-tree and multi-tree.

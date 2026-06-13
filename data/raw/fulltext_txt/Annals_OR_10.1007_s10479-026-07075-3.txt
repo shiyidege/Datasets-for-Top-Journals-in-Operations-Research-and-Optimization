@@ -1,0 +1,3829 @@
+TITLE: Changepoint detection in the cross-section of stock returns
+JOURNAL: Annals_OR
+YEAR: 2026
+DOI: https://doi.org/10.1007/s10479-026-07075-3
+---
+
+Annals of Operations Research
+https://doi.org/10.1007/s10479-026-07075-3
+ORIGINAL RESEARCH
+Changepoint detection in the cross-section of stock returns
+Sébastien Lleo1
+· William T. Ziemba2,3 · Jessica Li1
+Received: 29 March 2023 / Accepted: 23 January 2026
+© The Author(s) 2026
+Abstract
+We investigate changepoints in the cross-section of stock returns using an ensemble of dedi-
+cated unsupervised learning methods. Our large-scale study reveals a sustained incidence of
+changepoints in the mean, variance, and distribution of daily returns. This ﬁnding is robust to
+the choice of the changepoint detection method. We also ﬁnd that a six-factor empirical asset
+pricing model partially explained these results until the mid-1990s, but its explanatory power
+has weakened considerably. Moreover, GARCH models do not account for changepoints in
+the variance of the residuals. This striking ﬁnding indicates that conditional heteroskedas-
+ticity is not connected to changepoints, at least not in a way standard econometric models
+capture. A further study on monthly data conﬁrms that changepoints are a robust feature of
+the cross-section. Predictably, the number of detected changepoints is smaller than with daily
+data, yet these changepoints persist across methods, especially for variance and distribution.
+Therefore, changepoints undermine the interpretability of constant-parameter Fama–French-
+style factor models on long samples: least-squares estimates collapse multiple regimes into
+a single set of parameters, and residual-based inference weakens. Accordingly, changepoint
+detection should be incorporated as a standard component of model validation and recalibra-
+tion.
+Keywords changepoint methods · unsupervised machine learning · empirical asset pricing ·
+Fama-French ﬁve-factor model · heteroskedasticity · GARCH
+This article is dedicated to the memory of the late William T. Ziemba. The authors wish to thank George
+Constantinides, Sami Attaoui, Fabio Bertoni, Yann Braouezec, Wenbin Cao, Olivier Le Courtois, Patrice
+Poncet, Pierre Six, and the participants in the 2020 French Inter Business Schools seminar and in Finance
+and NEOMA Finance Department Seminar for their valuable comments and insightful discussions on an
+early version of this paper. The ﬁrst author acknowledges the support of the Areas of Excellence The
+Complexity Advantage and AI, Data Science, & Business at NEOMA Business School. Part of this work was
+produced while the ﬁrst author served as Bruti-Liberati Fellow at the Quantitative Finance Research Center
+of the University of Technology Sydney. The authors have no competing interests to declare that are relevant
+to the content of this article. No funding was received to assist with the preparation of this manuscript.
+B Sébastien Lleo
+sebastien.lleo@NEOMA-bs.fr
+Jessica Li
+jessica.li@NEOMA-bs.fr
+1
+Finance Department, NEOMA Business School, 59 rue Pierre Taittinger, Reims 51100, France
+2
+Alumni Professor of Financial Modeling and Stochastic Optimization (Emeritus), University of
+British Columbia, Vancouver, Canada
+3
+Distinguished Visiting Scholar, Systemic Risk Centre, London School of Economics, London, United
+Kingdom
+123
+
+Annals of Operations Research
+1 Introduction
+The study of structural breaks in times series is a mainstay of the ﬁnance and economics
+literature. Stock and Watson (1996) investigate the stability of time series, Bai and Perron
+(1998, 2003) study parameter stability in linear models, Hamilton (1989, 1990); Ang and
+Bekaert (2002); Koop and Potter (2007) use Markov regime-switching processes to model
+time series instability, and Shiryaev et al. (2014, 2015); Lleo et al. (2022) develop a stochastic
+disorder model to detect asset price bubbles. Beyond economics and ﬁnance, the widespread
+interest in detecting abrupt changes in the shape of the probability distribution or the value of
+its parameters has sparked an explosion in the number, range, and sophistication of statistical
+machine learning techniques, collectively known as changepoint detection methods.
+From an operations research perspective, changepoint detection is naturally posed as a
+sequential decision problem: one observes a stochastic process over time and decides when
+to signal a regime shift so as to balance false alarms against detection delay under an explicit
+loss function. This viewpoint originates in statistical process control. Shewhart’s control
+charts (Shewhart, 1931, 1939) formalized online monitoring for quality assurance, while
+Wald’s sequential hypothesis testing (Wald, 1945; Wolfowitz & Wald, 1948) introduced
+optimality criteria for decisions made in real time as data arrive. Page’s CUSUM procedure
+(Page, 1954) provided a canonical quickest-detection rule and remains central in modern
+streaming applications. Disorder-detection models, developed by Kolmogorov and advanced
+by Shiryaev (Shiryaev, 2010), further connected changepoint problems to optimal stopping
+and dynamic programming, clarifying how optimal detection depends on both the assumed
+dynamics and the decision costs.
+Despite a mature methodological literature and a wide range of applications (e.g., Barnett
+& Onnela, 2019; Fearnhead & Rigaill, 2016; Mackintosh et al., 2019), changepoint detection
+has yet to gain wide acceptance in ﬁnance and economics. By bringing a changepoint lens
+to the cross-section of stock returns, we provide a data-driven way to locate and characterize
+structural breaks that matter for equity market modeling, and to inform how models should
+be speciﬁed, calibrated, and stress-tested across regimes.
+In this paper, we apply four families of discrete-time unsupervised learning changepoint
+detection models to investigate the frequency and origin of changepoints observed in the
+cross-section of stock returns. The question of frequency is crucial for econometric models.
+While a low incidence of changepoints can easily be contained, and might even be safely
+ignored in some instances, a high incidence needs to be addressed explicitly in the formulation
+and estimation of asset prices and returns models. Moreover, understanding the origin of
+changepoints could provide insights into the formation and behavior of asset returns and
+prices. Are changepoints an empirical fact of the cross-section of stock returns? If so, do
+they matter for empirical asset pricing models? Our paper investigates these two essential
+questions.
+We focus on unsupervised learning methods because these methods are best suited for
+data exploration. Unsupervised learning does not require a training set of labeled data, unlike
+supervised learning. However, assessing the prediction accuracy of unsupervised learning
+algorithms poses a signiﬁcant challenge because the absence of a target makes it impossible to
+use loss functions to estimate the prediction error. We address this problem with an ensemble
+learning approach on a group of heterogeneous models, or learners. By diversifying across
+assumptions and methodologies, ensemble learning achieves more accurate and robust results
+than any single model. It also minimizes the risk of false discovery. Our ensemble includes
+algorithms from four families of discrete-time unsupervised learning changepoint models:
+123
+
+Annals of Operations Research
+Hidden Markov Models (HMMs), Likelihood ratio methods (LRs), Change Point Methods
+(CPMs), and Bayesian methods (BMs). Although this ensemble is not exhaustive, it captures
+the main dimensions of unsupervised changepoint methods.
+We investigate the relation between changepoints in the cross-section of stock returns and
+empirical asset pricing models. Empirical asset pricing models postulate that multiple factors
+explain asset returns. Consider a general n-factor empirical asset pricing model for a stock
+i, i = 1, . . . , m at time t = 1, . . . , T ,
+˜Ri,t = αi + F⊤
+t βi + ϵi,t,
+t = 1, . . . T ,
+(1.1)
+where ˜Ri,t is the daily excess return, αi is a scalar constant, Ft is a n-element column vector
+of factor returns at time t, the superscript ⊤denotes the transpose of a vector, βi is a constant
+n-element sensitivities column vector. The time t residual ϵi,t is assumed normally distributed
+with mean 0 and variance σ 2
+i,t, that is ϵi,t ∼N(0, σ 2
+i,t), so we relax the assumption that the
+variance of the residual is constant to account for possible heteroskedasticity.
+Hence, the stock’s expected excess return equals E
+
+˜Ri,t
+
+= αi +E
+
+F⊤
+t
+
+βi. This equation
+shows that changepoints in the expected level of the risk factors may trigger changepoints
+in the stock’s expected excess returns. Similarly, the variance of the stock’s excess returns is
+var
+
+˜Ri,t
+
+= β⊤
+i var [Ft] βi + σ 2
+i,t, so changepoints in the variance of the factors may cause
+changepoints in the variance of the stock’s excess returns. Alternatively, the changepoints
+detected in the variance var
+
+˜Ri,t
+
+may signal an abrupt change in the residual’s variance σ 2
+i,t
+and manifest as heteroskedasticity.
+What would happen if empirical asset pricing models neither explain nor account for
+changepoints? Then, their estimation will be susceptible to errors. In the least square esti-
+mates, changepoints in the stock’s expected excess returns E
+
+˜Ri,t
+
+may result in unstable
+estimates for the intercept term αi. Furthermore, changepoints in the variance var
+
+˜Ri,t
+
+may affect the estimation equation in two ways. The ﬁtted residual term ˆϵi may exhibit het-
+eroskedasticity. The estimated slope ˆβi may become unstable. For instance, in the univariate
+case, the slope estimate is ˆβi =
+cov
+
+˜Ri,F
+
+var(F)
+. So an abrupt change in the variance of ˜Ri may
+affect the numerator and, therefore, the slope estimate. Consequently, empirical asset pricing
+models must consider and address changepoints.
+We conduct a large-scale empirical study investigating 21,596 publicly traded U.S. stocks
+over 60 years, from July 1, 1963, to December 31, 2022. We perform changepoint detec-
+tion on the daily excess return of these stocks using 30 changepoint model speciﬁcations.
+Then, we investigate whether a six-factor empirical asset pricing model and conditional het-
+eroskedasticity explain the existence of these changepoints. The six factors comprise Fama
+and French’s ﬁve factors and Carahart’s momentum (Carhart, 1997; Fama & French, 2015).
+Although hundreds more factors have been studied to date, the Fama-French factors and
+Carahart’s momentum are among the most extensively researched. Finally, we address con-
+ditional heteroskedasticity with three GARCH models: standard GARCH (Bollerslev, 1986;
+Taylor, 1986), GJR GARCH (Glosten et al., 1993), and eGARCH (Nelson, 1991).
+Our research uncovers ﬁve sets of novel ﬁndings. First, our investigation reveals the fre-
+quent occurrence of changepoints in the distribution of stock returns. This ﬁnding holds
+cross-sectionally over the sample of stocks and chronologically over the entire 60-year hori-
+zon. Moreover, this ﬁnding is robust to the choice of the changepoint detection method. All 30
+speciﬁcations of changepoint detection models identify substantial instances of changepoints
+in the distribution of stock returns.
+123
+
+Annals of Operations Research
+Second, the changepoint detection methods provide solid evidence for changepoints in
+the mean, variance, and entire distribution of returns. The results also reveal that the number
+of changepoints detected in the mean shows the greatest variation between changepoints
+detection methods. Those for the variance are the most stable.
+Third, we discover that the six-factor empirical asset pricing model explained a substantial
+number of the changepoints detected in the cross-section of stock returns between 1963 and
+the mid-1990s. 90% of the changepoint model speciﬁcations rejected the null hypothesis that
+the average number of changepoints in the residual of the empirical asset pricing model is
+higher than that in the stocks’ excess returns. However, the empirical asset pricing model’s
+explanatory power has gradually weakened since the second half of the 1990s. Interestingly,
+this reversal occurred in the decade when research into empirical asset pricing models gained
+popularity due in no small part to works by Fama and French (1992, 1993) and Carhart
+(1997).
+Fourth, we ﬁnd that the GARCH models fail to describe the effect of changepoints in
+the variance of the residuals. Adding a GARCH component to the empirical asset pricing
+model does not increase the number of changepoints the empirical model explains. Even
+more surprising, the GARCH component leads to a signiﬁcant decrease in the number of
+changepoints explained. This trend is noticeable starting in the 1990s, consistent with the
+loss of signiﬁcance of the empirical asset pricing model.
+Fifth, using monthly data from 1963 to 2022, we ﬁnd that changepoints remain a robust
+feature of the cross-section of U.S. stock returns. Predictably, the number of detected
+changepoints is smaller than with daily data, yet these changepoints persist across meth-
+ods, especially for variance and distributional shifts. Importantly, even after adjusting for
+standard Fama–French factors using both OLS and robust regressions, a substantial share of
+changepoints remains. These results highlight that structural breaks are not merely artifacts
+of high-frequency noise but reﬂect persistent regime shifts relevant to trading, asset pricing,
+and portfolio management.
+These ﬁve ﬁndings show that changepoints are an essential empirical fact of the cross-
+section of stock returns. They also suggest that empirical asset pricing models no longer
+explain changepoints. Therefore, it is necessary to apply changepoint detection methods
+before implementing empirical asset pricing models.
+Our work extends the literature in four main ways. First, this study is a comprehensive
+investigationofchangepointsandchangepointdetectionmethodsonthecross-sectionofstock
+returns. Aggarwal et al. (1999) use an iterated CUSUM algorithm to detect abrupt changes in
+the variance of returns in emerging stock markets. Adams and MacKay (2007) demonstrated
+their Bayesian algorithm on daily price returns on the Dow-Jones Industrial Average index
+between 1972 and 1975. Loschi et al. (2007) apply their predictive product partition to the
+ENDESA stock series between 1987 to 1994. Focusing on macroeconomic variables, Koop
+and Potter showed that U.S GDP and inﬂation exhibit frequent changepoints (Koop & Potter,
+2007). Recently, Kim et al. (2022) tested their Kruskal-Wallis Iterative CUSUM method on
+32 ﬁnancial time-series, including stocks, bonds, currencies, and commodities, on 18 years of
+daily data from 2001 to 2020. Differently, Shiryaev et al. (2014, 2015) and Lleo et al. (2022)
+use continuous-time supervised changepoint detection methods on the mean of the log return
+process to construct trading strategies around asset pricing bubbles and crashes. Unlike these
+prior works, we construct an ensemble of discrete-time unsupervised learning changepoint
+detection methods on the mean, variance, and distribution to investigate the incidence and
+origin of changepoints in the cross-section of U.S stock returns.
+Our work also relates to Smith and Timmermann (2021), who propose a prediction method
+for stock returns that detects structural breaks and corrects their effect on prediction models.
+123
+
+Annals of Operations Research
+Similar to our work, their study concerns abrupt changes in a panel of stock returns. How-
+ever, the objectives, methods, and ﬁndings differ. While Smith and Timmermann focus on
+large structural breaks common to the cross-section of monthly stock returns, we investigate
+changepoints in the mean, variance, and distribution of daily returns for each individual share.
+Smith and Timmermann apply a single parametric method, whereas we adopt an ensemble
+approach involving four families of established parametric and non-parametric changepoint
+detection models. Finally, Smith and Timmermann ﬁnd evidence of 8 large structural breaks
+whereas we documented from tenths to thousands of changepoints. Thus, our study signiﬁ-
+cantly expands the scope of research questions and methods linking changepoint detection
+and ﬁnance theory.
+Second, our work brings new insights into heteroskedasticity and changepoints in the lin-
+ear models underpinning empirical asset pricing models. Our results suggest that empirical
+asset pricing models have a weakening explanatory power. Hence, changepoints may cause
+structural breaks in coefﬁcient estimates, such as those detected in parameter stability tests
+(Bai & Perron, 1998, 2003). Similarly, GARCH models do not capture the heteroskedasticity
+detected by unsupervised changepoint models. Therefore, changepoint detection is an essen-
+tial complement to existing econometric techniques that every researcher and practitioner
+needs to adopt.
+Third, changepoint detection on the variance of a ﬁtted model’s residuals provides a
+powerful alternative to general heteroskedasticity tests, such as the Goldfeld–Quandt test.
+Changepoint models automatically identify the number and location of changepoints, a deci-
+sive advantage over general heteroskedasticity tests. They also examine the dynamics of the
+residuals to convey valuable information on the nature and structure of heteroskedasticity.
+Finally, our results add to the rapidly expanding literature on the application of machine
+learning to empirical asset pricing models, including Gu et al. (2020), Karolyi and
+Van Nieuwerburgh (2020), Bianchi et al. (2021), Giglio et al. (2022), and Chen et al.
+(2023). While these papers focus on applying supervised learning technique to improve asset
+return predictions, our work is unique in emphasizing unsupervised learning techniques and
+exploratory data analysis.
+2 Methodology
+This section describes the four families of changepoint models we set out to implement,
+proposes explanations within empirical asset pricing and econometric models, and introduces
+the data that we use in our analysis. We refer the reader to the Online Appendix for a detailed
+mathematical presentation of the changepoint models.
+2.1 Changepoint detection methods
+Changepoint detection methods are statistical machine learning techniques designed to detect
+abrupt changes in a time series (Yt)t=1,... given observed data y1:T := {y1, . . . yT }. A change-
+point occurs at time τ if the statistical properties of the distribution of the sub-sequences
+{y1, y2, . . . , yτ−1} and {yτ, yτ+1, . . . , yT } differ. With multiple changepoints, we look for a
+partition ρ1:T of the set {1, 2, . . . , T } such that the statistical properties of the time series,
+(Yt)t=1,... remain constant within each sub-sequence of the partition but change between
+sub-sequences. Mathematically, the partition ρ1:T := {i0, i1, i2, . . . , ib} is a strictly increas-
+ing sub-sequence of {1, 2, . . . , T } such that 0 =: i0 < i1 < i2 < . . . < ib := T . Here,
+123
+
+Annals of Operations Research
+i0 < i1 < i2 < . . . < ib are the end points of the subsequence, so the (b −1) changepoints
+are the points i1 + 1, i2 + 1, . . . , ib−1 + 1.
+We select a heterogeneous ensemble of four complementary families of unsupervised
+changepoint detection methods. This choice is neither exhaustive nor fully representative of
+the diversity of unsupervised changepoint detection algorithms. However, these families are
+well-known, extensively studied, and accurate. Crucially, they differ in their assumptions and
+statistical methods. This diversity helps reduce the risk of false discovery. The four families
+are Hidden Markov Models (HMMs), Likelihood Ratio Methods (LRMs), Change Point
+Methods (CPMs), and Bayesian Methods (BMs).
+HMMs assume that the distribution of the time series (Yt)t=1,... is conditioned on a hid-
+den state variable (St)t=1,.... This state variable is in one of N distinct states or regimes
+S1, S2, . . . , SN at time t (Rabiner, 1989; Rabiner & Juang, 1993). Changepoints correspond
+to state transition times. The transitions occur according to a discrete ﬁrst-order Markov
+Chain with transition probability matrix A = (ai j), i, j = 1, . . . , N. Given a number of
+states N and a sequence of T observed values y1:T = {y1, y2, . . . , yT }, HMMs aim to
+estimate the transition probability matrix A = (ai j), the parameters of the conditional distri-
+butions Yt | Sn, n = 1 . . . , N, and the historical sequence of states s1:T = {s1, s2, . . . , sT }.
+We assume that the conditional distribution of Yt | Sn is Gaussian and estimate the HMMs
+for N = 1, . . . , 8 states. Then we compute the Akaike Information Criterion (AIC), Han-
+nan–QuinnInformationCriterion(HQIC),andBayesianInformationCriterion(BIC)toselect
+the optimal number of states. The single-state model (N = 1) assumes the time series comes
+from a single Gaussian distribution, with parameters set to the overall sample mean and
+variance. This minimal, transition-free model is a baseline for evaluating the other HMMs.
+We implement the HMMs using the R package depmixS4 (Visser & Speekenbrink, 2010).
+LRMs apply a penalized likelihood ratio test to determine the changepoints’ number
+and location. We consider both At Most One Changepoint (AMOC) detection and multiple
+changepoints, subject to three penalties: AIC, HQIC, and BIC. We implement these LRMs
+using three standard algorithms: Binary Segmentation (BinSeg), Segmented Neighborhood
+(SegNeigh), and Pruned Exact Linear Time (PELT). BinSeg provides a fast approximation
+to the solution by repeatedly splitting the search space in two, each split corresponding to a
+changepoint (Edwards & Cavalli-Sforza, 1965). SegNeigh relies on dynamic programming
+to provide an exact solution, but it is considerably slower than BinSeg (Auger & Lawrence,
+1989). The more recent PELT algorithm introduces a pruning step within the dynamic pro-
+gramming procedure to produce an exact solution faster than SegNeigh (Killick et al., 2012).
+We use the R packages changepoint and changepoint.np to implement these like-
+lihood ratio models ofﬂine (Haynes & Haynes, 2022; Killick & Eckley, 2014).
+The CPM framework by Hawkins et al. (2003) applies standard parametric and non-
+parametric tests to detect single and multiple changepoints. In this paper, we consider eight
+different tests. The ﬁrst three are parametric tests under a Gaussian assumption: a t-test for
+changepoints in the mean, Bartlett test for changepoints in the variance, and generalized
+likelihood ratio test for changepoints in both mean and variance. The next two parametric
+tests remove the Gaussian assumption: Mann-Whitney test on the mean, Mood test on the
+variance. The last three tests by Lepage, Kolmogorov-Smirnov, and Cramer-von-Mises are
+non-parametric and concern the overall distribution. These eight tests apply to both single
+and multiple changepoints. We set the probability of a Type I error to α = 5% for single
+changepoints and the average run length, ARL0, to 500 for multiple changepoints. The
+average run length is the expected number of observations before the ﬁrst Type I error occurs.
+Under IID assumptions, ARL0 is the inverse of the probability of Type I error: ARL0 = 1
+α .
+We use the R package cpm (Ross, 2015).
+123
+
+Annals of Operations Research
+BMs consist of Bayesian product partition algorithms. These methods apply Bayes’ for-
+mula to compute the posterior distribution that identiﬁes the partition ρ1:T . However, their
+development is speciﬁc to each algorithm. We choose two popular algorithms for our study:
+the ofﬂine algorithm by Barry and Hartigan (1993a) and the online algorithm by Adams and
+MacKay (2007).
+The ofﬂine Barry-Hartigan algorithm draws an initial partition randomly according to the
+product partition distribution in Barry and Hartigan (1993b). The number of sub-sequences is
+a random variable b taking values in {1, . . . , T }. Then, the partition and the observations y1:T
+enter Bayes’ formula to produce posterior cohesions for the sub-sequences and distributions
+for the model parameters. The detection problem is solved computationally via Markov
+Chain Monte Carlo methods. Moreover, the ofﬂine detection algorithm assumes that the
+observations are independent and Gaussian with known variance, that is, Yt ∼N(μt, σ 2), so
+it only detects changepoints in the mean. We implement this algorithm with the R package
+bcp (Erdman & Emerson, 2007), with hyperparameters γ and λ set at 0.2, as in Barry and
+Hartigan (1993a).
+By contrast, the Adams-MacKay algorithm formulates online changepoint detection as
+a Bayesian ﬁltering problem. The objective is to infer from observations y1:t whether the
+current pattern, called a run, continues or stops. Speciﬁcally, denote by rt−1 the run length
+at time t −1. At the next time increment, t, the current run continues or ends. If it continues,
+the run length is incremented by 1, so rt = rt−1 + 1. If the run ends, record time t as a
+changepoint and set rt := 0 to start new run. The changepoint posterior probability P(rt |
+y1:t) determines whether the run continues or ends. The algorithm requires two inputs: a
+conditional distribution P(Yt | ηρ), where ηρ represents the parameters of the model for a
+given partition ρ1:t, and a hazard function H which deﬁnes the conditional prior probability
+of a changepoint P(rt | rt−1). We compute changepoints based on three probabilistic criteria
+with decreasing sensitivity. The ﬁrst and most sensitive, maxprob, is based on the highest
+run length probability. The second, thrshld50, sets the run length probability at a 50%
+threshold. We use it as a baseline. The third, maxCP, uses the highest overall probability and
+is, therefore, the most stringent. Our implementation assumes that the conditional distribution
+P(Yt | ηρ) is Gaussian and that the hazard function H is constant at H(t) = 1
+λ, with the
+hyperparameter λ set at a standard value of 100. We use the R package ocp for this method
+(Pagotto, 2019).
+2.2 Empirical asset pricing models
+To investigate the origin of changepoints, we consider a six-factor empirical asset pricing
+model constructed from the Fama and French (2015) ﬁve-factor model and Carhart (1997)
+momentum:
+˜Ri,t =b0,i + b1,iMktminRft + b2,iSMBt + b3,iHMLt + b4,iRMWt
++ b5,iCMAt + b6,iMomt + ϵi,t,
+i = 1, . . . , m, t = 1, . . . T ,
+(2.1)
+where
+• MktminRft is the excess return of the market, including all NYSE, AMEX, and NASDAQ
+ﬁrms, over the risk-free rate;
+• SMBt, or Small Minus Big, is the average return on small stocks minus the average return
+on large capitalization stocks,
+• HMLt, or High Minus Low, is the average return on value stocks minus the average return
+on growth stock,
+123
+
+Annals of Operations Research
+• RMWt, or Robust Minus Weak, is the average return on stocks with robust operating
+proﬁtability minus the average return on stocks with weak operating proﬁtability,
+• CMAt, or Conservative Minus Aggressive, is the average return on stocks with conser-
+vative investments minus the average return on stocks with aggressive investments.
+• Momt, or momentum, captures the propensity of stocks with higher returns to continue
+to produce higher returns.
+We ﬁt this model using ordinary least square methods, ﬁrst on the entire sample. Then,
+to allow the regression coefﬁcients b0, . . . , b6 to change overtime while conserving a long
+enough time interval to perform the changepoint detection, we also estimate the model on
+non overlapping sliding windows containing 5 years of daily data.
+Next, we run the changepoint detection methods on the time series of excess stock returns
+˜Ri,1:T and on the time series of ﬁtted residuals ˆϵi,1:T . The changepoints detected in the time
+series of excess return establish a baseline. The difference between the number of change-
+points detected in the excess returns and in the residuals reveals the number of changepoints
+that the empirical asset pricing model explains.
+2.3 GARCH models
+To explore the relation between changepoints and heteroskedasticity of the residuals, we
+model the dynamics of the residuals using three GARCH speciﬁcations. We start with a
+standard GARCH(1,1) model (Bollerslev, 1986; Taylor, 1986),
+σ 2
+i,t = a0,i + a1,iϵ2
+i,t−1 + a2,iσ 2
+i,t−1,
+i = 1, . . . , m, t = 1, . . . T ,
+(2.2)
+To add the effect of asymmetries, we also consider a GJR GARCH(1,1) model (Glosten et
+al., 1993),
+σ 2
+i,t = a0,i + a1iϵ2
+i,t−1 + a2,iσ 2
+i,t−1 + a3,iϵ2
+i,t−1Ii,t−1,
+i = 1, . . . , m, t = 1, . . . T ,
+(2.3)
+where Ii,t−1 is the indicator function that takes value 1 if ϵt−1 < 0 and 0 otherwise. As
+an alternative to the GJR model, we implement an eGARCH(1,1) model with conditionally
+normal error (Nelson, 1991),
+ln σ 2
+i,t = a0,i + a1,i ln
+
+σ 2
+i,t−1
+ 
++ a2,i
+ϵi,t−1
+
+σ 2
+i,t−1
++ a3,i
+⎡
+⎣| ϵi,t−1 |
+
+σ 2
+i,t−1
+−
+
+2
+π
+⎤
+⎦,
+i = 1, . . . , m, t = 1, . . . T ,
+(2.4)
+Our objective is to determine whether the changepoints we detected in the residual of the
+empirical asset pricing model manifest as autoregressive conditional heteroskedasicity. So
+we ﬁt the empirical asset pricing model with GARCH using maximum likelihood. The full
+model with GARCH(1,1) is
+⎧
+⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎩
+˜Ri,t =b0,i + b1,iMktminRft + b2,iSMBt + b3,iHMLt + b4,iRMWt
++ b5,iCMAt + b6,iMomt + ϵi,t,
+ϵi,t ∼N
+
+0, σi,t
+ 
+σ 2
+i,t =a0,i + a1,iϵ2
+i,t−1 + a2,iσ 2
+i,t−1,
+i = 1, . . . , m, t = 1, . . . T ,
+(2.5)
+123
+
+Annals of Operations Research
+with similar expressions for the CJR GARCH and eGARCH models. Then we run the change-
+point detection methods on the time series of residuals ˆνi,1:T of the ﬁtted model, deﬁned as
+⎧
+⎪⎪⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎪⎪⎩
+ˆνi,t := ˆRi,t −˜Ri,t
+ˆRi,t =ˆb0,i + ˆb1,iMktminRft + ˆb2,iSMBt + ˆb3,iHMLt + ˆb4,iRMWt
++ ˆb5,iCMAt + ˆb6,iMomt + ˆϵi,t,
+ˆϵi,t ∼N
+
+0, ˆσi,t
+ 
+ˆσ 2
+i,t =ˆa0,i + ˆa1,i ˆϵ2
+i,t−1 + ˆa2,i ˆσ 2
+i,t−1,
+i = 1, . . . , m, t = 1, . . . T ,
+(2.6)
+for the GARCH(1,1) model, with similar expressions for the CJR GARCH and eGARCH
+models.
+2.4 Data
+We sourced daily stock return data from the CRSP US Stock Databases1. Our research
+focuses on publicly-traded U.S. common stocks (share code shrcd 10 and 11). We selected
+all shares listed for at least two years (500 daily prices). We use the CRSP-calculated returns
+(ﬁeld ret), which include the effect of stock splits and dividend reinvestment. Data for the
+Fama-French ﬁve-factor model, momentum, and risk-free rate come from Kenneth French’s
+online database2. So the data in our study extends nearly sixty years, from July 1, 1963, the
+start date for the Fama-French ﬁve-factor data, to December 31, 2022.
+3 Frequency of changepoints in the cross-section of daily stock returns
+3.1 Large scale study on the entire sample period
+We conduct a large-scale empirical analysis, examining the frequency of changepoints in
+the distribution of excess daily returns in shares from 21,596 companies over the entire
+sample period from July 1, 1963, to December 31, 2022. Table 1 reports the results from
+30 model speciﬁcations across the four families of unsupervised changepoints detection
+methods. We organize the discussion by family of changepoint methods. For brevity, we
+refer to changepoint models on both mean and variance as models on mean-var throughout
+the discussion.
+3.1.1 HMM
+The ﬁrst row in Table 1 shows the optimal number of states in HMM models selected based
+on the BIC. The BIC imposes a stiffer penalty than the AIC and HQIC to produce a more
+parsimonious model with fewer states. The number of states ranges from 1 to 8, the maximum
+we tested in this study. The mean and median are very close, at 5.21 states and 5 states,
+respectively. The coefﬁcient of variation (CV) is the ratio of the standard deviation (1.83
+1 ©2023 Center for Research in Security Prices, LLC, An Afﬁliate of the University of Chicago Booth School
+of Business.
+2 Kenneth French’s data Library is located at https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/
+data_library.html.
+123
+
+Annals of Operations Research
+Table 1 Summary statistics for the distribution of the number of changepoints detected by 30 speciﬁcations of unsupervised changepoints detection methods. The abbreviation
+‘Off.’ and ‘On.’ refer respectively to ofﬂine and online methods, ‘Min.’ and ‘Max.’ are the minimum and maximum, ‘Q1’ and ‘Q3’ correspond to the ﬁrst and third quartile of
+the distribution, ‘Std. Dev.’ is the standard deviation, ‘CV’ is the coefﬁcient of variation, and ‘Var.’ refers to the variance
+Method
+Moment
+Off.
+Min.
+Q1
+Median
+Mean
+Q3
+Max.
+Std.
+CV
+/On.
+Dev.
+3.1.1 HMM
+Number of states
+Mean, Var.
+On.
+1
+4
+5
+5.21
+7
+8
+1.83
+0.35
+3.1.2 LR
+CUSUM AMOC
+Mean
+Off.
+0
+1
+1
+1.00
+1
+1
+0.01
+–
+BinSeg
+Mean
+Off.
+0
+34
+96
+143.76
+197
+1,345
+155.43
+1.08
+PELT
+Mean
+Off.
+0
+214
+413
+560.42
+749
+6,179
+499.41
+0.89
+CSS AMOC
+Var.
+Off.
+1
+1
+1
+1.00
+1
+1
+0.00
+–
+BinSeg
+Var.
+Off.
+0
+9
+17
+22.01
+28
+200
+19.24
+0.87
+PELT
+Var.
+Off.
+0
+20
+39
+63.05
+78
+616
+67.17
+1.07
+AMOC
+Mean, Var.
+Off.
+1
+1
+1
+1.00
+1
+1
+0.00
+–
+BinSeg
+Mean, Var.
+Off.
+0
+6
+12
+17.81
+21
+326
+20.44
+1.15
+PELT
+Mean, Var.
+Off.
+1
+58
+150
+226.67
+323
+1,709
+225.72
+1.00
+3.1.3 CPM
+Student
+Mean
+Off.
+0
+0
+0
+516.91
+3
+14,787
+1,539.15
+2.98
+Bartlett
+Var.
+Off.
+0
+452
+994
+1,679.22
+2,164
+14,681
+2,010.23
+1.20
+GLR
+Mean, Var.
+Off.
+0
+453
+995
+1,680.24
+2,163
+14,681
+2,010.01
+1.20
+Mann–Whitney
+Mean
+Off.
+0
+0
+16
+717.50
+940
+14,763
+1,364.97
+1.90
+Mood
+Var.
+Off.
+0
+550
+1,078
+1,665.05
+2,134
+14,681
+1,784.10
+1.07
+Lepage
+Distribution
+Off.
+0
+534
+1,058
+1,629.33
+2,022
+14,681
+1,765.03
+1.08
+Kolmogorov-Smirnov
+Distribution
+Off.
+0
+190
+479
+849.25
+1,054
+14,262
+1,148.08
+1.35
+123
+
+Annals of Operations Research
+Table 1 continued
+Method
+Moment
+Off.
+Min.
+Q1
+Median
+Mean
+Q3
+Max.
+Std.
+CV
+/On.
+Dev.
+Cramer-Von Mises
+Distribution
+Off.
+0
+469
+984
+1,481.25
+1,801
+14,681
+1,675.49
+1.13
+Student
+Mean
+On.
+0
+14
+28
+39.76
+55
+336
+36.06
+0.91
+Bartlett
+Var.
+On.
+4
+57
+122
+186.37
+250
+1,782
+187.56
+1.01
+GLR
+Mean, Var.
+On.
+2
+52
+114
+178.89
+242
+1,789
+184.63
+1.03
+Mann–Whitney
+Mean
+On.
+0
+5
+12
+22.83
+30
+259
+28.09
+1.23
+Mood
+Var.
+On.
+0
+21
+41
+57.24
+77
+401
+49.62
+0.87
+Lepage
+Distribution
+On.
+0
+16
+33
+48.49
+65
+390
+45.74
+0.94
+Kolmogorov-Smirnov
+Distribution
+On.
+0
+12
+29
+51.37
+70
+531
+58.37
+1.14
+Cramer-Von Mises
+Distribution
+On.
+0
+8
+20
+38.98
+49
+534
+50.34
+1.29
+3.1.4 BM
+BH
+Mean
+Off.
+1
+112
+162
+154.08
+203
+400
+76.31
+0.50
+AM maxprob
+Mean, Var.
+On.
+2
+53
+114
+168.67
+229
+1,583
+163.18
+0.97
+AM thrshld50
+Mean, Var.
+On.
+1
+31
+79
+134.90
+182
+1,478
+150.68
+1.12
+AM maxCP
+Mean, Var.
+On.
+1
+12
+28
+63.99
+81
+692
+83.36
+1.30
+123
+
+Annals of Operations Research
+Fig. 1 Distribution of the optimal number of states for the HMM model
+states) to the mean. The CV is low (0.35), suggesting that the distribution of optimal states
+across all shares clusters near the mean.
+The distribution of the number of changepoints in Figure 1 substantiates these observations
+and adds context to the summary statistics. All but a handful of shares require at least two
+states to characterize the distribution of their excess returns. At least ﬁve states are required
+to characterize the excess return distribution of over 50% of the shares in our sample, and
+at least eight states are required for 12.5% of the shares. Although having more states does
+not imply a higher number of changepoints, the number of states still signals a prevalence
+because each state transition generates a changepoint.
+3.1.2 Likelihood ratio models
+The second section of Table 1 displays summary statistics for selected changepoint detection
+models from the LR family. We present results for the approximate BinSeg and exact PELT
+algorithms using the more heavily penalized BIC criterion. We omit the SegNeigh algorithm
+because it produces the same results as the PELT but with a higher computational cost.
+The ﬁrst three rows focus on changepoint detection in the mean of the distribution, starting
+with results for a Cumulative Sum (CUSUM) criterion assuming at most one changepoint. For
+each share in the sample, this criterion produces either a 0 if no changepoint was detected or a
+1 as soon as the ﬁrst changepoint is detected. The mean and median are at or near 1, signaling
+that nearly all share returns exhibit changepoints. The near-zero CV (0.01) supports this
+observation. The BinSeg and PELT conﬁrm that changepoints occurred in order of magnitude
+in the hundreds. Although the BinSeg’s mean (144, or about 2.4 changepoints every year) is
+noticeably lower than that of the PELT (560, roughly 9.4 changepoints a year), both methods
+produce similar coefﬁcients of variation (1.08 vs. 0.89).
+The next three rows relate to changepoints in the variance. The Cumulative Sum of Squares
+(CSS) tests the presence of at most one changepoint. This criterion shows that all 21,596
+stocks had changepoints in their variance. The BinSeg and PELT detected a number of
+123
+
+Annals of Operations Research
+Fig. 2 Distribution of changepoints detected by LR methods
+changepoint in order of magnitude in the tens, although the two methods disagree on the
+exact number (22 on average for BinSeg vs. 63 for PELT, corresponding to about 0.4 and 1.1
+changepoint per year). Here as well, the coefﬁcients of variation are similar.
+The last three rows examine changepoints in mean-var. As expected, the results conﬁrm
+our separate ﬁndings for the mean and variance. (BinSeg: 18; PELT: 227).
+Figure 2 exhibits the distributions of the number of changepoints detected in the mean,
+variance and in mean-var. For the mean, the distribution for the CUSUM indicates that very
+few stocks had no changepoints. The distribution for BinSeg and PELT are heavily skewed.
+For the variance, the CSS is unambiguous in rejecting the hypothesis of no changepoints.
+Moreover, the distributions of changepoints produced by the BinSeg and PELT algorithms
+have consistent shapes with a more deﬁned body and a substantially shorter right tail. The
+distributions for the mean-var are very similar to those for the variance, but with a more
+pronounced right skewness.
+3.1.3 Change point methods
+The third section in Table 1 shows summary statistics for the CPM models. Ofﬂine, the
+Student-t test provides conﬂicting evidence of changepoints in the mean of the distribution
+of excess returns. The median is zero, but the mean comes in at 517 (or about 8.7 changepoints
+a year), and the CV reaches 3, indicating a ﬂat and heavily skewed distribution. The Bartlett
+test for changepoints in the variance and the Generalized Likelihood Ratio (GLR) identify
+an average of 1,680 changepoints (roughly 28.2 changepoints a year, or 1 changepoint every
+9 days), with a coefﬁcient of variation at 1.2. Results for the non-Gaussian Mann-Whitney
+test for changepoints in the mean and Mood test for changepoints in the variance are similar
+123
+
+Annals of Operations Research
+Fig. 3 Distribution of changepoints detected by ofﬂine CPM methods
+to their Gaussian counterparts, the Student-t and Bartlett tests. The non-parametric Lep-
+age, Kolmogorov-Smirnov, and Cramer-von-Mises tests strongly support the existence of
+changepoints in the distribution. The summary statistics for the non-parametric Lepage and
+Cramer-von-Mises tests are similar to those for the non-Gaussian Mood tests and the Gaus-
+sian Bartlett and GLR tests. Strikingly, the maximum number of changepoints for all the
+methods is close to one changepoint per day.
+Turning to online detection, we notice similar patterns. The Student-t test and non-
+Gaussian Mann-Whitney test provide contradictory evidence of changepoints in the mean. By
+contrast, the parametric Bartlett and non-Gaussian Mood tests ﬁnd strong evidence of change-
+points in the variance. Similarly, the parametric Generalized Likelihood Ratio on mean-var
+produces results nearly identical to those for the Bartlett test. Finally, the three non-parametric
+tests by Lepage, Kolmogorov-Smirnov, and Cramer-von-Mises ﬁnd comparable evidence of
+changepoints in the distribution of excess returns.
+Figure 3 displays the distribution of changepoints for the eight ofﬂine CPM speciﬁcations.
+What stands out is that all distributions are heavily skewed, ﬂat and with a far-reaching tail
+on the right. This implies that few stocks have the same number of changepoints. Figure 4
+shows the same distributions for the eight online CPM algorithms. The distributions have a
+clearer body with higher frequencies and a distinct mode. Their tails are considerably less
+elongated, reaching into the hundreds rather than the tens of thousands.
+3.1.4 Bayesian methods
+The ﬁnal section in Table 1 reports results for the Bayesian models. The four algorithm
+speciﬁcation detected changepoints in all the stocks.
+123
+
+Annals of Operations Research
+Fig. 4 Distribution of changepoints detected by online CPM methods
+For the ofﬂine Barry-Hartigan (BH) algorithm, the mean and median number of change-
+points detected are close, at 154 and 162, respectively (or about 2.6 changepoints a year). The
+CV is low (0.5), suggesting relatively little variation in the number of changepoints across
+the sample.
+The online Adams-MacKay (AM) algorithm provides strong supporting evidence for
+changepoints in the distribution of excess returns. On average, the baseline model with a
+probabilistic threshold of 50% detected nearly three times as many changepoints as the most
+conservative model (79 vs. 28 changepoints, or 1.32 vs. 0.5 changepoints per year), and
+only two-thirds of the lenient implementation (114 changepoints, roughly 1.9 per year). The
+mean number of changepoints is lower than the median for all three probabilistic criteria,
+suggesting the changepoint distribution is skewed to the right. The CVs are comparable across
+implementations (0.97 vs. 1.12 vs. 1.30), with a increase coinciding with the strictness of the
+criterion.
+Figure 5 displays the distribution of changepoints. The ofﬂine Barry-Hartigan in panel
+(a) reveals that only 1% of shares have a single changepoint. Most shares have between 125
+and 250 changepoints in the mean of their distribution. Panels (b), (c), and (d) show that the
+choice of probabilistic criterion rescales the distribution but does not alter its shape.
+In summary, our results uncovered conclusive evidence of changepoints in the mean,
+variance, and distribution of excess returns. This conclusion is robust to both the choice of
+family unsupervised changepoint detection methods and to the choice of model speciﬁcations
+within each family.
+123
+
+Annals of Operations Research
+Fig. 5 Distribution of changepoints detected by Bayesian methods
+3.2 Evolution of the number of changepoints
+The results in the previous section revealed the existence and extent of changepoints in the
+distribution of excess returns. We reﬁne our ﬁndings by investigating whether the occur-
+rence of changepoints displays any trend. Were there periods over the past 60 years when
+no changepoint was detected? How did the number of changepoints vary over time? Do
+changepoints relate to market breadth, as measured by the number of issues traded on stock
+exchanges?
+To answer these questions, we split the 60-year study period into 12 non-overlapping
+sliding windows: 10 regular 5-year windows plus two irregular windows located in the ﬁrst
+and last position to account for the uneven start and end dates. The average number of
+companies per sliding window is nearly 5,000, with a minimum of 2,317 for the 1963-1969
+window and a maximum of 7,883 for the 1995-1999 window. On each window, we conduct
+a changepoint detection on the stocks’ excess returns using the same 30 model speciﬁcations
+as in our previous study.
+Table 2 displays the average number of changepoints detected in the excess returns by
+the 30 unsupervised changepoint model speciﬁcations over the 12 non-overlapping sliding
+windows. Four observations stand out.
+First, the changepoints we uncovered in the previous section have been a persistent stylized
+fact of stock market returns over the entire study horizon. For example, the three AMOC
+methods systematically reject the null hypothesis of no changepoint.
+Second, the number of changepoints in mean-var is more closely related to those detected
+in variance than in the mean. For example, the number of changepoints that the LR-PELT
+detected in mean-var is strongly positively correlated with that in the variance (correlation =
+123
+
+Annals of Operations Research
+0.93, signiﬁcantly different from 0 with p-value in the order of 10−5), but not to the mean
+(correlation = -0.13, not signiﬁcantly different from 0). This observation is consistent with
+our earlier conjecture that changepoints in variance are a more prominent feature of stock
+markets than changepoints in the mean.
+Third, the data exhibit less intertemporal variation than cross-sectional variation. Intertem-
+poral variation is the change in the number of changepoints detected by a same method over
+time across the twelve windows. Cross-sectional variation refers to ﬂuctuations in the number
+of changepoints detected by several methods within the same time window. For instance, the
+intertemporal CV for changepoint detection methods on the mean, which we deﬁne as the CV
+computed for a single method across all 12 windows, ranged from 0.27 to 0.88. By contrast,
+the cross-sectional CV for changepoint detection methods on the mean, which is the CV
+computed across methods for a single window, ranged from 0.75 to 1.15. For changepoints
+in the variance, the intertemporal CV range from 0.21 to 0.59 compared to 1.15 to 1.45 for
+the cross-sectional coefﬁcients of variation3.
+Finally, the number of changepoints does not appear correlated with the number of com-
+panies included in each window. Pearson correlation coefﬁcients calculated for each method
+range from -0.35 to +0.17. So the variation in the number of companies across windows did
+not affect the average number of changepoints.
+Together these results show that changepoints are an intrinsic characteristic of the cross-
+section of stock returns. Changepoints occur frequently, across individual shares, and affect
+theentiredistributionofreturns.Thesestylizedfactsquestionhowwellempiricalassetpricing
+models and traditional econometric models capture these abrupt shifts in the distribution of
+the dependent variable.
+4 Explanatory power of empirical asset pricing models
+4.1 Empirical asset pricing factors
+We investigate the ability of empirical asset pricing models to explain changepoints in the
+distribution of stock returns. We ﬁt the empirical asset pricing model in each sliding window,
+and perform changepoint detection on the residuals of the ﬁtted models. We expect to ﬁnd
+fewer changepoints in the residuals than in the stock’s excess returns if the factors explain
+some of the changepoints. If changepoints persist in the residuals, then asset pricing factors
+do not explain all the changepoints observed in the excess returns.
+Table 3 displays the average number of changepoints detected in the residuals for each
+of the 30 unsupervised changepoint model speciﬁcations. These results reveal similar trends
+as for the excess returns. The ﬁve AMOC methods systematically reject the null hypothesis
+of no changepoint, while the other methods continue to detect changepoints in each sliding
+window. The number of changepoints detected in mean-var is closely related to that in the
+variance. Additionally, the number of changepoints exhibits less intertemporal variation than
+cross-sectional variation.
+Although the factors from the empiricalassetpricing have noteliminated the changepoints,
+a cursory comparison of Tables 2 and 3 shows that they have markedly reduced their number.
+To substantiate this observation, we test the hypothesis that the average number of change-
+points detected in the excess returns and the residuals are equal. To that end, we perform a
+standard Welch t-test for data series with unequal sample size and variance for each combi-
+3 Our calculations exclude the AMOC methods from the comparison to avoid skewing the results.
+123
+
+Annals of Operations Research
+Table 2 Average number of changepoints detected by 30 speciﬁcations of unsupervised changepoints detection methods on 12 non-overlapping windows (1963-2022)
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Num. Stocks
+2,317
+4,497
+4,869
+5,292
+6,624
+6,348
+7,883
+5,759
+4,967
+3,930
+3,802
+3,539
+HMM
+Num. States
+4.3
+4.7
+5.5
+4.9
+5.1
+4.8
+4.2
+3.3
+3.1
+2.7
+2.7
+2.3
+LR
+CUSUM AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean
+38.2
+46.4
+41.9
+48.6
+49.3
+61.4
+61.4
+69.0
+70.9
+41.1
+41.0
+52.3
+PELT Mean
+161.6
+158.3
+155.6
+156.1
+200.8
+293.5
+280.7
+287.9
+226.2
+164.9
+158.4
+184.6
+CSS AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Variance
+5.7
+7.6
+13.4
+13.7
+12.5
+8.3
+6.3
+7.6
+8.0
+7.2
+7.8
+5.9
+PELT Variance
+17.2
+31.0
+44.5
+46.0
+41.6
+29.2
+18.3
+15.2
+13.4
+12.2
+13.9
+8.4
+AMOC Mean-Var
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean-Var
+3.8
+6.0
+12.6
+12.3
+11.5
+7.2
+4.3
+4.9
+5.5
+4.7
+4.9
+4.4
+PELT Mean-Var
+98.9
+98.3
+169.1
+146.5
+134.1
+119.6
+76.5
+33.6
+18.1
+15.6
+16.8
+8.9
+CPM
+Student Ofﬂine
+153.5
+119.4
+73.2
+83.8
+80.3
+56.8
+136.4
+40.5
+134.4
+56.9
+65.5
+43.7
+Bartlett Ofﬂine
+625.2
+532.0
+369.9
+534.6
+469.1
+461.1
+585.1
+591.8
+689.0
+614.9
+621.0
+221.3
+GLR Ofﬂine
+620.9
+528.0
+361.8
+533.2
+468.8
+457.8
+581.1
+592.0
+688.8
+612.4
+615.4
+221.9
+M-W Ofﬂine
+321.7
+186.9
+461.0
+286.2
+338.9
+189.4
+67.8
+52.4
+63.5
+25.0
+36.0
+23.7
+Mood Ofﬂine
+657.1
+469.4
+542.6
+578.4
+539.1
+507.9
+573.8
+555.1
+679.3
+584.5
+514.6
+236.6
+Lepage Ofﬂine
+664.2
+460.9
+573.3
+540.5
+561.9
+470.9
+555.7
+543.8
+673.3
+568.5
+477.5
+228.9
+K-S Ofﬂine
+525.5
+434.2
+457.9
+434.8
+530.1
+273.9
+537.6
+466.7
+572.3
+375.2
+254.9
+142.4
+C-vM Ofﬂine
+556.5
+410.8
+599.6
+463.4
+586.3
+365.5
+397.8
+452.4
+567.0
+356.6
+211.7
+126.0
+123
+
+Annals of Operations Research
+Table 2 continued
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Student Online
+17.0
+12.8
+18.7
+20.2
+15.3
+11.2
+10.8
+11.0
+12.1
+11.2
+15.1
+7.6
+Bartlett Online
+61.4
+60.9
+124.5
+106.8
+92.9
+76.2
+48.0
+35.5
+28.4
+27.5
+29.5
+15.8
+GLR Online
+61.2
+59.8
+123.1
+105.3
+91.4
+74.9
+45.9
+30.8
+23.8
+23.0
+24.8
+12.7
+M-W Online
+6.4
+9.1
+17.4
+16.7
+11.5
+6.6
+3.4
+3.1
+3.9
+2.6
+4.3
+2.1
+Mood Online
+19.4
+16.6
+31.1
+26.6
+23.9
+21.2
+16.3
+15.8
+14.1
+13.9
+14.0
+9.4
+Lepage Online
+15.4
+15.5
+30.5
+27.1
+21.2
+16.5
+11.3
+11.4
+10.4
+10.1
+10.7
+7.3
+K-S Online
+15.3
+19.0
+40.2
+33.9
+26.5
+19.4
+9.3
+6.9
+6.0
+5.3
+5.9
+4.0
+C-vM Online
+8.9
+14.0
+32.7
+27.3
+20.1
+13.1
+5.2
+5.0
+5.1
+4.1
+5.2
+3.3
+BM
+BH
+158.9
+140.0
+185.2
+195.8
+124.4
+94.7
+95.2
+152.3
+166.5
+127.2
+108.9
+84.3
+AM maxprob
+52.1
+63.6
+112.8
+94.4
+83.7
+75.8
+48.2
+32.2
+23.4
+21.4
+22.4
+14.5
+AM thrshld50
+36.9
+53.6
+103.3
+84.1
+74.1
+67.1
+38.5
+19.6
+12.0
+10.6
+12.4
+6.4
+AM maxCP
+12.3
+26.0
+56.7
+45.7
+36.2
+28.9
+13.5
+8.4
+6.5
+5.7
+5.9
+4.7
+123
+
+Annals of Operations Research
+Table 3 Average number of changepoints detected in the residuals of the empirical asset pricing model by 30 speciﬁcations of unsupervised changepoints detection methods on
+12 non-overlapping windows (1963-2022)
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Num. Stocks
+2,317
+4,497
+4,869
+5,292
+6,624
+6,348
+7,883
+5,759
+4,967
+3,930
+3,802
+3,539
+HMM
+Num. States
+2.5
+2.4
+2.9
+2.7
+3.0
+3.0
+2.8
+2.6
+2.7
+2.4
+2.4
+2.2
+LR
+CUSUM AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean
+24.2
+31.8
+33.7
+37.2
+43.2
+54.8
+56.8
+63.8
+54.5
+30.3
+34.3
+36.2
+PELT Mean
+145.1
+144.1
+143.9
+142.4
+192.6
+286.4
+272.4
+265.1
+186.6
+124.7
+132.5
+133.7
+CSS AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Variance
+5.1
+6.0
+11.6
+11.3
+10.4
+7.4
+5.8
+7.5
+8.1
+7.5
+8.8
+6.3
+PELT Variance
+10.4
+12.7
+27.9
+23.7
+21.7
+16.5
+11.6
+13.1
+13.1
+13.0
+14.9
+9.3
+AMOC Mean-Var
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean-Var
+3.1
+3.9
+7.8
+7.7
+7.1
+4.9
+3.7
+4.7
+5.4
+4.7
+5.6
+4.3
+PELT Mean-Var
+6.4
+9.5
+22.1
+18.1
+16.0
+11.4
+7.5
+8.5
+8.9
+8.8
+10.3
+6.9
+CPM
+Student Ofﬂine
+114.2
+107.7
+69.3
+77.1
+80.5
+49.4
+118.2
+39.0
+101.4
+77.2
+71.2
+37.3
+Bartlett Ofﬂine
+685.8
+521.6
+478.3
+617.8
+566.4
+527.8
+627.3
+579.4
+681.4
+632.5
+602.2
+256.9
+GLR Ofﬂine
+674.9
+514.8
+477.0
+611.2
+562.4
+520.3
+623.1
+579.7
+678.4
+627.1
+596.3
+259.3
+M-W Ofﬂine
+53.6
+35.6
+107.5
+110.7
+39.4
+18.2
+44.0
+22.1
+59.0
+37.7
+39.5
+23.0
+Mood Ofﬂine
+630.0
+465.0
+382.6
+541.9
+522.5
+493.7
+564.9
+539.2
+666.7
+549.0
+485.9
+237.3
+Lepage Ofﬂine
+604.0
+449.3
+372.4
+521.4
+501.9
+467.3
+542.2
+528.9
+652.1
+522.0
+448.6
+225.4
+K-S Ofﬂine
+365.8
+272.5
+310.1
+403.2
+329.7
+290.6
+340.3
+419.7
+475.5
+277.6
+201.8
+107.2
+C-vM Ofﬂine
+309.9
+223.0
+274.2
+336.9
+277.8
+248.0
+293.7
+415.4
+470.8
+242.9
+176.4
+90.2
+123
+
+Annals of Operations Research
+Table 3 continued
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Student Online
+15.6
+10.7
+15.7
+18.1
+13.1
+9.9
+10.3
+11.1
+13.7
+14.7
+16.5
+8.9
+Bartlett Online
+28.7
+22.5
+40.0
+36.8
+32.0
+28.3
+24.9
+27.2
+25.8
+26.3
+27.9
+16.4
+GLR Online
+20.8
+17.5
+34.1
+31.0
+26.3
+22.3
+18.4
+20.0
+19.3
+19.6
+21.2
+12.4
+M-W Online
+4.1
+3.8
+6.3
+7.9
+4.4
+2.7
+2.5
+2.2
+4.0
+3.4
+4.0
+2.3
+Mood Online
+15.0
+9.9
+12.6
+13.4
+13.2
+13.0
+13.2
+14.6
+13.7
+12.7
+13.6
+9.2
+Lepage Online
+10.8
+8.0
+11.3
+12.9
+10.3
+8.8
+8.6
+10.1
+10.1
+9.3
+10.1
+7.1
+K-S Online
+6.3
+5.5
+9.0
+10.2
+6.5
+4.5
+4.0
+4.8
+5.5
+5.3
+5.4
+3.9
+C-vM Online
+5.0
+4.7
+7.9
+9.2
+5.5
+3.6
+3.2
+3.9
+4.8
+4.4
+4.8
+3.2
+BM
+BH
+123.0
+110.8
+164.2
+175.3
+118.9
+81.9
+83.5
+148.7
+154.1
+109.7
+104.5
+78.1
+AM maxprob
+20.1
+19.9
+44.0
+37.0
+32.9
+26.5
+19.4
+21.6
+20.7
+19.7
+21.9
+14.3
+AM thrshld50
+9.2
+11.3
+31.5
+24.4
+21.8
+16.5
+9.9
+9.6
+10.3
+11.0
+13.0
+7.1
+AM maxCP
+4.4
+5.7
+16.2
+12.7
+11.6
+8.2
+5.0
+5.7
+6.1
+5.6
+6.6
+4.8
+123
+
+Annals of Operations Research
+Fig. 6 Heatmap of t-statistics and their associated P-value for a difference in mean between changepoints
+detected in the residuals of an empirical asset pricing model and changepoints detected in the excess return
+(baseline)
+nation of method and window. The heat map in Figure 6 reports the result of this procedure,
+displaying the t-statistic and a color-coded indication of the p-value. Three quarters of the
+tests reject the null at a 1% signiﬁcance. A majority of tests still reject the null at 0.001%
+or less. Moreover, these ﬁndings are equally valid for changepoints in the mean, variance,
+and distribution. We conclude that the factors in empirical asset pricing models explain a
+signiﬁcant proportion of the changepoints detected Fig. 6.
+The natural follow-up question is to examine the proportion of all the changepoints
+explained by the factors. Figure 7 displays a heatmap of the percentage reduction in the
+average number of changepoints between the excess return (baseline) and the asset pricing
+model’s residuals. Until the mid 1990s, more than half of all model speciﬁcations experienced
+a reduction of at least 20% in changepoints. Some speciﬁcations, including the LR-PELT on
+mean-var, seven of the CPM methods, and the online Adams-MacKay Bayesian methods,
+even saw drops of over 60%. However, this trend slowed down in the second half of the
+1990s and reversed afterward. Unexpectedly, starting the 2010s, twelve model speciﬁcations
+detected more changepoints in the residuals of the asset pricing models than in the excess
+returns.
+One possible explanation for this puzzling ﬁnding is the increasing adoption of empirical
+pricing models. The six-factor model’s ability to explain changepoints began its decline in
+the 1990s. This decade coincides with the publication of two seminal works on asset pricing
+models by Fama and French (1993) and Carhart (1997). In the 2000s, the adoption of multi-
+factor models accelerated among academics and practitioners, leading to an explosion in
+the number of factors. The factor zoo was born. We therefore conjecture that the broader
+adoption of multi-factor models has blunted the factors’ ability to explain changepoints.
+123
+
+Annals of Operations Research
+Fig. 7 Heatmap of the percentage of changepoints in the excess returns explained by the empirical asset pricing
+model. Negative percentages indicate that more changepoints were detected in the residual of the empirical
+asset pricing model than in the stocks’ excess return.
+4.2 Autoregeressive conditional heteroskedasticity
+This section investigates whether the changepoints we detected in the residual of the empirical
+asset pricing model manifest as autoregressive conditional heteroskedasicity. We include a
+GARCH speciﬁcation in the linear model and run the changepoint detection methods on the
+residuals.
+Tables 4 and 5 report the average number of changepoints detected in the residuals of
+a standard GARCH(1,1) and asymmetric GJR GARCH(1,1) model. We do not report the
+eGARCH results because the model ﬁtting process excluded signiﬁcantly more companies
+than GARCH and GJR GARCH, potentially biasing the results. The numbers in both tables
+are remarkably similar, suggesting that changepoints are unrelated to asymmetric effects of
+stock returns on heteroskedasticity.
+Furthermore, both tables display results that are comparable to those reported in Table 3
+for the residuals of the empirical asset pricing model. We expected that the GARCH models
+do not explain changepoints in the mean of the return distribution, which is what we observe.
+However, the number of changepoints detected in the variance does not decline noticeably.
+This suggests that GARCH models are ineffective at capturing changepoints in the variance
+of the distribution of excess returns.
+To corroborate this observation, we apply a Welch t-test to the hypothesis that the average
+number of changepoints detected in the residuals of the GARCH models equals that in the
+residuals of the empirical asset pricing model. Figures 8 and 9 display the t-statistics and p-
+values as a heatmap. We ﬁnd that the data fail to reject the null hypotheses in most instances,
+conﬁrming that GARCH models do not describe changepoints. Furthermore, when we reject
+123
+
+Annals of Operations Research
+Table 4 Average number of changepoints detected in the residuals of the standard GARCH model by 30 speciﬁcations of unsupervised changepoints detection methods on 12
+non-overlapping windows covering the period July 1st, 1963 to December 31, 2022
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Num. Stocks
+2,306
+4,469
+4,770
+5,163
+6,481
+6,271
+7,803
+5,701
+4,886
+3,807
+3,689
+3,471
+HMM
+Num. States
+2.5
+2.4
+2.9
+2.7
+3.1
+3.1
+2.9
+2.7
+2.7
+2.4
+2.5
+2.3
+LR
+CUSUM AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean
+24.5
+32.2
+34.4
+37.8
+43.4
+55.3
+57.2
+64.3
+55.4
+30.2
+33.9
+36.3
+PELT Mean
+145.5
+144.4
+145.2
+143.6
+193.9
+287.2
+272.4
+265.0
+186.4
+124.5
+131.2
+132.7
+CSS AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Variance
+5.3
+6.2
+11.4
+11.3
+10.4
+7.4
+5.9
+7.6
+8.3
+7.5
+8.7
+6.4
+PELT Variance
+10.5
+13.1
+27.7
+24.1
+22.0
+17.1
+12.0
+13.3
+13.4
+13.0
+14.9
+9.5
+AMOC Mean-Var
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean-Var
+3.2
+4.0
+7.7
+7.7
+7.1
+5.0
+3.8
+4.8
+5.5
+4.7
+5.5
+4.5
+PELT Mean-Var
+6.6
+9.8
+22.0
+18.5
+16.3
+12.2
+7.8
+8.7
+9.1
+8.7
+10.3
+7.1
+CPM
+Student Ofﬂine
+118.0
+112.3
+70.2
+76.7
+80.7
+50.2
+119.7
+39.9
+112.4
+74.9
+70.7
+37.0
+Bartlett Ofﬂine
+686.3
+521.7
+473.7
+613.4
+565.4
+527.2
+629.9
+577.4
+687.2
+628.6
+599.6
+252.4
+GLR Ofﬂine
+676.1
+515.6
+472.1
+608.2
+561.0
+521.1
+625.4
+577.4
+685.4
+622.5
+593.5
+254.7
+M-W Ofﬂine
+55.2
+39.3
+104.8
+102.3
+36.6
+18.1
+44.9
+23.0
+68.9
+38.7
+39.5
+23.4
+Mood Ofﬂine
+633.4
+467.3
+383.7
+544.4
+524.9
+495.8
+567.3
+537.9
+673.5
+553.3
+492.0
+242.3
+Lepage Ofﬂine
+605.3
+455.4
+368.5
+520.9
+504.3
+470.5
+547.6
+527.7
+661.1
+526.3
+453.9
+230.8
+K-S Ofﬂine
+379.6
+279.9
+317.5
+399.9
+330.8
+294.4
+351.0
+430.2
+493.2
+287.2
+206.7
+120.4
+C-vM Ofﬂine
+317.3
+233.8
+275.8
+334.6
+279.7
+250.0
+307.0
+421.9
+490.6
+258.0
+183.4
+101.3
+123
+
+Annals of Operations Research
+Table 4 continued
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Student Online
+15.7
+10.8
+15.6
+18.1
+13.0
+9.9
+10.4
+11.2
+13.8
+14.6
+16.4
+8.9
+Bartlett Online
+29.2
+22.9
+39.9
+37.2
+32.4
+28.9
+25.3
+27.5
+26.4
+26.4
+28.0
+16.7
+GLR Online
+21.2
+17.8
+34.1
+31.3
+26.8
+23.1
+18.9
+20.3
+19.7
+19.7
+21.2
+12.7
+M-W Online
+4.2
+3.9
+6.3
+7.8
+4.4
+2.8
+2.5
+2.3
+4.1
+3.4
+4.0
+2.3
+Mood Online
+15.2
+10.1
+12.8
+13.6
+13.5
+13.2
+13.5
+14.8
+14.1
+12.9
+13.7
+9.6
+Lepage Online
+11.1
+8.1
+11.5
+12.9
+10.5
+8.9
+8.8
+10.4
+10.4
+9.4
+10.2
+7.4
+K-S Online
+6.4
+5.6
+9.0
+10.1
+6.5
+4.6
+4.1
+5.0
+5.7
+5.3
+5.5
+4.0
+C-vM Online
+5.0
+4.8
+7.9
+9.2
+5.5
+3.7
+3.2
+4.0
+5.0
+4.5
+4.8
+3.3
+BM
+BH
+122.8
+112.6
+166.3
+177.7
+118.9
+83.1
+85.6
+151.8
+161.3
+114.4
+107.2
+82.7
+AM maxprob
+20.6
+20.5
+44.1
+37.8
+33.6
+28.2
+20.1
+22.1
+21.3
+19.7
+22.0
+14.8
+AM thrshld50
+9.4
+11.7
+31.4
+25.0
+22.1
+17.9
+10.4
+9.8
+10.4
+10.9
+12.9
+7.2
+AM maxCP
+4.5
+5.9
+16.1
+12.9
+11.7
+8.7
+5.2
+5.9
+6.2
+5.6
+6.5
+4.9
+123
+
+Annals of Operations Research
+Table 5 Average number of changepoints detected in the residuals of the GJ GARCH model by 30 speciﬁcations of unsupervised changepoints detection methods on 12
+non-overlapping windows covering the period July 1st, 1963 to December 31, 2022
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Num. Stocks
+2,300
+4,455
+4,750
+5,133
+6,447
+6,249
+7,766
+5,661
+4,861
+3,796
+3,695
+3,465
+HMM
+Num. States
+2.5
+2.4
+2.9
+2.7
+3.1
+3.1
+2.9
+2.7
+2.7
+2.4
+2.5
+2.3
+LR
+CUSUM AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean
+24.6
+32.3
+34.3
+38.1
+43.5
+55.2
+57.2
+64.2
+55.6
+30.4
+34.1
+36.3
+PELT Mean
+145.5
+144.5
+145.4
+144.1
+194.1
+286.6
+272.9
+264.7
+187.3
+126.0
+131.8
+133.1
+CSS AMOC
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Variance
+5.2
+6.2
+11.3
+11.2
+10.3
+7.4
+5.9
+7.6
+8.3
+7.5
+8.7
+6.4
+PELT Variance
+10.5
+13.1
+27.6
+23.9
+22.0
+17.1
+12.0
+13.3
+13.4
+13.0
+14.9
+9.5
+AMOC Mean-Var
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+BinSeg Mean-Var
+3.2
+4.0
+7.7
+7.6
+7.1
+5.0
+3.8
+4.8
+5.6
+4.7
+5.5
+4.5
+PELT Mean-Var
+6.6
+9.8
+21.9
+18.3
+16.3
+12.2
+7.8
+8.7
+9.1
+8.8
+10.2
+7.1
+CPM
+Student Ofﬂine
+118.2
+112.3
+69.5
+75.5
+79.4
+50.6
+119.4
+39.7
+110.5
+74.4
+72.0
+37.4
+Bartlett Ofﬂine
+685.4
+520.9
+472.7
+613.5
+565.6
+527.1
+629.6
+576.5
+686.4
+629.4
+602.0
+252.1
+GLR Ofﬂine
+676.0
+515.1
+471.5
+607.8
+561.6
+520.5
+625.4
+576.2
+685.4
+624.1
+594.9
+253.5
+M-W Ofﬂine
+55.9
+38.1
+109.1
+102.2
+37.6
+19.3
+46.7
+23.7
+67.6
+37.7
+40.9
+23.9
+123
+
+Annals of Operations Research
+Table 5 continued
+Model
+1963
+1970
+1975
+1980
+1985
+1990
+1995
+2000
+2005
+2010
+2015
+2020
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+-
+1969
+1974
+1979
+1984
+1989
+1994
+1999
+2004
+2009
+2014
+2019
+2022
+Mood Ofﬂine
+636.6
+469.6
+384.1
+541.5
+524.2
+493.7
+569.1
+536.8
+674.4
+552.3
+491.7
+242.6
+Lepage Ofﬂine
+607.5
+455.3
+368.3
+521.4
+504.9
+468.9
+548.2
+527.3
+662.0
+526.8
+454.5
+230.4
+K-S Ofﬂine
+380.2
+278.2
+316.1
+399.3
+335.9
+294.6
+352.0
+427.5
+492.3
+291.9
+210.5
+118.6
+C-vM Ofﬂine
+320.8
+231.8
+277.2
+332.9
+281.5
+252.3
+306.4
+420.8
+492.1
+261.6
+184.5
+102.1
+Student Online
+15.7
+10.9
+15.7
+18.0
+13.0
+9.9
+10.4
+11.2
+13.8
+14.6
+16.4
+8.9
+Bartlett Online
+29.1
+23.0
+39.8
+37.0
+32.4
+28.9
+25.3
+27.5
+26.4
+26.4
+27.9
+16.6
+GLR Online
+21.2
+17.9
+34.0
+31.1
+26.8
+23.1
+18.8
+20.3
+19.8
+19.7
+21.1
+12.7
+M-W Online
+4.2
+3.9
+6.3
+7.8
+4.4
+2.8
+2.5
+2.3
+4.1
+3.4
+4.0
+2.3
+Mood Online
+15.2
+10.1
+12.8
+13.5
+13.5
+13.2
+13.5
+14.8
+14.1
+12.9
+13.8
+9.6
+Lepage Online
+11.1
+8.1
+11.5
+12.9
+10.5
+8.9
+8.8
+10.4
+10.4
+9.5
+10.2
+7.3
+K-S Online
+6.4
+5.6
+9.1
+10.2
+6.5
+4.6
+4.1
+5.0
+5.7
+5.3
+5.5
+4.0
+C-vM Online
+5.0
+4.8
+7.9
+9.2
+5.5
+3.7
+3.2
+4.0
+5.0
+4.5
+4.8
+3.3
+BM
+BH
+124.0
+113.0
+167.5
+177.8
+119.3
+84.0
+85.3
+152.0
+161.7
+114.0
+106.9
+82.4
+AM maxprob
+20.6
+20.6
+43.9
+37.5
+33.8
+28.1
+20.2
+22.1
+21.3
+19.8
+22.0
+14.7
+AM thrshld50
+9.4
+11.7
+31.1
+24.7
+22.2
+17.8
+10.4
+9.8
+10.5
+11.0
+12.9
+7.2
+AM maxCP
+4.5
+5.9
+16.0
+12.8
+11.7
+8.7
+5.2
+5.9
+6.2
+5.7
+6.5
+4.9
+123
+
+Annals of Operations Research
+Fig. 8 Heatmap of t-statistics and their associated P-value for a difference in mean between changepoints
+detected in the residual of a standard GARCH model and the residuals of the empirical asset pricing (baseline)
+the null, the residuals of the two GARCH models have signiﬁcantly more changepoints
+than the residuals of the empirical asset pricing model. This striking ﬁnding indicates that
+conditional heteroskedasticity is not connected to changepoints, at least not in a way standard
+econometric models capture.
+5 Changepoints in the cross-section of monthly stock returns
+To assess the robustness of our ﬁndings, we re-examine changepoints in the cross-section of
+stock returns using monthly data over the same period, July 1, 1963 to December 31, 2022.
+We proceed in two steps. First, we study changepoints directly in excess returns. Second,
+we analyze changepoints in the residuals of the six-factor empirical asset pricing model
+introduced in Section 2.2. The coefﬁcients of this model are estimated using both Ordinary
+Least Squares (OLS) and robust regression methods, including Huber, Tukey bisquare, and
+Hampel loss functions (for recent applications in asset pricing and portfolio selection, see J.
+Guerard, Thomakos, Kyriazi, & Beheshti, 2018; J.B. Guerard et al., 2024).
+5.1 Frequency of changepoints in the cross-section of stock returns
+Table 6 reports results from 30 model speciﬁcations across four families of unsupervised
+changepoint detection methods.4 The main conclusion is clear: changepoints persist at a
+4 As before, we refer to changepoint models on both mean and variance as mean-var models for brevity.
+123
+
+Annals of Operations Research
+Fig. 9 Heatmap of t-statistics and their associated P-value for a difference in mean between changepoints
+detected in the residual of a GJR GARCH model and the residuals of the empirical asset pricing (baseline)
+monthly frequency. They are rare in the mean, common in the variance, and abundant in
+mean-var and full distribution tests.
+HMM models identify a median of two states and a mean of approximately 2.1 across all
+stocks, with a range from one to seven. Figure 10 shows that 20% of stocks can be modeled
+with a single regime, about 40% require two, and the remaining 40% need three or more.
+In short, HMM models suggest that most stocks can be described with only two to three
+persistent regimes, with transitions marking changepoints.
+LR models provide a more nuanced view.5 AMOC tests, using the CUSUM/CSS statistic,
+consistently identiﬁed changepoints. By contrast, BinSeg and PELT with a BIC penalty
+uncovered very few mean changepoints (medians of 0; means around 0.25–0.36, with maxima
+of 4–6). Variance changepoints were far more common (medians of 3 and 6; means of 4.6
+and 8.4; maxima of 39 and 53). On average, this corresponds to one changepoint every 7–13
+years, but with long right tails allowing much higher frequencies. Mean-var speciﬁcations
+show stronger evidence of distributional shifts, with a median of 22 changepoints, a mean
+of 32, and a maximum of 184 (Figure 11). The discrepancy between AMOC and multiple
+changepoint methods reﬂects thresholding: BinSeg and PELT apply information criteria
+penalties, imposing a higher burden of proof than AMOC’s likelihood ratio. Overall, LR
+models highlight volatility shifts as the dominant source of changepoints, while mean shifts
+are infrequent.
+CPM methods detect substantial evidence of changepoints. Ofﬂine CPM on the mean
+(Student/Mann–Whitney) reports medians around 40 and means of 70, while online CPM
+5 The numbers for BinSeg and PELT use an AIC penalty. Results with alternative penalties (AIC and BIC)
+differed in scale but not in the overall pattern: few mean changepoints, frequent variance and mean-var
+changepoints.
+123
+
+Annals of Operations Research
+Table 6 Summary statistics for the distribution of the number of changepoints detected by 30 speciﬁcations of unsupervised changepoints detection methods (monthly data). The
+abbreviation ‘Off.’ and ‘On.’ refer respectively to ofﬂine and online methods, ‘Min.’ and ‘Max.’ are the minimum and maximum, ‘Q1’ and ‘Q3’ correspond to the ﬁrst and third
+quartile of the distribution, ‘Std. Dev.’ is the standard deviation, ‘CV’ is the coefﬁcient of variation, and ‘Var.’ refers to the variance
+Method
+Moment
+Off.
+Min.
+Q1
+Median
+Mean
+Q3
+Max.
+Std.
+CV
+/On.
+Dev.
+HMM
+Number of states
+Mean, Variance
+Online
+1
+1
+2
+2.13
+3
+8
+1.02
+0.48
+LR
+CUSUM AMOC
+Mean
+Ofﬂine
+0
+1
+1
+1.00
+1
+1
+0.04
+–
+BinSeg
+Mean
+Ofﬂine
+0
+0
+0
+0.25
+0
+4
+0.52
+2.04
+PELT
+Mean
+Ofﬂine
+0
+0
+0
+0.36
+0
+6
+0.71
+1.97
+CSS AMOC
+Variance
+Ofﬂine
+1
+1
+1
+1.00
+1
+1
+0.00
+–
+BinSeg
+Variance
+Ofﬂine
+0
+1
+3
+4.59
+6
+39
+4.49
+0.98
+PELT
+Variance
+Ofﬂine
+0
+3
+6
+8.40
+12
+53
+6.92
+0.82
+AMOC
+Mean, Variance
+Ofﬂine
+1
+1
+1
+1.00
+1
+1
+0.00
+–
+BinSeg
+Mean, Variance
+Ofﬂine
+0
+4
+8
+12.91
+17
+71
+13.06
+1.01
+PELT
+Mean, Variance
+Ofﬂine
+0
+11
+22
+32.29
+43
+184
+29.78
+0.92
+CPM
+Student
+Mean
+Ofﬂine
+0
+11
+41
+70.11
+93
+468
+85.79
+1.22
+Bartlett
+Variance
+Ofﬂine
+0
+0
+36
+70.94
+95
+612
+97.48
+1.37
+GLR
+Mean, Variance
+Ofﬂine
+0
+18
+45
+74.90
+97
+563
+88.34
+1.18
+Mann–Whitney
+Mean
+Ofﬂine
+0
+15
+42
+71.71
+93
+468
+86.03
+1.20
+Mood
+Variance
+Ofﬂine
+0
+0
+20
+59.61
+77
+550
+100.64
+1.69
+Lepage
+Distribution
+Ofﬂine
+0
+14
+42
+72.69
+89
+547
+92.91
+1.28
+123
+
+Annals of Operations Research
+Table 6 continued
+Method
+Moment
+Off.
+Min.
+Q1
+Median
+Mean
+Q3
+Max.
+Std.
+CV
+/On.
+Dev.
+Kolmogorov-Smirnov
+Distribution
+Ofﬂine
+0
+14
+39
+54.75
+73
+459
+58.40
+1.07
+Cramer-Von Mises
+Distribution
+Ofﬂine
+0
+16
+43
+72.17
+93
+471
+86.39
+1.20
+Student
+Mean
+Online
+0
+1
+3
+4.59
+6
+36
+5.37
+1.17
+Bartlett
+Variance
+Online
+0
+1
+2
+3.55
+5
+31
+4.20
+1.18
+GLR
+Mean, Variance
+Online
+0
+1
+3
+4.72
+7
+37
+5.44
+1.15
+Mann–Whitney
+Mean
+Online
+0
+1
+3
+4.75
+6
+40
+5.73
+1.21
+Mood
+Variance
+Online
+0
+0
+1
+2.25
+3
+24
+3.02
+1.34
+Lepage
+Distribution
+Online
+0
+1
+2
+4.25
+6
+33
+5.03
+1.18
+Kolmogorov-Smirnov
+Distribution
+Online
+0
+1
+3
+4.48
+6
+38
+5.37
+1.20
+Cramer-Von Mises
+Distribution
+Online
+0
+1
+3
+4.71
+6
+39
+5.65
+1.20
+BM
+Barry-Hartigan
+Mean
+Ofﬂine
+1
+5
+12
+15.14
+22
+99
+12.77
+0.84
+Adams-MacKay (maxprob)
+Mean, Variance
+Online
+1
+2
+4
+6.14
+8
+51
+6.40
+1.04
+Adams-MacKay (thrshld50)
+Mean, Variance
+Online
+1
+1
+2
+3.22
+4
+23
+2.84
+0.88
+Adams-MacKay (maxCP)
+Mean, Variance
+Online
+1
+1
+2
+3.27
+4
+23
+3.07
+0.94
+123
+
+Annals of Operations Research
+Fig. 10 Distribution of the optimal number of states for the HMM model (monthly data)
+Fig. 11 Distribution of changepoints detected by LR methods (monthly data)
+123
+
+Annals of Operations Research
+Fig. 12 Distribution of changepoints detected by ofﬂine CPM methods
+versions yield far smaller counts (medians 2–3; means 3.5–4.6). The difference reﬂects
+thresholding: ofﬂine methods use a 5% signiﬁcance level, whereas online methods impose an
+average run length (ARL0) of 20, implying the ﬁrst error after 20 months on average. Overall,
+the main drivers of changepoints are not monthly level shifts, but volatility regimes. Ofﬂine
+CPM on the variance (Mood and Bartlett) identiﬁes medians of 20–36 and means of 60–71,
+roughly one changepoint every 10–12 months, with heavy-tailed distributions. Online CPM
+ﬁnds far fewer (medians 1–2; means 2.3–3.6). Thus, recurring monthly volatility regimes
+are strongly evident, consistent with economic episodes of high and low market volatility.
+Distributional tests magnify the counts: ofﬂine CPM (KS, CvM, Lepage) ﬁnds medians
+near 40 and means of 55–73, with maxima exceeding 450. Online tests are more moderate
+(medians 2–3; means 4–5). Figures 12 and 13 illustrate that ofﬂine methods produce more
+skewed distributions, with a spike at zero and long right tails. Taken together, CPM methods
+provide strong evidence of recurring volatility regimes and broader distributional changes.
+Bayesian models yield moderate, economically plausible counts. The ofﬂine Barry–Har-
+tigan method ﬁnds a median of 12 and a mean of about 15 changepoints in the mean of excess
+returns (roughly one every 3–4 years). The online Adams–MacKay method detects medians
+of 2–4 and means of 3–6, depending on speciﬁcation. Here, priors and hazard structures act
+as built-in penalties, avoiding further tuning. Figure 14 shows that the choice of threshold
+(maximum probability, 50% threshold, or highest overall probability) rescaled the distribu-
+tion, pushing mass toward zero and reducing skew. In summary, Bayesian models point to a
+modest but steady pace of changepoints, consistent with economically interpretable regime
+shifts.
+How do these results for monthly excess returns compare with those for daily data? The
+main conclusion–that changepoints occur–remains valid at both frequencies. Yet their scale
+123
+
+Annals of Operations Research
+Fig. 13 Distribution of changepoints detected by online CPM methods
+Fig. 14 Distribution of changepoints detected by Bayesian methods
+123
+
+Annals of Operations Research
+differs markedly. For daily returns, changepoint counts are enormous across most methods:
+medians range from dozens to hundreds (e.g., LR–PELT Mean median = 413; CPM Bartlett
+Variance median ≈994), with maxima in the thousands. By contrast, monthly data yield far
+fewer changepoints: medians are typically 0–6 for LR and CPM online methods and only a
+few tens for ofﬂine CPM. Thus, moving from daily to monthly data dramatically rescales the
+distribution of detected changepoints.
+Thiscontrasthasplausibleexplanations.Dailybreaksinthemeanmaylargelyreﬂectshort-
+lived noise or microstructure effects–salient for high-frequency traders but less relevant for
+long-term portfolio managers. Market crashes may also be too brief to register on a monthly
+scale. For instance, Lleo and Ziemba (2015, 2017) documented 18 S&P 500 crashes between
+1962 and 2012, nearly half lasting fewer than four months.
+At the monthly horizon, however, the identiﬁed changepoints appear economically mean-
+ingful. They tend to align with shifts in variance or the full distribution, pointing to persistent
+regimes of high or low volatility and broader macroeconomic transitions of clear interest to
+risk and portfolio managers.
+Finally, the coefﬁcient of variation changes little when moving from daily to monthly
+data. This suggests that the frequency shift primarily rescales the distribution of changepoint
+counts, which, being bounded below by zero, naturally produces the spikes at zero seen in
+many ﬁgures.
+5.2 Explanatory power of empirical asset pricing models on monthly data
+We re-estimated the six-factor empirical asset pricing model introduced in Section 2.2 on
+monthly data, using OLS and three robust regression methods (Huber, Tukey bisquare, and
+Hampel objective functions). We then applied the changepoint detection methods to the
+regression residuals.
+Figure 15 reports, for 1962–2022, the average number of changepoints detected in raw
+excess returns and in residuals across the four regression models. On average, changepoint
+counts decline after factor adjustment, particularly for variance- and distribution-sensitive
+tests. Reductions typically range from 2% to 13% and are statistically signiﬁcant (e.g., LR—
+Variance PELT −7%, t = −9.0; CPM Online–Bartlett −8% to −13%, t ∈[−12.0, −6.9];
+Barry–Hartigan −7% to −12%, t ∈[−15.6, −9.6]). Robust regressions yield results nearly
+identical to OLS. Thus, standard factors account for some structural breaks, but the reductions
+are limited.
+The magnitude of these reductions is economically modest. A 2%–13% decline corre-
+sponds to fewer than one changepoint over the full sample, insufﬁcient to alter portfolio
+construction or risk management materially. More important is the persistence of change-
+points in the residuals: even after controlling for standard factors, many structural breaks
+remain, particularly in variance and distribution-sensitive methods. This persistence sug-
+gests that static Fama–French-based models capture only part of the underlying dynamics.
+To examine stability across time, we split the sample into three subperiods: 1963–1992,
+1993–2006, and 2007–2022. Figures 16 and 17 show the percentage of changepoints in
+excess returns explained by the regressions. Factor adjustment has the strongest effect in the
+early and recent subperiods, with 10–20% reductions in several variance- and distribution-
+sensitivemethods–bothstatisticallyandeconomicallymeaningful.Bycontrast,between1993
+and 2006, reductions are small (often below 5%) and rarely signiﬁcant, indicating limited
+explanatory power in that era. Across all periods, however, substantial changepoints remain
+123
+
+Annals of Operations Research
+Fig. 15
+Average number of changepoints, percentage decrease in the number of changepoints detected in the
+residual, compared to the number of changepoints detected in the excess return), and heatmap of t-statistics
+and their associated P-value for a difference in mean between changepoints detected in the residuals of an
+empirical asset pricing model and changepoints detected in the excess return (baseline)
+in the residuals, and results are consistent across OLS and robust regressions. Hence, the
+explanatory power of factors varies across time but never eliminates structural breaks.
+6 Implications for equity return modeling and model validation
+Our ﬁndings have four implications for equity return models and their users.
+1. Parameter stability and inference in factor models.
+Consider the factor model in (1.1). Changepoints are pervasive in excess returns. A sub-
+stantial share remains in residuals after controlling for Fama–French-style factors. This
+pattern suggests that the constant-parameter speciﬁcation (αi, βi) is often misspeciﬁed over
+long samples. Least-squares estimates are then best read as regime-averaged exposures,
+not stable structural parameters. Shifts in the conditional mean are reﬂected in instability
+in αi. Shifts in volatility or in the full return distribution can induce time variation in βi,
+undermine homoskedasticity-based inference, and leave residual dynamics that the ﬁtted
+model does not capture. The practical message is straightforward: estimation and validation
+should account for breaks. Three steps are natural: estimate on break-adjusted subsamples
+(piecewise-constant parameters), adopt time-varying or regime-switching speciﬁcations, and
+run changepoint diagnostics on residuals as a routine model check.
+2. Changepoint detection, structural breaks, and robust regression.
+Changepoint detection, structural break analysis, and robust regression address different
+failure modes. Robust regression (e.g., Huber or Tukey bisquare) controls the weight of
+123
+
+Annals of Operations Research
+Fig. 16 Heatmap of the percentage of changepoints in the excess returns explained by empirical asset pricing
+models. Negative percentages indicate that more changepoints were detected in the residual of the empirical
+asset pricing model than in the stocks’ excess return
+outliers and heavy tails in coefﬁcient estimation. Structural break tests target parameter
+instability (e.g., breaks in βi) within a given regression form. The procedures used here
+instead detect distributional instability in returns (mean, variance, or broader shifts). They
+therefore answer a different question: when does the data-generating mechanism change?
+This information is complementary. It does not presuppose whether the best description is an
+outlier episode, a parameter break, or a regime shift in the distribution. In practice, the three
+tools ﬁt naturally into a validation workﬂow: robust regression protects estimation against
+extremes, while changepoint detection and break tests diagnose persistent shifts that call for
+re-estimation, re-speciﬁcation, or regime-aware risk forecasts.
+3. Model comparison and factor choice under structural instability.
+If changepoints are an empirical fact of the cross-section, model comparison should reﬂect
+that. A useful model should improve ﬁt and reduce residual instability. This observation
+suggests using residual changepoints as a diagnostic when comparing factor sets (Fama-
+French-style factors, macroeconomic factors, fundamental factors, statistical factors, or
+machine-learning factors). One can compare models by the share of return changepoints
+that disappear once conditioning on factors, or by the number (and proportion) of change-
+points remaining in residuals. Any such comparison should control for model complexity,
+for example, via factor penalties and out-of-sample validation. On this view, alternative con-
+structions, including fundamental factors such as the 10-factor USER model in Guerard et
+al. (2012, 2015, 2024), and statistical factors such as Liu et al. (2025), are promising if they
+yield systematically more stable residuals than traditional factors.
+123
+
+Annals of Operations Research
+Fig. 17 Heatmap of t-statistics and their associated P-value for a difference in mean between changepoints
+detected in the residuals of an empirical asset pricing model and changepoints detected in the excess return
+(baseline), for each of the subperiods
+4. Horizon dependence and implications for practitioners.
+The interpretation of changepoints is horizon-dependent. At the daily frequency, mean
+breaks may partly reﬂect short-lived noise or microstructure effects. They still matter for
+short-horizon monitoring and trading. At the monthly horizon, changepoints look more eco-
+nomically meaningful. They align more often with variance or distributional shifts, consistent
+with persistent high-/low-volatility regimes and broader macro transitions that matter for port-
+folio choice and risk control. The persistence of changepoints in factor-model residuals also
+points to dynamics beyond linear exposures, including nonlinearities, interactions, omitted
+state variables, or latent regimes. This reinforces the value of changepoint detection as (i)
+a monitoring device that triggers recalibration, (ii) a complement to volatility modeling in
+stress testing, and (iii) a diagnostic for misspeciﬁcation. Overall, Fama-French style factor
+models mitigate structural instability in stock returns, but they do not eliminate it.
+7 Conclusion
+This paper studied changepoints in the cross-section of U.S. stock returns. We used an
+ensemble of unsupervised changepoint methods spanning four complementary families to
+achieve robust ﬁndings across models.
+Three conclusions stand out. First, changepoints are pervasive. All 30 speciﬁcations
+detect breaks in the distribution of excess returns. Second, frequency matters. At the daily
+horizon, methods detect a large number of breaks, consistent with short-lived ﬂuctuations
+123
+
+Annals of Operations Research
+and microstructure noise. After aggregation to monthly data, the count drops sharply. Yet
+structural breaks persist, especially in volatility and distributions. Thus, the existence of
+changepoints is not a product of higher-frequency data. While aggregation removes transi-
+toryinstability,italsopreserveslonger-livedregimechange.Third,Fama-French-stylefactors
+only explain a modest share of the changepoints. While their explanatory power changed over
+time, it never dominated. In all periods and at both frequencies, many changepoints remain
+in residuals.
+These ﬁndings have clear implications. Changepoints undermine the constant-parameter
+interpretation of Fama-French-style factor models over long samples. Least-squares esti-
+mates become regime averages. Inference based on stable residuals becomes fragile. One
+should therefore regard changepoint detection as a routine diagnostic for model validation
+and recalibration. Changepoint detection also offers a practical criterion for model compari-
+son: a useful model should reduce residual instability, not only improve ﬁt.
+A natural progression of this work is to ask what else could explain the prevalence of
+changepoints in the cross-section of stock returns. Do other factors in the zoo explain change-
+points? Could corporate events or the release of corporate information explain changepoints?
+A further study could also assess the use of supervised changepoint methods in empirical
+asset pricing to sharpen the predictions of asset risk premia.
+Funding Open access funding provided by NEOMA Business School.
+Open Access This article is licensed under a Creative Commons Attribution 4.0 International License, which
+permits use, sharing, adaptation, distribution and reproduction in any medium or format, as long as you give
+appropriate credit to the original author(s) and the source, provide a link to the Creative Commons licence,
+and indicate if changes were made. The images or other third party material in this article are included in the
+article’s Creative Commons licence, unless indicated otherwise in a credit line to the material. If material is
+not included in the article’s Creative Commons licence and your intended use is not permitted by statutory
+regulation or exceeds the permitted use, you will need to obtain permission directly from the copyright holder.
+To view a copy of this licence, visit http://creativecommons.org/licenses/by/4.0/.
+References
+Adams, R.P. & MacKay, D.J.C. (2007). Bayesian online changepoint detection.
+Aggarwal, R., Inclan, C., & Leal, R. (1999). Volatility in emerging stock markets. Journal of Financial and
+Quantitative Analysis, 34(1), 33–55.
+Ang, A., & Bekaert, G. (2002). International asset allocation with time-varying correlations. Review of Finan-
+cial Studies, 55(5), 1137–1187.
+Auger, I., & Lawrence, C. (1989). Algorithms for the optimal identiﬁcation of segment neighborhoods. Bulletin
+of Mathematical Biology, 51(1), 39–54.
+Bai, J., & Perron, P. (1998). Estimating and testing linear models with multiple structural changes. Economet-
+rica, 66(1), 47–78.
+Bai, J., & Perron, P. (2003). Computation and analysis of multiple structural change models. Journal of Applied
+Econometrics, 18(1), 1–22.
+Barnett, I., & Onnela, J.-P. (2016). Change point detection in correlation networks. Scientiﬁc Reports, 6(1),
+18893.
+Barry, D., & Hartigan, J. A. (1993). A bayesian analysis for change point problems. Journal of the American
+Statistical Association, 88(421), 309.
+Barry, D., & Hartigan, J. A. (1993). Product partition models for change point problems. The Annals of
+Statistics, 20, 260–279.
+Bianchi, D., Büchner, M., & Tamoni, A. (2021). Premiums with Machine Learning Bond Risk Premiums with
+Machine Learning. Review of Financial Studies, 34(2), 1046–1089.
+Bollerslev, T. (1986). Generalized autoregressive conditional heteroskedasticity. Journal of Econometrics,
+31(3), 307–327.
+Carhart, M. (1997). On persistence in mutual fund performance. The Journal of Finance, 52(1), 57–82.
+123
+
+Annals of Operations Research
+Chen, L., Pelger, M., & Zhu, J. (2023). In Asset Pricing Deep Learning in Asset Pricing. Management Science,
+70(2), 714–750.
+Edwards, A. W. F., & Cavalli-Sforza, L. L. (1965). A method for cluster analysis. Biometrics, 21(2), 362.
+Erdman, C., & Emerson, J. W. (2007). bcp: An r package for performing a bayesian analysis of change point
+problems. Journal of Statistical Software, 23(3), 1–13.
+Fama, E., & French, K. R. (1993). Common risk factors in the returns on stocks and bonds. Journal of Financial
+Economics, 33(1), 3–56.
+Fama, E., & French, K. R. (2015). A ﬁve-factor asset pricing model. Journal of Financial Economics, 116(1),
+1–22.
+Fama, E. F., & French, K. R. (1992). June). The cross-section of expected stock returns. Journal of Finance,
+47, 427–465.
+Fearnhead, P., & Rigaill, G. (2019). Changepoint detection in the presence of outliers. Journal of the American
+Statistical Association, 114(525), 169–183.
+Giglio, S., Kelly, B., & Xu, D. (2022). Machine Learning, and Asset Pricing Factor Models, Machine Learning,
+and Asset Pricing. Annual Review of Financial Economics, 14, 337–368.
+Glosten, L., Jagannathan, R., & Runkle, D. (1993). On the relation between the expected value and the volatility
+of the nominal excess return on stocks. The Journal of Finance, 48(5), 1779–1801.
+Gu, S., Kelly, B., & Xiu, D. (2020). Pricing via Machine Learning Empirical Asset Pricing via Machine
+Learning. The Review of Financial Studies, 33(5), 2223–2273.
+Guerard, J., Markowitz, H., & Xu, G. (2015). Earnings forecasting in a global stock selection model and
+efﬁcient portfolio construction and management. International Journal of Forecasting, 31(2), 550–560.
+Guerard, J., Thomakos, D., Kyriazi, F. & Beheshti, B. (2024). The development and evolution of mean-variance
+efﬁcient portfolios in the US and Japan: 30 years after the Markowitz and Ziemba applications. Annals
+of Operations Research(to appear)).
+Guerard, J., Xu, G., & Gultekin, M. (2012). Investing with momentum: The past, present, and future. Journal
+of Investing, 21(1), 68–80.
+Guerard, J. B., Gillam, R. A., Markowitz, H., Xu, G., Deng, S., & Wang, Z. E. (2018). Corrections Testing in
+Chinese Stocks Data Mining Corrections Testing in Chinese Stocks. Interfaces, 48(2), 108–120.
+Hamilton, J. (1989). A new approach to the economic analysis of nonstationary time series and the business
+cycle. Econometrica, 57, 357–384.
+Hamilton, J. (1990). Analysis of time series subject to changes in regime. Journal of Econometrics, 451,
+39–70.
+Hawkins, D. M., Qiu, P. H., & Kang, C. W. (2003). The changepoint model for statistical process control.
+Journal of Quality Technology, 35(4), 355–366.
+Haynes, K. & Haynes, R. (2022). changepoint.np: Methods for nonparametric changepoint detection [Com-
+puter software manual]. https://CRAN.R-project.org/package=changepoint.np R package version 1.0.5
+Karolyi, G.A. & Van Nieuwerburgh, S. (2020, May). for the Cross-Section of Returns New Methods for the
+Cross-Section of Returns. The Review of Financial Studies33(5)1879–1890.
+Killick, R., & Eckley, I. A. (2014). changepoint: An r package for changepoint analysis. Journal of Statistical
+Software, 58(3), 1–19.
+Killick,R.,Fearnhead,P.,&Eckley,I.A.(2012).Optimaldetectionofchangepointswithalinearcomputational
+cost. Journal of the American Statistical Association, 107(500), 1590–1598.
+Kim, K. , Park, J.H. , Lee, M. & Song, J.W. (2022). Point Detection and Trend Prediction for Financial
+Time-Series Using a New CUSUM-Based Approach Unsupervised Change Point Detection and Trend
+Prediction for Financial Time-Series Using a New CUSUM-Based Approach. IEEE Access10 34690–
+34705. Conference Name: IEEE Access
+Koop, G., & Potter, S. (2007). Estimation and Forecasting in Models with Multiple Breaks. The Review of
+Economic Studies, 74(3), 763–789.
+Liu, X., Guerard, J., Chen, R., & Tsay, R. (2025). Improving estimation of portfolio risk using new statistical
+factors. Annals of Operations Research, 346, 245–261.
+Lleo, S., Zhitlukhin, M., & Ziemba, W. T. (2022). Changing Stochastic Processes Exit-Entry Model for Stock
+Market Long-Short Prediction Using a Mean-Changing Stochastic Processes Exit-Entry Model for Stock
+Market Long-Short Prediction. The Journal of Portfolio Management, 49(1), 172–197.
+Lleo, S., & Ziemba, W. (2015). Some historical perspectives on the bond-stock earnings yield model for crash
+prediction around the world. International Journal of Forecasting, 31(2), 399–425.
+Lleo, S., & Ziemba, W. T. (2017). May). ond-Stock Earnings Yield Differential Model Predict Equity Market
+Corrections Better Than High P/E Models? Does the Bond-Stock Earnings Yield Differential model
+predict equity market corrections better than high P/E models? Financial Markets, Institutions & Instru-
+ments, 262, 61–123.
+123
+
+Annals of Operations Research
+Loschi, R., Iglesias, P., Arellano-Valle, R., & Cruz, F. (2007). Full predictivistic modeling of stock market data:
+Application to change point problems. European Journal of Operational Research, 180(1), 282–291.
+Mackintosh, M., Aldridge, R., Rossor, M., Gonzalez-Izquierdo, A., Whitaker, K., Ford, E. & Denaxas, S.
+(2019). Dementia recognition, diagnosis, and treatment in the uk, 1997–2017: a change-point analysis.
+The Lancet 394, Special Issue S70.
+Nelson, D. (1991). Conditional heteroskedasticity in asset returns: A new approach. Econometrica, 59(2),
+347–370.
+Page, E. S. (1954). Continuous inspection schemes. Biometrika, 41(1–2), 100–115.
+Pagotto, A. (2019). ocp: Bayesian online changepoint detection [Computer software manual]. https://CRAN.R-
+project.org/package=ocp
+Rabiner, L. (1989). idden Markov Models and selected applications in speech recognition A tutorial in Hidden
+Markov Models and selected applications in speech recognition. Proceedings of the IEEE, 77(2), 257–
+286.
+Rabiner, L., & Juang, B. H. (1993). Fundamentals of speech recognition. Prentice Hall.
+Ross, G. (2015). Parametric and nonparametric sequential change detection in r: The cpm package. Journal
+of Statistical Software, Articles, 66(3), 1–20.
+Shewhart, W. (1931). The economic control of manufactured product. Van Nostrand Company: Toronto New
+York LondonD.
+Shewhart, W. (1939). Statistical method from the viewpoint of quality control. In Deming, W. (ed.). Washington
+The Graduate School, The Department of Agriculture, Washington.
+Shiryaev, A. N. (2010). Quickest detection problems: Fifty years later. Sequential Analysis, 29(4), 345–385.
+Shiryaev, A. N., Zhitlukhin, M. V., & Ziemba, W. T. (2014). Apple and the Nasdaq 100? Trading Bubbles with
+a Stochastic Disorder Model When to sell Apple and the Nasdaq 100? trading bubbles with a stochastic
+disorder model. Journal of Portfolio Management, 40(2), 1–10.
+Shiryaev, A. N., Zhitlukhin, M. V., & Ziemba, W. T. (2015). Land and stock bubbles, crashes and exit strategies
+in japan circa 1990 and in 2013. Quantitative Finance, 15(9), 1449–1469.
+Smith, S. C., & Timmermann, A. (2021). Break Risk. The Review of Financial Studies, 34(4), 2045–2100.
+Stock, J.H. & Watson, M.W. (1996). Evidence on structural instability in macroeconomic time series relations.
+14(1), 11. Place: Alexandria, United Kingdom Publisher: Taylor & Francis Ltd.
+Taylor, S. (1986). Modelling ﬁnancial time series. Chichester: John Wiley and Sons, Ltd.
+Visser, I., & Speekenbrink, M. (2010). An R Package for Hidden Markov Models depmixS4: An R package
+for hidden markov models. Journal of Statistical Software, 36(7), 1–21.
+Wald, A. (1945). Sequential tests of statistical hypotheses. Annals of Mathematical Statistics, 16(2), 117–196.
+Wolfowitz, J., & Wald, A. (1948). Optimum character of the sequential probability ratio test. The Annals of
+Mathematical Statistics, 19(3), 326–339.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

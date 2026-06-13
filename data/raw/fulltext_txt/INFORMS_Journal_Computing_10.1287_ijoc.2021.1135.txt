@@ -1,0 +1,2766 @@
+TITLE: Monte Carlo and Quasi–Monte Carlo Density Estimation via Conditioning
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2022
+DOI: https://doi.org/10.1287/ijoc.2021.1135
+---
+
+arXiv:1906.04607v5 [math.ST] 7 Sep 2021
+Monte Carlo and Quasi-Monte Carlo Density
+Estimation via Conditioning
+Pierre L’Ecuyer
+D´epartement d’Informatique et de Recherche Op´erationnelle, Pavillon Aisenstadt, Universit´e de Montr´eal, C.P. 6128, Succ.
+Centre-Ville, Montr´eal, Qu´ebec, Canada H3C 3J7, lecuyer@iro.umontreal.ca
+Florian Puchhammer
+Basque Center for Applied Mathematics, Alameda de Mazarredo 14, 48009 Bilbao, Basque Country, Spain; and D´epartement
+d’Informatique et de Recherche Op´erationnelle, Universit´e de Montr´eal, fpuchhammer@bcamath.org
+Amal Ben Abdellah
+D´epartement d’Informatique et de Recherche Op´erationnelle, Pavillon Aisenstadt, Universit´e de Montr´eal, C.P. 6128, Succ.
+Centre-Ville, Montr´eal, Qu´ebec, Canada H3C 3J7, amal.ben.abdellah@umontreal.ca
+Estimating the unknown density from which a given independent sample originates is more diﬃcult than
+estimating the mean, in the sense that for the best popular non-parametric density estimators, the mean
+integrated square error converges more slowly than at the canonical rate of O(1/n). When the sample is
+generated from a simulation model and we have control over how this is done, we can do better. We examine
+an approach in which conditional Monte Carlo yields, under certain conditions, a random conditional density
+which is an unbiased estimator of the true density at any point. By averaging independent replications, we
+obtain a density estimator that converges at a faster rate than the usual ones. Moreover, combining this
+new type of estimator with randomized quasi-Monte Carlo to generate the samples typically brings a larger
+improvement on the error and convergence rate than for the usual estimators, because the new estimator is
+smoother as a function of the underlying uniform random numbers.
+Key words : density estimation; conditional Monte Carlo; quasi-Monte Carlo
+1.
+Introduction
+Simulation is commonly used to generate n realizations of a random variable X that may represent
+a payoﬀ, a cost, or a performance of some kind, and then to estimate from this sample the unknown
+expectation of X together with a conﬁdence interval on this expectation (Asmussen and Glynn
+2007, Law 2014). Simulation books focus primarily on how to improve the quality of the estimator
+of E[X] and of the conﬁdence interval. Estimating a given quantile of the distribution of X, or the
+sensitivity of E[X] with respect to some parameter in the model, also with a conﬁdence interval,
+are other well-studied topics in the literature.
+However, large simulation experiments can provide a lot more information than just point esti-
+mates with conﬁdence intervals. Running simulations of a complex system for hours, with thousands
+of runs, only to report conﬁdence intervals on a few single numbers is poor data valorization. A
+1
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+2
+simulation experiment can give much more useful information than this. In particular, it can pro-
+vide an estimate of the entire distribution of X, and not only its expectation or a speciﬁc quantile.
+Moreover, and perhaps more importantly, users are typically more interested in the whole distri-
+bution than on a conﬁdence interval on the mean. The following examples of typical simulation
+models show why.
+In many real-life stochastic simulation models, the prime focus of interested is the distribution
+of certain random delays. These delays can be for example the waiting times of calls in a telephone
+call center, the waiting times of patients at a walk-in medical clinic or at the emergency, the waiting
+time of passengers at an airport checking counter, the delivery time of an order, the travel time
+in some transportation network, etc. In all these situations, a user will be mostly interested in
+what his own waiting time is likely to be. That is, she/he is much more interested in the probability
+distribution of the waiting time than in having a good estimate of the expectation (or global mean)
+(Nelson 2008, Smith and Nelson 2015).
+When one makes a call to a call center and all agents are busy, a good forecast of the waiting
+time is certainly appreciated. Based on this forecast, the caller may decide that there is enough
+time to engage in another activity before getting an answer. The expected waiting time alone is
+not suﬃcient to make such as decision, because for example it does not tell the probability of
+missing the call when going out for x minutes. A distributional forecast, which provides a density
+of the waiting time distribution (perhaps conditional on the current time and system state) is
+much more informative and helpful (Thiongane et al. 2021). This applies to waiting times in many
+other types of service systems. Users are interested in the density (or distribution) of their waiting
+time, not just the expectation. When a manufacturer orders parts from a supplier, or a retail store
+orders items from the manufacture or distributor, an estimate of the density of the time until
+delivery (and not just its expectation) gives them good idea of what can happen, including the
+probability that the parts or items arrive on time, and the distribution of the delay if there is one.
+In a large construction project that involves many activities of random durations and precedence
+constraints, the total time to complete the project is a random variable X usually modeled by
+a stochastic activity network (see Section 4.3). Knowing the density of X permits one to assess
+the risks in signing contracts that impose various types of penalties when X is too large. In many
+other situations, X is a cost or a proﬁt and estimating the density of X is again more interesting
+and useful than just the expectation. In a ﬁnance application, for example, X may represent an
+investment loss over a given month, and the density of X provides much more information on the
+possibilities of large losses (and perhaps bankruptcy) than just the mean. We will report numerical
+experiments for a ﬁnance-type example in Section 4.6.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+3
+So, simulation users are interested in the whole distribution of the output and not only the mean.
+One way to visualize the entire distribution of X is to look at the empirical cumulative distribution
+function (cdf) of the observations. But density estimators (including histograms) are preferred
+because they give a better visual insight on the distribution than the cdf. For this reason, leading
+simulation software routinely provides histograms and enhanced boxplots that give a rough idea
+of the distribution of the output random variables of interest. For example, the standard output
+display in Simiotm is a histogram enhanced with a boxplot, named SMORE (Simio Measure Of
+Risk and Error) (Sturrock and Pegden 2010, Smith and Nelson 2015). When X has a continuous
+distribution, these histograms and boxplots are in fact just primitive forms of density estimators.
+So why are better density estimators not routinely oﬀered? Mainly because non-parametric density
+estimation is diﬃcult.
+If the density of X is assumed to have a known parametric form, e.g., a normal or gamma
+distribution, then one can estimate the parameters from data in the usual way (e.g., by maximum
+likelihood) and things are simple. But in typical complex models, X does not have a known and
+simple form of distribution. There are semi-parametric procedures in which the density is assumed
+to belong to a Hilbert space of functions which are linear combinations a ﬁnite number of ﬁxed basis
+functions, and the coeﬃcients are estimated by penalized regression. These are known as smoothing
+spline models (Gu and Qiu 1993, Yu et al. 2020). But it is often diﬃcult to select basis functions
+that capture the unknown density and a good choice depends on the problem. In this paper, we
+focus on non-parametric methods, in the sense that we assume no particular form for the density
+of X. On the other hand, the input distributions in the simulation model may be parametric (they
+often are). The most widely used non-parametric density estimation methods are the histogram and
+the kernel density estimator (KDE) (Parzen 1962, Silverman 1986, Wand and Jones 1995, Scott
+2015). Given n independent realizations of X, the mean integrated square error (MISE) between
+the true density and a histogram with optimally selected divisions converges only as O(n−2/3).
+With the KDE, the MISE converges as O(n−4/5) in the best case. These rates are slower than
+the canonical O(n−1) rate for the variance of the sample average as an unbiased estimator of the
+mean. The slower rates stem from the presence of bias. See for example Scott (2015) for the details.
+For a histogram, taking wider rectangles reduces the variance but increases the bias by ﬂattening
+out the short-range density variations. A compromise must be made to minimize the MISE. The
+same happens with the KDE, with the rectangle width replaced by the bandwidth of the kernel.
+Selecting a good bandwidth for the KDE is particularly diﬃcult. The bandwidth should ideally
+vary over the interval in which we estimate the density; it should be smaller where the density is
+larger and/or smoother, and vice-versa. This is complicated to implement. Handling discontinuities
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+4
+in the density is also problematic. These diﬃculties have discouraged the use of KDEs (instead of
+histograms) to report simulation results in general-purpose software.
+The KDE and other related density estimation methods were developed mainly for the situation
+where n independent realizations of X are given and nothing else is known, as traditionally assumed
+in classical non-parametric statistics, and one wishes to estimate the density from them (Scott
+2015). But in a Monte Carlo setting in which the n observations are generated by simulation, there
+are opportunities to do better by controlling the way we generate the realizations and by exploiting
+the fact that we know the underlying stochastic model. This is the subject of the present paper.
+Our approach combines two general ideas. The ﬁrst one is to build a smooth estimator of the cdf
+via conditional Monte Carlo (CMC), and take the corresponding conditional density to estimate the
+unknown density. We call it a conditional density estimator (CDE). Under appropriate conditions,
+the CDE is unbiased and has uniformly-bounded variance, so its MISE is O(n−1) for n samples.
+This idea of using CMC was mentioned by Asmussen and Glynn (2007), page 146, Example 4.3,
+and further studied in Asmussen (2018), but only for the special case of estimating the density of a
+sum of i.i.d. continuous random variables having a known density. Asmussen (2018) simply “hides”
+the last term of the sum, meaning that the last random variable is not generated, and he takes a
+shifted version of the known density of this last variable to estimate the density, the value at risk,
+and the conditional value at risk of the sum. His setting is equivalent to a sum of two independent
+random variables: the ﬁrst one is the partial sum which is generated and on which we condition,
+and the second one is the last variable which is not generated. Fu (2006) mentioned this same idea
+in one of his examples.
+Smoothing by CMC before taking a stochastic derivative has been studied earlier for estimating
+the derivative of an expectation (Gong and Ho 1987, L’Ecuyer and Perron 1994, Fu and Hu 1997)
+and the derivative of a quantile (Fu et al. 2009) with respect to a model parameter. This is known
+as smoothed perturbation analysis (SPA). In retrospect, one can say that the CDE at a given point
+x is an SPA estimator obtained by viewing the cdf F(x) as the expectation and x as the model
+parameter. However, nobody studied this idea for density estimation until Asmussen (2018) did it
+for his special case.
+The main contribution of this paper is to show how this CDE approach can be used to estimate
+the density in a much more general setting than Asmussen (2018), to give conditions under which
+it provides an unbiased density estimator, and to examine how eﬀective it is via experiments
+on several types of examples. In most of these examples, X is not deﬁned as a sum of random
+variables, and we often have to hide more than just one random variable to do the conditioning. A
+key unbiasedness condition is that the conditional cdf must be a continuous function of the point
+x at which we estimate the density. In other words, the conditional distribution of X under the
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+5
+selected conditioning must have a density with respect to the Lebesgue measure. The variance
+of the density estimator may depend strongly on which variables we hide, i.e., on what we are
+conditioning. We illustrate this with several examples and we provide guidelines for the choice of
+conditioning. Interestingly, while the KDE is deﬁned as an average of n randomly-shifted copies
+of the (ﬁxed) kernel density, the CDE is an average of n conditional densities which are generally
+diﬀerent and random.
+In addition to being unbiased, the CDE often has less variation than the KDE as a function of the
+underlying uniform random numbers. As a result, its combination with randomized quasi-Monte
+Carlo (RQMC) tends to bring much more improvement than for the KDE. We have observed this
+in all our experiments. Under appropriate conditions, it can be proved that combining the CDE
+with RQMC provides a density estimator whose MISE converges at a faster rate than O(n−1),
+for instance O(n−2+ǫ) for any ǫ > 0 in some situations. We observe this fast rate empirically on
+numerical examples. This happens essentially when the CDE is a smooth function of the underlying
+uniforms. To our knowledge, this type of convergence rate has never been proved or observed for
+non-parametric density estimation.
+The combination of RQMC with an ordinary KDE was studied by Ben Abdellah et al. (2021),
+who were able to prove a faster rate than O(n−4/5) for the MISE when the RQMC points have
+a small number of dimensions. They observed this faster rate empirically on examples. They also
+showed that the MISE reduction from RQMC degrades rapidly when the bandwidth is reduced
+(to reduce the bias) or when the dimension increases. The CDE+RQMC approach studied in the
+present paper avoids this problem (there is no bias and no bandwidth) and is generally much more
+eﬀective than the KDE+RQMC combination. We provide numerical comparisons in our examples.
+Other Monte Carlo density estimators were proposed very recently, also based on the idea of esti-
+mating the derivative of the cdf, but using a likelihood ratio (LR) method instead. The LR method
+was originally designed to estimate the derivative of the expectation with respect to parameters
+of the distribution of the underlying input random variables (Glynn 1987, L’Ecuyer 1990). Laub
+et al. (2019) proposed an estimator that combines a clever change of variable with the LR method,
+to estimate the density of a sum of random variables as in Asmussen (2018), but in a setting where
+the random variables can be dependent. Peng et al. (2018) proposed a generalized version of the
+LR gradient estimator method, named GLR, to estimate the derivative of an expectation with
+respect to a more general model parameter. Lei et al. (2018) sketched out how GLR could be used
+to estimate a density. Formulas for these GLR density estimators are given in Theorem 1 of Peng
+et al. (2020). We compare them with the CDE estimators in our numerical illustrations.
+Density estimation has other applications than just visualizing the distribution of an output
+random variable (Van der Vaart 2000, Scott 2015). For instance when computing a conﬁdence
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+6
+interval for a quantile using the central-limit theorem (CLT), one needs a density estimator at the
+quantile to estimate the variance (Serﬂing 1980, Asmussen and Glynn 2007, Nakayama 2014a,b).
+See Section B.4 in the Supplement. Another application is for maximum likelihood estimation
+when the likelihood does not have a closed-form expression, so to maximize it with respect to some
+parameter θ, the likelihood function (which in the continuous case is a density at any value of θ)
+must be estimated (Van der Vaart 2000, Peng et al. 2020). A related application is the estimation
+of the posterior density of θ given some data, in a Bayesian model (Efron and Hastie 2016).
+The remainder is organized as follows. In Section 2, we deﬁne our general setting, recall key facts
+about density estimators, introduce the general CDEs considered in this paper, prove some of their
+properties, and give small examples to provide insight on the key ideas. We also brieﬂy recall GLR
+density estimators. In Section 3, we explain how to combine the CDE with RQMC and discuss the
+convergence properties for this combination. Section 4 reports experimental results with various
+examples. Some of the examples feature creative ways of conditioning to improve the eﬀectiveness
+of the method. Additional examples are examined in the Online Supplement. Section 5 summarizes
+the key issues and guidelines on the construction and applications of the CDE. A conclusion is
+given in Section 6. The main ideas of this paper were presented at a SAMSI workshop on QMC
+methods in North Carolina, and at a RICAM workshop in Linz, Austria, both in 2018.
+2.
+Model and conditional density estimator
+2.1.
+Density estimation setting
+We have a real-valued random variable X that can be simulated from its exact distribution, but
+we do not know the cdf F and density f of X. Typically, X will be an easily computable function
+of several other random variables with known densities. Our goal is to estimate f over a ﬁnite
+interval [a,b]. Let ˆfn denote an estimator of f based on a sample of size n. We measure the quality
+of ˆfn by the mean integrated square error (MISE), deﬁned as
+MISE = MISE( ˆfn) =
+Z b
+a
+E[( ˆfn(x) −f(x))2]dx.
+(1)
+The MISE is the sum of the integrated variance (IV) and the integrated square bias (ISB):
+MISE = IV + ISB =
+Z b
+a
+E( ˆfn(x) −E[ ˆfn(x)])2dx +
+Z b
+a
+(E[ ˆfn(x)] −f(x))2dx.
+A standard way of constructing ˆfn when X1,...,Xn are n independent realizations of X is via a
+KDE, deﬁned as follows (Parzen 1962, Scott 2015):
+ˆfn(x) = 1
+nh
+n
+X
+i=1
+k
+x −Xi
+h
+
+,
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+7
+where the kernel k is a probability density over R, usually symmetric about 0 and non-increasing
+over [0,∞), and the constant h > 0 is the bandwidth, whose role is to stretch [or compress] the kernel
+horizontally to smooth out [or unsmooth] the estimator ˆfn. The KDE was developed for the setting
+in which X1,...,Xn are given a priori, and it is the most popular estimator for this situation. It
+can be used as well when X1,...,Xn are independent observations produced by simulation from a
+generative model, but then there is an opportunity to do better, as we now explain.
+2.2.
+Conditioning and the stochastic derivative as an unbiased density estimator
+Since the density of X is the derivative of its cdf, f(x) = F ′(x), a natural idea would be to take
+the derivative of an estimator of the cdf as a density estimator. The simplest candidate for a cdf
+estimator is the empirical cdf
+ˆFn(x) = 1
+n
+n
+X
+i=1
+I[Xi ≤x],
+but d ˆFn(x)/dx = 0 almost everywhere, so this one cannot be a useful density estimator. Here,
+ˆFn(x) is an unbiased estimator of F(x) at each x, but its derivative is a biased estimator of F ′(x).
+That is, because of the discontinuity of ˆFn, we cannot exchange the derivative and expectation:
+0 = E
+"
+d ˆFn(x)
+dx
+#
+̸= dE[ ˆFn(x)]
+dx
+= F ′(x).
+A general framework to construct a continuous estimator of F via CMC is the following. Replace
+the indicator I[X ≤x] by its conditional cdf given ﬁltered (reduced) information G: F(x | G)
+def
+=
+P[X ≤x | G], where G is a sigma-ﬁeld that contains not enough information to reveal X but
+enough to compute F(x | G). Here, knowing the realization of G means knowing the realizations
+of all G-measurable random variables. Our CDE to estimate f(x) will be the conditional density
+f(x | G)
+def
+= F ′(x | G) = dF(x | G)/dx, when it exists. We assume that this estimator can be computed
+(or approximated) for (almost) all realizations of G. Under the following assumption, we prove
+that f(x | G) exists almost surely and is an unbiased estimator of f(x) whose variance is bounded
+uniformly in x. Since F(· | G) cannot decrease, f(· | G) is never negative.
+Assumption 1. For all realizations of G, F(x | G) is a continuous function of x over the interval
+[a,b], and is diﬀerentiable except perhaps at a countable set of points D(G) ⊂[a,b]. For all x ∈[a,b],
+F(x | G) is diﬀerentiable at x w.p.1. There is also a random variable Γ deﬁned over the same
+probability space as F(x | G), such that E[Γ2] ≤Kγ for some constant Kγ < ∞, and for which
+supx∈[a,b]\D(G) F ′(x | G) ≤Γ.
+Proposition 1. Under Assumption 1, E[f(x | G)] = f(x) and Var[f(x | G)] ≤Kγ for all x ∈
+[a,b].
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+8
+Proof. We adapt the proof of Theorem 1 of L’Ecuyer (1990). By Theorem 8.5.3 of Dieudonn´e
+(1969), which is a form of mean value inequality theorem for non-diﬀerentiable functions, for every
+x ∈[a,b] and δ > 0, with probability 1, we have
+0 ≤∆(x,δ,G)
+δ
+def
+= F(x + δ | G) −F(x | G)
+δ
+≤
+sup
+y∈[x,x+δ]\D(G)
+F ′(y | G) ≤Γ.
+Then, by the dominated convergence theorem,
+E
+
+lim
+δ→0
+∆(x,δ,G)
+δ
+
+= lim
+δ→0E
+∆(x,δ,G)
+δ
+
+,
+which shows the unbiasedness. Moreover, Var[f(x | G)] = Var[F ′(x | G)] ≤E[Γ2] ≤Kγ.
+□
+Suppose now that G(1),...,G(n) are n independent realizations of G, so F(x | G(1)),...,F(x | G(n))
+are independent realizations of F(x | G), and consider the CDE
+ˆfcde,n(x) = 1
+n
+n
+X
+i=1
+f(x | G(i)).
+(2)
+Under Assumption 1, it follows from Proposition 1 that ISB( ˆfcde,n) = 0 and MISE( ˆfcde,n) =
+IV( ˆfcde,n) ≤(b −a)Kγ/n. An unbiased estimator of this IV is given by
+c
+IV = c
+IV( ˆfcde,n) =
+1
+n −1
+Z b
+a
+n
+X
+i=1
+h
+f(x | G(i)) −ˆfcde,n(x)
+i2
+dx.
+(3)
+In practice, this integral can be approximated by evaluating the integrand at a ﬁnite number of
+points over [a,b] and taking the average, multiplied by (b −a).
+The variance of the CDE estimator at x is Var[f(x | G)], where x is ﬁxed and G is random. This
+diﬀers from the variance associated with the conditional density f(· | G), which is Var[X | G]. It is
+well known that in general, when estimating E[X], a CMC estimator never has a larger variance
+than X itself, and the more information we hide, the smaller the variance. That is, if G ⊂˜G are
+two sigma-ﬁelds such that G contains only a subset of the information of ˜G, then
+Var[E[X | G]] ≤Var[E[X | ˜G]] ≤Var[X].
+(4)
+Noting that F(x | G) = E[I[X ≤x] | G], we also have
+Var[F(x | G)] ≤Var[F(x | ˜G)] ≤Var[I[X ≤x]] = F(x)(1 −F(x)).
+Thus, (4) applies as well to the (conditional) cdf estimator. However, applying it to the CDE is
+less straightforward. It is obviously not true that Var[F ′(x | G)] ≤Var[dI[X ≤x]/dx] because the
+latter is zero almost everywhere. Nevertheless, we can prove the following.
+Lemma 1. If G ⊂˜G both satisfy Assumption 1, then for all x ∈[a,b], we have Var[f(x | G)] ≤
+Var[f(x | ˜G)].
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+9
+Proof. The result does not follow directly from (4) because F ′ is not an expectation; this is
+why our proof does a little detour. For an arbitrary x ∈[a,b] and a small δ > 0, deﬁne the random
+variable I = I(x,δ) = I[x < X ≤x + δ]. We have E[I | G] = F(x + δ | G) −F(x | G), as in the proof of
+Proposition 1, and similarly for ˜G. Using (4) with I in place of X gives
+Var[E[I | G]] ≤Var[E[I | ˜G]].
+(5)
+We have
+f(x | G) = lim
+δ→0
+F(x + δ | G) −F(x | G)
+δ
+= lim
+δ→0E[I(x,δ)/δ | G]
+and similarly for ˜G. Combining this with (5), we obtain
+Var[f(x | G)] = Var[lim
+δ→0E[I(x,δ)/δ | G]] = lim
+δ→0 Var[E[I(x,δ)/δ | G]]
+≤lim
+δ→0Var[E[I(x,δ)/δ | ˜G]] = Var[lim
+δ→0 E[I(x,δ)/δ | ˜G]] = Var[f(x | ˜G)],
+in which the exchange of “Var” with the limit (at two places) can be justiﬁed by a similar argument
+as in Proposition 1. More speciﬁcally, we need to apply the dominated convergence theorem to
+E[I(x,δ)/δ | G], which is just the same as in Proposition 1, and also to its square, which is also
+valid because the square is bounded uniformly by Γ2. This completes the proof.
+□
+This lemma tells us that conditioning on less information (hiding more) always reduces the
+variance of the CDE (or keep it the same). But if we hide more, the CDE may be harder or more
+costly to compute, so a compromise must be made to minimize the work-normalized MISE (which
+is the MISE multiplied by the expected time to compute the estimator), and the best compromise
+is generally problem-dependent. When none of G or ˜G is a subset of the other, the variances of
+the corresponding conditional density estimators may diﬀer signiﬁcantly, and Lemma 1 does not
+apply, so other strategies must be used to select G when there are multiple possibilities.
+In our setting, the most important condition is that G must satisfy Assumption 1. Any such G
+provides an unbiased density estimator with ﬁnite variance. When there are multiple choices, in
+general we want to choose G so that the conditional density tends to be spread out as opposed to
+being concentrated in a narrow peak. We give concrete examples of this in Section 4. This criterion is
+heuristic. If f is very spiky itself, then the CDE must be spiky as well, because Var[X | G] ≤Var[X],
+and yet Var[f(x | G)] can be very small, even zero in degenerate cases. Also, a large Var[X | G] for
+all G is not suﬃcient, because the large variance may come from two or more separate spikes, and
+this is why we write “spread out” instead of “large variance”. Roughly, we want the CDE f(· | G)
+to be spread out relative to f, for all realizations of G.
+A more elaborate selection criterion should take into account the IV of the CDE, its computing
+cost, and also the variation of of the resulting CDE as a function of the underlying uniform random
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+10
+numbers, in case we want to use RQMC to generate those random numbers (see Section 3). For
+real-life models, it is usually much too hard to precompute such measures, so the best practice
+would be to identify a few promising candidates and either: (1) perform pilot runs to compare
+their eﬀectiveness and select one or (2) take a convex combination of the corresponding CDEs,
+as explained in Section 2.4. We believe that ﬁnding a good G will always remain largely problem-
+dependent and it sometimes requires creativity. No simple selection method works universally. On
+the other hand, to make good selections, it is useful to understand certain basic principles. We
+illustrate this with a variety of examples in the next subsection and in Section 4.
+2.3.
+Small examples to provide insight
+To illustrate some key ideas, this subsection provides simple examples formulated in the special
+setting in which X = h(Y1,...,Yd) where Y1,...,Yd are independent continuous random variables,
+each Yj has cdf Fj and density fj, and we condition on G = G−k deﬁned as the information
+that remains after erasing the value taken by the single input variable Yk. We can write G−k =
+(Y1,...,Yk−1,Yk+1,...,Yd). The CDE f(x | G−k) will be related to the density fk and will depend
+on the form of h. Checking for the continuity of the conditional cdf is usually easy in this case.
+Note that this setting is only a particular case of our framework. In many applications, X is not
+deﬁned like this in a way that G−k would satisfy Assumption 1 for some k. In Section 4, we examine
+examples that do not ﬁt this setting and we provide more elaborate forms of conditioning.
+Our ﬁrst example is a sum of random variables, similar to Asmussen (2018). It conveys the CDE
+idea in a simple setting. It also shows that selecting which variable to hide is not straightforward
+even in this very simple setting, and that the optimal choice may depend on the value of x at which
+we estimate the density. The second example shows how the choice of G can make a signiﬁcant
+diﬀerence in performance, and that it is usually better to hide variables having a larger variance
+contribution. The third example illustrates what we have to do to verify Assumption 1 for a given
+application. The fourth example shows that we cannot always obtain an unbiased CDE by hiding
+a single variable. The ﬁfth example shows that it is not always easy to know what is the optimal
+information to hide. On the other hand, the CDE can still work well even if we do not use the
+optimal G.
+Example 1. A very simple situation is when X = h(Y1,...,Yd) = Y1 + ··· + Yd, a sum of d
+independent continuous random variables. By hiding Yk for an arbitrary k, we get
+F(x | G−k) = P[X ≤x | S−k] = P[Yk ≤x −S−k] = Fk(x −S−k),
+where S−k
+def
+= Pd
+j=1, j̸=k Yj, and the density estimator becomes f(x | G−k) = fk(x −S−k). This form
+also works when the Yj’s are not independent if we are able to compute the density of Yk conditional
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+11
+on G−k. It then suﬃces to replace fk by this conditional density. Asmussen (2018) studied exactly
+this model, with independent variables and k = d.
+When the Yj’s have diﬀerent distributions and we want to hide one, which one should we hide?
+Intuition may suggest to hide the one having the largest variance. This simple rule works well in
+a majority of cases, although it is not always optimal. In particular, the optimal choice of variable
+Yk may depend on the value of x at which we estimate the density. To illustrate this, let d = 2,
+X = Y1 + Y2, f1(y) = 2y, and f2(y) = 2(1 −y), for y ∈(0,1). Then, f(x) > 0 for 0 < x < 2. If
+we hide Y2, the density estimator at x is f2(x −Y1) and its second moment is E[f 2
+2 (x −Y1)] =
+R 1
+0 f 2
+2 (x−y1)f1(y1)dy1 whereas if we hide Y1, the density estimator at x is f1(x−Y2) and its second
+moment is E[f 2
+1 (x −Y2)] =
+R 1
+0 f 2
+1 (x −y2)f2(y2)dy2. One can easily verify that when x is close to 0,
+these integrands are nonzero only when both y1 and y2 are also close to 0, and then the second
+integral is smallest, so it is better to hide Y1. When x is close to 2, the opposite is true and it is
+better to hide Y2. In applications, changing the conditioning as a function of x adds complications
+and is normally not necessary. Using the same conditioning for all x, even when not optimal, is
+usually preferable because of its simplicity.
+Example 2. The following small example provides further insight into the choice of G. Suppose
+X is the sum of two independent uniform random variables: X = Y1 + Y2 where Y1 ∼U(0,1) and
+Y2 ∼U(0,ǫ) where 0 < ǫ < 1. The exact density of X here is f(x) = x/ǫ for 0 ≤x ≤ǫ, f(x) = 1 for
+ǫ ≤x ≤1, and f(x) = (1 + ǫ −x)/ǫ for 1 ≤x ≤1 + ǫ. Figure 1 illustrates this density.
+0
+0.5
+1
+1.5
+0
+0.5
+1
+x
+f(x)
+0
+0.2 0.4 0.6 0.8
+1
+0
+0.5
+1
+x
+Figure 1
+Exact density of X for the model in Example 2 with ǫ = 3/4 (left) and ǫ = 1/16 (right).
+With G = G−1, we have F(x | G−1) = P[X ≤x | Y2] = P[Y1 ≤x −Y2 | Y2] = x −Y2 and the density
+estimator is f(x | G−1) = 1 for Y2 ≤x ≤1+Y2, and 0 elsewhere. If G = G−2 instead, then F(x | G−2) =
+P[Y2 ≤x −Y1 | Y1] = (x −Y1)/ǫ and the density estimator is f(x | G−2) = 1/ǫ for Y1 ≤x ≤ǫ + Y1,
+and 0 elsewhere. In both cases, Assumption 1 holds and the density estimator with one sample is a
+uniform density, but the second one is over a narrow interval if ǫ is small. When ǫ is small, G = G−2
+gives a density estimator ˆfcde,n which is a sum of high narrow peaks and has much larger variance.
+For this simple example, we can also derive exact formulas for the IV of the CDE under MC. For
+G = G−1, f(x | G−1) = I[Y2 ≤x ≤1 + Y2] is a Bernoulli random variable with mean P[x −1 ≤Y2 ≤
+x] = f(x), so its variance is f(x)(1 −f(x)). Integrating this over [0, 1 + ǫ] gives IV = ǫ/3 for one
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+12
+sample. For a sample of size n, this gives IV = ǫ/(3n). For G = G−2, f(x | G−2) = I[Y1 ≤x ≤ǫ+Y1]/ǫ
+has also mean f(x), but its variance is ǫ−1f(x)(1−ǫf(x)), which is much larger than f(x)(1−f(x))
+when ǫ is small. Integrating over [0, 1+ǫ] gives IV = 1/ǫ−1+ǫ/3 for one sample, which is also much
+larger than ǫ/3 when ǫ is small. The take-away: It is usually better to condition on lower-variance
+information and hide variables having a large variance contribution.
+Example 3. In this example, we illustrate how Assumption 1 can be veriﬁed. Let X be the sum
+of two independent normal random variables, X = Y1 + Y2, where Y1 ∼N(0,σ2
+1), Y2 ∼N(0,σ2
+2),
+and σ2
+1 + σ2
+2 = 1, so X ∼N(0,1). Let Φ and φ denote the cdf and density of the standard normal
+distribution. With G = G−2, we have F(x | G−2) = P[Y2 ≤x −Y1] = Φ((x −Y1)/σ2) and the CDE
+is f(x | G−2) = φ((x −Y1)/σ2)/σ2. Assumption 1 holds with Γ = φ(0)/σ2 and Kγ = Γ2, so this
+estimator is unbiased for f(x) = φ(x). Its variance is
+Var[φ((x −Y1)/σ2)/σ2] = E[exp[−(x −Y1)2/σ2
+2]/(2πσ2
+2)] −φ2(x)
+=
+1
+σ2
+2
+√
+2πE[φ(
+√
+2(x −Y1)/σ2)] −φ2(x)
+=
+1
+σ2
+p
+2π(1 + σ2
+1)
+φ
+√
+2x/
+p
+1 + σ2
+1
+
+−φ2(x).
+(6)
+Example 4. If X is the min or max of two or more continuous random variables, then in general
+F(· | G−k) is not continuous, so if we hide only one variable, Assumption 1 does not hold. Indeed,
+if X = max(Y1,Y2) where Y1 and Y2 are independent, with G = G−2 (we hide Y2), we have
+P[X ≤x | Y1 = y] =
+(
+P[Y2 ≤x | Y1 = y] = F2(x)
+if x ≥y;
+0
+if x < y.
+If F2(y) > 0, this function is discontinuous at x = y. The same holds for the maximum of more than
+two variables. One way to handle this is to generate all the variables, then hide the maximum and
+compute its conditional density given the other ones. Without loss of generality, suppose Y1 is the
+maximum and Y2 = y2 the second largest. Then the CDE of the max is f(x | G) = f1(x | Y1 > y2).
+Note that for independent random variables whose cdf’s and densities have an analytical form, the
+cdf and density of the max can often be computed analytically. See Section 4.3 for more on this.
+A very similar story holds if we replace the max by the min.
+Example 5. Suppose X = Z · C where Z ∼N(0,1) and C is continuous with support over
+(0,∞). We can hide Z and generate X ∼N(0,C2) conditional on C, or do the opposite. Which
+one is best depends on the distribution of C. Here we have Var[X] = E[Var[X | C]] = E[C2] while
+Var[E[X | C]] = 0. So the usual variance decomposition tells us nothing about what to hide. This
+illustrates the fact that there is rarely a simple rule to ﬁnd the optimal G.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+13
+2.4.
+Convex combination of conditional density estimators
+When there are many possible choices of G for a given problem, one can select more than one and
+take a convex linear combination of the corresponding CDEs as the ﬁnal density estimator. This
+idea is well known for general mean estimators (Bratley et al. 1987). More speciﬁcally, suppose
+ˆf0,n,..., ˆfq,n are q + 1 distinct unbiased density estimators. Typically, these estimators are depen-
+dent and based on the same simulations. They could be all CDEs based on diﬀerent choices of
+G (so they will not hide the same information), but there could be non-CDEs as well. A convex
+combination can take the form
+ˆfn(x) = β0 ˆf0,n(x) + ··· + βq ˆfq,n(x) = ˆf0,n(x) −
+q
+X
+ℓ=1
+βℓ( ˆf0,n(x) −ˆfℓ,n(x))
+(7)
+for all x ∈R, where β0 + ··· + βq = 1. This is equivalent to choosing ˆf0,n(x) as the main estimator,
+and taking the q diﬀerences ˆf0,n(x) −ˆfℓ,n(x) as control variables (Bratley et al. 1987), Problem
+2.3.9. With this interpretation, the optimal coeﬃcients βℓcan be estimated via standard control
+variate theory (Asmussen and Glynn 2007) by trying to minimize the IV of ˆfn(x) w.r.t. the βℓ’s.
+More precisely, if we denote IVℓ= IV( ˆfℓ,n(x)) and ICℓ,k = R b
+a Cov[ ˆfℓ,n(x), ˆfk,n(x)]dx, we obtain
+IV = IV
+
+ˆfn(x)
+
+=
+q
+X
+ℓ=0
+β2
+ℓIVℓ+ 2
+X
+0≤ℓ<k≤q
+βℓβkICℓ,k.
+Given the IVℓ’s and ICℓ,k’s (or good estimates of them), this IV is a quadratic function of the βℓ’s,
+which can be minimized exactly as in standard least-squares linear regression. That is, the optimal
+coeﬃcients βj obey the standard linear regression formula. Estimating the density and coeﬃcients
+from the same data yields biased but consistent density estimators, and the bias is rarely a problem.
+We followed this approach for some of the examples in Section 4. Cui et al. (2020) obtained an
+equivalent formula from a slightly diﬀerent but equivalent reasoning.
+Given that the best choice of G generally depends on x, one may also adopt a more reﬁned
+approach which allows the coeﬃcients βj to depend on x:
+ˆfn(x) = β0(x) ˆf0,n(x) + ··· + βq(x) ˆfq,n(x) = ˆf0,n(x) −
+q
+X
+ℓ=1
+βℓ(x)( ˆf0,n(x) −ˆfℓ,n(x)),
+(8)
+where β0(x) + ··· + βq(x) = 1 for all x ∈R. The optimal coeﬃcients can be estimated by standard
+control variate theory at selected values of x, then for each ℓ≥1, one can ﬁt a smoothing spline
+to these estimated values, by least squares. This provides estimated optimal coeﬃcients that are
+smooth functions of x, which can be used to obtain a ﬁnal CDE. This type of strategy was used in
+L’Ecuyer and Buist (2008) to estimate varying control variate coeﬃcients. The additional ﬂexibility
+can improve the variance reduction in some situations.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+14
+2.5.
+A GLR density estimator (GLRDE)
+The generalized likelihood ratio (GLR) method, originally developed by Peng et al. (2018) to
+estimate the derivative of an expectation with respect to some model parameter, can be adapted
+to density estimation, as shown in Peng et al. (2020). We summarize brieﬂy here how this method
+estimates the density f(x) in our general setting, so we can apply it in our examples and make
+numerical comparisons. The assumptions stated below diﬀer slightly from those in Peng et al.
+(2020). In particular, here we do not have a parameter θ, the conditions on the estimator are
+required only in the area where X ≤x, and we add a condition to ensure ﬁnite variance. As
+in Section 2.3, we assume here that X = h(Y) = h(Y1,...,Yd) where Y1,...,Yd are independent
+continuous random variables, and Yj has cdf Fj and density fj. Let P(x) = {y ∈Rd : h(y) ≤x}.
+For j = 1,...,d, let hj(y) := ∂h(y)/∂yj, hjj(y) := ∂2h(y)/∂y2
+j, and
+Ψj(y) = ∂log fj(yj)/∂yj −hjj(y)/hj(y)
+hj(y)
+.
+(9)
+Assumption 2. The Lebesgue measure of h−1((x −ǫ,x + ǫ)) in Rd goes to 0 when ǫ →0 (this
+means essentially that the density is bounded around x).
+Assumption 3. The set P(x) is measurable, the functions hj, hjj, and Ψj are well deﬁned over
+it, and E[I[X ≤x] · Ψ2
+j(Y)] < ∞.
+Proposition 2. Under Assumptions 2 and 3, the GLRDE I[X ≤x] · Ψj(Y) is an unbiased and
+ﬁnite-variance estimator of the density f(x) at x.
+For the proof of Proposition 2 and additional details, see Peng et al. (2020).
+3.
+Combining RQMC with the CMC density estimator
+We now discuss how RQMC can be used with the CDE, and under what conditions it can provide
+a convergence rate faster than O(n−1) for the IV of the resulting unbiased estimator. For this,
+we ﬁrst recall some basic facts about QMC and RQMC. More detailed coverages can be found in
+Niederreiter (1992), Dick and Pillichshammer (2010), and L’Ecuyer (2009, 2018), for example.
+For a function g : [0,1)s →R, the integration error by the average over a point set Pn =
+{u1,...,un} ⊂[0,1]s is deﬁned by
+En = 1
+n
+n
+X
+i=1
+g(ui) −
+Z
+[0,1]s g(u)du.
+(10)
+Classical QMC theory bounds this error as follows. Let v ⊆S := {1,...,s} denote an arbitrary
+subset of coordinates. For any point u = (u1,...,us) ∈[0,1]s, uv denotes the projection of u on
+the coordinates in v and (uv,1) is the point u in which uj is replaced by 1 for each j ̸∈v. Let
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+15
+gv := ∂|v|g/∂uv denote the partial derivative of g with respect to all the coordinates in v. When gv
+exists and is continuous for v = S (i.e., for all v ⊆S), the Hardy-Krause (HK) variation of g can
+be written as
+VHK(g) =
+X
+∅̸=v⊆S
+Z
+[0,1]|v| |gv(uv,1)|duv.
+(11)
+On the other hand, the star-discrepancy of Pn is
+D∗(Pn) = sup
+u∈[0,1]s
+
+|Pn ∩[0,u)|
+n
+−vol[0,u)
+
+where vol[0,u) is the volume of the box [0,u). The classical Koksma-Hlawka (KH) inequality
+bounds the absolute error by the product of these two quantities, one that involves only the function
+g and the other that involves only the point set Pn:
+|En| ≤VHK(g) · D∗(Pn).
+(12)
+There are explicit construction methods (e.g., digital nets, lattice rules, and polynomial lattice
+rules) of deterministic point sets Pn for which D∗(Pn) = O((logn)s−1/n) = O(n−1+ǫ) for all ǫ > 0.
+This means that functions g for which VHK(g) < ∞can be integrated by QMC with a worst-case
+error that satisﬁes |En| = O(n−1+ǫ). There are also known methods to randomize these point sets
+Pn in a way that each randomized point ui has the uniform distribution over [0,1)s, so E[En] = 0,
+and the O(n−1+ǫ) discrepancy bound is preserved, which gives
+Var[En] = E[E2
+n] = O(n−2+ǫ).
+(13)
+The classical deﬁnitions of variation and discrepancy given above are only one pair among an
+inﬁnite collection of possibilities. There are other versions of (12), with diﬀerent deﬁnitions of the
+discrepancy and the variation, such that there are known point set constructions for which the
+discrepancy converges as O(n−α+ǫ) for α > 1, but the conditions on g to have ﬁnite variation are
+more restrictive (more smoothness is required) (Dick and Pillichshammer 2010).
+From a practical viewpoint, getting a good estimate or an upper bound on the variation of g that
+can be useful to bound the RQMC variance is a notoriously diﬃcult problem. Even just showing
+that the variation is ﬁnite is not always easy. However, ﬁnite variation is not a necessary condition.
+In many realistic applications in which variation is known to be inﬁnite, RQMC can nevertheless
+reduce the variance by a large factor (L’Ecuyer 2009, L’Ecuyer and Munger 2012, He and Wang
+2015). The appropriate explanation for this depends on the application. In many cases, part of
+the explanation is that the integrand g can be written as a sum of orthogonal functions (as in an
+ANOVA decomposition) and a set of terms in that sum have a large variance contribution and
+are smooth low-dimensional functions for which RQMC is very eﬀective (L’Ecuyer and Lemieux
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+16
+2000, L’Ecuyer 2009, Lemieux 2009). Making such a decomposition and ﬁnding the important
+terms is diﬃcult for realistic problems, but to apply RQMC in practice, this is not needed. The
+usual approach in applications is to try it and compare the RQMC variance with the MC variance
+empirically. We will do that in Section 4.
+To combine the CDE with RQMC, we must be able to write F(x | G) = ˜g(x,u) and f(x | G) =
+˜g′(x,u) = d˜g(x,u)/dx for some function ˜g : [a,b] × [0,1)s. The function ˜g′(x,·) will act as g in (10).
+The combined CDE+RQMC estimator ˆfcde-rqmc,n(x) will be deﬁned by
+ˆfcde-rqmc,n(x) = 1
+n
+n
+X
+i=1
+˜g′(x,Ui),
+(14)
+which is the RQMC version of (2). To estimate the RQMC variance, we can perform nr independent
+randomizations to obtain nr independent realizations of ˆfcde-rqmc,n in (14) with RQMC, and compute
+the empirical IV. By putting together the previous results, we obtain:
+Proposition 3. If supx∈[a,b] VHK(˜g′(x,·)) < ∞, then with RQMC points sets Pn with D∗(Pn) =
+O((logn)s−1/n), for any ǫ > 0, we have supx∈[a,b] Var[ ˆfcde-rqmc,n(x)] = O(n−2+ǫ), so the MISE of the
+CDE+RQMC estimator converges as O(n−2+ǫ).
+Although this is rarely done in practice, it is instructive to see how the HK variation of ˜g′(x,·) can
+be bounded in our CDE setting, so that Proposition 3 applies. For this, we need to show that the
+integral of the partial derivative of ˜g′(x,u) with respect to each subset of coordinates of u is ﬁnite.
+In Section A of the Supplement, we do it for Examples 1 to 3. When the variation is unbounded,
+RQMC may still reduce the IV, but there is no guarantee. The GLRDE in Proposition 2 is typically
+discontinuous because of the indicator function, and therefore its HK variation is usually inﬁnite.
+4.
+Examples and numerical experiments
+We now examine larger instructive examples for which we show how to construct a CDE, summarize
+the results of numerical experiments with the CDE and CDE+RQMC, and make comparisons with
+the GLRDE and KDE, with MC and RQMC. Section 4.1 gives the experimental framework used
+for all the numerical experiments. In Section 4.2, we use a three-dimensional real-life example to
+provide further insight on the choice of conditioning and make comparisons between methods. In
+Section 4.3, we estimate the density of the length X of the longest path between the source and
+destination in a stochastic network. This length may represent the total time to execute a project,
+the arrival time of a train at a given station, etc. The length of the shortest path can be handled
+in a similar way. In Section 4.4, X is the waiting time of a customer in a queuing system. We
+consider a single queue in the example, but a similar conditioning would apply for larger queueing
+systems as well. In Section 4.6, X is the payoﬀof a ﬁnancial option. We show that by using a
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+17
+clever conditioning with CDE+RQMC, the MISE can be reduced by huge factors. More examples
+are given in the Online Supplement. In all these examples, estimating the density of X has high
+practical relevance. Larger problem instances can also be handled with the same methods.
+4.1.
+Experimental setting
+Since the CDE is unbiased, we measure its performance by the IV, which equals the MISE in this
+case. To approximate the IV estimator (3) for a given n, we ﬁrst take a stratiﬁed sample e1,...,ene
+of ne evaluation points at which the empirical variance will be computed. We sample ej uniformly
+in [a + (j −1)(b −a)/ne, a + j(b −a)/ne) for j = 1,...,ne. Then we use the unbiased IV estimator
+c
+IV = (b −a)
+ne
+ne
+X
+j=1
+d
+Var[ ˆfn(ej)],
+where d
+Var[ ˆfn(ej)] is the empirical variance of the CDE at ej, obtained as follows. We repeat the
+following nr times, independently: Generate n observations of X from the density f with the given
+method (MC or RQMC), and compute the CDE at each evaluation point ej. We then compute
+d
+Var[ ˆfn(ej)] as the empirical variance of the nr density estimates at ej, for each j. In all our examples,
+we used nr = 100 and ne = 128.
+To estimate the convergence rate of the IV as a function of n with the diﬀerent methods, we ﬁt a
+model of the form IV ≈Kn−ν. For the CDE with independent points (no RQMC), this model holds
+exactly with ν = 1. We hope to observe ν > 1 with RQMC. The parameters K and ν are estimated
+by linear regression in log-log scale, i.e., by ﬁtting the model log IV ≈logK −ν log n to data. Since
+n is always taken as a power of 2, we report the logarithms in base 2. We estimated the IV for
+n = 214,...,219 (6 values) to ﬁt the regression model. We also report the observed −log2 IV for
+n = 219 and use e19 as a shorthand for this value in the tables. We use exactly the same procedure
+for the GLRDE. For the KDE, these values are for the MISE instead of the IV. In all cases, we
+used a normal kernel and a bandwidth h selected by the methodology described in Ben Abdellah
+et al. (2021). For some examples, we tried CDEs based on diﬀerent choices of G and a convex
+combination as in Section 2.4.
+We report results with the following types of point sets:
+(1) independent points (MC);
+(2) a randomly-shifted lattice rule (Lat+s);
+(3) a randomly-shifted lattice rule with a baker’s transformation (Lat+s+b);
+(4) Sobol’ points with a left random matrix scramble and random digital shift (Sob+LMS).
+The short names in parentheses are used in the plots and tables. For the deﬁnitions and properties
+of these RQMC point sets, see L’Ecuyer and Lemieux (2000), Owen (2003), L’Ecuyer (2009, 2018).
+They are implemented in SSJ (L’Ecuyer 2016), which we used for our experiments. The parameters
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+18
+of the lattice rules were found with the Lattice Builder software of L’Ecuyer and Munger (2016),
+using a fast-CBC construction method with the P2 criterion and order dependent weights γv = ρ|v|,
+with ρ ranging from 0.05 to 0.8, depending on the example (a larger ρ was used when the dimension
+s was smaller). The baker’s transformation sometimes improves the convergence rate by making
+the integrand periodic (Hickernell 2002), but it can also increase the variation of the integrand, so
+its impact on the variance can go either way.
+4.2.
+Displacement of a cantilever beam
+We consider the following (real-life) model for the displacement X of a cantilever beam with
+horizontal and vertical loads, taken from Bingham (2017):
+X = h(Y1,Y2,Y3) = 4ℓ3
+Y1wt
+r
+Y 2
+2
+w4 + Y 2
+3
+t4
+(15)
+in which ℓ= 100, w = 4 and t = 2 are constants (in inches), while Y1 (Young’s modulus), Y2
+(the horizontal load), and Y3 (the vertical load), are independent normal random variables, Yj ∼
+N(µj,σ2
+j), i.e., normal with mean µj and variance σ2
+j. The parameter values are µ1 = 2.9 × 107,
+σ1 = 1.45 × 106, µ2 = 500, σ2 = 100, µ3 = 1000, σ3 = 100. We will denote κ = 4ℓ3/(wt) = 5 × 105.
+The goal is to estimate the density of X over the interval [3.1707, 5.6675], which covers about 99%
+of the density (it clips 0.5% on each side). It is possible to have X < 0 in this model, but the
+probability is P[Y1 < 0] = Φ(−20) = 2.8 × 10−89, which is negligible, so we can assume that Y1 > 0.
+This example ﬁts the framework of Section 2.3, with d = 3. We can hide any of the three random
+variables for the conditioning, and we will examine each case.
+Conditioning on G−1 means hiding Y1. We have
+X = κ
+Y1
+r
+Y 2
+2
+w4 + Y 2
+3
+t4 ≤x
+if and only if
+Y1 ≥κ
+x
+r
+Y 2
+2
+w4 + Y 2
+3
+t4
+def
+= W1(x).
+Note that W1(x) > 0 if and only if x > 0. For x > 0,
+F(x | G−1) = P[Y1 ≥W1(x) | W1(x)] = 1 −Φ((W1(x) −µ1)/σ1)
+which is continuous and diﬀerentiable in x, and
+f(x | G−1) = −φ((W1(x) −µ1)/σ1)W ′
+1(x)/σ1 = φ((W1(x) −µ1)/σ1)W1(x)/(xσ1).
+If we condition on G−2 instead, i.e., we hide Y2, we have X ≤x if and only if
+Y 2
+2 ≤w4  (xY1/κ)2 −Y 2
+3 /t4 def
+= W2(x).
+If W2(x) ≤0, then f(x | G−2) = F(x | G−2) = P[X ≤x | W2(x)] = 0. For W2(x) > 0, we have
+F(x | G−2) = P[X ≤x | W2(x)] = P
+h
+−
+p
+W2(x) ≤Y2 ≤
+p
+W2(x) | W2(x)
+i
+= Φ((
+p
+W2(x) −µ2)/σ2) −Φ(−(
+p
+W2(x) + µ2)/σ2),
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+19
+which is again continuous and diﬀerentiable in x, and
+f(x | G−2) = φ((
+p
+W2(x) −µ2)/σ2) + φ(−(
+p
+W2(x) + µ2)/σ2)
+(σ2
+p
+W2(x))/(w4x(Y1/κ)2)
+> 0.
+If we condition on G−3, the analysis is the same as for G−2, by symmetry, and we get
+f(x | G−3) = φ((
+p
+W3(x) −µ3)/σ3) + φ(−(
+p
+W3(x) + µ3)/σ3)
+(σ3
+p
+W3(x))/(t4x(Y1/κ)2)
+> 0
+for W3(x) > 0, where W3(x) is deﬁned in a similar way as W2(x).
+For the GLRDE, we write h(Y) = (κ/Y1)S1/2 where S = Y 2
+2 /w4 + Y 2
+3 /t4, and denote
+Zj = (Yj −µj)/σ2
+j = −∂logfj(Yj)/∂Yj for j = 1,2,3. With this notation, we obtain h1(Y) =
+−h(Y)/Y1,
+h11(Y) = 2h(Y)/Y 2
+1 , h2(Y) = (κ/Y1)(Y2/w4)S−1/2 = h(Y)Y2/(Sw4), h22(Y) =
+(κ/(Y1w4))(S−1/2 −S−3/2Y 2
+2 /w4),
+h3(Y) = (κ/Y1)(Y3/t4)S−1/2 = h(Y)Y3/(St4),
+h33(Y) =
+(κ/(Y1t4))(S−1/2 −S−3/2Y 2
+3 /t4). With a little calculation, this gives
+Ψ1(Y) = Y1Z1 −2
+h(Y)
+,
+Ψ2(Y) = −Y2Z2S + Y 2
+3 /t4
+h(Y)Y 2
+2 /w4 ,
+Ψ3(Y) = −Y3Z3S + Y 2
+2 /w4
+h(Y)Y 2
+3 /t4
+.
+In addition to testing the individual estimators derived above, we also tested convex combinations
+of the three CDEs and of the three GLRDEs, as explained in Section 2.4, with coeﬃcients βℓthat
+do not depend on x.
+Table 1
+Values of ˆν and e19 with a CDE for each choice of G−k and for the best convex combination (CDE-c),
+for the GLRDE with each Ψj and for the best convex combination (GLRDE-c), and for the KDE, for the
+cantilever beam model.
+G−1
+G−2
+G−3
+CDE-c
+Ψ1
+Ψ2
+Ψ3
+GLRDE-c KDE
+e19
+MC
+19.3 14.5 22.8
+22.5
+14.1
+4.5
+15.8
+16.3
+15.8
+Lat+s
+39.8 25.2 41.6
+41.9
+23.4
+-2.5
+26.4
+26.5
+21.9
+Lat+s+b
+44.5 23.7 46.8
+47.0
+23.3
+5.7
+24.7
+25.1
+21.0
+Sob+LMS 44.0 23.6 45.7
+46.1
+23.4
+2.8
+25.5
+25.9
+21.5
+ˆν
+MC
+0.97 0.98 0.99
+0.98
+1.02 0.55 0.94
+0.95
+0.76
+Lat+s
+1.99 1.95 2.06
+2.04
+1.38
+—
+1.51
+1.52
+1.03
+Lat+s+b
+2.24 2.08 2.27
+2.25
+1.37
+—
+1.24
+1.25
+0.93
+Sob+LMS 2.21 2.03 2.21
+2.21
+1.32
+—
+1.31
+1.32
+0.97
+Table 1 summarizes the results. The MISE is about 2−47 for the best CDE+RQMC compared
+with 2−15.8 for the usual KDE+MC, a gain by a factor of over 231 ≈2 billions. This is probably
+much better accuracy than required in practice for this particular application. With RQMC, the
+convergence rate ˆν is around 2 in all cases with the CDE methods, and much less for GLRDE and
+KDE. The GLRDE using Ψ2 behaves very badly (the estimates ˆν with RQMC are meaningless),
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+20
+but with Ψ1 and Ψ3 (the best choice), it performs better that the KDE. Note that the denominator
+of Ψ2 takes much smaller values on average than that of Ψ3, and this can explain its larger variance.
+For the CDE with lattice rules, the baker’s transformation helps signiﬁcantly for the CDE.
+Conditioning on G−2 does not give as much reduction as for the other choices. To provide visual
+insight, Figure 2 shows plots of ﬁve realizations of the conditional density for G−1, G−2, and G−3.
+The realizations of f(· | G−2) have high narrow peaks, which explains the larger variance. The
+average of the ﬁve realizations is shown in orange (dotted in the b/w version) and the true density
+in black. In Figure 3, we zoom in on part of the estimated densities to show the diﬀerence between
+MC and RQMC. In each panel one can see the CDE using MC (in orange), RQMC (in green),
+and the “true density” (black, dashed) estimated with RQMC using a large number of samples.
+We have G−1 with n = 210 on the left and G−2 with n = 216 on the right. In both cases, the RQMC
+estimate is closer to the true density, and on the left it oscillates less. If we repeat this experiment
+several times, the orange curve would vary much more than the green one across the realizations.
+4
+5
+0
+1
+2
+x
+4
+5
+0
+10
+20
+30
+x
+4
+5
+0
+0.5
+1
+x
+Figure 2
+Five realizations of the density conditional on G−k (blue), their average (orange, dotted in the b/w
+version), and the true density (thick black) for k = 1 (left), k = 2 (middle), and k = 3 (right), for the
+cantilever example.
+4
+4.2
+4.4
+4.6
+4.8
+0.4
+0.6
+0.8
+x
+4.5
+4.55
+4.6
+4.65
+4.7
+0.6
+0.65
+0.7
+0.75
+x
+Figure 3
+The CDE under MC (red), under RQMC (green, very close to the dashed line) and the true density
+(black, dashed) for G−1 with n = 210 (left) and for G−2 with n = 216 (right), for the cantilever example.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+21
+4.3.
+A stochastic activity network
+In this example, the conditioning for the CDE must hide more than one random variable. We
+consider an acyclic directed graph G = (N,A) where N is a ﬁnite set of nodes and A = {aj =
+(αj,βj), j = 1,...,d} a ﬁnite set of arcs (directed links) where aj goes from αj to βj. There is
+a source node having only outcoming arcs, a sink node having only incoming arcs, and each arc
+belongs to at least one path going from the source to the sink. There can be at most one arc
+for each pair (αj,βj) (no parallel arcs). Each arc j has random length Yj. These Yj are assumed
+independent with continuous cdf’s Fj, density fj, and can be generated by inversion: Yj = F −1
+j
+(Uj)
+where Uj ∼U(0,1). The length of the longest path from the source to the sink is a random variable
+X and the goal is to estimate the density of X.
+This general model has several applications. The arcs aj may represent activities having random
+durations and the graph represents precedence relationships between all activities of a project.
+Activity aj cannot start before all activities j′ with βj′ = αj are completed. Then X represents the
+duration of the project if all activities are started as soon as allowed. This type of stochastic activity
+network (SAN) is widely used in project management for all types of projects (e.g., construction,
+software, etc.), communication, transportation, etc. For example, the graph may represent a large
+railway network in which each activity corresponds to a train stopping at a station, or a train
+covering a given segment of its route, or a minimal spacing between trains, etc. Precedence rela-
+tionships are needed because railways are shared, there are ordering and distancing rules between
+trains, passengers have connections between trains, trains are merged or split at certain points,
+etc. The travel time of one passenger in this network turns out to be the length X of the longest
+path in a subnetwork whose source and sink are the origin and destination of this passenger.
+For our numerical experiments, we use a small example from Avramidis and Wilson (1996,
+1998), who showed how to use CMC to estimate E[X] and some quantiles of the distribution of
+X. L’Ecuyer and Lemieux (2000) and L’Ecuyer and Munger (2012) used this same example to test
+the combination of CMC with RQMC to estimate E[X]. The network is depicted in Fig. 4 and the
+cdf’s Fj are given in Avramidis and Wilson (1996). Much larger networks can be handled in the
+same way. We will estimate the density of X over [a,b] = [22, 106.24], which covers about 95% of
+the density.
+Here, X is deﬁned as the maximum length over several paths, and if we hide only a single random
+variable Yj to implement the CDE, we run into the same problem as in Example 4: Assumption 1
+does not hold, because F(· | G) has a jump. This means that we must hide more information
+(condition on less). Following Avramidis and Wilson (1996, 1998), we select a uniformly directed
+cut L, which is a set of activities such that each path from the source to the sink contains exactly
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+22
+0
+source
+1
+Y1
+2
+Y2
+Y3
+3
+Y4
+4
+Y8
+5
+Y10
+Y5
+Y6
+6
+Y7
+7
+Y12
+Y9
+8
+sink
+Y13
+Y11
+Figure 4
+A stochastic activity network, with the cut L = {5,6,7,9,10} shown in dashed light blue
+one activity from L, and let G represent {Yj, j ̸∈L}. In Figure 4, {1,2}, {11,13}, {5,6,7,9,10},
+and {2,3,5,8,9,13}, are all valid choices of L. The corresponding conditional cdf is
+F(x | G) = P[X ≤x | {Yj : j ̸∈L}] =
+Y
+j∈L
+P[Yj ≤x −Pj] =
+Y
+j∈L
+Fj(x −Pj)
+(16)
+where Pj is the length of the longest path that goes through arc j when we exclude Yj from that
+length. The conditional density is
+f(x | G) = d
+dxF(x | G) =
+X
+j∈L
+fj(x −Pj)
+Y
+l∈L, l̸=j
+Fl(x −Pj).
+Under this conditioning, if the Yj’s are continuous variables with bounded variance, Assumption 1
+holds, so f(x | G) is an unbiased density estimator with uniformly bounded variance.
+For our numerical experiments, we use the same cut L = {5,6,7,9,10} as Avramidis and Wilson
+(1996), indicated in light blue in Figure 4, even though there are other cuts with six links, which
+could possibly perform better because they hide more links. We could also compute the CDE with
+several choices of L and then take a convex combination. This approach scales nicely and works
+in exactly the same way for very large networks, with thousands of links. A simple adaptation
+also works for a stochastic max-ﬂow problem, in which we want the density of the capacity of the
+minimal cut having the smallest capacity (L’Ecuyer et al. 2020).
+The GLRDE method described in Section 2.5 does not work for this example. Indeed, with
+X = h(Y) deﬁned as the length of the longest path, for any j, the derivative hj(Y) is zero whenever
+arc j is not on the longest path, so we would need to select an arc j that is guaranteed to be on
+the longest path. But there is no such arc in general. We could perhaps apply a modiﬁed GLRDE
+that selects a cut instead of a single coordinate Yj, but this is beyond the scope of this paper.
+Table 2 and Figure 5 summarize our results. We see that for n = 219, the CDE outperforms the
+KDE by a factor of about 20 with MC, and by a factor of about 28 ≈250 with RQMC.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+23
+Table 2
+Values of ˆν and e19 for the SAN example.
+ˆν
+e19
+CDE
+MC
+0.96 25.6
+Lat+s
+1.31 30.9
+Lat+s+b
+1.17 29.6
+Sob+LMS
+1.27 29.9
+KDE
+MC
+0.78 20.9
+Lat+s
+0.95 22.7
+Lat+s+b
+0.93 22.0
+Sob+LMS
+0.74 21.9
+14
+16
+18
+−30
+−25
+−20
+log2 n
+log2 MISE
+MC
+Lat+s
+Lat+s+b
+Sob+LMS
+Figure 5
+MISE vs n in log-log scale, for the SAN example.
+4.4.
+Density of waiting times in a single queue
+We adapted this example from Peng et al. (2020), mainly to compare our approach with the
+GLRDE proposed in their paper. What we use here is not ordinary CMC, but extended CMC, in
+which we condition on diﬀerent information for each customer. This type of strategy would work
+for much larger queueing systems and many other types of systems that involve random delays. To
+estimate the density of the waiting times in a queueing system, the general idea is to hide suﬃcient
+information, for each customer in the system, so that its exact waiting time is unknown, but it has
+a density conditional on the known information, and we can compute this density easily. This is
+often easy to do even for large queueing systems. The hidden information can be the arrival time
+of the customer, the departure time of the previous customer, or something similar, selected so
+that we can compute the conditional density.
+4.4.1.
+Model with independent days. We consider a single-server FIFO queue in which
+customers arrive from an arbitrary arrival process (not necessarily stationary Poisson) and the
+service times are independent, with continuous cdf G and density g. If W denotes the waiting time
+of a “random” customer, we want to estimate p0 = P[W = 0] and the density f of W over (0,∞).
+We ﬁrst consider a system that starts empty and evolves over a ﬁxed time horizon τ, which we call
+a day. Let Tj be the arrival time of the jth customer, T0 = 0, Aj = Tj −Tj−1 the jth interarrival time,
+Sj the service time of customer j, and Wj the waiting time of customer j. Since the system starts
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+24
+empty, we have W1 = 0, and the Lindley recurrence gives us that Wj = max(0, Wj−1 +Sj−1 −Aj) for
+j ≥2. At time τ, the arrival process stops, but service continues until all customers already arrived
+are served. The number of customers handled in a day is the random variable N = max{j ≥1 :
+Tj < τ}. The cdf of W can be written as F(0) = p0 and for x > 0, F(x) = P[W ≤x] = E[I(W ≤x)].
+The sequence of waiting times of all customers over an inﬁnite number of independent successive
+days is a regenerative process that regenerates at the beginning of each day, so we can apply the
+renewal reward theorem, which gives
+F(x) = E[I(W ≤x)] = E[I[W1 ≤x] + ··· + I[WN ≤x]]
+E[N]
+.
+(17)
+Since E[N] does not depend on x, we see that for x > 0, the density f(x) is the derivative of the
+numerator with respect to x, divided by E[N].
+To obtain a diﬀerentiable cdf estimator, we want to replace each indicator in the numerator by
+a conditional expectation. One simple way of doing this is to hide the service time Sj−1 of the
+previous customer; that is, replace I[Wj ≤x] by
+Pj(x) = P[Wj ≤x | Wj−1 −Aj] = P[Sj−1 ≤x + Aj −Wj−1] = G(x + Aj −Wj−1)
+for x ≥0.
+This gives Pj(0) = G(Aj −Wj−1) (there is a probability mass at 0), whereas for x > 0, we have
+P ′
+j(x) = dPj(x)/dx = g(x + Aj −Wj−1) and then, since N does not change when we change x,
+f(x) = E[D(x)]
+E[N]
+where D(x) =
+N
+X
+j=1
+g(x + Aj −Wj−1).
+(18)
+Note that we are not conditioning on the same information for all terms of the sum, so what we do
+is not exactly CMC, but extended CMC (Bratley et al. 1987). It nevertheless provides the required
+smoothing and an unbiased density estimator for the numerator of (17). In a multiserver queue,
+such as a call center with a large number of agents, one possibility would be to hide the arrival time
+Aj of the call, and compute the density of its waiting time conditional on the other information.
+Often, for example if the arrival process is Poisson, E[N] can be computed exactly, in which
+case we only need to estimate E[D(x)] and we get an unbiased density estimator. Otherwise, the
+denominator E[N] can be estimated in the usual way, and we are then in the standard setting
+of estimating a ratio of expectations (Asmussen and Glynn 2007), for which we have unbiased
+estimators for the numerator and the denominator. We simulate n days, independently (with MC)
+or with n RQMC points, to obtain n realizations of (N,D(x)), say (N1,D1(x)),...,(Nn,Dn(x)).
+The ratio estimator (CDE) of f(x) is
+ˆf(x) =
+Pn
+i=1 Di(x)
+Pn
+i=1 Ni
+.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+25
+It can be computed at any x ∈[0,∞). For independent realizations (with MC), the variance of ˆf(x)
+can be estimated using the delta method for ratio estimators (Asmussen and Glynn 2007):
+nVar[ ˆf(x)] →Var[Di(x)] + Var[Ni]f 2(x) −2Cov[Di(x),Ni]f(x)
+(E[Ni])2
+asymptotically, when n →∞. This variance can be estimated by replacing the unknown quantities
+in this expression by their empirical values. This is consistent because the n pairs (Di(x),Ni),
+i = 1,...,n, are independent. Alternatively, a conﬁdence interval on f(x) can also be computed
+with a bootstrap approach (Choquet et al. 1999).
+In the RQMC case, the pairs (Di(x),Ni) are no longer independent. Then, to obtain an estimator
+of f(x) for which we can estimate the variance, we make nr independent replicates of the RQMC
+estimator of the pair (E[D(x)],E[N]), say ( ¯D1(x), ¯N1),...,( ¯Dnr(x), ¯Nnr), where each ( ¯Dj(x), ¯Nj) is
+the average of n pairs (Di(x),Ni) sampled by RQMC. We estimate the density f(x) by the ratio
+of the two grand sums
+ˆfrqmc,nr(x) =
+Pnr
+j=1 ¯Dj(x)
+Pnr
+j=1 ¯Nj
+.
+To estimate the variance, we use that
+Var[ ˆfrqmc,nr(x)] ≈Var[ ¯Dj(x)] + Var[ ¯Nj]f 2(x) −2Cov[ ¯Dj(x), ¯Nj]f(x)
+nr(E[N])2
+and we replace all the unknown quantities in this expression by their empirical values.
+Here, the required dimension of the RQMC points is the (random) total number of inter-arrival
+times Aj and service times Sj that we need to generate during the day. It is approximately twice
+the number of customers that arrive during the day. This number is unbounded, so the RQMC
+points must have unbounded (or inﬁnite) dimension, and one must be able to generate the points
+without ﬁrst selecting a maximal dimension. Recurrence-based RQMC point sets have this prop-
+erty; they can be provided for instance by ordinary or polynomial Korobov lattice rules (L’Ecuyer
+and Lemieux 2000, 2002), which are available in the hups package of SSJ (L’Ecuyer 2016).
+4.4.2.
+Steady-state model. In a slightly diﬀerent setting, we can assume that the single
+queue evolves in steady-state over an inﬁnite time horizon, under the additional assumptions that
+the Aj’s are i.i.d. and the Sj’s are also i.i.d. Again, we want to estimate the density of the waiting
+time W of a random customer. In this case, the system regenerates whenever a new customer
+arrives in an empty system. The regenerative cycles can be much shorter on average than for the
+previous case, unless the day is very short or the utilization factor of the system is close to 1. The
+CDE has exactly the same form, apart from the diﬀerent deﬁnition of regenerative cycle. In this
+case n represents the number of regenerative cycles, Ni is the number of customers in the ith cycle
+and Di(x) is the realization of D(x) over the ith cycle.
+In both settings, one could also hide Aj instead of Sj−1. The density estimator is similar and
+easy to derive. Intuition says that this should be a better choice if Aj has more variance than Sj−1.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+26
+4.4.3.
+The GLRDE estimator. Peng et al. (2020), Section 4.2.2., show how to construct a
+GLRDE for the density of the sojourn time of customer j in this single-queue model. The density of
+the waiting time can be estimated as follows. If the service times Sj are lognormal with parameters
+(µ,σ2), we can write
+X = Wj = max(0, Wj−1 + Sj−1 −Aj) = max(0, Wj−1 + exp[σZj−1 + µ] −Aj) =: h(Y)
+where Zj−1 has the standard normal density φ, and Y = (Y1,Y2,Y3) = (Zj−1,Aj,Wj−1). When
+Wj > 0, taking the derivative of h with respect to Y1 = Zj−1 gives h1(Y) = exp[σZj−1 +µ]σ = Sj−1σ,
+h11(Y) = Sj−1σ2, and these derivatives are 0 when Wj = 0. We also have ∂log φ(x)/∂x = −x, and
+therefore for x > 0, f(x) = E[L(x)]/E[N] where L(x) = PN
+j=1 I[Wj ≤x] · Ψj and Ψj = −(Zj−1 +
+σ)/(Sj−1σ). We can do n runs to estimate each of the two expectations in the ratio. This provides
+a very similar density estimator as with the CDE in (18), but here L(x) is discontinuous in x,
+whereas D(x) in (18) is continuous.
+4.4.4.
+Numerical results. For a numerical illustration, suppose the time is in minutes, let
+the arrival process be Poisson with constant rate λ = 1, and the service times Sj lognormal with
+parameters (µ,σ2) = (−0.7,0.4). This gives E[Sj] = e−0.5 ≈0.6065 and Var[Sj] = e−1(e0.4 −1) ≈
+0.18093. For RQMC, we use inﬁnite-dimensional RQMC points deﬁned by Korobov lattice rules
+(L’Ecuyer and Lemieux 2000) selected with Lattice Builder (L’Ecuyer and Munger 2016) using
+order-dependent weights γk = 0.005k for projections of order k. We do not use Sobol’ points because
+with the available software, there is an upper bound on the dimension.
+Finite-horizon case. For the ﬁnite-horizon case, take τ = 60, so E[N] = 60, we only need to
+estimate the numerator, and we have an unbiased density estimator all over [0,∞). The results for
+(a,b] = (0,2.2] are in Table 3. Due to the large and random dimensionality of the required RQMC
+points, and more importantly the discontinuity of the derivative of the CDE with respect to the
+underlying uniforms (because of the max, the HK variation is inﬁnite), it was unclear if RQMC
+could bring any signiﬁcant gain for this example. The good surprise is that although RQMC does
+not improve ˜ν signiﬁcantly, it improves the IV itself by a factor of about 27.5 ≈180 for n = 219,
+which is quite signiﬁcant. We also see that CDE beats GLRDE by a factor of about 500 with MC
+and about 200 with RQMC.
+Steady-state case. We performed a similar experiment using regenerative simulation for the
+steady-state model. The density is similar but not exactly the same as in the ﬁnite-horizon case.
+The results are in Table 4. They are similar to those of the ﬁnite-horizon case, with similar empir-
+ical convergence rates, and the IV for n = 219 is again about 180 times smaller with CDE+RQMC
+compared to CDE+MC. The IV for GLRDE with n = 219 is roughly 300 times larger than with
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+27
+Table 3
+Values of ˆν and e19 for the single queue example, ﬁnite-horizon case.
+ˆν
+e19
+CDE
+MC
+1.00 24.8
+Lat+s
+0.99 32.3
+Lat+s+b
+1.02 32.3
+GLRDE
+MC
+1.00 15.8
+Lat+s
+1.03 24.6
+Lat+s+b
+1.08 25.0
+CDE with MC and 200 times larger than with CDE with RQMC. The only important diﬀerence
+is that here, the IV is about 30 times larger than in the ﬁnite-horizon case, for all the methods.
+The explanation is that in the ﬁnite-horizon case, we simulate n runs with about 60 customers
+per run, whereas in the steady-state case, we have about 2.5 customers per regenerative cycle on
+average, so we simulate about 25 times fewer customers. Interestingly, the fact that we use much
+more coordinates of the RQMC points in the ﬁnite-horizon case (on average) makes no signiﬁcant
+diﬀerence. A similar observation was made by L’Ecuyer and Lemieux (2000), Section 10.3, who
+compared ﬁnite-horizon runs of 5000 customers each on average, with regenerative simulation, in
+the context of estimating the probability of a large waiting time using RQMC. The reason why
+RQMC performs well even for a very large time horizon is that the integrand has low eﬀective
+dimension in the successive-dimensions sense (as deﬁned by these authors). Appendix C of the
+Supplement provides additional plots for this example.
+Table 4
+Values of ˆν and e19 for the single queue example, steady-state case.
+ˆν
+e19
+CDE
+MC
+0.99 19.9
+Lat+s
+1.04 27.6
+Lat+s+b
+1.08 27.8
+GLRDE
+MC
+0.99 11.5
+Lat+s
+1.20 20.1
+Lat+s+b
+1.21 20.4
+4.5.
+Making a change of variable
+In many situations, X = h(Y) for a random vector Y and hiding a single coordinate of Y does not
+provide a very eﬀective CDE. But sometimes, after an appropriate change of variable Y = g(Z),
+hiding one coordinate of the random vector Z can provide a much more eﬀective CDE. We will use
+this technique in Section 4.6. We describe it here in a separate subsection because it can be useful
+for a much wider range of applications.
+Speciﬁcally, let Z−j denote the vector Z with Zj (the jth coordinate) removed, and let γ(z) =
+γ(z;Z−j) = h(g(z;Z−j)) denote the value of h(Y) as a function of Zj = z when Z−j is ﬁxed. We
+assume in the following that for almost any realization of Z−j, γ(z;Z−j) is a monotone non-
+decreasing and diﬀerentiable function of z, so that γ−1(x) = inf{z ∈R : γ(z) ≥x} is well deﬁned for
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+28
+any x. We also assume that Zj has density ϕ and is independent of Z−j (to simplify). Conditional
+on Z−j, we have
+P[x < h(Y) ≤x + δ | Z−j] = P[x < γ(Zj) ≤x + δ | Z−j] = P[z < Zj ≤z + ∆| Z−j] ≈ϕ(z)∆
+where z = γ−1(x) and z + ∆= γ−1(x + δ). Taking the limit gives
+f(x | Z−j) = lim
+δ→0
+P[z < Zj ≤z + ∆| Z−j]
+δ
+= lim
+δ→0
+ϕ(z)∆
+δ
+= ϕ(z)
+γ′(z) = ϕ(γ−1(x))
+γ′(γ−1(x)),
+assuming that the latter is well deﬁned. In case there are closed-form formulas for γ−1 and γ′, this
+CDE can be evaluated directly. Otherwise, z = γ−1(x) can often be computed by a few iterations
+of a root-ﬁnding algorithm. Since γ and its inverse γ−1 depend on Z−j, this could mean inverting a
+diﬀerent function for each sample realization. Our next example will show that the approach could
+nevertheless bring a huge beneﬁt.
+4.6.
+A function of a multivariate normal vector
+We consider a multivariate normal vector Y = (Y1,...,Ys)t (where t means transposed) deﬁned via
+Yj = Yj−1 + µj + σjZj with Y0 = 0, the µj and σj > 0 are constants, and the Zj are independent
+N(0,1) random variables, with cdf Φ and density φ. Let X = ¯S = (S1 +···+Ss)/s where Sj = S0eYj
+for some constant S0 > 0. We want to estimate the density of X over some interval (a,b) = (K,K +c)
+where K ≥0 and c > 0. This is the same as estimating the density of max(0, ¯S −K), which may
+represent the payoﬀof a ﬁnancial contract, for example (Glasserman 2004). A simple way to deﬁne
+the CDE here is to hide Zs. The conditional cdf is P[X ≤x | Z−s] = P[Zs ≤W(x)] = Φ(W(x)) where
+W(x) = (ln[sx −(S1 + ··· + Ss−1)/S0] −lnS0 −Ys−1 −µs)/σs.
+Taking the derivative with respect to x gives the unbiased CDE
+f(x | Z−s) = ∂
+∂xP[ ¯S ≤x | Z−s] = φ(W(x))W ′(x) =
+φ(W(x))s
+[sx −(S1 + ··· + Ss−1)/S0]σs
+.
+(19)
+Unfortunately, this sequential CDE is usually rather spiky, because hiding only this Zs does not
+remove much information, and then the conditional density has a large variance.
+We now describe a less obvious but more eﬀective conditioning approach. The goal is to hide a
+variable that contains more information. For this, we generate the vector Y using a Brownian bridge
+construction in which the Zj’s are used in a diﬀerent way, as follows (Caﬂisch et al. 1997, Glasserman
+2004). Let ¯µj = µ1 + ··· + µj and ¯σj = σ1 + ··· + σj, for j = 1,...,s. With this construction, we
+ﬁrst sample Ys = ¯µs + ¯σsZs. Then, given Ys = ys, we put j2 = ⌊s/2⌋, and we sample Yj2 from
+its normal distribution conditional on Ys = ys, which is normal with mean ys¯µj2/¯µs and variance
+(¯σs −¯σj2)¯σj2/¯σs. This uses the fact that if X1 and X2 are independent and normal, then conditional
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+29
+on X1+X2 = ¯x, X1 is normal with mean ¯xE[X1]/E[X1+X2] and variance Var[X1]Var[X2]/Var[X1+
+X2]. Then we put j3 = ⌊j2/2⌋and we sample Yj3 conditionally on Yj2, then we put j4 = ⌊(j2 +s)/2⌋
+and we sample Yj4 conditionally on (Yj2,Ys), and so on, until all the Yj’s are known.
+For the CDE, we hide again Zs, but now Zs has much more impact on the payoﬀ, because all the
+Yj’s depend on Zs. This makes the conditional density much less straightforward to compute, but
+we can proceed as follows. To avoid sampling Zs, we sample Y1,...,Ys−1 conditional on Zs = zs = 0,
+which will give say Y 0
+1 ,...,Y 0
+s−1, and then write X as a function of z = zs conditional on these values,
+that is, conditional on Z−s = (Z1,...,Zs−1). We have Ys = Y 0
+s + ¯σsZs and Yj = Y 0
+j + (¯µj/¯µs)¯σsZs.
+Then,
+X = ¯S = S0
+s
+s
+X
+j=1
+eYj = S0
+s
+s
+X
+j=1
+exp[Y 0
+j + Zs(¯µj/¯µs)¯σs].
+This ﬁts the framework of Section 4.5, with j = s,
+γ(z) = S0
+s
+s
+X
+j=1
+exp[Y 0
+j + z(¯µj/¯µs)¯σs]
+and
+γ′(z) = S0
+s
+s
+X
+j=1
+exp[Y 0
+j + z(¯µj/¯µs)¯σs](¯µj/¯µs)¯σs.
+The CDE at x = γ(z) is then f(x | Z−s) = φ(z)/γ′(z). We call it the bridge CDE.
+To compute this density at a speciﬁed x we need z = γ−1(x), We have no explicit formula for
+γ−1 in this case, but we can compute a root of γ(z)−x = 0 numerically. To evaluate the density at
+the ne evaluation points e1,...,ene in (a,b), we ﬁrst compute x∗= γ(0) and let j∗be the smallest
+j for which ej ≥x∗. We compute z = wj∗such that γ(wj∗) = ej∗. This can be done via Newton
+iteration, zk = zk−1 −(γ(zk−1) −ej∗)/γ′(zk−1), starting with z0 = 0. Then, for j = j∗+ 1,...,ne, we
+use again Newton iteration to ﬁnd z = wj such that γ(wj) = ej, starting at z0 = wj−1. We do the
+same to ﬁnd z = wj such that γ(wj) = ej for j = j∗−1,...,1, starting at z0 = wj+1. This provides
+the point wj required to evaluate the conditional density at ej, for each j. We must repeat this
+procedure for each realization of Z−j, because the function γ depends on Z−j. However, the gain
+in accuracy is more signiﬁcant than the cost of additional computations. This conditioning diﬀers
+from the simpler ones used by Boyle et al. (1997) and Heidergott et al. (2015) for barrier options.
+For a numerical illustration, we take S0 = 100, s = 12, µj = 0.00771966 and σj = 0.035033 for all
+j, and K = 101. We estimate the density of the payoﬀover [a,b] = [101, 128.13]. To approximate
+the root of γ(z) −x = 0 for the bridge CDE, we use ﬁve Newton iterations; doing more makes no
+signiﬁcant diﬀerence. The results are in Table 5, with additional plots in the Supplement. RQMC
+with the bridge CDE performs extremely well. For example, for Sob+LMS, the MISE with n = 219
+is approximately 2−46.9, which is about 219 (half a million) times smaller than for the same CDE
+with MC, and it decreases as O(n−2). With a KDE, the MISE with n = 219 is about 221 ≈2
+million times larger with the same Sobol’ points and 226 ≈67 million times larger with MC. With
+the sequential CDE, RQMC is ineﬀective and the IV of the MC estimator is also quite large, as
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+30
+expected. To illustrate the behavior of the sequential and bridge CDEs, Figure 6 plots ﬁve single
+realizations of each, using the same horizontal scale. The sequential CDE has much more spiky
+realizations than the bridge CDE, and this explains why the latter performs much better.
+Table 5
+Values of ˆν and e19 for the Asian option, with sequential and bridge CDE constructions.
+ˆν
+e19
+sequential KDE
+MC
+0.78 20.4
+Sob+LMS
+0.76 20.6
+sequential CDE
+MC
+1.00 19.9
+Lat+s
+1.07 20.3
+Lat+s+b
+1.01 20.1
+Sob+LMS
+1.00 20.0
+bridge CDE
+MC
+1.04 27.9
+Lat+s
+1.60 40.0
+Lat+s+b
+1.74 45.0
+Sob+LMS
+2.01 46.9
+105
+110
+115
+120
+125
+0
+0.5
+1
+x
+105
+110
+115
+120
+125
+0
+2 · 10−2
+4 · 10−2
+6 · 10−2
+x
+Figure 6
+Five realizations of the density estimator (blue), their average (orange, dashed in b/w), and the true
+density (thick black) for the sequential CDE (left) and the bridge CDE (right), for the Asian option
+example.
+The method introduced here works not only for a Brownian motion, but for more general L´evy
+processes as well. Some popular models in ﬁnance use a L´evy subordinator process to produce a
+random clock speed to model stochastic volatility, and a geometric Brownian process that evolves
+at that random speed. This includes the variance-gamma (VG) and the normal inverse Gaussian
+processes, for example. For these models, we can generate the subordinator as usual using a bridge
+method to obtain the random times at which the Brownian process is evaluated, and then apply
+the method that we just described to the resulting Brownian process. For the VG process, a
+more eﬀective alternative could be to use the double gamma bridge sampling method described
+in Avramidis and L’Ecuyer (2006) and hide the ﬁrst variable as we have done here. Yet another
+approach would be to do a monotone mapping between the L´evy process and a Brownian motion
+as explained in L’Ecuyer et al. (2008), estimate the density in the Brownian representation as we
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+31
+did here, and transform this density to the original L´evy process via the change of variable that
+corresponds to the mapping.
+4.7.
+More examples
+Additional examples are given in the Online Supplement. In the ﬁrst one, X is a sum of independent
+normal random variables, with known density, and the purpose is to see how each estimator behaves
+as a function of the dimension (the number of summands) and of the relative variance of the one we
+hide. The second one is a (real-life) six-dimensional example in which X is the buckling strength of
+a steel plate. The third one is a multicomponent system in which each component fails at a certain
+random time, and we want to estimate the density of the failure time of the system. In the fourth
+one, we explain how accurate density estimation is useful to compute a conﬁdence interval on a
+quantile or on the expected shortfall. This, alone, has many applications.
+5.
+Summary and Guidelines
+Here we provide a summary of the main conditions and some guidelines for applying the method.
+The primary task is to select the information G on which we condition, or equivalently, to decide
+what we hide. The main constraint is that G must be selected in a way that Assumption 1 is
+satisﬁed, at least in the region where we want to estimate the density. The key condition for this is
+that the conditional density must be well-deﬁned in that region. In particular, the conditional CDF
+should never have jumps. A second requirement is that the conditional density can be calculated
+eﬃciently for all realizations of G (almost surely). There are often many possible choices of G for
+which these conditions are satisﬁed. The set of admissible choices is highly problem-dependent; it
+depends on the model and also on the variable X of interest.
+In many cases, one must hide more than just a single input random variable. The hidden infor-
+mation can also be dynamically selected, in the sense that it may depend on the sample realization
+(for example, if X is the maximum of several independent random variables, one may generate all
+the variables and hide the maximum). Sometimes, it becomes much easier to apply the method
+after making an appropriate multivariate change of variable. This may require creativity, as we
+have shown in our examples.
+When there are many choices for G, ﬁnding the optimal one (e.g., to minimize the work-
+normalized MISE) can be diﬃcult in general, because the MISE depends on many factors, but
+just ﬁnding a good one is usually much easier and suﬃcient. For comparable computing times, the
+best choices are often those for which the variance of the conditional density is the largest. As a
+rule of thumb, it is usually better to condition on lower-variance information and hide variables
+having a large variance contribution. The optimal choice also depends (in general) on the point
+x at which we want to estimate the density. In principle, one could optimize by using diﬀerent
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+32
+conditioning for diﬀerent intervals, but it is usually not worth the additional complications. When
+several good choices of G are available, selecting a few of them and taking a convex combination
+of the corresponding estimators can provide a more robust CDE than selecting only one G.
+When we want to combine the CDE with RQMC, additional properties come into play: we want
+to select G and also the formulation of the estimator as a function ˜g′ of the vector U of underlying
+uniform random numbers in a way that the assumption of Proposition 3 is satisﬁed (if possible)
+and the variation of this function ˜g′ is not too large. Proving these conditions in practice may be
+diﬃcult, but one can always try RQMC empirically. Experience shows that it can often reduce the
+variance signiﬁcantly, in particular when the eﬀective dimension of ˜g′ is small. This was illustrated
+in our examples.
+6.
+Conclusion
+We have examined a simple and very eﬀective approach for estimating the density of a random
+variable generated by simulation from a stochastic model, by using a computable conditional den-
+sity. The resulting CDE is unbiased and its MISE converges faster than for other popular density
+estimators such as the KDE. We have also shown how to further reduce the IV, and even improve
+its convergence rate, by combining the CDE with RQMC. Our numerical examples show that this
+combination can be very eﬃcient. It sometimes reduces the MISE by factors over a million. The
+CDE approach also outperforms the recently proposed GLRDE method, and CDE+RQMC out-
+performs both GLRDE+RQMC and KDE+RQMC, in all our examples. RQMC tends to bring a
+larger improvement to the CDE than the KDE or GLRDE because the estimator usually has less
+variation as a function of the underlying uniforms.
+The examples in the paper were selected to provide insight on key issues. We tried to avoid
+unnecessary complications in the models. But it would not be too diﬃcult to derive CDEs for
+larger and more complicated versions of these models. We outlined some possibilities in the text.
+Suggested future work includes experimenting this methodology in more complicated applications,
+designing and exploring diﬀerent types of conditioning, and perhaps adapting the Monte Carlo
+sampling strategies to make the method more eﬀective for speciﬁc applications (e.g., by changing
+the way X is deﬁned in terms of the basic input random variates). Its application to quantile and
+expected shortfall estimation also deserves further study.
+Acknowledgments
+This work has been supported by an IVADO Research Grant, an NSERC-Canada Discovery Grant,
+a Canada Research Chair, and an Inria International Chair, to P. L’Ecuyer. F. Puchhammer was also
+supported by Spanish and Basque governments fundings through BCAM (ERDF, ESF, SEV-2017-0718,
+PID2019-108111RB-I00, PID2019-104927GB-C22, BERC 2018e2021, EXP. 2019/00432, ELKARTEK KK-
+2020/00049), and the computing infrastructure of i2BASQUE academic network and IZO-SGI SGIker (UPV).
+The reviewers, the editors, and Julien Keutchayan gave several comments that improved the paper.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+33
+References
+Asmussen S (2018) Conditional Monte Carlo for sums, with applications to insurance and ﬁnance. Annals
+of Actuarial Science 12(2):455–478.
+Asmussen S, Glynn PW (2007) Stochastic Simulation (New York: Springer-Verlag).
+Avramidis AN, L’Ecuyer P (2006) Eﬃcient Monte Carlo and quasi-Monte Carlo option pricing under the
+variance-gamma model. Management Science 52(12):1930–1944.
+Avramidis AN, Wilson JR (1996) Integrated variance reduction strategies for simulation. Operations Research
+44:327–346.
+Avramidis AN, Wilson JR (1998) Correlation-induction techniques for estimating quantiles in simulation
+experiments. Operations Research 46(4):574–591.
+Ben Abdellah A, L’Ecuyer P, Owen A, Puchhammer F (2021) Density estimation by randomized quasi-Monte
+Carlo. SIAM Journal on Uncertainty Quantiﬁcation 9(1):280–301.
+Bingham D (2017) Virtual library of simulation experiments. https://www.sfu.ca/~ssurjano/canti.html.
+Boyle P, Broadie M, Glasserman P (1997) Monte Carlo methods for security pricing. Journal of Economic
+Dynamics and Control 21(8-9):1267–1321.
+Bratley P, Fox BL, Schrage LE (1987) A Guide to Simulation (New York, NY: Springer-Verlag), second
+edition.
+Caﬂisch RE, MorokoﬀW, Owen A (1997) Valuation of mortgage-backed securities using Brownian bridges
+to reduce eﬀective dimension. J. of Computational Finance 1(1):27–46.
+Choquet D, L’Ecuyer P, L´eger C (1999) Bootstrap conﬁdence intervals for ratios of expectations. ACM
+Transactions on Modeling and Computer Simulation 9(4):326–348.
+Cui Z, Fu MC, Hu JQ, Liu Y, Peng Y, Zhu L (2020) On the variance of single-run unbiased stochastic
+derivative estimators. INFORMS Journal on Computing Forthcoming.
+Dick J, Pillichshammer F (2010) Digital Nets and Sequences: Discrepancy Theory and Quasi-Monte Carlo
+Integration (Cambridge, U.K.: Cambridge University Press).
+Dieudonn´e J (1969) Foundations of Modern Analysis (New York: Academic Press), second edition.
+Efron B, Hastie T (2016) Computer Age Statistical Inference (New York: Cambridge University Press).
+Fu M, Hu JQ (1997) Conditional Monte Carlo (Boston: Kluwer Academic).
+Fu MC (2006) Sensitivity analysis in Monte Carlo simulation of stochastic activity networks. Alt FB, Fu
+MC, Golden BL, eds., Perspectives in Operations Research, 351–366, Operations Research/Computer
+Science Interfaces Series (Boston: Springer).
+Fu MC, Hong LJ, Hu JQ (2009) Conditional Monte Carlo estimation of quantile sensitivities. Management
+Science 55(12):2019–2027.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+34
+Glasserman P (2004) Monte Carlo Methods in Financial Engineering (New York: Springer-Verlag).
+Glynn PW (1987) Likelihood ratio gradient estimation: an overview. Proceedings of the 1987 Winter Simu-
+lation Conference, 366–375 (Piscataway, NJ: IEEE Press).
+Gong WB, Ho YC (1987) Smoothed (conditional) perturbation analysis of discrete event dynamical systems.
+IEEE Transactions on Automatic Control AC-32(10):858–866.
+Gu C, Qiu C (1993) Smoothing spline density estimation: Theory. The Annals of Statistics 21(1):217–234.
+He Z, Wang X (2015) On the convergence rate of randomized quasi-monte carlo for discontinuous functions.
+SIAM Journal on Numerical Analysis 53(5):2488–2503.
+Heidergott B, Leahu H, Volk-Makarewicz WM (2015) A smoothed perturbation analysis of parisian options.
+IEEE Transactions on Automatic Control 60(2):469–474.
+Hickernell FJ (2002) Obtaining O(N −2+ǫ) convergence for lattice quadrature rules. Fang KT, Hickernell FJ,
+Niederreiter H, eds., Monte Carlo and Quasi-Monte Carlo Methods 2000, 274–289 (Berlin: Springer-
+Verlag).
+Laub PJ, Salomone R, Botev ZI (2019) Monte Carlo estimation of the density of the sum of dependent
+random variables. Mathematics and Computers in Simulation 161:23–31.
+Law AM (2014) Simulation Modeling and Analysis (New York: McGraw-Hill), ﬁfth edition.
+L’Ecuyer P (1990) A uniﬁed view of the IPA, SF, and LR gradient estimation techniques. Management
+Science 36(11):1364–1383.
+L’Ecuyer P (2009) Quasi-Monte Carlo methods with applications in ﬁnance. Finance and Stochastics
+13(3):307–349.
+L’Ecuyer P (2016) SSJ: Stochastic simulation in Java, http://simul.iro.umontreal.ca/ssj/, accessed
+9th August 2021.
+L’Ecuyer P (2018) Randomized quasi-Monte Carlo: An introduction for practitioners. Glynn PW, Owen AB,
+eds., Monte Carlo and Quasi-Monte Carlo Methods: MCQMC 2016, 29–52 (Berlin: Springer).
+L’Ecuyer P, Buist E (2008) On the interaction between stratiﬁcation and control variates, with illustrations
+in a call center simulation. Journal of Simulation 2(1):29–40.
+L’Ecuyer P, Lemieux C (2000) Variance reduction via lattice rules. Management Science 46(9):1214–1235.
+L’Ecuyer P, Lemieux C (2002) Recent advances in randomized quasi-Monte Carlo methods. Dror M, L’Ecuyer
+P, Szidarovszky F, eds., Modeling Uncertainty: An Examination of Stochastic Theory, Methods, and
+Applications, 419–474 (Boston: Kluwer Academic).
+L’Ecuyer P, Marion P, Godin M, Fuchhammer F (2020) A tool for custom construction of QMC and RQMC
+point sets. Monte Carlo and Quasi-Monte Carlo Methods: MCQMC 2020, https://arxiv.org/abs/
+2012.10263.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+35
+L’Ecuyer P, Munger D (2012) On ﬁgures of merit for randomly-shifted lattice rules. Wo´zniakowski H, Plaskota
+L, eds., Monte Carlo and Quasi-Monte Carlo Methods 2010, 133–159 (Berlin: Springer-Verlag).
+L’Ecuyer P, Munger D (2016) Algorithm 958: Lattice builder: A general software tool for constructing rank-1
+lattice rules. ACM Transactions on Mathematical Software 42(2):Article 15.
+L’Ecuyer P, Parent-Chartier JS, Dion M (2008) Simulation of a L´evy process by PCA sampling to reduce
+the eﬀective dimention. Proceedings of the 2008 Winter Simulation Conference, 436–443 (Piscataway,
+NJ: IEEE Press).
+L’Ecuyer P, Perron G (1994) On the convergence rates of IPA and FDC derivative estimators. Operations
+Research 42(4):643–656.
+Lei L, Peng Y, Fu MC, Hu JQ (2018) Applications of generalized likelihood ratio method to distribution
+sensitivities and steady-state simulation. Discrete Event Dynamic Systems 28(1):109–125.
+Lemieux C (2009) Monte Carlo and Quasi-Monte Carlo Sampling (Springer-Verlag).
+Nakayama MK (2014a) Conﬁdence intervals for quantiles using sectioning when applying variance-reduction
+techniques. ACM Transactions on Modeling and Computer Simulation 24(4):Article 9.
+Nakayama MK (2014b) Quantile estimation when applying conditional Monte Carlo. 2014 International
+Conference on Simulation and Modeling Methodologies, Technologies, and Applications (SIMULTECH),
+280–285 (IEEE).
+Nelson BL (2008) The MORE plot: Displaying measures of risk and error from simulation output. Proceedings
+of the 2008 Winter Simulation Conference, 413–416 (Piscataway, New Jersey: IEEE Press).
+Niederreiter H (1992) Random Number Generation and Quasi-Monte Carlo Methods, volume 63 of SIAM
+CBMS-NSF Reg. Conf. Series in Applied Mathematics (SIAM).
+Owen AB (2003) Variance with alternative scramblings of digital nets. ACM Transactions on Modeling and
+Computer Simulation 13(4):363–378.
+Parzen E (1962) On estimation of a probability density function and mode. Annals of Mathematical Statistics
+33(3):1065–1076.
+Peng Y, Fu MC, Heidergott B, Lam H (2020) Maximum likelihood estimation by Monte Carlo simulation:
+Towards data-driven stochastic modeling. Operations Research 68(6):1896–1912.
+Peng Y, Fu MC, Hu JQ, Heidergott B (2018) A new unbiased stochastic derivative estimator for discontinuous
+sample performances with structural parameters. Operations Research 66(2):487–499.
+Scott DW (2015) Multivariate Density Estimation (Wiley), second edition.
+Serﬂing RJ (1980) Approximation Theorems for Mathematical Statistics (New York, NY: Wiley).
+Silverman B (1986) Density Estimation for Statistics and Data Analysis (London: Chapman and Hall).
+Smith JS, Nelson BL (2015) Estimating and interpreting the waiting time for customers arriving to non-
+stationary queueing system. Proceedings of the 2015 Winter Simulation Conference, 2610–2621 (Pis-
+cataway, New Jersey: IEEE Press).
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+36
+Sturrock DT, Pegden CD (2010) Recents innovations in Simio. Proceedings of the 2010 Winter Simulation
+Conference, 21–31 (Piscataway, New Jersey: IEEE Press).
+Thiongane M, Chan W, L’Ecuyer P (2021) Learning-based prediction of conditional waiting time distribu-
+tions in multiskill call centers. Operations Research and Entreprise Systems, expanded selected papers
+from ICORES 2020
+(Springer), URL http://www.iro.umontreal.ca/~lecuyer/myftp/papers/
+delay-dist-forecast.pdf, to appear.
+Van der Vaart AW (2000) Asymptotic Statistics (Cambridge University Press).
+Wand MP, Jones MC (1995) Kernel Smoothing (Chapman and Hall).
+Yu J, Shi J, Liu A, Wang Y (2020) Smoothing spline semiparametric density models. Journal of the American
+Statistical Association 1–14, URL http://dx.doi.org/10.1080/01621459.2020.1769636.
+
+arXiv:1906.04607v5 [math.ST] 7 Sep 2021
+Monte Carlo and Quasi-Monte Carlo Density
+Estimation via Conditioning
+Pierre L’Ecuyer
+D´epartement d’Informatique et de Recherche Op´erationnelle, Pavillon Aisenstadt, Universit´e de Montr´eal, C.P. 6128, Succ.
+Centre-Ville, Montr´eal, Qu´ebec, Canada H3C 3J7, lecuyer@iro.umontreal.ca
+Florian Puchhammer
+Basque Center for Applied Mathematics, Alameda de Mazarredo 14, 48009 Bilbao, Basque Country, Spain; and D´epartement
+d’Informatique et de Recherche Op´erationnelle, Universit´e de Montr´eal, fpuchhammer@bcamath.org
+Amal Ben Abdellah
+D´epartement d’Informatique et de Recherche Op´erationnelle, Pavillon Aisenstadt, Universit´e de Montr´eal, C.P. 6128, Succ.
+Centre-Ville, Montr´eal, Qu´ebec, Canada H3C 3J7, amal.ben.abdellah@umontreal.ca
+Online Supplement
+This Supplement contains additional examples and details for which there was not enough space in the
+main paper.
+In Appendix A, we show with simple examples how one can prove that the HK variation of the CDE is
+bounded uniformly over the interval [a,b] of interest. When this can be done, it proves that the MISE for
+the CDE with good RQMC points converges as O(n−2+ǫ).
+Appendix B provides additional examples showing how CDEs can be constructed, sometimes in non-trivial
+ways that are adapted to the problem at hand. In Section B.1, we consider the very simple example of a sum
+of independent normal random variables, for which the density is known, and the purpose is to see how each
+estimator behaves as a function of the dimension (the number of summands) and of the relative variance
+of the one we hide. In Section B.2, we consider a six-dimensional example taken from Schields and Zhang
+(2016). In Section B.3, we consider a multicomponent system in which each component fails at a certain
+random time, and we want to estimate the density of the failure time of the system. In Section B.4, we
+explain brieﬂy how accurate density estimation is useful for computing a conﬁdence interval on a quantile
+or on the expected shortfall.
+Section C provides additional ﬁgures for examples in the paper.
+Appendix A:
+Proving bounded HK variation for the CDE: some simple illustrations
+Here we show how the HK variation of g ≡˜g′(x,·) can be bounded uniformly in x ∈[a,b] in our CDE setting,
+for Examples 1 to 3 of the paper.
+1
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+2
+Example 1. Consider a sum of random variables as in Example 1, with G = G−k summarized by the single
+real number S−k. We have F(x | G) = Fk(x −S−k) and f(x | G) = fk(x −S−k). Without loss of generality,
+let k = d. Suppose that each Yj is generated by inversion from Uj ∼U(0,1), so Yj = F −1
+j
+(Uj) and S−d =
+F −1
+1 (U1)+ ···+ F −1
+s
+(Us) with s = d−1. This gives ˜g(x,U) = Fd(x−S−d) = Fd(x−F −1
+1 (U1)−···−F −1
+s
+(Us))
+and ˜g′(x,U) = fd(x −S−d) = fd(x −F −1
+1 (U1) −··· −F −1
+s
+(Us)). The partial derivatives of this last function
+are
+˜g′
+v(x,Uv,1) = f (|v|)
+d
+(x −S−d)
+Y
+j∈v
+∂(F −1
+j
+(Uj))
+∂Uj
+.
+So the functions F −1
+j
+must be diﬀerentiable over (0,1) for j = 1,...,d −1, the density fd must be s times
+diﬀerentiable, and the integral of |˜g′
+v(x,uv,1)| with respect to uv must be bounded uniformly in x ∈[a,b].
+Under these conditions, the HK variation is bounded uniformly in x over [a,b].
+For Example 2, with G = G−2 and Y1 = U1, we have ˜g′(x,u) = ˜g′(x,U1) = I[U1 ≤x ≤ǫ + U1]/ǫ = I[x −ǫ ≤
+U1 ≤x]/ǫ. This function is not continuous, but its HK variation (not given by (11) in this case) is 2/ǫ < ∞,
+because it is piecewise constant with only two jumps, each one of size 1/ǫ. Thus, the HK variation is
+unbounded when ǫ →0, but it is ﬁnite for any ﬁxed ǫ, independently of x. The behavior with G = G−1 is
+similar and the HK variation is 2 in that case, which is much better.
+For Example 3, if G = G−2, we have Y1 = σ1Φ−1(U1) where U1 ∼U(0,1). Then, F(x | G−2) = F2(x −Y1) =
+Φ((x −Y1)/σ2) and f(x | G−2) = φ((x −σ1Φ−1(U1))/σ2)/σ2 = ˜g′(x,U1). Taking the derivative with respect
+to u and noting that dΦ−1(u)/du = 1/(φ(Φ−1(u))) yields
+˜g′
+v(x,u) = φ′((x −σ1Φ−1(u))/σ2)σ1
+σ2
+2φ(Φ−1(u))
+for v = {1} = S (the only subset in this case). Integrating this with respect to u by making the change of
+variable z = Φ−1(u) gives
+Z 1
+0
+˜g′
+v(x,u)du = σ1
+σ2
+2
+Z ∞
+−∞
+|φ′((x −σ1z)/σ2)|dz,
+which is bounded uniformly in x, because |φ′(·)| is bounded by φ(·) multiplied by the absolute value of a
+polynomial of degree 1. So the HK variation is bounded uniformly in x.
+Appendix B:
+Additional examples
+B.1.
+A sum of normals
+We start with a very simple example in which the density f is known beforehand, so there is no real need
+to estimate it, but this type of example is very convenient for testing the performance of various density
+estimators. Let Z1,...,Zd be independent standard normal random variables, i.e., with mean 0 and variance
+1, and deﬁne
+X = (a1Z1 + ···+ adZd)/σ,
+where
+σ2 = a2
+1 + ···+ a2
+d.
+Then X is also standard normal, with density f(x) = φ(x)
+def
+= exp(−x2/2)/
+√
+2π and cdf P[X ≤x] = Φ(x) for
+x ∈R. The term ajZj in the sum has variance a2
+j. We pretend we do not know this and we estimate f(x)
+over the interval [−2,2], which contains slightly more than 95% of the density. We also tried larger intervals,
+such as [−5,5], and the IVs for the CDE were almost the same.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+3
+To construct the CDE, we deﬁne G−k as in Example 1, for any k = 1,...,d. That is, we hide Zk and
+estimate the cdf by
+F(x | G−k) = P
+"
+akZk ≤xσ −
+d
+X
+j=1, j̸=k
+ajZj
+G−k
+#
+= Φ
+ 
+xσ
+ak
+−1
+ak
+d
+X
+j=1, j̸=k
+ajZj
+!
+.
+The CDE becomes
+f(x | G−k) = φ
+ 
+xσ
+ak
+−1
+ak
+d
+X
+j=1, j̸=k
+ajZj
+!
+σ
+ak
+= φ
+ 
+xσ
+ak
+−1
+ak
+d
+X
+j=1, j̸=k
+ajΦ−1(Uj)
+!
+σ
+ak
+def
+= ˜g′(x,U)
+for x ∈R, where U = (U1,...,Uk−1,Uk+1,...,Ud), Zj = Φ−1(Uj), and the Uj are independent U(0,1) random
+variables. Assumption 1 is easily veriﬁed, so this CDE is unbiased.
+For CMC+MC (independent sampling), we get an exact formula for the variance of the CDE from Exam-
+ple 3, by taking in that example Y2 = akZk/σ and Y1 = X −Y2, whose variances are σ2
+2 = (ak/σ)2 and
+σ2
+1 = 1−σ2
+2, and plugging these values into (6). With the same argument as in the second part of Example 1
+in the supplement, we can show that VHK(˜g′(x,·)) < ∞, uniformly in x over any bounded interval [a,b], so
+Proposition 3 applies. We expect to observe this empirically.
+For the GLRDE, with Yj = Zjaj/σ ∼N(0,a2
+j/σ2), we obtain ∂(log fj(yj))/∂yj = −yjσ2/a2
+j, hj(yj) = 1,
+hjj(yj) = 0, and then Ψj = −Yjσ2/a2
+j = −Zjσ/aj. Note that we could also replace Yj by Zj and fj by φj (the
+standard normal density), which would give ∂(log φj(zj))/∂zj = −zj, hj(zj) = aj/σ, hjj(yj) = 0, and again
+Ψj = −Zjσ/aj.
+In our ﬁrst experiment, we take aj = 1 for all j, and k = d. By symmetry, the true IV is the same for
+any other k. Table 1 reports the estimated rate ˆν and the estimated value of e19 = −log2(IV) for n = 219,
+for various values of d and sampling methods. The rows marked CDE-1 give the results for k = d, while
+those labeled CDE-Avg are for a convex combination (7) with equal weights βℓ= 1/d for all ℓ= k −1, after
+computing the CDE for each k from the same simulations.
+For MC, the rates ˆν agree with the (known) exact asymptotic rates of ν = 1 for the CDE and GLRDE, and
+ν = 0.8 for the KDE. By looking at e19, we see that the MISE with MC is much smaller for the CDE than for
+the GLRDE and KDE, for example for d = 2 by a factor of about 32 for CDE-1 and about 70 for CDE-avg.
+For d = 20, the gains are more modest. RQMC methods provide huge improvements for small d with the
+CDE. We observe rates ˆν larger than 2 for d = 2 and 3. These rates also hold for larger d asymptotically, but
+they take longer to kick in, so we would need to have much larger values of n to observe them. By looking at
+the exponents e19, we see that for d = 3, for example, the MISE goes from 2−17 for the GLRDE and KDE
+to about 2−42 for CDE-avg with Sobol’ points with LMS. This is a MISE reduction by a factor of about
+225 ≈33 millions! The large values of ˆν imply of course that this factor is smaller for smaller n. When d is
+large, such as d = 20, RQMC brings only a small gain. The values of ˆν are sometimes noisy. For the GLRDE
+with Lat+s and d = 5, for example, the large ˆν = 1.45 comes from the fact that the IV for n = 214 (not
+shown) is unusually large (an outlier). Looking at e19 gives a more robust assessment of the performance.
+The GLRDE performs better than the KDE under RQMC for small d, but is not competitive with the CDE.
+Under MC, the GLRDE is slightly worse than the KDE.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+4
+Table 1
+Values of ˆν and e19 for a CDE, a convex combination of CDEs, a GLRDE, and a KDE, for a sum of
+d = k normals with aj = 1, over [−2,2].
+ˆν
+e19
+d = 2
+d = 3
+d = 5
+d = 10 d = 20
+d = 2
+d = 3
+d = 5
+d = 10 d = 20
+CDE-1
+MC
+0.99
+0.98
+1.02
+1.00
+1.02
+22.1
+21.4
+20.8
+19.8
+19.2
+Lat+s
+2.83
+2.00
+1.85
+1.40
+1.04
+52.3
+39.8
+32.1
+23.6
+19.7
+Lat+s+b
+2.69
+2.11
+1.69
+1.14
+1.05
+50.5
+41.5
+31.1
+21.8
+20.0
+Sob+LMS
+2.62
+2.10
+1.81
+1.04
+1.04
+49.3
+40.7
+31.1
+21.3
+19.7
+CDE-avg
+MC
+1.06
+0.92
+1.03
+1.01
+1.01
+23.4
+22.1
+21.6
+20.6
+19.8
+Lat+s
+2.79
+1.84
+1.33
+1.19
+1.05
+53.3
+39.8
+32.2
+23.0
+20.6
+Lat+s+b
+2.65
+1.90
+1.71
+1.05
+1.08
+51.6
+41.4
+32.3
+23.4
+21.3
+Sob+LMS
+2.60
+2.10
+1.92
+1.02
+1.03
+49.8
+42.0
+33.0
+22.7
+20.5
+GLRDE
+MC
+0.98
+0.95
+1.03
+1.05
+1.00
+17.0
+16.1
+15.9
+14.9
+14.1
+Lat+s
+1.51
+1.56
+1.45
+0.94
+1.06
+28.2
+24.9
+22.1
+17.8
+17.2
+Lat+s+b
+1.49
+1.41
+1.05
+1.06
+1.04
+27.3
+23.9
+20.4
+18.8
+17.6
+Sob+LMS
+1.49
+1.33
+1.15
+0.99
+1.16
+27.5
+24.0
+21.0
+18.3
+17.4
+KDE
+MC
+0.79
+0.80
+0.76
+0.75
+0.77
+17.0
+17.0
+16.9
+16.9
+17.0
+Lat+s
+1.08
+1.39
+0.92
+0.97
+0.76
+25.1
+22.4
+19.4
+18.2
+17.4
+Lat+s+b
+1.23
+0.94
+0.72
+0.73
+0.74
+24.1
+20.1
+18.1
+17.3
+17.2
+Sob+LMS
+1.18
+0.98
+0.83
+0.74
+0.77
+24.4
+20.8
+17.9
+17.2
+17.1
+Table 2
+Values of ˆν and e19 with a CDE for selected choices of G−k, for a linear combination of d = 11 normals
+with a2
+j = 21−j.
+ˆν
+e19
+k = 1 k = 2 k = 5 k = 11 k = 1 k = 2 k = 5 k = 11
+MC
+1.00
+1.02
+1.01
+1.00
+22.2
+21.0
+18.8
+15.5
+Lat+s
+1.43
+1.48
+1.34
+1.04
+30.3
+28.5
+22.8
+15.6
+Lat+s+b
+1.57
+1.65
+1.28
+1.02
+33.5
+30.8
+22.1
+15.6
+Sob+LMS
+1.78
+1.56
+1.21
+1.02
+34.1
+30.4
+21.7
+15.7
+In our second experiment, we take a2
+j = 21−j for j = 1,...,d. Now, the choice of k for the CDE makes a
+diﬀerence, and the best choice will obviously be k = 1, i.e., hide the term that has the largest variance. Note
+that with MC, Var[X] = 2 −2−d, and when we apply CMC by hiding akZk from the sum, we hide a term
+of variance a2
+k = 21−k and generate a partial sum S−k of variance 2 −21−k −2−d. Both terms have a normal
+distribution with mean 0. The results of Example 3 hold with these variances. Table 2 reports the numerical
+results for d = 11 and k = 1,2,5,11.
+The MC rates ˆν agree again with the theory, but here the IV depends very much on the choice of k, and
+this eﬀect is more signiﬁcant when k is smaller. For example, for Sobol’ points, the IV with k = 1 is about
+300,000 times smaller than with k = 11. The reason is that with k = 11, we hide only a variable having a
+very small variance, so the CDE for one sample is a high narrow peak, and the HK variation of ˜g′(x,u) is
+very large. For k = 1 or 2, we have the opposite and the integrand is much more RQMC-friendly.
+B.2.
+Buckling strength of a steel plate
+This is a six-dimensional example, taken from Schields and Zhang (2016). It models the buckling strength
+of a steel plate by
+X =
+2.1
+Λ −0.9
+Λ2
+
+1 −0.75Y5
+Λ
+
+1 −2Y6Y2
+Y1
+
+,
+(1)
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+5
+where Λ = (Y1/Y2)
+p
+Y3/Y4, and Y1,...,Y6 are independent random variables whose distributions are given
+in Table 3. Each distribution is either normal or lognormal, and the table gives the mean and the coeﬃcient
+of variation (cv), which is the standard deviation divided by the mean. We estimate the density of X over
+[a,b] = [0.5169,0.6511], which contains about 99% of the density (leaving out 0.5% on each side). There is a
+nonzero probability of having Y4 ≤0, in which case X is undeﬁned, but this probability is extremely small
+and this has a negligible impact on the density estimator over [a,b], so we just ignore it (alternatively we
+could truncate the density of Y4). There are also negligible probabilities that the density estimates below are
+negative and we ignore this.
+Table 3
+Distribution of each parameter for the buckling strength model.
+parameter distribution
+mean cv
+Y1
+normal
+23.808 0.028
+Y2
+lognormal
+0.525 0.044
+Y3
+lognormal
+44.2 0.1235
+Y4
+normal
+28623 0.076
+Y5
+normal
+0.35 0.05
+Y6
+normal
+5.25 0.07
+For this example, computing the density of X conditional on G−5 or G−6 (i.e., when hiding Y5 or Y6) is
+relatively easy, so we will try and compare these two choices. If we hide one of the variables that appear in
+Λ, the CDE would be harder to compute (it would require to solve a polynomial equation of degree 4 for
+each sample), and we do not do it. Let us deﬁne
+V1 = 2.1
+Λ −0.9
+Λ2 ,
+V2 = 1 −2Y6Y2
+Y1
+,
+and V3 = 1 −3Y5
+4Λ .
+Then we have
+X ≤x
+⇔
+Y5 ≥
+
+1 −
+x
+V1V2
+ 4Λ
+3
+and
+f(x | G−5) = f5
+
+1 −
+x
+V1V2
+ 4Λ
+3
+
+4Λ
+3V1V2
+= φ
+(1 −x/(V1V2))4Λ/3 −0.35
+0.0175
+
+4Λ
+0.0525 · V1V2
+.
+Similarly,
+f(x | G−6) = f6
+
+1 −
+x
+V1V3
+ Y1
+2Y2
+
+Y1
+2Y2V1V3
+= φ
+(1 −x/(V1V3))Y1/(2Y2) −5.25
+0.3675
+
+Y1
+0.735 · Y2V1V3
+.
+For GLRDE using Y6, let C = (2.1/Λ −0.9/Λ2)(1 −0.75Y5/Λ). We have X = h(Y) = C(1 −2Y6Y2/Y1),
+h6(Y) = 2CY2/Y1, h66(Y) = 0, ∂logf6(Y6)/∂Y6 = −(Y6 −µ6)/σ2
+6, and Ψ6 = Y1(Y6 −µ6)/(2CY2σ2
+6).
+Table 4 summarizes the results. We see again that with a very simple conditioning, the CDE with RQMC
+performs extremely well and much better than the GLRDE and the KDE. It is also much better to condition
+on G−6 than on G−5, and combining the two provides no signiﬁcant improvement. The GLRDE is better than
+the KDE under RQMC, but not under MC. Figure 1 displays the IV as a function of n in a log-log-scale for
+the CDE with G−5 and G−6. It unveils a slightly more erratic behavior of the MISE for the shifted lattice
+rule (Lat+s) than for the other methods; the performance depends on the choice of parameters of the lattice
+rule and their interaction with the particular integrand.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+6
+Table 4
+Values of ˆν and e19 with a CDE for G−5, G−6, their combination, GLRDE, and the KDE, for the
+buckling strength model.
+ˆν
+e19
+G−5
+G−6
+comb. GLRDE
+KDE
+G−5
+G−6
+comb. GLRDE
+KDE
+MC
+1.00 1.00
+1.00
+0.98
+0.76
+13.5 15.4
+15.4
+10.2
+11.7
+Lat+s
+1.89 1.56
+1.56
+1.29
+0.81
+20.0 24.9
+24.9
+16.6
+13.7
+Lat+s+b
+1.46 1.65
+1.60
+1.19
+0.85
+17.5 25.1
+25.1
+15.9
+12.7
+Sob+LMS
+1.40 1.75
+1.75
+1.16
+0.81
+17.7 25.5
+25.5
+15.9
+12.4
+14
+16
+18
+−20
+−15
+−10
+log2 n
+log2 MISE
+MC
+Lat+s
+Lat+s+b
+Sob+LMS
+14
+16
+18
+−25
+−20
+−15
+−10
+log2 n
+MC
+Lattice+Shift
+Lattice+Baker
+Sob+LMS
+Figure 1
+MISE vs n in log-log scale for the G = G−5 (left) and G = G−6 (right) for the buckling strength model.
+B.3.
+Density of the failure time of a system
+We consider a d-component system in which each component starts in the operating mode (state 1) and fails
+(jumps to state 0) at a certain random time, to stay there forever. Let Yj be the failure time of component
+j for j = 1,...,d. For t ≥0, let Wj(t) = I[Yj > t] be the state of component j and W(t) = (W1(t),...,Wd(t))t
+the system state, at time t. The system is in the failed mode at time t if and only if Φ(W(t)) = 0, where
+Φ : {0,1}d →{0,1} is called the structure function. Let X = inf{t ≥0 : Φ(W(t)) = 0} be the random time
+when the system fails. We want to estimate the density of X. A straightforward way of simulating a realization
+of X is to generate the component lifetimes Yj = inf{t ≥0 : Wj(t) = 0} for j = 1,...,d, and then compute X
+from that.
+As in Section 4.3, the GLRDE method of Section 2.5 does not work for this example, because hj(Y) ̸= 0
+only when X = Yj, and there is no j for which this is certain to happen.
+If the Yj are independent and exponential, one can construct a CMC estimator of the cdf F(x) = P[X ≤x]
+as follows (Gertsbakh and Shpungin 2010, Botev et al. 2013). Generate all the Yj’s and sort them in increasing
+order. Then, erase their values and retain only their order, which is a permutation π of {1,...,d}. Compute
+the critical number C = C(π), deﬁned as the number of component failures required for the system to fail
+(that is, the system fails at the Cth component failure, for the given π). Note that C can also be computed
+by starting with all components failed and resurrecting them one by one in reverse order of their failure, until
+the system becomes operational. Computing C using this reverse order is often more eﬃcient (Botev et al.
+2016). Then compute the conditional cdf P[X ≤x | π], where X is the time of the Cth component failure.
+This is an unbiased estimator of F(x) with smaller variance than the indicator I[X ≤x]. It can also be
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+7
+shown that in an asymptotic regime in which the component failure rates converge to 0 so that 1−F(x) →0,
+the relative variance of this CMC estimator of 1 −F(x) remains bounded whereas it goes to inﬁnity with
+the conventional estimator I[X > x]; i.e., the CMC estimator has bounded relative error (Botev et al. 2013,
+2016). This X is a sum of C independent exponentials, so it has a hypoexponential distribution, whose cdf
+has an explicit formula that can be written in terms of a matrix exponential, and developed explicitly as
+a sum of products in terms of the rates of the exponential lifetimes, as explained below.
+By taking the
+derivative of the conditional cdf formula with respect to x, one obtains the conditional density.
+More speciﬁcally, let component j have an exponential lifetime with rate λj > 0, for j = 1,...,d. For a
+given realization, let π(j) be the jth component that fails and let C(π) = c for the given π, let A1 be the time
+until the ﬁrst failure, and let Aj be the time between the (j −1)th and jth failures, for j > 1. Conditional
+on π, we have X = A1 + ··· + Ac where the Aj’s are independent and Aj is exponential with rate Λj for all
+j ≥1, with Λ1 = λ1 +···+λd, and Λj = Λj−1 −λπ(j−1) for all j ≥2. The conditional distribution of X is then
+hypoexponential with cdf
+P[X ≤x | π] = P[A1 + ··· + Ac ≤x | π] = 1 −
+c
+X
+j=1
+pje−Λjx,
+where
+pj =
+c
+Y
+k=1,k̸=j
+Λk
+Λk −Λj
+.
+See Gertsbakh and Shpungin (2010), Appendix A, and Botev et al. (2016), for example. Taking the derivative
+with respect to x gives the CDE
+f(x | π) =
+c
+X
+j=1
+Λjpje−Λjx,
+in which c, the Λj and the pj depend on π. This conditional density is well deﬁned and computable everywhere
+in [0,∞). There are instability issues for computing pj when Λk −Λj is close to 0 for some k ̸= j, but this
+can be addressed by a stable numerical algorithm of Higham (2009).
+All of this can be generalized easily to a model in which the lifetimes are dependent, with the dependence
+modeled by a Marshall-Olkin copula (Botev et al. 2016). In that model, the Yj represent the occurrence
+times of shocks that can take down one or more components simultaneously.
+It is interesting to note that although f(x | π) is an unbiased estimator of the density f(x) at any x, this
+estimator is a function of the permutation π only, so it takes its values in a ﬁnite set, which means that
+the corresponding ˜g(u) is a piecewise constant function, which is not RQMC-friendly. Therefore, we do not
+expect RQMC to bring a very large gain.
+Table 5
+Values of ˆν and e19 with the CDE, for the network reliability example.
+ˆν
+e19
+MC
+1.00 19.9
+Lat+s
+1.22 23.9
+Lat+s+b
+1.19 23.8
+Sob+LMS
+1.33 23.9
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+8
+0
+0.5
+1
+1.5
+0
+0.5
+1
+1.5
+x
+density
+14
+15
+16
+17
+18
+19
+−20
+−15
+log n
+log IV
+MC
+Lat+s
+Lat+s+b
+Sob+LMS
+Figure 2
+Density (left) and log IV as a function of log n (right) for the network failure time.
+For a numerical illustration, we take the same graph as in Section 4.3. For j = 1,...,13, Yj is exponential
+with rate λj and the Yj are independent. The system fails as soon as there is no path going from the source
+to the sink. For simplicity, here we take λj = 1 for all j, although taking diﬀerent λj’s brings no signiﬁcant
+additional diﬃculty. We estimate the density over the interval (a,b] = (0,1.829], which cuts oﬀroughly 1%
+of the probability on the right side. Table 5 and Figure 2 give the results. The density of X estimated with
+n = 220 random samples is shown on the left and the IV plots are on the right. Despite the discontinuity of
+˜g, RQMC outperforms MC in terms of the IV by a factor of about 24 = 16 for n = 219, and also by improving
+the empirical rate ˆν to about −1.2 for lattices and even better with Sobol’ points. The Sobol’ points used
+here were constructed using LatNet Builder (Marion et al. 2020) with a CBC search based on the t-value of
+all projections up to order 6, with order-dependent weights γk = 0.8k for projections of order k.
+B.4.
+Estimating a quantile with a conﬁdence interval
+For 0 < q < 1, the q-quantile of the distribution of X is deﬁned as ξq = F −1(q) = inf{x : F(x) ≥q}. Given n
+i.i.d. observations of X, a standard (consistent) estimator of ξq is the q-quantile of the empirical distribution,
+deﬁned as ˆξq,n = X(⌈nq⌉), where X(1),...,X(n) are the n observations sorted in increasing order (the order
+statistics). We assume that the density f(x) is positive and continuously diﬀerentiable in a neighborhood of
+ξq. Then we have the central limit theorem (CLT):
+√n(ˆξq,n −ξq)/σξ ⇒N(0,1)
+for n →∞,
+where σ2
+ξ = q(1 −q)/f 2(ξq) (Serﬂing 1980). This provides a way to compute a conﬁdence interval on ξq, but
+requires the estimation of f(ξq), which is generally diﬃcult. Some approaches for doing this include ﬁnite
+diﬀerences with the empirical cdf, batching, and sectioning (Asmussen and Glynn 2007, Nakayama 2014a,b).
+In our setting, one can do better by taking the q-quantile ˆξcmc,q,n of the conditional cdf
+ˆFcmc,n(x) = 1
+n
+n
+X
+i=1
+F(x | G(i)).
+That is, ˆξcmc,q,n = inf{x : ˆFcmc,n(x) ≥q}. This idea was already suggested by Nakayama (2014b), who pointed
+out that this estimator obeys a CLT just like ˆξq,n, but with the variance constant σ2
+ξ replaced by σ2
+cmc,ξ =
+Var[F(ξq | G)]/f 2(ξq) ≤σ2
+ξ. This is an improvement on the quantile estimator itself. Our CDE approach also
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+9
+provides an improved estimator of the density f(ξq) which appears in the variance expression. We estimate
+f(ξq) by ˆfcde,n(ˆξcmc,q,n). This provides a more accurate conﬁdence interval of ξq.
+Further improvements on the variances of both the quantile and density estimators can be obtained by using
+RQMC to generate the realizations G(i). In particular, if ˜g(ξq,u) = F(ξq | G) is a suﬃciently smooth function
+of u, Var[ˆξcmc,q,n] can converge at a faster rate than O(n−1). When using RQMC with nr randomizations to
+estimate a quantile, the quantile estimator will be the empirical quantile of all the nr × n observations.
+A related quantity is the expected shortfall, deﬁned as cq = E[X | X > ξq] = ξq −E[(ξq −X)+]/q which is
+often estimated by its empirical version (Hong et al. 2014)
+ˆcq,n = ˆξq,n −1
+nq
+n
+X
+i=1
+(ˆξq,n −Xi)+.
+This estimator obeys the CLT √n(ˆcq,n −cq)/σc ⇒N(0,1) for n →∞, where σ2
+c = Var[(ξq −X)+]/q2, if this
+variance is ﬁnite (Hong et al. 2014). By improving the quantile estimator, CDE+RQMC can also improve the
+expected shortfall estimator a well as the estimator of the variance constant σ2
+c and the quality of conﬁdence
+intervals on cq. We leave this as a topic for future work.
+100
+110
+120
+130
+0
+2 · 10−2
+4 · 10−2
+x
+density
+14
+16
+18
+−40
+−30
+log n
+log IV
+MC
+Lat+s
+Lat+s+b
+Sob+LMS
+Figure 3
+Estimated density (left) and log IV as a function of log n (left) for the Asian option.
+0
+0.5
+1
+1.5
+2
+0.2
+0.4
+x
+density
+14
+15
+16
+17
+18
+19
+−30
+−20
+−10
+logn
+logIV
+MC-CDE
+MC-GLRDE
+Lat+s-CDE
+Lat+s-GLRDE
+Figure 4
+Estimated density (left) and log IV as a function of log n (right) for the single queue over a ﬁnite-horizon.
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+10
+0
+1
+2
+3
+4
+5
+0
+0.2
+0.4
+x
+density
+14
+16
+18
+−20
+−10
+logn
+logIV
+MC-CDE
+MC-GLRDE
+Lat+s-CDE
+Lat+s-GLRDE
+Figure 5
+Estimated density (left) and log IV as a function of log n (right) for the single queue in steady-state.
+Appendix C:
+Some additional ﬁgures
+Figure 3 shows the estimated density in [a,b] (left panel) and the IV as a function of n in log-log scale for
+the bridge CDE in Example 4.6.
+Figure 4 shows the estimated density in [a,b] (left panel) and the IV as a function of n in log-log scale for
+the ﬁnite-horizon queueing system in Example 4.4. Figure 5 does the same for the inﬁnite-horizon case.
+References
+Asmussen S, Glynn PW (2007) Stochastic Simulation (New York: Springer-Verlag).
+Botev ZI, L’Ecuyer P, Rubino G, Simard R, Tuﬃn B (2013) Static network reliability estimation via gener-
+alized splitting. INFORMS Journal on Computing 25(1):56–71.
+Botev ZI, L’Ecuyer P, Tuﬃn B (2016) Static network reliability estimation under the Marshall-Olkin copula.
+ACM Transactions on Modeling and Computer Simulation 26(2):Article 14, 28 pages.
+Gertsbakh IB, Shpungin Y (2010) Models of Network Reliability (Boca Raton, FL: CRC Press).
+Higham NJ (2009) The scaling and squaring method for the matrix exponential revisited. SIAM Review
+51(4):747–764.
+Hong LJ, Hu Z, Liu G (2014) Monte Carlo methods for value-at-risk and conditional value-at-risk: A review.
+ACM Transactions on Modeling and Computer Simulation 24(4):Article 22.
+Marion P, Godin M, L’Ecuyer P (2020) An algorithm to compute the t-value of a digital net and of its pro-
+jections. Journal of Computational and Applied Mathematics 371, URL http://www.iro.umontreal.
+ca/~lecuyer/myftp/papers/tvalue.pdf.
+Nakayama MK (2014a) Conﬁdence intervals for quantiles using sectioning when applying variance-reduction
+techniques. ACM Transactions on Modeling and Computer Simulation 24(4):Article 9.
+Nakayama MK (2014b) Quantile estimation when applying conditional monte carlo. 2014 International
+Conference on Simulation and Modeling Methodologies, Technologies, and Applications (SIMULTECH),
+280–285 (IEEE).
+
+L’Ecuyer, Puchhammer, Ben Abdellah: MC and QMC Density Estimation via Conditioning
+11
+Schields MD, Zhang J (2016) The generalization of latin hypercube sampling. Reliability Engineering and
+System Safety 148:96–108.
+Serﬂing RJ (1980) Approximation Theorems for Mathematical Statistics (New York, NY: Wiley).

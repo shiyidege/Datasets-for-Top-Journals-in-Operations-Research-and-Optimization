@@ -1,0 +1,4167 @@
+TITLE: Federated Optimization Under Intermittent Client Availability
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2023
+DOI: https://doi.org/10.1287/ijoc.2022.0057
+---
+
+Distributed Non-Convex Optimization with Sublinear Speedup
+under Intermittent Client Availability
+Yikai Yan1, Chaoyue Niu1, Yucheng Ding1, Zhenzhe Zheng1, Fan Wu1, Guihai Chen1,
+Shaojie Tang2, and Zhihua Wu3
+1Shanghai Jiao Tong University, China
+2University of Texas at Dallas, USA
+3Alibaba Group, China
+ABSTRACT
+Federated learning is a new distributed machine learning frame-
+work, where a bunch of heterogeneous clients collaboratively train
+a model without sharing training data. In this work, we consider a
+practical and ubiquitous issue when deploying federated learning
+in mobile environments: intermittent client availability, where the
+set of eligible clients may change during the training process. Such
+intermittent client availability would seriously deteriorate the per-
+formance of the classical Federated Averaging algorithm (FedAvg
+for short). Thus, we propose a simple distributed non-convex opti-
+mization algorithm, called Federated Latest Averaging (FedLaAvg
+for short), which leverages the latest gradients of all clients, even
+when the clients are not available, to jointly update the global model
+in each iteration. Our theoretical analysis shows that FedLaAvg
+attains the convergence rate of 𝑂(𝐸1/2/(𝑁1/4𝑇1/2)), achieving a
+sublinear speedup with respect to the total number of clients. We
+implement FedLaAvg along with several baselines and evaluate
+them over the benchmarking MNIST and Sentiment140 datasets.
+The evaluation results demonstrate that FedLaAvg achieves more
+stable training than FedAvg in both convex and non-convex settings
+and indeed reaches a sublinear speedup.
+1
+INTRODUCTION
+Federated Learning (FL) is a new paradigm of distributed machine
+learning [8, 14, 17]. It allows multiple clients to collaboratively train
+a global model without needing to upload local data to a central-
+ized cloud server. In the FL setting, data are massively distributed
+over clients, with non-IID distribution [6, 15] and unbalance in
+quantity [18]; in these ways, FL is distinguished from traditional
+distributed optimization [13]. Furthermore, the agents participating
+in FL are typically unreliable heterogeneous clients, e.g., mobile
+devices, with limited computation resources and unstable commu-
+nication links [7, 12, 28, 30, 31], resulting in a varying set of eligible
+clients during the training process. These new features pose chal-
+lenges in designing and analyzing learning algorithms for FL.
+One of the leading challenges in deploying FL systems is client
+availability, where the clients may not be available throughout the
+entire training process. Consider the typical FL scenario where
+Google’s mobile keyboard Gboard polishes its language models
+among numerous mobile-device users [1, 5, 33]. To minimize the
+negative impact on user experience, only devices that meet certain
+requirements (e.g., charging, idle, and free Wi-Fi) are eligible for
+model training. These requirements are usually met at night local
+time but are not satisfied in the daytime when the devices are busy.
+Such intermittent client availability would introduce bias into train-
+ing data. In particular, the clients with longer time available are
+more likely to be selected to participate, and thus their training
+data would be over-represented. In contrast, the training data of the
+clients, who have shorter time available and lower chance to be cho-
+sen, may be under-represented. Further, if the free resources on local
+devices (e.g., CPU and RAM) are also incorporated, the availability
+patterns of different clients would be more diverse, implying that
+the data representations are more differentiated in the collaborative
+training process. Nevertheless, the test data distribution, which
+is irrelevant with client availability in the training phase, would
+be inconsistent with the training data distribution. This inconsis-
+tency is also known as dataset shift [19, 21], a notorious obstacle
+to the convergence of machine learning algorithms [23, 27], which
+also exists in FL, and can degrade the generalization ability of FL
+algorithms.
+Existing work in the literature has not touched the issue of in-
+termittent client availability1, and the convergence analysis of FL
+algorithms always requires all the clients to be available throughout
+the training process. In this case, there is no bias in the training data,
+which is an essential condition to obtain the positive convergence
+results. Much effort [2, 9, 10, 16, 24, 26, 29, 35] has been expended
+in proving the convergence of the classical FedAvg algorithm [17].
+One line of work [10, 24, 26, 29, 35] assumed that all the clients are
+available and participate in each iteration of the training, to
+establish the 𝑂(1/
+√
+𝑁𝑇)2 convergence of FedAvg. However, the
+requirement of full client participation would significantly increase
+the synchronization latency of the collaborative training process,
+and is hard to be satisfied in practical cross-device FL scenarios.
+Another line of work [2, 9, 16] allowed partial client participa-
+tion but required all the clients to be available, to proved an
+𝑂(1/𝑇) convergence of FedAvg. In their analysis, clients are se-
+lected either uniformly at random [9, 16] or according to a certain
+strategy [2], which are, however, possible only if all clients are
+available.
+In this work, we integrate the consideration of intermittent client
+availability into the design and analysis of the FL algorithm. We first
+formulate a practical model for intermittent client availability in
+FL; this model allows the set of available clients to follow any time-
+varying distribution, with the assumption that each client needs to
+be available at least once during any period with length 𝐸. Under
+such a client availability model, FedAvg would diverge even in a
+1A concurrent work [22], released roughly three months after our preprint [32], con-
+sidered a different availability setting, where some clients submit partially completed
+work or drop out occasionally. They proposed to kick out frequently dropped clients,
+which, however, cannot eliminate the training data bias under intermittent client
+availability. We reserve the divergence analysis of their method in Appendix A.
+2Notation 𝑁is the total number of clients, and 𝑇is the total number of iterations in
+the training.
+arXiv:2002.07399v3 [stat.ML] 22 Dec 2020
+
+arXiv preprint, 2020,
+Yan, et al.
+simple learning scenario with a quadratic objective (shown in Sec-
+tion 3.1), because the training data are biased towards those highly
+available clients. For general distributed non-convex optimization,
+we propose a simple Federated Latest Averaging algorithm, namely
+FedLaAvg, to approximately balance the influence of each client’s
+data on the global model training. Specifically, instead of averaging
+only the gradients collected from participating clients, FedLaAvg
+averages the latest gradients3 of all clients. By setting appropriate
+parameters, we can prove an 𝑂(𝐸1/2/(𝑁1/4𝑇1/2)) convergence
+for FedLaAvg, implying that FedLaAvg can achieve a sublinear
+speedup with respect to the total number of clients. We summarize
+our contributions as follows.
+• To the best of our knowledge, we are the first to study the
+problem of intermittent client availability in FL, an ubiq-
+uitous phenomenon in practical mobile environments, and
+present a formal formulation thereof.
+• We demonstrate that even with exact (not stochastic) gra-
+dient descent, two clients in the system, one local iteration
+on either client, and a simple quadratic (convex) optimiza-
+tion objective, FedAvg can diverge due to intermittent client
+availability.
+• We identify the reasons behind the divergence of FedAvg and
+further propose a convergent algorithm FedLaAvg, which ag-
+gregates the latest gradients of all clients in each training iter-
+ation. Our theoretical analysis shows the𝑂(𝐸1/2/(𝑁1/4𝑇1/2))
+convergence of FedLaAvg for general distributed non-convex
+optimization.
+• Using the public MNIST and Sentiment140 datasets, we eval-
+uate FedLaAvg and compare its performance with FedSGD,
+FedAvg, and FedProx [15]. The evaluation results validate
+the superiority of our FedLaAvg in terms of more smooth
+training process, sublinear speedup, and lower training loss.
+2
+PROBLEM FORMULATION
+We consider a general distributed non-convex optimization scenario
+in which 𝑁clients collaboratively solve the following consensus
+optimization problem:
+min
+x∈R𝑚𝑓(x) ≜
+𝑁
+∑︁
+𝑖=1
+𝑤𝑖E𝜉𝑖∼D𝑖[𝐹(x; 𝜉𝑖)] =
+𝑁
+∑︁
+𝑖=1
+𝑤𝑖˜𝑓𝑖(x).
+Each client 𝑖holds training data 𝜉𝑖∼D𝑖, and 𝑤𝑖is the weight of
+this client (typically the proportion of client 𝑖’s local data volume in
+the total data volume of the FL system [17]). Function 𝐹(x; 𝜉𝑖) is the
+training error of model parameters x over local data 𝜉𝑖, and ˜𝑓𝑖(x)
+is the local generalization error, taking expectation over the ran-
+domness of local data. In iteration4 𝑡, participating client 𝑖observes
+the local stochastic gradient: g𝑡
+𝑖= ∇𝐹(x𝑡−1; 𝜉𝑡
+𝑖), where x𝑡−1 is the
+model parameters from the previous iteration and 𝜉𝑡
+𝑖is the local
+training data in this iteration. We note E
+h
+g𝑡
+𝑖| 𝜉[𝑡−1]i
+= ∇˜𝑓𝑖(x𝑡−1),
+where 𝜉[𝑡−1] is the historical training data from all clients before
+iteration 𝑡: 𝜉[𝑡−1] ≜{𝜉𝜏
+𝑖|𝑖∈{1, 2, · · · , 𝑁},𝜏∈{1, 2, · · · ,𝑡−1}}.
+3The latest gradient of a given client is the gradient calculated in its latest participating
+iteration. Please refer to Section 3.2 for detailed definition.
+4Since our major focus is client availability, for the sake of conciseness, we first consider
+the training scenario where participating clients perform only one local iteration, and
+extend our results to the multiple-local-iteration scenario in Section 5.
+To simplify the analysis of unbalanced data volume among clients,
+we use a scaling technique to obtain a revised local objective func-
+tion: 𝑓𝑖(x) = 𝑤𝑖𝑁˜𝑓𝑖(x). Then, we can rewrite the global objective
+function as 𝑓(x) = 1
+𝑁
+Í𝑁
+𝑖=1 𝑓𝑖(x).
+In this study, we make three assumptions regarding the objective
+funtions as follows.
+Assumption 1. Local objective functions 𝑓𝑖are all 𝐿-smooth:
+∥∇𝑓𝑖(u) −∇𝑓𝑖(v)∥≤𝐿∥u −v∥, ∀𝑖, u, v. The corollary is 𝑓𝑖(v) ≤
+𝑓𝑖(u) + ⟨v −u, ∇𝑓𝑖(u)⟩+ 𝐿
+2 ∥v −u ∥2, ∀𝑖, u, v.
+Assumption 2. Bounded variance: with variance 𝜎> 0, ∀𝑖, x,
+E𝜉𝑖∼D𝑖
+
+∥∇𝐹(x; 𝜉𝑖) −∇𝑓𝑖(x)∥2
+≤𝜎2.
+Assumption 3. Bounded gradient: with gradient norm 𝐺> 0,
+∀𝑖, x, E𝜉𝑖∼D𝑖
+
+∥∇𝐹(x; 𝜉𝑖) ∥2
+≤𝐺2.
+To model intermittent client availability, we use C𝑡to denote
+the set of available clients in iteration 𝑡. We formally introduce
+Assumption 4 regarding the intermittent client availability model
+in FL.
+Assumption 4. Minimal availability: each client 𝑖is available
+at least once in any period with 𝐸successive iterations: ∀𝑖, ∀𝑡, ∃𝜏∈
+{𝑡,𝑡+ 1, · · · ,𝑡+ 𝐸−1}, such that 𝑖∈C𝜏.
+Assumption 1 is standard, and Assumptions 2 and 3 have also
+been widely made in the literature [16, 24, 25, 34–36]. Specifically,
+Yu et al. [35] worked with non-convex functions under Assump-
+tions 1–3, and required all clients to be available and to participate
+in each iteration. Meanwhile, Li et al. [16] focused on convex func-
+tions while imposing the same full client availability requirement.
+The full client availability model in existing work is equivalent to
+the special case of our intermittent client availability model by set-
+ting 𝐸= 1 in Assumption 4. Furthermore, Assumption 4 regarding
+the intermittent client availability model is reasonable in practical
+FL. For example, as discussed earlier, clients are typically available
+at night, and thus Assumption 4 with 𝐸equal to the number of
+iterations in one day can describe such a client availability scenario.
+3
+ALGORITHM DESIGN
+If the ideal full client availability is guaranteed, FedAvg with only
+one local iteration is equivalent to the classical mini-batch SGD
+and can converge. However, under the practical intermittent client
+availability model, the equivalence does not hold, and we show that
+FedAvg would produce arbitrarily poor results, even if only one
+local iteration is performed. We further investigate the underlying
+reasons for the divergence of FedAvg, and then propose a new
+convergent algorithm called FedLaAvg.
+3.1
+Divergence of FedAvg
+Example 1. We consider a distributed optimization problem with
+only two clients (denoted as 1 and 2) and a convex objective func-
+tion. The goal is to learn the mean of one-dimensional data from
+these two clients. Following the problem formulation in Section 2,
+the local data distribution is 𝜉𝑖∼D𝑖with mean e𝑖= E [𝜉𝑖]. For
+simplicity, we assume the amounts of data from the two clients are
+balanced. We can formulate this learning problem as minimizing
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+the mean square error (MSE):
+𝑓(x) = 1
+2
+2
+∑︁
+𝑖=1
+𝑓𝑖(x) = 1
+2
+2
+∑︁
+𝑖=1
+E𝜉𝑖∼D𝑖
+
+(x −𝜉𝑖)2
+= 1
+2
+2
+∑︁
+𝑖=1
+(x −e𝑖)2 + 1
+2
+2
+∑︁
+𝑖=1
+E𝜉𝑖∼D𝑖
+
+(𝜉𝑖−e𝑖)2
+.
+For this example, we consider a specific intermittent client avail-
+ability model: two clients are available periodically and alternately,
+i.e., in each period, client 1 is available in the first 𝑡1 iterations, and
+client 2 is available in the following 𝑡2 iterations. Let 𝑘index the
+period; we then have
+1 ∈C𝑘(𝑡1+𝑡2)+𝑖,𝑘∈N,𝑖∈{1, 2, · · · ,𝑡1};
+2 ∈C𝑘(𝑡1+𝑡2)+𝑖,𝑘∈N,𝑖∈{𝑡1 + 1,𝑡1 + 2 · · · ,𝑡1 + 𝑡2}.
+This model describes the client availability with a regular diurnal
+pattern, which has been widely observed in previous studies [1, 3,
+33], and is a typical subcase of our intermittent client availability
+model. For example, clients around the world participate in FL at
+night. Clients 1 and 2 may correspond to clients from two different
+geographic regions, respectively.
+Theorem 1. Suppose each client computes the exact (not stochastic)
+gradient. In Example 1, even with a sufficiently low learning rate, the
+model parameters returned by FedAvg at the end of each period, i.e.,
+x𝑘(𝑡1+𝑡2), would converge to (𝑡1e1 + 𝑡2e2)/(𝑡1 + 𝑡2), which can be
+arbitrarily far away from the optimal solution x∗= (e1 + e2)/2.
+Proof of Theorem 1. In Example 1, the training process of Fe-
+dAvg is that the two clients train the global model using their own
+local data alternatively. Hence, after a certain number of training it-
+erations, the global model parameters would be “pulled” in opposite
+directions when different clients are available, and would finally
+oscillate periodically around (𝑡1e1 + 𝑡2e2)/(𝑡1 + 𝑡2). The detailed
+proof is given as follows.
+We first show that if 𝛾< 1/2, x𝑘(𝑡1+𝑡2) would converge to
+𝑋= (1 −2𝛾)𝑡2 (e1 −e2) + e2 −e1 (1 −2𝛾)𝑡1+𝑡2
+1 −(1 −2𝛾)𝑡1+𝑡2
+.
+Note that for iterations where client 1 is available, we have
+∀𝑡∈{𝑘(𝑡1+𝑡2)+𝑖| 𝑘∈N,𝑖∈{1, · · · ,𝑡1}}, x𝑡+1 = x𝑡−2𝛾 x𝑡−e1
+ ,
+where 𝛾is the learning rate. Rearrange the equation, we have
+x𝑡+1 −e1 = (1 −2𝛾)  x𝑡−e1
+ ,
+which implies that  x𝑡−e1
+ is a geometric progression. Hence, we
+have
+x𝑘(𝑡1+𝑡2)+𝑡1 = (1 −2𝛾)𝑡1
+
+x𝑘(𝑡1+𝑡2) −e1
+
++ e1.
+(1)
+Applying the same analysis on iterations where client 2 is available,
+we have
+x(𝑘+1) (𝑡1+𝑡2) = (1 −2𝛾)𝑡2
+
+x𝑘(𝑡1+𝑡2)+𝑡1 −e2
+
++ e2.
+(2)
+Substituting (1) into (2), we have
+x(𝑘+1) (𝑡1+𝑡2)
+= (1 −2𝛾)𝑡1+𝑡2
+
+x𝑘(𝑡1+𝑡2) −e1
+
++ (1 −2𝛾)𝑡2 (e1 −e2) + e2.
+Based on this recursion formula, we have
+x𝑘(𝑡1+𝑡2) = (1 −2𝛾)(𝑡1+𝑡2)𝑘x0 +
+
+1 −(1 −2𝛾)(𝑡1+𝑡2)𝑘
+𝑋.
+Since𝛾< 1
+2, we have lim𝑘→+∞x𝑘(𝑡1+𝑡2) = 𝑋. Based on L’Hopital’s
+rule, we then have lim𝛾→0+ 𝑋= (𝑡1e1 + 𝑡2e2)/(𝑡1 + 𝑡2).
+The global minimization objective is
+𝑓(x) = 1
+2
+2
+∑︁
+𝑖=1
+(x −e𝑖)2 + 1
+2
+2
+∑︁
+𝑖=1
+E𝜉𝑖∼D𝑖
+
+(𝜉𝑖−e𝑖)2
+,
+and the minimum is reached when x = x∗= (e1 + e2)/2. Note that
+(e1 +e2)/2 = (𝑡1e1 +𝑡2e2)/(𝑡1 +𝑡2) only when e1 = e2 (data distri-
+butions are IID) or 𝑡1 = 𝑡2. Hence, FedAvg will produce arbitrarily
+poor-quality results without these inpractical assumptions.
+□
+3.2
+Federated Latest Averaging
+As shown in Section 3.1, intermittent client availability seriously
+degrades the performance of FedAvg. In FL, the overall data distri-
+bution is an unbiased mixture of all clients’ local data distributions.
+FedAvg can be proven to converge in the full client participation
+scenario [35], because it uses the current gradients of all clients
+to update the global model. This makes the training data distribu-
+tion in each iteration consistent with the overall data distribution.
+However, due to the intermittent client availability, some clients
+are selected to participate in the training process more frequently,
+introducing the bias into training data. To mitigate the bias prob-
+lem, we imitate the full client participation scenario, and attempt to
+leverage the gradient information of all clients for model training in
+each iteration. The difficulty in employing this idea is that as some
+clients are absent from the training due to being either unavail-
+able or unselected, we cannot obtain the current gradients of these
+clients. To resolve the lack of gradient information, we propose a
+natural and simple idea: using the latest gradient of the client
+when its current gradient is not available. By doing so, we can
+eliminate the bias in training data, and establish the convergence
+result.
+We present in Algorithm 1 the detailed procedures of FedLaAvg,
+and give Figure 1 for easy illustration. In each iteration 𝑡, each se-
+lected client 𝑖locally calculates the gradient g𝑡
+𝑖, and the cloud server
+maintains the average latest gradient g𝑡of all clients. The client se-
+lection principle in FedLaAvg is to choose the 𝐾clients that are
+absent from the training process for the longest time from
+the available clients (Lines 5–7). Together with Assumption 4,
+we can guarantee that each client is selected at least once during
+any period with 𝐼successive iterations, where 𝐼is a function of
+parameters 𝐾, 𝑁, and 𝐸(please refer to Lemma 1 in Section 4 for
+the details). Based on this condition, we can establish an upper
+bound for the difference between each client’s latest gradient and
+its current gradient, which would be critical for the convergence
+analysis of FedLaAvg in Section 4. To implement this principle, we
+use 𝑇𝑡
+𝑖to record the latest iteration before or at 𝑡in which client 𝑖
+participates in the training process. During the aggregation proce-
+dure (Lines 8–9), to reduce the aggregation overhead, each selected
+client uploads the gradient difference: the difference between the
+gradients computed in the current participating iteration and the
+
+arXiv preprint, 2020,
+Yan, et al.
+Client 2
+1
+Server
+𝐱𝐱3
+Client 1
+Client 3
+𝑡𝑡= 3
+2
+0
+𝐱𝐱4
+𝑡𝑡= 4
+0
+3
+1
+𝐠𝐠1
+3 𝐠𝐠2
+1 𝐠𝐠3
+0
+𝐱𝐱5
+𝑡𝑡= 5
+4
+3
+𝐠𝐠1
+3 𝐠𝐠2
+1 𝐠𝐠3
+4
+1
+𝐠𝐠1
+3 𝐠𝐠2
+5 𝐠𝐠3
+4
+𝑇𝑇𝑖𝑖
+𝑡𝑡−1
+𝑇𝑇𝑖𝑖
+𝑡𝑡−1
+Unavailable
+Available but
+not participating
+…
+…
+√
+√
+√
+𝑇𝑇𝑖𝑖
+𝑡𝑡−1
+Available and
+participating
+√
+Figure 1: A simple illustration of FedLaAvg. The cloud server chooses 𝐾= 1 client with the most outdated gradient from the
+available clients to participate in each iteration. The black lines between iterations mean the chosen client participates in this
+iteration and uploads its current gradient, while the grey dotted lines mean the cloud server uses the absent client’s latest
+gradient in this iteration. Number 𝑇𝑡−1
+𝑖
+in the rectangles denotes the latest iteration in which the client 𝑖participates.
+Algorithm 1 Federated Latest Averaging Algorithm
+1: Input: initial model parameters x0; number of clients 𝑁; num-
+ber of total iterations 𝑇; learning rate 𝛾; proportion of selected
+clients 𝛽(i.e., the number of participating clients in each itera-
+tion is 𝐾= 𝛽𝑁.)
+2: Initialization: g0 ←0; ∀𝑖∈{1, 2, · · · , 𝑁}, g0
+𝑖←0, 𝑇0
+𝑖←0.
+3: for 𝑡= 1 to 𝑇do
+4:
+g𝑡←g𝑡−1
+5:
+C𝑡←the set of available clients
+6:
+B𝑡←𝐾clients from C𝑡with the lowest 𝑇𝑡−1
+𝑖
+values
+7:
+Update 𝑇𝑡
+𝑖values: 𝑇𝑡
+𝑖←𝑡, ∀𝑖∈B𝑡; 𝑇𝑡
+𝑖←𝑇𝑡−1
+𝑖
+, ∀𝑖∉B𝑡.
+8:
+Each client 𝑖∈B𝑡calculates local gradient g𝑡
+𝑖and uploads
+gradient difference g𝑡
+𝑖−g𝑇𝑡−1
+𝑖
+𝑖
+.
+9:
+Once receiving the gradient information from client 𝑖, the
+cloud server calculates the global gradient:
+g𝑡←g𝑡+ 1
+𝑁
+
+g𝑡
+𝑖−g𝑇𝑡−1
+𝑖
+𝑖
+
+.
+10:
+The cloud server updates the global model parameters:
+x𝑡←x𝑡−1 −𝛾g𝑡.
+(4)
+11: end for
+previous participating iteration, i.e., g𝑡
+𝑖−g𝑇𝑡−1
+𝑖
+𝑖
+, rather than the cur-
+rent gradient g𝑡
+𝑖as in the traditional FedAvg algorithm. Once the
+gradient difference from each client 𝑖is received, the cloud server
+would update the global gradient (Line 9). Following this aggre-
+gation method, the cloud server only needs to store the average
+latest gradient g𝑡and run 𝐾update operations. It can be proved by
+induction that at the end of each iteration 𝑡, the resulting gradient
+is indeed the average latest gradient:
+g𝑡= 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖.
+(3)
+Once the average latest gradient g𝑡is obtained, the cloud server
+uses it to update the global model parameters in (4).
+4
+CONVERGENCE ANALYSIS
+In this section, under intermittent client availability, we show that
+FedLaAvg achieves 𝑂(𝐸1/2/(𝑁1/4𝑇1/2)) convergence rate on gen-
+eral non-convex functions with a sublinear speedup in terms of the
+total number of clients.
+4.1
+Convergence on Example 1
+We first demonstrate that FedLaAvg converges in Example 1, where
+FedAvg produces an arbitrarily poor-quality result. The conver-
+gence analysis of FedLaAvg for this simple example sheds light on
+the analysis for the case of general non-convex optimization in the
+next subsection.
+Theorem 2. Suppose each client computes the exact (not stochastic)
+gradient. In Example 1, after𝑇iterations, FedLaAvg with the learning
+rate 𝛾= 1/(2
+√
+𝑇) produces a solution ^x that is within 𝑂(1/
+√
+𝑇)
+range of the optimal solution x∗: (^x −x∗)2 = 𝑂(1/
+√
+𝑇), where we
+choose ^x = arg minx𝑡𝑓(x𝑡) as the output.
+Proof of Theorem 2. We recall that
+𝑓(x) =
+
+x −e1 + e2
+2
+2
++ (e1 −e2)2
+4
++ 1
+2
+2
+∑︁
+𝑖=1
+E𝜉𝑖∼D𝑖
+
+(𝜉𝑖−e𝑖)2
+,
+where the latter two terms are not associated with the variable x.
+Hence, we only need to focus on the following part of the loss func-
+tion: ^𝑓(x) = (x −x∗)2 , where x∗= e1+e2
+2
+is the optimal solution.
+Note that
+^𝑓(x𝑡) −^𝑓(x𝑡−1) =
+
+x𝑡−x𝑡−12
++2
+
+x𝑡−1 −x∗ 
+x𝑡−x𝑡−1
+. (5)
+We calculate the difference of x between two successive iterations:
+x𝑡−x𝑡−1 = −𝛾
+2
+
+g𝑇𝑡
+1
+1 + g𝑇𝑡
+2
+2
+
+= −𝛾
+
+x𝑇𝑡
+1 −e1 + x𝑇𝑡
+2 −e2
+
+= −𝛾
+
+x𝑇𝑡
+1 + x𝑇𝑡
+2 −2x∗
+,
+(6)
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+where 𝑇𝑡
+𝑖is defined in Section 3.2. Hence, we have
+2
+
+x𝑡−1 −x∗ 
+x𝑡−x𝑡−1
+= −𝛾
+
+2x𝑡−1 −2x∗ 
+x𝑇𝑡
+1 + x𝑇𝑡
+2 −2x∗
+= −𝛾
+2
+
+2x𝑡−1 −2x∗2
+−𝛾
+2
+
+x𝑇𝑡
+1 + x𝑇𝑡
+2 −2x∗2
++ 𝛾
+2
+
+2x𝑡−1 −x𝑇𝑡
+1 −x𝑇𝑡
+2
+2
+.
+(7)
+Substituting (6) and (7) into (5), we have
+^𝑓(x𝑡) −^𝑓(x𝑡−1) ≤−2𝛾
+
+x𝑡−1 −x∗2
++ 𝛾
+2
+
+2x𝑡−1 −x𝑇𝑡
+1 −x𝑇𝑡
+2
+2
+,
+(8)
+which follows from 0 < 𝛾≤1/2.
+The algorithm starts from model parameters x0. When client 1
+is available, x moves towards e1, and when client 2 is available, x
+moves towards e2. Hence, x is always within 𝐺/2 range of x∗:
+−𝐺
+2 ≤x𝑡−x∗≤𝐺
+2 , ∀𝑡≥0,
+(9)
+where 𝐺= max
+
+2  x0 −x∗ , |e1 −e2|
+ 
+is the the largest gradient
+norm during the training process. Substituting (9) into (6), we have
+−𝛾𝐺≤x𝑡−x𝑡−1 ≤𝛾𝐺.
+(10)
+Referring to the specific client availability model in this example, we
+have 𝑡−𝑇𝑡
+𝑖≤𝐼= max {𝑡1,𝑡2}, 𝑖= 1, 2. Therefore, when 𝑡≥𝑇𝑡
+𝑖+2,
+summing (10) over iterations from 𝑇𝑡
+𝑖+ 1 to 𝑡−1, we have
+−𝛾𝐼𝐺≤x𝑡−1 −x𝑇𝑡
+𝑖≤𝛾𝐼𝐺, 𝑖= 1, 2.
+(11)
+Note that when 𝑡= 𝑇𝑡
+𝑖or 𝑡= 𝑇𝑡
+𝑖+ 1, the above formula also holds.
+Substituting (11) into (8), we have
+^𝑓(x𝑡) −^𝑓(x𝑡−1) ≤−2𝛾
+
+x𝑡−1 −x∗2
++ 2𝛾3𝐼2𝐺2.
+Rearranging the formula, we have
+
+x𝑡−1 −x∗2
+≤1
+2𝛾
+
+^𝑓(x𝑡−1) −^𝑓(x𝑡)
+
++ 𝛾2𝐼2𝐺2.
+Summing this inequility over iterations from 1 to 𝑇, we have
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+
+x𝑡−1 −x∗2
+≤
+1
+2𝛾𝑇
+
+^𝑓(x0) −^𝑓(x𝑇)
+
++ 𝛾2𝐼2𝐺2
+≤
+1
+2𝛾𝑇
+
+^𝑓(x0) −^𝑓(x∗)
+
++ 𝛾2𝐼2𝐺2.
+(12)
+Substituting 𝛾= 1/(2
+√
+𝑇) into (12), we have
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+
+x𝑡−1 −x∗2
+≤
+1
+√
+𝑇
+
+^𝑓(x0) −^𝑓(x∗)
+
++ 𝐼2𝐺2
+4𝑇
+=
+1
+√
+𝑇
+
+𝑓(x0) −𝑓(x∗)
+
++ 𝐼2𝐺2
+4𝑇.
+Finally, we have
+ ^x −x∗2 ≤1
+𝑇
+𝑇
+∑︁
+𝑡=1
+
+x𝑡−1 −x∗2
+≤1
+√
+𝑇
+
+𝑓(x0) −𝑓(x∗)
+
++ 𝐼2𝐺2
+4𝑇
+= 𝑂
+ 1
+√
+𝑇
+
+.
+□
+4.2
+Convergence on General Non-Convex
+Functions
+In this subsection, we show the 𝑂(𝐸1/2/(𝑁1/4𝑇1/2)) convergence
+of FedLaAvg on general non-convex functions. First, we introduce
+Lemma 1 about client participation.
+Lemma 1. Under Assumption 4, the client selection policy in Fed-
+LaAvg guarantees that for each client, the latest participating itera-
+tion is at most 𝐼iterations earlier than the current iteration: 𝑡−𝑇𝑡
+𝑖≤
+𝐼, ∀𝑡, ∀𝑖, where 𝐼=
+ 𝑁
+𝐾
+
+𝐸−1
+Proof of Lemma 1. Please refer to Appendix B.1.
+□
+With such a client participation condition, we can derive a key
+result for analyzing the convergence of FedLaAvg.
+Theorem 3. By setting 𝛾≤1/(2𝐿) in FedLaAvg, we can derive
+the following bound on the average expected squared gradient norm
+under Assumptions 1–4:
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+≤2𝛾𝐼𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 2𝛾2𝐼2𝐿2𝐺2
+1 −2𝛾𝐿
++ 4𝛾2𝐼2𝐿2𝐺2
+| {z }
+gradient staleness
++
+4𝛾𝜎2𝐿
+𝑁
+| {z }
+gradient variance
++ 4
+𝛾𝑇
+
+E
+
+𝑓(x0)
+
+−E
+
+𝑓(x∗)
+
+| {z }
+objective distance
+,
+where x∗is the the optimal solution for the general non-convex opti-
+mization problem.
+Proof Sketch of Theorem 3. Based on Assumption 1 about
+smoothness, we decompose the difference of the loss function val-
+ues in two successive iterations, i.e., E[𝑓(x𝑡)] −E[𝑓(x𝑡−1)], into
+several terms. With Lemma 1, we show that the gradient staleness,
+i.e., difference between the latest gradient and the corresponding
+current gradient, is bounded. With Assumption 3, we show that
+the error related to stochastic gradient variance is also bounded.
+With the gradient staleness bound and the gradient variance bound,
+we further prove an upper bound for each decomposed term men-
+tioned above. Finally, we prove the theorem by summing up the
+bounds over iterations 𝑡from 1 to 𝑇and rearranging the resulted
+inequation. For the detailed proof, please refer to Appendix B.2.
+□
+Before presenting our main result, we consider the full client par-
+ticipation setting discussed in Yu et al. [35], in which our FedLaAvg
+reduces to FedAvg. Since 𝐾= 𝑁, 𝐸= 1, and 𝐼= ⌈𝑁/𝐾⌉𝐸−1 = 0
+in this setting, the gradient staleness term vanishes and the result
+in Theorem 3 becomes
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+≤4𝛾𝜎2𝐿
+𝑁
++ 4
+𝛾𝑇
+
+E
+
+𝑓(x0)
+
+−E
+
+𝑓(x∗)
+
+.
+Choosing 𝛾=
+√
+𝑁/(2𝐿
+√
+𝑇), when 𝑇≥𝑁, we can obtain the
+𝑂(1/
+√
+𝑁𝑇) convergence, which is consistent with the linear speedup
+in terms of 𝑁as proven in Yu et al. [35].
+
+arXiv preprint, 2020,
+Yan, et al.
+For the intermittent client availability setting considered in this
+work, FedLaAvg achieves a sublinear speedup by choosing appro-
+priate hyperparameters. For easy illustration, we define the loss
+difference between the initial solution x0 and the optimal solution
+x∗as 𝐵= 𝑓(x0) −𝑓(x∗). In addition, we recall that 𝛽= 𝐾/𝑁is the
+proportion of the selected clients in each iteration.
+Corollary 1. By choosing the learning rate 𝛾=
+𝛽
+1
+2 𝑁
+1
+4
+2𝐿𝐸
+1
+2 𝑇
+1
+2 and
+requiring𝛾≤1/(4𝐿) in FedLaAvg, we have the following convergence
+result:
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐿𝐵
+𝑁
+1
+4𝑇
+1
+2 𝛽
+1
+2
++ 𝐸𝐺2𝑁
+1
+2
+𝑇𝛽
+!
+.
+When 𝑇≥𝐸𝑁3/2/𝛽, we further obtain the sublinear speedup with
+respect to the total number of clients:
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐿𝐵
+𝑁
+1
+4𝑇
+1
+2 𝛽
+1
+2
+!
+= 𝑂
+ 
+𝐸
+1
+2
+𝑁
+1
+4𝑇
+1
+2
+!
+.
+Proof of Corollary 1. Please refer to Appendix B.3.
+□
+5
+EXTENSION TO COMMUNICATION
+ROUND-BASED SETTING
+In practical FL deployment, for communication efficiency, each
+participating client is allowed to perform multiple local training
+iterations before uploading the accumulated local model update in
+each communication round [17]. Although we focused in earlier
+sections on the case where participating clients communicate every
+iteration, FedLaAvg can be trivially extended to support multiple
+local iterations per communication round.
+We introduce some notations to represent the training process
+of the communication round-based FedLaAvg. 𝐶denotes the local
+iteration number. Let ^C𝑟≜Ñ𝑟𝐶
+𝑡=(𝑟−1)𝐶+1 C𝑡be the set of available
+clients in round 𝑟. Each client 𝑖observes the stochastic gradient g𝑡
+𝑖
+on the local model parameters in each local iteration, and accumu-
+lates these stochastic gradients to obtain the local model update
+u𝑟
+𝑖≜−𝛾Í𝑟𝐶
+𝑡=(𝑟−1)𝐶+1 g𝑡
+𝑖in round𝑟. After collecting the local model
+updates at the end of round 𝑟, (i.e., in iteration 𝑡= 𝑟𝐶), the cloud
+server calculates the global model parameters x𝑟𝐶. Similar to the
+notation 𝑇𝑡
+𝑖, we use 𝑅𝑟
+𝑖to denote the latest round where client 𝑖is
+available before or in round 𝑟. We define 𝑟𝑡≜⌊(𝑡−1)/𝐶⌋+ 1 as
+the round that iteration 𝑡belongs to. The one-iteration-per-round
+scenario corresponds to the special case using the specific notations:
+𝐶= 1, 𝑟𝑡= 𝑡, ^C𝑟𝑡= C𝑡, u𝑟𝑡
+𝑖
+= −𝛾g𝑡
+𝑖, and 𝑅𝑟𝑡
+𝑖
+= 𝑇𝑡
+𝑖.
+To apply FedLaAvg to the multiple-iteration-per-round scenario,
+we need only replace the cached gradient g𝑡in Algorithm 1 with
+cached update u𝑟. The communicated gradient difference g𝑡
+𝑖−g𝑇𝑡−1
+𝑖
+𝑖
+is replaced with the update difference u𝑟
+𝑖−u𝑅𝑟−1
+𝑖
+𝑖
+. The algorithm is
+formally presented in Algorithm 2.
+As we consider multiple local iterations per communication
+round, client availability should be measured in rounds. Hence we
+replace Assumption 4 with Assumption 5:
+Algorithm 2 The Communication Round-Based Federated Latest
+Averaging Algorithm
+1: Input: initial model parameters x0; number of clients 𝑁; num-
+ber of total rounds 𝑅; learning rate𝛾; number of local iterations
+𝐶; proportion of selected clients 𝛽(i.e., the number of partici-
+pating clients in each round is 𝐾= 𝛽𝑁.)
+2: Do initialization:
+u0 ←0, ∀𝑖∈{1, 2, · · · , 𝑁}, u0
+𝑖←0, 𝑅0
+𝑖←0.
+3: for 𝑟= 1 to 𝑅do
+4:
+u𝑟←u𝑟−1
+5:
+^C𝑟←the set of available clients
+6:
+^B𝑟←𝐾clients from ^C𝑟with the lowest 𝑅𝑟−1
+𝑖
+values
+7:
+Update 𝑅𝑟
+𝑖values:
+𝑅𝑟
+𝑖←𝑟, ∀𝑖∈^B𝑟; 𝑅𝑟
+𝑖←𝑅𝑟−1
+𝑖
+, ∀𝑖∉^B𝑟.
+8:
+Each client 𝑖∈^B𝑟calculates the accumulated local model
+update u𝑟
+𝑖and uploads the update difference u𝑟
+𝑖−u𝑅𝑟−1
+𝑖
+𝑖
+in
+parallel.
+9:
+Once receiving the update information from client 𝑖, the
+cloud server calculates the global update:
+u𝑟←u𝑟+ 1
+𝑁
+
+u𝑟
+𝑖−u𝑅𝑟−1
+𝑖
+𝑖
+
+.
+10:
+The cloud server updates the global model parameters:
+x𝑟𝐶←x𝑟𝐶−𝐶+ u𝑟.
+11: end for
+Assumption 5. Minimal availability: each client 𝑖is available at
+least once in any period with 𝐸successive rounds:
+∀𝑖, ∀𝑟, ∃^𝑟∈{𝑟,𝑟+ 1, · · · ,𝑟+ 𝐸−1}, such that 𝑖∈^C^𝑟.
+Under Assumption 5, we can establish the following convergence
+rate of the extended algorithm:
+Theorem 4. We recall that 𝐵= 𝑓(x0) −𝑓(x∗) and 𝛽= 𝐾/𝑁.
+Let the communication round-based FedLaAvg execute 𝑅rounds. By
+choosing the learning rate 𝛾= (𝛽1/2𝑁1/4)/(2𝐿𝐶𝐸1/2𝑅1/2) and
+requiring 𝛾≤1/(4𝐿), we have the following convergence result:
+1
+𝑅
+𝑅
+∑︁
+𝑟=1
+E
+∇𝑓(x𝑟𝐶−1)
+
+2
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐿𝐵
+𝑁
+1
+4 𝑅
+1
+2 𝛽
+1
+2
++ 𝐸𝐺2𝑁
+1
+2
+𝑅𝛽
+!
+.
+When 𝑅≥𝐸𝑁3/2/𝛽, we further have
+1
+𝑅
+𝑅
+∑︁
+𝑟=1
+E
+∇𝑓(x𝑟𝐶−1)
+
+2
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐵𝐿
+𝛽
+1
+2 𝑁
+1
+4 𝑅
+1
+2
+!
+= 𝑂
+ 
+𝐸
+1
+2
+𝑁
+1
+4 𝑅
+1
+2
+!
+.
+Proof of Theorem 4. Please refer to Appendix C.
+□
+6
+EXPERIMENTS
+In this section, we evaluate the performance of FedLaAvg in differ-
+ent tasks, datasets, models, and availability settings.
+6.1
+Experimental Setups
+6.1.1
+Federated learning tasks. We choose the following two tasks
+for evaluation.
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+𝐸𝐸rounds
+0, ⋯, 𝐷𝐷−1
+a period
+𝐸𝐸rounds
+𝐷𝐷, ⋯, 9
+𝐸𝐸rounds
+0, ⋯, 𝐷𝐷−1
+a period
+𝐸𝐸rounds
+𝐷𝐷, ⋯, 9
+…
+Figure 2: The availability setting with diurnal pattern
+adopted in the MNIST experiments. Clients holding digits
+0, · · · , 𝐷−1 are available in white grids, while the remaining
+clients are available in black grids.
+0:00
+24:00
+Available (8h)
+tweet
+Figure 3: The availability setting adopted in the Senti-
+ment140 experiments. The black or white dots denote that
+the client sent a tweet at this moment one day.
+Image classification. We first take an image classification task
+over the MNIST dataset [11], to validate the convergence of Fed-
+LaAvg, and the divergence of FedAvg even in a simple convex
+setting. The dataset consists of 70000 28×28 grey images of hand-
+written digits, where 60000 images are for training and the other
+10000 ones are for testing. In this task, we adopt the multinomial
+logistic regression model, which has a convex optimization objec-
+tive. To simulate non-IID data distribution, we set each client to
+hold only images of one certain digit, and the number of clients
+holding the same digit to be 𝑁/10. To simulate data unbalance, we
+let the number of samples on each client roughly follow a normal
+distribution with mean 6 × 104/𝑁and variance (1 × 104/𝑁)2.
+Sentiment analysis. In the general non-convex case, we take
+a binary text sentiment classification task on the Sentiment140
+dataset [4]. The dataset consists of 1600000 tweets collected from
+659775 twitter users. In this task, we use a two-layer LSTM binary
+classifier with 16 hidden units and pretrained 25D GloVe embed-
+dings [20] as the classification model. We naturally partition this
+dataset by letting each Twitter account correspond to a client. We
+keep only the clients who hold more than 40 samples and get 1473
+clients, and randomly select one-tenth of the data as the test dataset.
+6.1.2
+Baselines. We choose the following baselines for comparison.
+FedAvg and FedSGD. FedAvg was proposed by the seminal
+work of FL [17], which naively uses the average of the collected
+local model updates to update the global model. FedSGD is a special
+case of FedAvg with only one local iteration.
+FedProx. FedProx [15] is the first variant of FedAvg with guar-
+anteed convergence while allowing partial client participation. The
+main modification to FedAvg is that FedProx adds a quadratic prox-
+imal term to explicitly limit the local model updates. We follow the
+practice of the original work [15] to set the proxy term coefficient
+as 1.0 for MNIST and 0.01 for Sentiment140.
+Sequential SGD. We run the standard SGD algorithm to train
+the global model using the whole dataset, and set the total number
+of iterations in each round as 𝛽𝑁𝐶. This ensures the same amount
+of computation per round with the distributed algorithms. The
+result of sequential SGD can be regarded as the ideal solution for
+the optimization problem.
+6.1.3
+Availability Settings and Other Settings. We simulate the
+client availability as follows.
+In the MNIST image classification experiments, we adopt the
+typical subcase of our intermittent client availability model with
+the diurnal pattern [1, 3, 33], depicted in Figure 2. In the white
+grids, the clients holding digits 0, 1, · · · , 𝐷−1 are available for 𝐸
+rounds, and in the black grids, the remaining clients are available for
+the next 𝐸rounds. This setting captures that the client availability
+correlates with the local data distribution in practice, and 𝐷controls
+the degree of such availability heterogeneity.
+In the sentiment analysis experiments over Sentiment140, we
+assume that clients are available only when the Twitter users are
+sleeping, such that the devices are idle and eligible for the model
+training. Hence, we set each client to be available for eight hours
+each day, during which the client sends the least number of tweets,
+as illustrated in Figure 3. To capture the correlation of client avail-
+ability and local data distribution in practical FL, we vary the label
+balance as a function of the time of day. In particular, we randomly
+drop tweets sent in 0:00–1:00 such that 𝛼proportion of tweets are
+positive sentiment; we randomly drop tweets sent in 12:00-13:00
+such that 1 −𝛼proportion of tweets are positive sentiment; and we
+linearly interpolate for other hours of day.
+As the default experiment settings, we set the total number
+of clients 𝑁= 1000, the period length 𝐸= 100 for MNIST and
+𝐸= 120 for Sentiment140, the availability heterogeneity controlling
+parameter 𝐷= 1 for MNIST and 𝛼= 0.0 for Sentiment140, the
+proportion of selected clients in each round 𝛽= 0.1, and the number
+of local iterations 𝐶= 10. For hyperparameters, we set the learning
+rate to 0.01, and the local batch size to 5 for MNIST and 2 for
+Sentiment140, respectively.
+6.2
+Results in the Convex Case
+We first compare FedLaAvg with the aforementioned baselines in
+the MNIST image classification task under various availability set-
+tings. In particular, we vary 𝐸from 50 to 200, which controls the
+maximum number of unavailable rounds, and vary 𝐷from 1 to 5,
+which controls the differentiation of client availability. We show the
+results in Figure 4. In general, we observe that FedLaAvg converges
+in approximately 2000 rounds under all the five availability set-
+tings. In addition, FedLaAvg approaches sequential SGD in terms of
+training loss. These coincide with Theorem 3. In contrast, FedSGD,
+FedAvg, and FedProx suffer from periodic osillation in any availabil-
+ity setting, especially when either 𝐸or 𝐷is large, which validates
+Theorem 1. By comparing FedProx and FedAvg, we can see that
+the training losses of these two algorithms almost overlap, which
+indicates that FedProx also cannot solve the issue of intermittent
+client availablity. By comparing FedLaAvg with one and multiple
+local iterations, we find that introducing multiple local iterations
+speeds up the convergence with respect to communication rounds
+in practice.
+We then evaluate the effect of the total number of clients 𝑁and
+the proportion of selected clients 𝛽on FedLaAvg in Figure 5. From
+Figure 5(a), we can see that FedLaAvg with different 𝑁behaves
+
+arXiv preprint, 2020,
+Yan, et al.
+FedSGD
+FedAvg
+FedProx
+FedLaAvg, C=1
+FedLaAvg
+Sequential SGD
+(a) Legends
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+Training Loss
+103
+(b) 𝐸= 100, 𝐷= 3
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+Training Loss
+103
+(c) 𝐸= 100, 𝐷= 5
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+Training Loss
+103
+(d) 𝐸= 50, 𝐷= 1
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+Training Loss
+103
+(e) 𝐸= 100, 𝐷= 1
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+Training Loss
+103
+(f) 𝐸= 200, 𝐷= 1
+Figure 4: Training losses of FedSGD, FedAvg, FedProx, FedLaAvg, and sequential SGD in the MNIST image classification task
+with different client availability settings.
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+4.0
+Training Loss
+103
+N=200
+N=600
+N=1000
+(a) Training loss with different 𝑁
+0
+1
+2
+3
+4
+Communication Rounds
+0.0
+1.0
+2.0
+3.0
+4.0
+5.0
+6.0
+Training Loss
+103
+All available
+clients participate
+β=0.1
+β=0.05
+(b) Training loss with different 𝛽
+Figure 5: Training losses of FedLaAvg on MNIST dataset by varying the total number of clients 𝑁and the proportion of selected
+clients 𝛽.
+almost uniformly. This is because a larger 𝑁improves the conver-
+gence by reducing the variance of the global model update, while
+for such a simple convex training scenario, the variance is already
+small enough with 𝑁= 200. From Figure 5(b), we observe that
+selecting more clients in each round leads to more stable training,
+but after reaching a certain threshold, selecting further more clients
+would not help much.
+6.3
+Results in the Non-Convex Case
+We next evaluate FedLaAvg and the baselines over the Sentiment140
+dataset. First, we compare different algorithms under various avail-
+ability settings in Figure 6. In particular, we vary 𝐸from 24 to 240,
+and vary 𝛼from 0 to 0.5, which controls the differentiation of client
+availability. Similar to the convex case, FedLaAvg converges in all
+the five availability settings, while FedSGD, FedAvg, and FedProx
+suffer from severe oscillation, especially when either 𝐸is large or 𝛼
+is small; FedProx still cannot solve the issue of intermittent client
+availability. We note that 𝛼= 0.5 indicates that the ratio of posi-
+tive tweets is fixed at 0.5 throughout the training process. There
+is nearly no correlation between client availability and local data
+distribution in this setting, and thus the performance of FedAvg is
+similar to that of FedLaAvg. In addition, we observe that introduc-
+ing multiple local iterations to FedLaAvg significantly speeds up the
+convergence, which further validates the empirical communication
+efficiency improvement of local iterations.
+We finally evaluate the impacts of the total number of clients 𝑁
+and the proportion of selected clients 𝛽on FedLaAvg, and show the
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+FedSGD
+FedAvg
+FedProx
+FedLaAvg, C=1
+FedLaAvg
+Sequential SGD
+(a) Legends
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.3
+0.4
+0.5
+0.6
+0.6
+0.7
+Train Loss
+103
+(b) 𝐸= 120, 𝛼= 0.25
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.3
+0.4
+0.5
+0.6
+0.6
+0.7
+Train Loss
+103
+(c) 𝐸= 120, 𝛼= 0.5
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.3
+0.4
+0.5
+0.6
+0.6
+0.7
+Train Loss
+103
+(d) 𝐸= 24, 𝛼= 0
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.3
+0.4
+0.5
+0.6
+0.6
+0.7
+Train Loss
+103
+(e) 𝐸= 120, 𝛼= 0
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.3
+0.4
+0.5
+0.6
+0.6
+0.7
+Train Loss
+103
+(f) 𝐸= 240, 𝛼= 0
+Figure 6: Training losses of FedSGD, FedAvg, FedProx, FedLaAvg, and sequential SGD in the Sentiment140 sentiment analysis
+task with different client availability settings.
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.5
+0.55
+0.6
+0.65
+0.7
+Training Loss
+103
+N=200
+N=600
+N=1000
+(a) Training loss with different 𝑁
+0
+2
+4
+6
+8
+10
+Communication Rounds
+0.5
+0.55
+0.6
+0.65
+0.7
+Training Loss
+103
+All available
+clients participate
+β=0.2
+β=0.1
+(b) Training loss with different 𝛽
+Figure 7: Training losses of FedLaAvg on Sentiment140 dataset by varying the total number of clients 𝑁and the proportion of
+selected clients 𝛽.
+results in Figure 7. From Figure 7(a), we observe that FedLaAvg with
+a larger 𝑁converges much faster, which validates the sublinear
+speedup with respect 𝑁. From Figure 7(b), we can see that 𝛽has
+little effect on the convergence of FedLaAvg in this task.
+For all the experiments above, we also show the test accuracies
+with training rounds in Appendix E, which behave consistently
+with the training losses.
+7
+CONCLUSION
+In this work, we investigate intermittent client availability in FL
+and its impact on the convergence of the classical FedAvg algo-
+rithm. We use a collection of time-varying sets to represent the
+available clients in each training iteration, which can accurately
+model the intermittent client availability. Furthermore, we design a
+simple FedLaAvg algorithm with an 𝑂(𝐸1/2/(𝑁1/4𝑇1/2)) conver-
+gence guarantee for general distributed non-convex optimization
+problems. Empirical studies with the standard MNIST and Sen-
+timent140 datasets demonstrate the effectiveness and efficiency
+of FedLaAvg with a remarkable performance improvement and a
+sublinear speedup.
+REFERENCES
+[1] Keith Bonawitz, Hubert Eichner, Wolfgang Grieskamp, Dzmitry Huba, Alex
+Ingerman, Vladimir Ivanov, Chloé Kiddon, Jakub Konečný, Stefano Mazzocchi,
+H. Brendan McMahan, Timon Van Overveldt, David Petrou, Daniel Ramage, and
+Jason Roselander. 2019. Towards Federated Learning at Scale: System Design. In
+Proceedings of MLSys.
+
+arXiv preprint, 2020,
+Yan, et al.
+[2] Yae Jee Cho, Jianyu Wang, and Gauri Joshi. 2020. Client Selection in Federated
+Learning: Convergence Analysis and Power-of-Choice Selection Strategies. CoRR
+abs/2010.01243 (2020).
+[3] Hubert Eichner, Tomer Koren, Brendan McMahan, Nathan Srebro, and Kunal
+Talwar. 2019. Semi-Cyclic Stochastic Gradient Descent. In Proceedings of ICML.
+1764–1773.
+[4] Alec Go, Richa Bhayani, and Lei Huang. 2009. Twitter Sentiment Classification
+Using Distant Supervision. CS224N project report, Stanford (2009).
+[5] Andrew Hard, Kanishka Rao, Rajiv Mathews, Françoise Beaufays, Sean Augen-
+stein, Hubert Eichner, Chloé Kiddon, and Daniel Ramage. 2018. Federated Learn-
+ing for Mobile Keyboard Prediction. CoRR abs/1811.03604 (2018).
+[6] Kevin Hsieh, Amar Phanishayee, Onur Mutlu, and Phillip B. Gibbons. 2019. The
+Non-IID Data Quagmire of Decentralized Machine Learning. CoRR abs/1910.00189
+(2019).
+[7] Hanpeng Hu, Dan Wang, and Chuan Wu. 2020. Distributed Machine Learning
+through Heterogeneous Edge Systems. In Proceedings of AAAI. 7179–7186.
+[8] Peter Kairouz, H. Brendan McMahan, Brendan Avent, Aurélien Bellet, Mehdi
+Bennis, Arjun Nitin Bhagoji, Keith Bonawitz, Zachary Charles, Graham Cormode,
+Rachel Cummings, Rafael G. L. D’Oliveira, Salim El Rouayheb, David Evans, Josh
+Gardner, Zachary Garrett, Adrià Gascón, Badih Ghazi, Phillip B. Gibbons, Marco
+Gruteser, Zaïd Harchaoui, Chaoyang He, Lie He, Zhouyuan Huo, Ben Hutchinson,
+Justin Hsu, Martin Jaggi, Tara Javidi, Gauri Joshi, Mikhail Khodak, Jakub Konecný,
+Aleksandra Korolova, Farinaz Koushanfar, Sanmi Koyejo, Tancrède Lepoint, Yang
+Liu, Prateek Mittal, Mehryar Mohri, Richard Nock, Ayfer Özgür, Rasmus Pagh,
+Mariana Raykova, Hang Qi, Daniel Ramage, Ramesh Raskar, Dawn Song, Weikang
+Song, Sebastian U. Stich, Ziteng Sun, Ananda Theertha Suresh, Florian Tramèr,
+Praneeth Vepakomma, Jianyu Wang, Li Xiong, Zheng Xu, Qiang Yang, Felix X.
+Yu, Han Yu, and Sen Zhao. 2019. Advances and Open Problems in Federated
+Learning. CoRR abs/1912.04977 (2019).
+[9] Sai Praneeth Karimireddy, Satyen Kale, Mehryar Mohri, Sashank J. Reddi, and
+Ananda Theertha Suresh. 2020. Scaffold: Stochastic Controlled Averaging for
+Federated Learning. In Proceedings of ICML.
+[10] Ahmed Khaled, Konstantin Mishchenko, and Peter Richtárik. 2019. First Analysis
+of Local GD on Heterogeneous Data. CoRR abs/1909.04715 (2019).
+[11] Yann LeCun, Léon Bottou, Yoshua Bengio, and Patrick Haffner. 1998. Gradient-
+Based Learning Applied to Document Recognition. Proc. IEEE (1998), 2278–2324.
+[12] Liping Li, Wei Xu, Tianyi Chen, Georgios B. Giannakis, and Qing Ling. 2019. RSA:
+Byzantine-Robust Stochastic Aggregation Methods for Distributed Learning from
+Heterogeneous Datasets. In Proceedings of AAAI. 1544–1551.
+[13] Mu Li, David G. Andersen, Jun Woo Park, Alexander J. Smola, Amr Ahmed,
+Vanja Josifovski, James Long, Eugene J. Shekita, and Bor-Yiing Su. 2014. Scaling
+Distributed Machine Learning with the Parameter Server. In Proceedings of OSDI.
+583–598.
+[14] Tian Li, Anit Kumar Sahu, Ameet Talwalkar, and Virginia Smith. 2019. Federated
+Learning: Challenges, Methods, and Future Directions. CoRR abs/1908.07873
+(2019).
+[15] Tian Li, Anit Kumar Sahu, Manzil Zaheer, Maziar Sanjabi, Ameet Talwalkar, and
+Virginia Smith. 2020. Federated Optimization in Heterogeneous Networks. In
+Proceedings of MLSys.
+[16] Xiang Li, Kaixuan Huang, Wenhao Yang, Shusen Wang, and Zhihua Zhang. 2020.
+On the Convergence of FedAvg on Non-IID Data. In Proceedings of ICLR.
+[17] Brendan McMahan, Eider Moore, Daniel Ramage, Seth Hampson, and
+Blaise Aguera y Arcas. 2017. Communication-Efficient Learning of Deep Net-
+works from Decentralized Data. In Proceedings of AISTATS. 1273–1282.
+[18] Mehryar Mohri, Gary Sivek, and Ananda Theertha Suresh. 2019.
+Agnostic
+Federated Learning. In Proceedings of ICML. 4615–4625.
+[19] Jose G. Moreno-Torres, Troy Raeder, Rocío Alaiz-Rodríguez, Nitesh V. Chawla,
+and Francisco Herrera. 2012. A Unifying View on Dataset Shift in Classification.
+Pattern Recognition 45, 1 (2012), 521–530.
+[20] Jeffrey Pennington, Richard Socher, and Christopher D. Manning. 2014. Glove:
+Global Vectors for Word Representation. In Proceedings of EMNLP. 1532–1543.
+[21] Joaquin Quiñonero-Candela, Masashi Sugiyama Sugiyama, Anton Schwaighofer,
+and Neil D. Lawrence. 2009. Dataset Shift in Machine Learning. The MIT Press.
+[22] Yichen Ruan, Xiaoxi Zhang, Shu-Che Liang, and Carlee Joe-Wong. 2020. Towards
+Flexible Device Participation in Federated Learning for Non-IID Data. CoRR
+abs/2006.06954 (2020).
+[23] Jasper Snoek, Yaniv Ovadia, Emily Fertig, Balaji Lakshminarayanan, Sebastian
+Nowozin, D. Sculley, Joshua Dillon, Jie Ren, and Zachary Nado. 2019. Can You
+Trust Your Model’s Uncertainty? Evaluating Predictive Uncertainty under Dataset
+Shift. In Proceedings of NeurIPS. 13969–13980.
+[24] Sebastian U. Stich. 2019. Local SGD Converges Fast and Communicates Little. In
+Proceedings of ICLR.
+[25] Sebastian U Stich, Jean-Baptiste Cordonnier, and Martin Jaggi. 2018. Sparsified
+SGD with Memory. In Proceedings of NeurIPS. 4447–4458.
+[26] Sebastian U. Stich and Sai Praneeth Karimireddy. 2019. The Error-Feedback
+Framework: Better Rates for SGD with Delayed Gradients and Compressed
+Communication. CoRR abs/1909.05350 (2019).
+[27] Adarsh Subbaswamy, Peter Schulam, and Suchi Saria. 2019. Preventing Failures
+Due to Dataset Shift: Learning Predictive Models That Transport. In Proceedings
+of AISTATS. 3118–3127.
+[28] Yuwei Tu, Yichen Ruan, Satyavrat Wagle, Christopher G. Brinton, and Carlee
+Joe-Wong. 2020. Network-Aware Optimization of Distributed Learning for Fog
+Computing. In Proceedings of INFOCOM. 2509–2518.
+[29] Jianyu Wang and Gauri Joshi. 2018. Cooperative SGD: A unified Framework for
+the Design and Analysis of Communication-Efficient SGD Algorithms. CoRR
+abs/1808.07576 (2018).
+[30] Jianyu Wang, Qinghua Liu, Hao Liang, Gauri Joshi, and H. Vincent Poor. 2020.
+Tackling the Objective Inconsistency Problem in Heterogeneous Federated Opti-
+mization. In Proceedings of NeurIPS.
+[31] Zhaoxian Wu, Qing Ling, Tianyi Chen, and Georgios B. Giannakis. 2020. Feder-
+ated Variance-Reduced Stochastic Gradient Descent With Robustness to Byzan-
+tine Attacks. IEEE Trans. Signal Process. 68 (2020), 4583–4596.
+[32] Yikai Yan, Chaoyue Niu, Yucheng Ding, Zhenzhe Zheng, Fan Wu, Guihai Chen,
+Shaojie Tang, and Zhihua Wu. 2020. Distributed Non-Convex Optimization with
+Sublinear Speedup under Intermittent Client Availability. CoRR abs/2002.07399
+(2020).
+[33] Timothy Yang, Galen Andrew, Hubert Eichner, Haicheng Sun, Wei Li, Nicholas
+Kong, Daniel Ramage, and Françoise Beaufays. 2018. Applied Federated Learning:
+Improving Google Keyboard Query Suggestions. CoRR abs/1812.02903 (2018).
+[34] Hao Yu, Rong Jin, and Sen Yang. 2019. On the Linear Speedup Analysis of Com-
+munication Efficient Momentum SGD for Distributed Non-Convex Optimization.
+In Proceedings of ICML. 7184–7193.
+[35] Hao Yu, Sen Yang, and Shenghuo Zhu. 2019. Parallel Restarted SGD with Faster
+Convergence and Less Communication: Demystifying Why Model Averaging
+Works for Deep Learning. In Proceedings of AAAI. 5693–5700.
+[36] Yuchen Zhang, Martin J Wainwright, and John C Duchi. 2012. Communication-
+Efficient Algorithms for Statistical Optimization. In Proceedings of NeurIPS. 1502–
+1510.
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+A
+DIVERGENCE OF THE CONCURRENT WORK UNDER INTERMITTENT CLIENT AVAILABILITY
+The concurrent work [22] considered a different availability setting, where the number of local iterations performed by client 𝑖in round 𝑟
+can take an arbitrary value 𝑠𝑖𝑟from {0, 1, · · · ,𝐶}, following some time-varying distribution. For the clients submitting incompleted work, i.e.,
+1 ≤𝑠𝑖𝑟< 𝐶, they proposed to scale the model update by 𝑤𝑟
+𝑖= 𝐶
+𝑠𝑟
+𝑖𝑤𝑖, to force equal contribution to the global model among clients. Under this
+framework, they proved the convergence, which, however, is tailed with a bias term 𝑀𝑅
+𝑅; 𝑅is the total number of communication rounds,
+and 𝑀𝑅represents the accumulated training data bias throughout the training process. Specifically, 𝑀𝑅= Í𝑅
+𝑟=1 E [𝑧𝑟], where 𝑧𝑟= 0 if all
+clients contribute equally to the global model update in round 𝑟, i.e., E[𝑤𝑟
+𝑖𝑠𝑟
+𝑖]
+𝑤𝑖
+take the same value for all clients 𝑖, and 𝑧𝑟= 1 else. When
+there exists a single client 𝑖whose 𝑠𝑖𝑟= 0 with probability 𝑝𝑖> 0, i.e., client 𝑖is unavailable in round 𝑟, the proposed scaling technique
+cannot work and 𝑧𝑟= 𝑝𝑖. Further, if there exists multiple clients whose 𝑠𝑖𝑟= 0 with probability 𝑝𝑖> 0, 𝑧𝑟is even larger. The work [22] claims
+that their method converges if 𝑀𝑅increases sublinearly with 𝑅.
+The proposed method works mainly in the scenario that in most rounds of training, there are no unavailable clients. However, under
+intermittent client availability considered in this work, there exist unavailable clients in almost every round. E.g., in our Example 1, two
+clients are available alternately, and there is always one client unavailable throughout the training process, i.e., 𝑠𝑟
+𝑖= 1 with probability 1,
+indicating that 𝑀𝑅= 𝑅and the method diverges. Further, the work [22] proposed to kick out frequently unavailable clients if the evaluated
+training data bias introduced by keeping the clients, i.e., 𝑀𝑅
+𝑅, is larger than that introduced by kicking the clients out. This, however, still
+cannot solve the bias problem, since the bias always exists no matter whether frequently unavailable clients are kicked out or not.
+B
+DETAILED PROOF OF THE CONVERGENCE OF FEDLAAVG
+B.1
+Proof of Lemma 1
+Proof of Lemma 1. ∀𝑡, ∀𝑖, we focus on the training process from 𝑡(not included). In iteration 𝑡+ 𝐼+ 1, under Assumption 4, client 𝑖has
+been available for at least ⌈𝑁/𝐾⌉times. Note the ⌈𝑁/𝐾⌉iterations as 𝜏1,𝜏2, · · · ,𝜏⌈𝑁/𝐾⌉. We prove the lemma by contradiction. Suppose 𝑖is
+not selected in any of these iterations. Then we have 𝑇𝜏⌈𝑁/𝐾⌉
+𝑖
+= 𝑇𝑡
+𝑖. In the ⌈𝑁/𝐾⌉iterations where client 𝑖is available, ⌈𝑁/𝐾⌉𝐾clients have
+been selected. All these clients (noted as 𝑗) are with 𝑇𝜏
+𝑗≤𝑇𝑡
+𝑖for all iterations 𝜏before it participates in the training process and 𝑇𝜏
+𝑗> 𝑇𝑡
+𝑖for
+all iterations 𝜏after participation. Hence, the ⌈𝑁/𝐾⌉𝐾clients are distinct. Including client 𝑖, the system has at least ⌈𝑁/𝐾⌉𝐾+ 1 clients.
+However, the system has only 𝑁≤⌈𝑁/𝐾⌉𝐾< ⌈𝑁/𝐾⌉𝐾+ 1 clients. This forms a contradiction. Therefore, for all 𝑡, the next iteration 𝑡𝑛𝑒𝑥𝑡
+where 𝑖participates in the training process after iteration 𝑡satisfies
+𝑡𝑛𝑒𝑥𝑡≤𝑡+ 𝐼+ 1.
+(13)
+For all client 𝑖, by setting 𝑡to iterations where client 𝑖is selected in (13), we can derive
+∀𝑖, ∀𝑡, 𝑡−𝑇𝑡
+𝑖≤𝐼.
+□
+B.2
+Proof of Theorem 3
+Note that local gradient is not calculated in each iteration. In this subsection of the appendix, for mathematical analysis, we extend the
+definition g𝑡
+𝑖≜∇𝐹(x𝑡−1, 𝜉𝑡
+𝑖). For iterations where client 𝑖does not participate, 𝜉𝑡
+𝑖is a random variable which follows 𝜉𝑡
+𝑖∼D𝑖.
+Lemma 2. Under Assumption 2 and 3, we have
+E
+hg𝑡
+𝑖
+2i
+≤𝐺2, ∀𝑖, ∀𝑡
+and
+E
+hg𝑡
+𝑖−∇𝑓𝑖(x𝑡−1)
+2i
+≤𝜎2, ∀𝑖, ∀𝑡.
+Proof of Lemma 2. Our Assumptions 2 and 3 take the expectation over the randomness of one training iteration. But we care about the
+expectation taken over the randomness of the whole training process. This trivial lemma builds the gap.
+For the gradient, we have
+E
+hg𝑡
+𝑖
+2i (𝑎)
+= E
+h
+E
+hg𝑡
+𝑖
+2 | 𝜉[𝑡−1]ii
+= E
+
+E
+∇𝐹
+
+x𝑡−1, 𝜉𝑡
+𝑖
+
+2
+| x𝑡−1
+ (𝑏)
+≤E
+
+𝐺2
+= 𝐺2,
+(14)
+where (a) follows from Law of Total Expectation E[E[X|Y]] = E[X]; (b) follows from Assumption 3.
+For the variance, we have
+E
+hg𝑡
+𝑖−∇𝑓𝑖(x𝑡−1)
+2i (𝑎)
+= E
+h
+E
+hg𝑡
+𝑖−∇𝑓𝑖(x𝑡−1)
+2 | 𝜉[𝑡−1]ii
+=
+E
+
+E
+∇𝐹
+
+x𝑡−1; 𝜉𝑡
+𝑖
+
+−∇𝑓𝑖
+
+x𝑡−1
+2
+| x𝑡−1
+ (𝑏)
+≤E
+
+𝜎2
+= 𝜎2,
+(15)
+
+arXiv preprint, 2020,
+Yan, et al.
+where (a) follows from Law of Total Expectation E[E[X|Y]] = E[X]; (b) follows from Assumption 2.
+□
+Lemma 3. ∀𝑖, ∀𝑡, we have
+E
+
+
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+=
+𝑁
+∑︁
+𝑖=1
+E
+"g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2#
+.
+Proof of Lemma 3. This lemma follows because training data are independent across clients. Specifically, note that
+E
+
+
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+=
+𝑁
+∑︁
+𝑝=1
+𝑁
+∑︁
+𝑞=1
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1)
+
+(𝑎)
+=
+𝑁
+∑︁
+𝑝=1
+𝑁
+∑︁
+𝑞=1
+E
+
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1)
+
+| 𝜉
+h
+min{𝑇𝑡
+𝑝,𝑇𝑡
+𝑞}
+i
+(𝑏)
+=
+𝑁
+∑︁
+𝑖=1
+E
+"g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2#
+,
+(16)
+where (a) follows from Law of Total Expectation E[E[X|Y]] = E[X]. Then we illustrate (b) case by case. Note that
+E
+
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1)
+
+| 𝜉
+h
+min{𝑇𝑡
+𝑝,𝑇𝑡
+𝑞}
+i
+is equal to E
+"g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2#
+when 𝑝= 𝑞= 𝑖. When 𝑝≠𝑞, without loss of generality, suppose 𝑇𝑡𝑝≤𝑇𝑡𝑞. Then it is equal to
+E
+
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1)
+
+| 𝜉
+h
+𝑇𝑡
+𝑝
+i
+=
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), E
+
+g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1) | 𝜉
+h
+𝑇𝑡
+𝑝
+i
+(17)
+because g
+𝑇𝑡
+𝑝
+𝑝and 𝑓𝑞(x𝑇𝑡
+𝑝−1) are determined by 𝜉
+h
+𝑇𝑡
+𝑝
+i
+. When 𝑇𝑡𝑝< 𝑇𝑡𝑞, we have E[g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1) | 𝜉[𝑇𝑡
+𝑝]] = 0. When 𝑇𝑡𝑝= 𝑇𝑡𝑞, we have
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), E
+
+g
+𝑇𝑡
+𝑞
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑞−1) | 𝜉
+h
+𝑇𝑡
+𝑝
+i
+=
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), g
+𝑇𝑡
+𝑝
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑝−1)
+
+(𝑎)
+=
+E
+
+E
+
+g
+𝑇𝑡
+𝑝
+𝑝−∇𝑓𝑝(x𝑇𝑡
+𝑝−1), g
+𝑇𝑡
+𝑝
+𝑞−∇𝑓𝑞(x𝑇𝑡
+𝑝−1)
+
+| 𝜉
+h
+𝑇𝑡
+𝑝−1
+i
+(𝑏)
+=
+0,
+(18)
+where (a) follows from Law of Total Expectation E[E[X|Y]] = E[X]; (b) follows because 𝜉
+𝑇𝑡
+𝑝
+𝑝
+and 𝜉
+𝑇𝑡
+𝑝
+𝑞
+are independent, and thus the
+covariance of g
+𝑇𝑡
+𝑝
+𝑝and g
+𝑇𝑡
+𝑝
+𝑞is 0.
+□
+Lemma 4. Under Assumptions 1 and 3, ∀𝑡, ∀𝑡0 ≤𝑡, ∀𝑖, we have
+E
+h∇𝑓𝑖(x𝑡−1) −∇𝑓𝑖(x𝑡0−1)
+2i
+≤(𝑡−𝑡0)2 𝐿2𝛾2𝐺2.
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+Proof of Lemma 4. This lemma follows the intuition that the difference of x in two iterations is bounded by the number of iterations
+between them.
+E
+h∇𝑓𝑖(x𝑡−1) −∇𝑓𝑖(x𝑡0−1)
+2i
+=
+E
+
+
+𝑡−1
+∑︁
+𝜏=𝑡0
+
+∇𝑓𝑖(x𝜏) −∇𝑓𝑖(x𝜏−1)
+
+2
+(𝑎)
+≤
+(𝑡−𝑡0)
+𝑡−1
+∑︁
+𝜏=𝑡0
+E
+h∇𝑓𝑖(x𝜏) −∇𝑓𝑖(x𝜏−1)
+2i
+(𝑏)
+≤
+(𝑡−𝑡0) 𝐿2
+𝑡−1
+∑︁
+𝜏=𝑡0
+E
+hx𝜏−x𝜏−12i
+(𝑐)=
+(𝑡−𝑡0) 𝐿2𝛾2
+𝑡−1
+∑︁
+𝜏=𝑡0
+E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑗=1
+g
+𝑇𝜏
+𝑗
+𝑗
+
+2
+(𝑑)
+≤
+(𝑡−𝑡0) 𝐿2𝛾2 1
+𝑁
+𝑡−1
+∑︁
+𝜏=𝑡0
+𝑁
+∑︁
+𝑗=1
+E
+"g
+𝑇𝜏
+𝑗
+𝑗
+
+2#
+(𝑒)
+≤
+(𝑡−𝑡0)2 𝐿2𝛾2𝐺2,
+(19)
+where (a) and (d) follows from the convexity of ∥·∥2; (b) follows from Assumption 1; (c) follows from (4) and (3); (e) follows from Lemma 2.
+□
+Corollary 2. Corollary of Lemma 4:
+E
+h∇𝑓(x𝑡−1) −∇𝑓(x𝑡0−1)
+2i
+≤(𝑡−𝑡0)2𝐿2𝛾2𝐺2.
+Proof of Corollary 2.
+E
+h∇𝑓(x𝑡−1) −∇𝑓(x𝑡0−1)
+2i
+(𝑎)
+≤
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+E
+∇𝑓𝑖
+
+x𝑡−1
+−∇𝑓𝑖(x𝑡0−1)
+
+2
+(𝑏)
+≤
+(𝑡−𝑡0)2𝐿2𝛾2𝐺2,
+(20)
+where (a) follows from the convexity of ∥· ∥2; (b) follows from Lemma 4.
+□
+Main Proof of Theorem 3. From Assumption 1, local objective functions 𝑓𝑖are all 𝐿−𝑠𝑚𝑜𝑜𝑡ℎ, and thus the global objective function 𝑓,
+which is the mean of them, is also 𝐿−𝑠𝑚𝑜𝑜𝑡ℎ. Hence, fixing 𝑡≥1, we have
+E
+
+𝑓(x𝑡)
+
+≤E
+
+𝑓(x𝑡−1)
+
++ 𝐿
+2E
+hx𝑡−x𝑡−12i
++ E
+
+∇𝑓(x𝑡−1), x𝑡−x𝑡−1
+.
+(21)
+
+arXiv preprint, 2020,
+Yan, et al.
+We decompose the terms on the right, during which we refer to Lemma 4 and Corollary 2. Specifically, we first focus on the second term:
+E
+hx𝑡−x𝑡−12i
+(𝑎)
+=
+𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
+
+2
+=
+𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
++ 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑏)
+≤
+2𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
++ 2𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑐)=
+2𝛾2
+𝑁2
+𝑁
+∑︁
+𝑖=1
+E
+"g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2#
++ 2𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑑)
+=
+2𝛾2𝜎2
+𝑁
++ 2𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+,
+(22)
+where (a) follows from (4) and (3); (b) follows from the convexity of ∥· ∥2; (c) follows from Lemma 3; (d) follows from Lemma 2.
+Define 𝑇𝑡≜𝑚𝑖𝑛𝑖
+
+𝑇𝑡
+𝑖
+
+. Focus on the third term in (21),
+E
+
+∇𝑓(x𝑡−1), x𝑡−x𝑡−1
+(𝑎)
+=
+−𝛾E
+"*
+∇𝑓(x𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+=
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+−𝛾E
+"*
+∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+=
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+−𝛾E
+"*
+∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+,
+(23)
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+where (a) follows from (3) and (4). We further focus on the first term in (23):
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+=
+−𝛾2𝐼𝐿
+√
+𝑁
+E
+"*
+1
+𝛾𝐼𝐿
+
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1)
+
+,
+√
+𝑁
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+(𝑎)
+≤
+𝛾2𝐼𝐿
+2
+√
+𝑁
+E
+"
+1
+𝛾𝐼𝐿
+
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1)
+
+2#
++𝛾2𝐼𝐿
+2
+√
+𝑁
+E
+
+
+√
+𝑁
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑏)
+≤
+𝛾2𝐼𝐿𝐺2
+2
+√
+𝑁
++ 𝛾2𝐼𝐿
+2
+√
+𝑁
+E
+
+
+√
+𝑁
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑐)=
+𝛾2𝐼𝐿𝐺2
+2
+√
+𝑁
++ 𝛾2𝐼𝐿
+2𝑁
+3
+2
+𝑁
+∑︁
+𝑖=1
+E
+"
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2#
+(𝑑)
+≤
+𝛾2𝐼𝐿𝐺2
+2
+√
+𝑁
++ 𝛾2𝐼𝐿𝜎2
+2
+√
+𝑁
+,
+(24)
+where (a) follows from Cauchy–Schwarz inequality and AM-GM inequality; (b) follows from Corollary 2 with 𝑡0 assigned as𝑇𝑡and Lemma 1;
+(c) follows from Lemma 3; (d) follows from Lemma 2. Then we focus on the second term in 23 (Note that 𝛾< 1/(2𝐿) and thus we can extract
+the root of 1 −2𝛾𝐿):
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+=
+−𝛾E
+"*
+1
+√︁
+1 −2𝛾𝐿
+
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1)
+
+, 1
+𝑁
+√︁
+1 −2𝛾𝐿
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+(𝑎)
+≤
+𝛾
+2 (1 −2𝛾𝐿) E
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1)
+
+2
++𝛾(1 −2𝛾𝐿)
+2
+E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑏)
+≤
+𝛾3𝐼2𝐿2𝐺2
+2 (1 −2𝛾𝐿) + 𝛾(1 −2𝛾𝐿)
+2
+E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+,
+(25)
+
+arXiv preprint, 2020,
+Yan, et al.
+where (a) follows from Cauchy–Schwarz inequality and AM-GM inequality; (b) follows from Corollary 2 and Lemma 1. We finally focus on
+the third term in (23):
+E
+"*
+∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+(𝑎)
+=
+E
+"
+E
+"*
+∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++
+| 𝜉[𝑇𝑡−1]
+##
+=
+E
+"
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+E
+hD
+∇𝑓(x𝑇𝑡−1), g𝑇𝑡
+𝑖
+𝑖
+E
+| 𝜉[𝑇𝑡−1]i#
+(𝑏)
+=
+E
+"
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+E
+h
+E
+hD
+∇𝑓(x𝑇𝑡−1), g𝑇𝑡
+𝑖
+𝑖
+E
+| 𝜉[𝑇𝑡
+𝑖−1]i
+| 𝜉[𝑇𝑡−1]i#
+(𝑐)=
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+E
+h
+E
+hD
+∇𝑓(x𝑇𝑡−1), ∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+E
+| 𝜉[𝑇𝑡−1]ii
+(𝑑)
+=
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+E
+hD
+∇𝑓(x𝑇𝑡−1), ∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+Ei
+=
+E
+"*
+∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+(𝑒)=
+1
+2E
+∇𝑓(x𝑇𝑡−1)
+
+2
++ 1
+2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+−1
+2E
+
+∇𝑓(x𝑇𝑡−1) −1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+,
+(26)
+where (a), (b) and (d) follows from Law of Total Expectation E[E[X|Y]] = E[X]; (c) follows because ∀𝑖: 𝑇𝑡≤𝑇𝑡
+𝑖, and thus 𝑓(x𝑇𝑡−1) is
+determined by 𝜉[𝑇𝑡
+𝑖−1]; (e) follows from ⟨u,
+⃗
+⟩= 1
+2 (∥u ∥2 + ∥
+⃗⃗
+∥2−∥u −
+⃗⃗
+∥2). In (26), we further deal with the last term,
+E
+
+∇𝑓(x𝑇𝑡−1) −1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+=
+E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+∇𝑓𝑖(x𝑇𝑡−1) −∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+(𝑎)
+≤
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+E
+
+
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1) −∇𝑓𝑖(x𝑇𝑡−1)
+
+2
+(𝑏)
+≤
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+(𝑇𝑡
+𝑖−𝑇𝑡)2𝐿2𝛾2𝐺2
+(𝑐)
+≤
+𝐼2𝐿2𝛾2𝐺2,
+(27)
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+where (a) follows from the convexity of ∥· ∥2; (b) follows from Lemma 4 with 𝑡assigned as 𝑇𝑡
+𝑖and 𝑡0 assigned as 𝑇𝑡; (c) follows from
+Lemma 1, 𝑇𝑡
+𝑖≤𝑡, and 𝑇𝑡= min𝑖
+
+𝑇𝑡
+𝑖
+
+. Substituting (27) into (26) and (24)–(26) into (23), we have:
+E
+
+∇𝑓(x𝑡−1), x𝑡−x𝑡−1
+≤
+𝛾2𝐼𝐿𝐺2
+2
+√
+𝑁
++ 𝛾2𝐼𝐿𝜎2
+2
+√
+𝑁
++ 𝛾3𝐼2𝐿2𝐺2
+2 (1 −2𝛾𝐿) + 𝛾3𝐼2𝐿2𝐺2
+2
+−𝛾2𝐿E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+
+2
+−𝛾
+2E
+∇𝑓(x𝑇𝑡−1)
+
+2
+.
+(28)
+Further substituting (22) and (28) into (21), we have
+E
+
+𝑓(x𝑡)
+
+−E
+
+𝑓(x𝑡−1)
+
+≤
+𝛾2𝜎2𝐿
+𝑁
++ 𝛾2𝐼𝐿 𝐺2 + 𝜎2
+2
+√
+𝑁
++ 𝛾3𝐼2𝐿2𝐺2
+2 (1 −2𝛾𝐿) + 𝛾3𝐼2𝐿2𝐺2
+2
+−𝛾
+2E
+∇𝑓(x𝑇𝑡−1)
+
+2
+.
+(29)
+We rearrange (29) with summation to obtain the convergence result. First, we rearrange (29):
+E
+∇𝑓(x𝑇𝑡−1)
+
+2
+≤
+2𝛾𝜎2𝐿
+𝑁
++ 𝛾𝐼𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝛾2𝐼2𝐿2𝐺2
+1 −2𝛾𝐿
++ 𝛾2𝐼2𝐿2𝐺2
++2
+𝛾
+
+E
+
+𝑓(x𝑡−1)
+
+−E
+
+𝑓(x𝑡)
+
+.
+(30)
+Summing (30) over iterations from 1 to 𝑇and dividing both sides by 𝑇, we have
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+∇𝑓(x𝑇𝑡−1)
+
+2
+≤
+2𝛾𝜎2𝐿
+𝑁
++ 𝛾𝐼𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝛾2𝐼2𝐿2𝐺2
+1 −2𝛾𝐿
++ 𝛾2𝐼2𝐿2𝐺2
++ 2
+𝛾𝑇
+
+E
+
+𝑓(x0)
+
+−E
+
+𝑓(x∗)
+
+,
+(31)
+where x∗is the optimal solution for the global objective function 𝑓(x).
+Finally, we build the gap between ∇𝑓(x𝑡−1) and ∇𝑓(x𝑇𝑡−1). Lemma 1 implies that 𝑡−𝑇𝑡≤𝐼since 𝑇𝑡= min𝑖𝑇𝑡
+𝑖. Hence, we have
+E
+h∇𝑓(x𝑡−1)
+2i
+=
+E
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1) + ∇𝑓(x𝑇𝑡−1)
+
+2
+(𝑎)
+≤
+2E
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1)
+
+2
++ 2E
+∇𝑓(x𝑇𝑡−1)
+
+2
+(𝑏)
+≤
+2𝛾2𝐼2𝐿2𝐺2 + 2E
+∇𝑓(x𝑇𝑡−1)
+
+2
+,
+(32)
+where (a) follows from the convexity of ∥· ∥2; (b) follows from Corollary 2. Sum (32) over iterations from 1 to 𝑇, devide both sides by 𝑇, and
+substitute (31) into it. We then have
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+≤
+4𝛾𝜎2𝐿
+𝑁
++ 2𝛾𝐼𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 2𝛾2𝐼2𝐿2𝐺2
+1 −2𝛾𝐿
++ 4𝛾2𝐼2𝐿2𝐺2
++ 4
+𝛾𝑇
+
+E
+
+𝑓(x0)
+
+−E
+
+𝑓(x∗)
+
+.
+(33)
+□
+B.3
+Proof of Corollary 1
+Proof of Corollary 1. We first summarize the 𝑂(·) form of Theorem 3:
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+= 𝑂
+ 
+𝛾𝐼𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝛾2𝐼2𝐿2𝐺2
+1 −2𝛾𝐿
++ 𝐵
+𝛾𝑇
+!
+.
+(34)
+
+arXiv preprint, 2020,
+Yan, et al.
+Substituting 𝛾with (𝛽1/2𝑁1/4)/(2𝐿𝐸1/2𝑇1/2), we have
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+(𝑎)
+=
+𝑂
+ 
+𝛾𝐼𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝐼2𝛾2𝐿2𝐺2 + 𝐵
+𝛾𝑇
+!
+=
+𝑂
+ 
+𝐼𝛽
+1
+2  𝐺2 + 𝜎2
+𝑁
+1
+4 𝐸
+1
+2𝑇
+1
+2
++ 𝐼2𝛽𝐺2𝑁
+1
+2
+𝐸𝑇
++
+𝐵𝐿𝐸
+1
+2
+𝛽
+1
+2 𝑁
+1
+4𝑇
+1
+2
+!
+(𝑏)
+=
+𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐵𝐿
+𝛽
+1
+2 𝑁
+1
+4𝑇
+1
+2
++ 𝐸𝐺2𝑁
+1
+2
+𝛽𝑇
+!
+,
+(35)
+where (a) follows because 𝛾≤1/(4𝐿), and thus 1 −2𝛾𝐿> 1/2; (b) follows because from Lemma 1, 𝐼= ⌈𝑁/𝐾⌉𝐸= 𝑂(𝐸/𝛽).
+When 𝑇≥𝐸𝑁3/2/𝛽, we have
+1
+𝑇
+𝑇
+∑︁
+𝑡=1
+E
+h∇𝑓(x𝑡−1)
+2i
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐵𝐿
+𝛽
+1
+2 𝑁
+1
+4𝑇
+1
+2
+!
+= 𝑂
+
+1
+𝑁
+1
+4𝑇
+1
+2
+
+,
+(36)
+where the final equation follows if we care only about 𝑁and 𝑇, and regard other parameters as constants.
+□
+As shown in Section 1, FedAvg is proven to achieve 𝑂(1/
+√
+𝑁𝑇) convergence when all clients participate in each training iteration.
+However, we can prove only the 𝑂(1/(𝑁1/4𝑇1/2)) convergence for FedLaAvg because of the partial client participation as a result of the
+intermittent client availability. Specifically, this gap is introduced by (23). The randomness of the stochastic gradient g𝑇𝑡
+𝑖
+𝑖
+is an obstacle for
+the convergence analysis. With full client participation, we can reduce this randomness by the following equations:
+E
+"*
+∇𝑓(x𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+= E
+"*
+∇𝑓(x𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑡
+𝑖
++#
+=
+E
+"
+E
+"*
+∇𝑓(x𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑡
+𝑖
++
+| 𝜉[𝑡−1]
+##
+= E
+"*
+∇𝑓(x𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑡−1)
++#
+.
+(37)
+However, with partial client participation, (37) no longer holds. We analyze the gap between
+E
+"*
+∇𝑓(x𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑇𝑡
+𝑖
+𝑖
++#
+and E
+"*
+∇𝑓(x𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
++#
+in (23). Then, we further study the upper bound for the absolute value of the first term of the gap, i.e.,
+E
+hD
+∇𝑓(x𝑡−1) −∇𝑓(x𝑇𝑡−1), 1
+𝑁
+Í𝑁
+𝑖=1
+
+g𝑇𝑡
+𝑖
+𝑖
+−∇𝑓𝑖(x𝑇𝑡
+𝑖−1)
+Ei
+in (24). This term is the inner product of two vectors. The norm of the second
+vector is bounded by 𝑂(1/𝑁), but the norm of the fisrt term is not related to 𝑁. Hence, the upper bound that we can obtain for the inner
+product is 𝑂(1/
+√
+𝑁), while the 𝑂(1/
+√
+𝑁𝑇) convergence needs an upper bound in the order of 𝑂(1/𝑁). Whether the 𝑂(1/(𝑁1/4𝑇1/2))
+convergence is a tight bound requires further studies.
+C
+DETAILED CONVERGENCE PROOF FOR THE COMMUNICATION ROUND-BASED SETTING
+To make the proof more concise, we introduce an mathematically equivalent Algorithm 3 of Algorithm 2. Note that x𝑡(when 𝑡is not multiple
+of 𝐶) is intermediate variable for mathematical analysis. In addition, g𝜏
+𝑖(𝜏≤0) is extraly defined to avoid undefined symbols when 𝑅𝑟𝑡
+𝑖
+= 0
+in (38). It can be proved by induction that all variables defined in Algorithm 2 are consistent with those in Algorithm 3.
+With equavalence between Algorithm 2 and 3 established, we indroduce the corresponding equavalent lemmas of Lemmas 1–4.
+Lemma 5. Under Assumption 5, following Algorithm 2, with 𝐼= ⌈𝑁/𝐾⌉𝐸−1, ∀𝑟, ∀𝑖, we have
+𝑟−𝑅𝑟
+𝑖≤𝐼.
+(40)
+Proof of Lemma 5. Replacing 𝑡with 𝑟and 𝑇𝑡
+𝑖with 𝑅𝑟
+𝑖, the proof is exactly the same with that of Lemma 1.
+□
+Lemma 6. Corresponding lemma of Lemma 2:
+E
+hg𝑡
+𝑖
+2i
+≤𝐺2, ∀𝑖, ∀𝑡;
+E
+hg𝑡
+𝑖−∇𝑓𝑖(x𝑡−1
+𝑖
+)
+2i
+≤𝜎2, ∀𝑖, ∀𝑡.
+Proof of Lemma 6. Replacing x𝑡−1 with x𝑡−1
+𝑖
+, the proof is exactly the same with that of Lemma 2.
+□
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+Algorithm 3 An equivalent Algorithm of Algorithm 2
+1: Input: Initial model x0
+2: g𝜏
+𝑖←0, ∀𝑖∈{1, 2, · · · , 𝑁}, 𝜏∈{0, −1, · · · , 1 −𝐶}
+3: 𝑅0
+𝑖←0, ∀𝑖∈{1, 2, · · · , 𝑁}
+4: for 𝑡= 1 to 𝑅𝐶do
+5:
+𝑟𝑡←⌊(𝑡−1)/𝐶⌋+ 1
+6:
+if 𝑡−1 is a multiple of 𝐶then
+7:
+^C𝑟𝑡←the set of available clients in round 𝑟𝑡
+8:
+^B𝑟𝑡←𝐾clients from ^C𝑟𝑡with the lowest 𝑅𝑟𝑡−1
+𝑖
+values
+9:
+Update 𝑅𝑟𝑡
+𝑖
+values: 𝑅𝑟𝑡
+𝑖
+←𝑟𝑡, ∀𝑖∈^B𝑟𝑡; 𝑅𝑟𝑡
+𝑖
+←𝑅𝑟𝑡−1
+𝑖
+, ∀𝑖∉^B𝑟𝑡.
+10:
+x𝑡−1
+𝑖
+←x𝑡−1, ∀𝑖∈^B𝑟𝑡
+11:
+end if
+12:
+g𝑡
+𝑖←∇𝐹
+
+x𝑡−1
+𝑖
+; 𝜉𝑡
+𝑖
+
+, ∀𝑖∈^B𝑟𝑡
+13:
+Update the global model parameters:
+x𝑡←x𝑡−1 −𝛾
+𝑁
+∑︁
+𝑖=1
+g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
+.
+(38)
+14:
+Update the local model parameters:
+x𝑡
+𝑖←x𝑡−1
+𝑖
+−𝛾g𝑡
+𝑖.
+(39)
+15: end for
+Lemma 7. Corresponding lemma of Lemma 3: ∀𝑖, ∀𝑡, we have
+E
+
+
+𝑁
+∑︁
+𝑖=1
+
+g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
+−∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
+
+2
+=
+𝑁
+∑︁
+𝑖=1
+E
+"g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
+−∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
+
+2#
+.
+Proof of Lemma 7. Replacing g𝑇𝑡
+𝑖
+𝑖
+with g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
+and ∇𝑓𝑖(x𝑇𝑡
+𝑖−1) with ∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+), the proof is exactly the same with that of
+Lemma 3.
+□
+Note that Lemma 4 and Corollary 2 still hold. Their proof follows as well if we replace the relation x𝜏−x𝜏−1 = Í𝑁
+𝑗=1 g
+𝑇𝜏
+𝑗
+𝑗
+with
+x𝜏−x𝜏−1 = Í𝑁
+𝑗=1 g
+𝑅𝑟𝜏
+𝑗𝐶−𝑟𝜏𝐶+𝜏
+𝑗
+.
+Main proof of Theorem 4. The proof is similar to that of Theorem 3 and Corollary 1. We illustrate it in detail as follow.
+Fix 𝑡≥1, by Assumption 1, we have
+E
+
+𝑓(x𝑡)
+
+≤E
+
+𝑓(x𝑡−1)
+
++ 𝐿
+2E
+hx𝑡−x𝑡−12i
++ E
+
+∇𝑓(x𝑡−1), x𝑡−x𝑡−1
+.
+(41)
+Focus on the second term on the right. Following the procedure of (22), we omit the intermediate results and show the final bound:
+E
+hx𝑡−x𝑡−12i
+≤2𝛾2𝜎2
+𝑁
++ 2𝛾2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
+
+2
+.
+(42)
+
+arXiv preprint, 2020,
+Yan, et al.
+For simplicity, we define ^𝑇𝑡as min𝑖
+
+𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+ 𝑡
+
+. Focus on the third term in (41), we can separate it into 3 parts
+E
+
+∇𝑓(x𝑡−1), x𝑡−x𝑡−1
+=
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x^𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
+−∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
++#
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x^𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
++#
+−𝛾E
+"*
+∇𝑓(x^𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
++#
+.
+(43)
+We further focus on the first term in (43). Following the procedure of (24), we have the following bound:
+−𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x^𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+
+g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
+−∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
++#
+≤
+𝛾2𝐼𝐶𝐿 𝐺2 + 𝜎2
+2
+√
+𝑁
+.
+(44)
+Then we focus on the second term in (43). Following the procedure of (25), we have
+𝛾E
+"*
+∇𝑓(x𝑡−1) −∇𝑓(x^𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
++#
+≤
+𝛾3𝐼2𝐶2𝐿2𝐺2
+2 (1 −2𝛾𝐿) + 𝛾(1 −2𝛾𝐿)
+2
+E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
+
+2
+.
+(45)
+We finally focus on the third term in (43). Following the procedure of (26) and (27), we have
+E
+"*
+∇𝑓(x^𝑇𝑡−1), 1
+𝑁
+𝑁
+∑︁
+𝑖=1
+g𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡
+𝑖
++#
+(𝑏)
+=
+1
+2E
+∇𝑓(x^𝑇𝑡−1)
+
+2
++ 1
+2E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
+
+2
+−1
+2𝐼2𝐿2𝐶2𝛾2𝐺2.
+(46)
+Substituting (44)–(46) into (43), we have:
+E
+
+∇𝑓(x𝑡−1), x𝑡−x𝑡−1
+≤
+𝛾2𝐼𝐶𝐿 𝐺2 + 𝜎2
+2
+√
+𝑁
++ 𝛾3𝐼2𝐶2𝐿2𝐺2
+2 (1 −2𝛾𝐿) + 𝛾3𝐼2𝐶2𝐿2𝐺2
+2
+−𝛾2𝐿E
+
+
+1
+𝑁
+𝑁
+∑︁
+𝑖=1
+∇𝑓𝑖(x𝑅𝑟𝑡
+𝑖𝐶−𝑟𝑡𝐶+𝑡−1
+𝑖
+)
+
+2
+−𝛾
+2E
+∇𝑓(x^𝑇𝑡−1)
+
+2
+.
+(47)
+Further substituting (42) and (47) into (41), we have
+E
+
+𝑓(x𝑡)
+
+−E
+
+𝑓(x𝑡−1)
+
+≤
+𝛾2𝜎2𝐿
+𝑁
++ 𝛾2𝐼𝐶𝐿 𝐺2 + 𝜎2
+2
+√
+𝑁
++ 𝛾3𝐼2𝐶2𝐿2𝐺2
+2 (1 −2𝛾𝐿) + 𝛾3𝐼2𝐶2𝐿2𝐺2
+2
+−𝛾
+2E
+∇𝑓(x^𝑇𝑡−1)
+
+2
+.
+(48)
+Rearrange the above equation and we have
+E
+∇𝑓(x^𝑇𝑡−1)
+
+2
+≤
+2𝛾𝜎2𝐿
+𝑁
++ 𝛾𝐼𝐶𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝛾2𝐼2𝐶2𝐿2𝐺2
+(1 −2𝛾𝐿)
++ 𝛾2𝐼2𝐶2𝐿2𝐺2
++2
+𝛾
+
+E
+
+𝑓(x𝑡−1)
+
+−E
+
+𝑓(x𝑡)
+
+.
+(49)
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+Summing (49) over iterations from 1 to 𝑅𝐶and dividing both sides by 𝑅𝐶, we have
+1
+𝑅𝐶
+𝑅𝐶
+∑︁
+𝑡=1
+E
+∇𝑓(x^𝑇𝑡−1)
+
+2
+≤
+2𝛾𝜎2𝐿
+𝑁
++ 𝛾𝐼𝐶𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝛾2𝐼2𝐶2𝐿2𝐺2
+(1 −2𝛾𝐿)
++𝛾2𝐼2𝐶2𝐿2𝐺2 +
+2
+𝛾𝑅𝐶
+
+E
+
+𝑓(x0)
+
+−E
+
+𝑓(x∗)
+
+,
+(50)
+where x∗is the optimal value for the objective function 𝑓(x).
+Finally, we build the gap between ∇𝑓(x𝑟𝑡𝐶−1) and ∇𝑓(x^𝑇𝑡−1). Lemma 5 implies that 𝑡−^𝑇𝑡≤𝐼𝐶, thus 𝑟𝑡𝐶−^𝑇𝑡≤(𝐼+ 1)𝐶. Hence, we
+have
+E
+∇𝑓(x𝑟𝑡𝐶−1)
+
+2
+≤
+2E
+
+
+∇𝑓(x𝑟𝑡𝐶−1) −1
+𝐶
+𝑟𝑡𝐶
+∑︁
+𝜏=(𝑟𝑡−1)𝐶+1
+∇𝑓(x^𝑇𝜏−1)
+
+2
++2E
+
+
+1
+𝐶
+𝑟𝑡𝐶
+∑︁
+𝜏=(𝑟𝑡−1)𝐶+1
+∇𝑓(x^𝑇𝜏−1)
+
+2
+≤
+2𝛾2 (𝐼+ 1)2 𝐶2𝐿2𝐺2 + 2 1
+𝐶
+𝑟𝑡𝐶
+∑︁
+𝜏=(𝑟𝑡−1)𝐶+1
+E
+∇𝑓(x^𝑇𝜏−1)
+
+2
+,
+(51)
+which follows from the convexity of ∥· ∥2and Corollary 2.
+Summing 51 over 𝑡∈{𝐶, 2𝐶, · · · , 𝑅𝐶}, dividing both sides by 𝑅and substituting 50 into it, we have
+1
+𝑅
+𝑅
+∑︁
+𝑟=1
+E
+∇𝑓(x𝑟𝐶−1)
+
+2
+≤
+4𝛾𝜎2𝐿
+𝑁
++ 2𝛾𝐼𝐶𝐿 𝐺2 + 𝜎2
+√
+𝑁
++
+
+2𝐼2
+(1 −2𝛾𝐿) + 4𝐼2 + 4𝐼+ 2
+
+𝛾2𝐶2𝐿2𝐺2
++ 4
+𝛾𝑅𝐶
+
+E
+
+𝑓(x0)
+
+−E
+
+𝑓(x∗)
+
+.
+(52)
+Then, we write the 𝑂(·) expression of the above equation:
+1
+𝑅
+𝑅
+∑︁
+𝑡=1
+E
+∇𝑓(x𝑟𝐶−1)
+
+2
+= 𝑂
+ 
+𝛾𝐼𝐶𝐿 𝐺2 + 𝜎2
+√
+𝑁
++ 𝐼2𝛾2𝐶2𝐿2𝐺2
+(1 −2𝛾𝐿)
++
+𝐵
+𝛾𝑅𝐶
+!
+.
+(53)
+Substituting 𝛾with (𝛽1/2𝑁1/4)/(2𝐿𝐶𝐸1/2𝑅1/2), we have
+1
+𝑅
+𝑅
+∑︁
+𝑡=1
+E
+∇𝑓(x𝑟𝐶−1)
+
+2
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐵𝐿
+𝛽
+1
+2 𝑁
+1
+4 𝑅
+1
+2
++ 𝐸𝐺2𝑁
+1
+2
+𝛽𝑅
+!
+.
+(54)
+If we further choose 𝑅> 𝐸𝑁3/2/𝛽, we have
+1
+𝑅
+𝑅
+∑︁
+𝑡=1
+E
+∇𝑓(x𝑟𝐶−1)
+
+2
+= 𝑂
+ 
+𝐸
+1
+2  𝐺2 + 𝜎2 + 𝐵𝐿
+𝛽
+1
+2 𝑁
+1
+4 𝑅
+1
+2
+!
+= 𝑂
+
+1
+𝑁
+1
+4 𝑅
+1
+2
+
+.
+(55)
+The final equation follows if we care only about 𝑁and 𝑅, and regard other parameters as constants.
+□
+D
+COMPLEXITY ANALYSIS
+We analyze the time and space complexity of Algorithms 1 and 2 in this appendix. We use 𝑃to denote the time complexity of one
+backpropagation and 𝑄to denote the number of parameters in the deep learning model.
+In each iteration of Algorithm 1, each client performs one backpropagation to obtain the local gradient and computes the gradient
+difference. This requires 𝑂(𝑃+𝑄) time complexity per client per iteration and 𝑂(𝑄) space complexity to locally store the gradient calculated
+in the previous participating iteration. The cloud server selects 𝐾clients from C𝑡in each iteration 𝑡. Our implementation is sorting an array
+of 𝑇𝑡−1
+𝑖
+first and picking the 𝐾clients from C𝑡with the lowest 𝑇𝑡−1
+𝑖
+according to the sorted array. This requires 𝑂(𝑁log 𝑁) time complexity
+to sort the array and 𝑂(𝑁) space complexity to store the array. Then, the cloud server aggregates the gradient difference to obtain the
+average latest gradient g𝑡, and update the global model. This requires 𝑂(𝐾𝑄) time complexity and 𝑂(𝑄) space complexity. To summarize, the
+
+arXiv preprint, 2020,
+Yan, et al.
+FedSGD
+FedAvg
+FedProx
+FedLaAvg, C=1
+FedLaAvg
+Sequential SGD
+(a) Legends
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+(b) 𝐸= 100, 𝐷= 3
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+(c) 𝐸= 100, 𝐷= 5
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+(d) 𝐸= 50, 𝐷= 1
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+(e) 𝐸= 100, 𝐷= 1
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+(f) 𝐸= 200, 𝐷= 1
+Figure 8: Test accuracies of FedSGD, FedAvg, FedProx, FedLaAvg, and sequential SGD in the MNIST image classification task
+with different client availability settings.
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+N=200
+N=600
+N=1000
+(a) Test accuracy with different 𝑁
+0
+1
+2
+3
+4
+Communication Rounds
+10
+30
+50
+70
+90
+Test Accuracy (%)
+103
+All available
+clients participate
+β=0.1
+β=0.05
+(b) Test accuracy with different 𝛽
+Figure 9: Test accuracies of FedLaAvg on MNIST dataset by varying the total number of clients 𝑁and the proportion of selected
+clients 𝛽.
+time complexity of each iteration in Algorithm 1 is 𝑂(𝑃+ 𝑄) on each client and 𝑂(𝑁log 𝑁+ 𝐾𝑄) on the cloud server. The space complexity
+is 𝑂(𝑄) on each client and 𝑂(𝑁+𝑄) on the cloud server. By similar analysis, the time complexity of each round in Algorithm 2 is 𝑂(𝐶𝑃+𝑄)
+on each client and 𝑂(𝑁log 𝑁+ 𝐾𝑄) on the cloud server. The space complexity is 𝑂(𝑄) on each client and 𝑂(𝑁+ 𝑄) on the cloud server.
+Compared with FedAvg, FedLaAvg only needs to additionally store the latest gradients of all clients, incurring 𝑂(𝑄) disk space on each
+resource-limited client and 𝑂(𝑁+ 𝑄) memory space on the resource-rich cloud server, which are acceptable and affordable.
+E
+SUPPLEMENTARY EXPERIMENT RESULTS
+In this section, we show the test accuracies with training rounds for each experiment. Figure 8 compares the test accuracies of FedLaAvg and
+other baselines in the MNIST image classification task under various availability settings; Figure 9 shows the test accuracies of FedLaAvg
+with different total number of clients 𝑁and proportion of selected clients 𝛽; Figure 10 compares the test accuracies of FedLaAvg and other
+baselines in the Sentiment140 dataset under various availability settings; Figure 11 compares shows the test accuracies of FedLaAvg with
+different 𝑁and 𝛽. All figures show consistent results with the training losses
+
+Distributed Non-Convex Optimization with Sublinear Speedup under Intermittent Client Availability
+arXiv preprint, 2020,
+FedSGD
+FedAvg
+FedProx
+FedLaAvg, C=1
+FedLaAvg
+Sequential SGD
+(a) Legends
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+(b) 𝐸= 120, 𝛼= 0.25
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+(c) 𝐸= 120, 𝛼= 0.5
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+(d) 𝐸= 24, 𝛼= 0
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+(e) 𝐸= 120, 𝛼= 0
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+(f) 𝐸= 240, 𝛼= 0
+Figure 10: Test accuracies of FedSGD, FedAvg, FedProx, FedLaAvg, and sequential SGD in the Sentiment140 sentiment analysis
+task with different client availability settings.
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+N=200
+N=600
+N=1000
+(a) Test accuracy with different 𝑁
+0
+2
+4
+6
+8
+10
+Communication Rounds
+45
+55
+65
+75
+Test Accuracy (%)
+103
+All available
+clients participate
+β=0.2
+β=0.1
+(b) Test accuracy with different 𝛽
+Figure 11: Test accuracies of FedLaAvg on Sentiment140 dataset by varying the total number of clients 𝑁and the proportion
+of selected clients 𝛽.
+F
+SUPPLEMENTARY NOTES FOR THE EXPERIMENT ENVIRONMENT
+The MNIST dataset is available from http://yann.lecun.com/exdb/mnist/. The Sentiment140 dataset is available from http://help.sentiment140.
+com/for-students. The pretrained GloVe embeddings can be downloaded from http://nlp.stanford.edu/data/glove.twitter.27B.zip. In addition,
+experiments are conducted on machines with operating system Ubuntu 18.04.3, CUDA version 10.1, and one NVIDIA GeForce RTX 2080Ti
+GPU. The average runtime on our machine is approximately 10 hours per experiment.

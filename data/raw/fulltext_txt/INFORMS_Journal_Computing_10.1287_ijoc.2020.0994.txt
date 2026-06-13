@@ -1,0 +1,3171 @@
+TITLE: Reducing Simulation Input-Model Risk via Input Model Averaging
+JOURNAL: INFORMS_Journal_Computing
+YEAR: 2020
+DOI: https://doi.org/10.1287/ijoc.2020.0994
+---
+
+Submitted to INFORMS Journal on Computing
+manuscript JOC-2017-01-OA-012
+Authors are encouraged to submit new papers to INFORMS journals by means of
+a style ﬁle template, which includes the journal title. However, use of a template
+does not certify that the paper has been accepted for publication in the named jour-
+nal. INFORMS journal templates are for the exclusive purpose of submitting to an
+INFORMS journal and should not be used to distribute the papers in print or online
+or to submit the papers to another publication.
+Reducing Simulation Input-Model Risk via Input
+Model Averaging
+Barry L. Nelson
+Northwestern University, nelsonb@northwestern.edu
+Alan T. K. Wan
+City University of Hong Kong, Alan.Wan@cityu.edu.hk
+Guohua Zou
+Capital Normal University, ghzou@amss.ac.cn
+Xinyu Zhang
+University of Science and Technology and Chinese Academy of Sciences, xinyu@amss.ac.cn, Corresponding Author
+Xi Jiang
+Northwestern University, xijiang2020@u.northwestern.edu
+Input uncertainty is an aspect of simulation model risk that arises when the driving input distributions are
+derived or “ﬁt” to real-world, historical data. While there has been signiﬁcant progress on quantifying and
+hedging against input uncertainty, there has been no direct attempt to reduce it via better input modeling.
+The meaning of “better” depends on the context and the objective: our context is when (a) there are one
+or more families of parametric distributions that are plausible choices; (b) the real-world historical data
+are not expected to perfectly conform to any of them; and (c) our primary goal is to obtain higher-ﬁdelity
+simulation output rather than to discover the “true” distribution. In this paper we show that frequentist
+model averaging can be an eﬀective way to create input models that better represent the true, unknown
+input distribution, thereby reducing model risk. Input model averaging builds from standard input modeling
+practice, is not computationally burdensome, requires no change in how the simulation is executed nor any
+follow-up experiments, and is available on The Comprehensive R Archive Network (CRAN). We provide
+theoretical and empirical support for our approach.
+Key words : Input Modeling, Stochastic Simulation, Input Uncertainty
+1
+
+Nelson et al.: Input Model Averaging
+2
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+1.
+Introduction
+At a high level, stochastic simulations consist of inputs and logic: The inputs are
+the basic sources of uncertainty that defy further explanation; they are represented
+by fully speciﬁed probability models (e.g., exponential distribution with rate λ =
+7.2). The logic consists of rules and algorithms that transform realizations of the
+inputs into sample paths of system performance (e.g., waiting times in queues);
+estimating system properties from these sample paths or “outputs” is the reason
+a simulation experiment is performed. The ﬁdelity of the outputs in representing
+the performance of a real or conceptual system clearly depends—often in a very
+complex way—on the ﬁdelity of the input models. In this paper we consider input
+models that are tuned or “ﬁt” to samples of real-world, historical data. We refer
+to this activity as input modeling, and we propose a better way to do it.
+Beyond the availability of good software, methods used for input modeling in the
+stochastic simulation practice community have not advanced much in the last 30
+years.1 Here is the recipe found in many textbooks (e.g., Banks et al. (2010), Law
+and Kelton (1991)) for ﬁtting a marginal distribution F to describe an independent
+and identically distributed (i.i.d.) input process:
+1. Given: x1,x2,...,xN an i.i.d. sample from some unknown input distribution
+F c, with “c” denoting “correct” or “true” distribution.
+2. Fit q ≥1 candidate parametric distributions F = {F1,F2,...,Fq} using meth-
+ods such as maximum likelihood estimation (MLE), least squares, or moment
+matching. This yields a set of ﬁtted distributions, say bF =
+n
+bF1, bF2,..., bFq
+o
+. The
+number of choices in current software ranges from q = 10 to 40.
+1 Many new input models have been invented, particularly for multivariate and nonstationary inputs; the
+lack of progress to which we refer is in methods for ﬁtting these models to data.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+3
+3. Rank the choices using one or more summary measures of ﬁt. Standard mea-
+sures are hypothesis-test statistics such as chi-squared, Kolmogorov-Smirnov and
+Anderson-Darling, and likelihood-based statistics such as AIC and BIC.
+4. From among the top choices, evaluate the ﬁt, e.g., via p-values of the hypoth-
+esis tests or graphically via Q-Q plots or other tools.
+5. Select
+bF = Best Choice
+n
+bF1, bF2,..., bFq
+o
+. Alternatively, use the (possibly
+smoothed) empirical distribution of x1,x2,...,xN if nothing ﬁts well.
+Although this recipe can and should be made smarter, for instance by using
+the physical basis of the real input process to suggest an appropriate family of
+distributions, in practice Step 5 is often automated by selecting the distribution
+with, say, the minimum AIC statistic for each input process, bypassing Step 4. This
+approach is understandable because it is neither obvious to simulation practitioners
+how to do better, nor how much the choice actually matters. Our proposal adopts
+Step 2, but rather than selecting one element of F, it instead creates an “input
+model average” that often leads to a better input model.
+Our work is motivated by the current interest in simulation model risk due
+to input uncertainty, which is the uncertainty resulting from having only a ﬁnite
+sample N of real-world data from which to ﬁt bF. However, the input-uncertainty
+literature has emphasized either quantifying the variability in the simulation output
+due to the sampling variability in bF, or selecting a defensive bF, which means a
+distribution that is plausible with respect to the given data but leads to the worst-
+case (maximum or minimum) simulation output performance; see for instance Lam
+(2016). Our objective is to reduce input uncertainty through our choice of bF via a
+rethinking about how the input models are created. Our work is heavily motivated
+by recent advances in the statistics literature on using model averaging within
+the frequentist paradigm to improve parameter estimation eﬃciency and forecast
+accuracy (e.g., Hjort and Claeskens (2003), Hansen (2007), Wan et al. (2010) and
+Liang et al. (2011)).
+
+Nelson et al.: Input Model Averaging
+4
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+What do we want in an input modeling solution?
+• It should work within the framework of current input-modeling software, and
+in particular Step 2 above where we have a collection of candidate distributions,
+and impose only a modest additional computational burden.
+• It should not require any change in how we actually execute the simulation,
+other than generating inputs from a diﬀerent bF. Thus, input modeling remains an
+upfront step in the simulation experiment (input uncertainty quantiﬁcation, on the
+other hand, often requires additional follow-up experiments).
+• It should improve simulation output ﬁdelity when the true distribution is not
+in F—so no single choice can be fully correct—but also tends to favor a single
+candidate model when it is close to F c. This is consistent with the “view through the
+queue” criterion coined by Whitt (1981), which evaluates an input approximation
+by how well it reproduces the desired output, rather than whether it discovers the
+true input.
+More pointedly, our model averaging approach is not a better way to discover
+the “true” real-world distribution when it is a member of the candidate set F,
+either individually or as a mixture. In fact, our asymptotic analysis speciﬁcally
+assumes that F c ̸∈F, and shows that, under some assumptions on the candidate set
+of distributions F, our model-average distribution gets as close as possible to the
+real-world distribution using only the component distributions in F. Thus, model
+averaging is not generally consistent for F c; however, if we include the empirical
+distribution (ED) as a candidate, then the model average places all weight on
+the ED as the sample size N →∞. Further, under very weak assumptions, the
+empirically optimal model-average distribution exists and is easily found.
+In the end, we will recommend the following: Reduce the size of the candidate set
+F (if large) by using prior knowledge of the input process physics or by screening
+out poor choices using something like AIC or BIC; always include the ED in F; and
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+5
+then do model averaging. However, model averaging can be applied in a completely
+automated fashion to a large candidate set, and the ED need not be included (say
+if a continuous bF is desired).
+The paper is organized as follows. We describe the problem and context more
+fully in Section 2, and our input model averaging method in Section 3. An empirical
+evaluation follows in Section 4. Proofs of the some results are found in Appen-
+dices A–B of the online supplement.
+2.
+Background and Examples
+In this paper we focus on univariate input models, but the method extends natu-
+rally to random vectors. Generically, X and Y denote input and output random
+variables, respectively, and x and y are realized values. We use FY to refer to the
+(typically unknown) distribution of Y .
+The following examples will be used to evaluate our methods; they were chosen
+because they mimic three distinct classes of problems found in simulation studies,
+and because we expect that diﬀerent aspects of the inputs X (e.g., mean, variance,
+tail behavior) will aﬀect the ﬁdelity of their outputs Y . That is, even though the
+examples themselves are simple, they manifest complex and diﬀering input-to-
+output behavior. The examples are important because we rely solely on empirical
+evaluation to establish the potential reduction in input uncertainty.
+2.1.
+Stochastic Activity Network (SAN)
+Stochastic activity networks are used in project planning when there is interest in
+the time to complete the project; an early paper on simulating such networks is
+Burt and Garman (1971). A realistic problem might have several hundred activities,
+constrained resources, etc., but as an illustration we consider one with ﬁve activities
+where the time to complete the project is
+Y = max{X1 + X4,X1 + X3 + X5,X2 + X5}.
+(1)
+
+Nelson et al.: Input Model Averaging
+6
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+&%
+'$
+&%
+'$
+&%
+'$
+&%
+'$
+a
+c
+b
+d
+
+3
+QQQQQQQQ
+s
+
+3
+QQQQQQQQ
+s
+?
+X1
+X2
+X4
+X5
+X3
+Figure 1
+A small stochastic activity network.
+See Figure 1. Thus, simulation of the SAN requires ﬁve input distributions for
+X1,X2,...,X5. Properties of Y that are of interest include E(Y ), Pr{Y > c}, F −1
+Y (p)
+or the entire distribution. The natural experiment design for the simulation is to
+make R replications yielding i.i.d. outputs Y1,Y2,...,YR. Each replication requires
+random activity-time inputs X1,X2,...,X5. Because activity times are summed,
+path durations tend to be normally distributed for realistically large projects, but
+for this small example the speciﬁc distributions of the Xi should matter.
+2.2.
+GI/G/1 Queue
+The GI/G/1 queue has a renewal arrival process of customers, some non-negative
+service-time distribution, and a single server; see for instance Gross et al. (2008).
+Let Yi be the delay in queue of the ith arriving customer when the system starts
+empty. Then
+Yi = max{0,Yi−1 + X2,i−1 −X1,i}, i = 1,2,...
+(2)
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+7
+with Y0 = X2,0 = 0. There are two input distributions, the interarrival-time distri-
+bution of X1 and the service-time distribution of X2; successive interarrival times
+and service times are individually and jointly independent.
+Under certain conditions it can be shown that Yi
+D→Y as i →∞, and properties
+of Y , a speciﬁc Yi, or the set {Yi,i ≤T} for some stopping time T, are of interest.
+Thus, the experiment design could be a single, long replication, or multiple shorter
+ones, and the number of inputs X1,i and X2,i needed may be ﬁxed or random.
+The E(Y ) is tractable if the interarrival times are exponentially distributed and
+it depends only on the mean and variance of the service times X2; the entire
+distribution of Y is tractable if the service time is also exponential. In general
+the distributions of Yi and Y are not known. In our evaluation we focus on the
+distribution of Y5, the wait of the 5th arriving customer, since the eﬀect of the
+service-time distribution beyond its mean and variance should not yet have washed
+out.
+2.3.
+Highly Reliable System (HRS)
+Systems that are repairable or have signﬁcant redundancy are designed to be highly
+reliable, meaning that system failure is rare. Let Y be the time of system failure.
+The following algorithm mimics a HRS for which a failure is avoided if a backup
+component is repaired (time to repair X1) before the active component fails (time
+to failure X2); it does not actually model such a system, but allows us to control
+the rarity of failure through the distributions of X1 and X2.
+1. Y = 0; i = 1
+2. until X2,i < X1,i do
+Y = Y + X2,i
+i = i + 1
+loop
+3. return Y = Y + Xi,1
+
+Nelson et al.: Input Model Averaging
+8
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+If E(X1) ≪E(X2) then the system will be highly reliable; just how reliable it is
+is characterized by properties of Y , such as its mean or a tail probability. In our
+example Xi,1 and Xi,2 are individually and jointly independent.
+2.4.
+Input Uncertainty
+To present our method we focus on a single, univariate input distribution F c for
+which we have an i.i.d. sample x1,x2,...,xN of real-world data. Because it is a real-
+world process, there is no expectation that F c is a member of any standard family
+of parametric distributions, including those in our set F, although some may be
+close.
+The distribution of our generic output Y depends upon the choice of input dis-
+tribution F; thus we write
+Y ∼FY (y | F).
+Based on the input data we ﬁt a distribution denoted by bF; thus, the simulation
+generates observations of
+bY ∼FY (y | bF).
+Ideally FY (y | bF) = FY (y | F c), but in practice we will be satisﬁed if the distributions
+are close in some relevant sense (e.g., have nearly the same mean). Notice that what
+matters is the implied output distribution; the input distribution F c itself is of less
+interest. We let Y c ∼FY (y | F c) denote the ideal output.
+Research on input uncertainty addresses the problem that
+FY (y | bF) ̸= FY (y | F c)
+often by focusing on the error in using bY as an estimator of E(Y c). See, for instance,
+the surveys in Barton (2012), Lam (2016) and Song et al. (2014). One reasonable
+objective is to form a conﬁdence interval or a Bayesian credible interval for E(Y c)
+that accounts for error in using bF as an estimator of F c as well as the stochastic
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+9
+error from observing the simulated output bY rather than E(bY ). There has been
+signiﬁcant success in attacking this and related problems, including Cheng and
+Holland (1997), Cheng and Holland (1998), Chick (2001), Zouaoui and Wilson
+(2004), Ankenman and Nelson (2012), Barton et al. (2013), Corlu and Biller (2013),
+Fan et al. (2013), Xie et al. (2014), Song and Nelson (2015), Ghosh and Lam (2015),
+Zhou and Xie (2015), Song et al. (2015), Glynn and Lam (2018) and Lam and Qian
+(2018), to name a few. Notice that none of these papers attempt to reduce input
+uncertainty; instead they try to quantify it or hedge against it.
+Unfortunately, experience has shown that the added error due to input uncer-
+tainty can be substantial, sometimes overwhelming, even when we have a signiﬁcant
+quantity of real-world data. Therefore, in this paper we look to reduce the input-
+uncertainty error by our choice of bF, a reduction which would then be reﬂected in
+reduced measurements of it using the methods described in the papers cited above.
+We are not attempting to create a defensive choice bFworst, and in fact our approach
+would be an impediment to such robust analysis (see Lam (2016) for an excellent
+survey of these methods).
+Reducing the eﬀect of input-model uncertainty on the simulation output is chal-
+lenging for obvious reasons: The standard families of distributions used in sim-
+ulations are often supported by process physics, they are ﬂexible meaning that
+they can assume a variety of shapes, and they are accompanied by provably eﬃ-
+cient parameter-estimation methods, such as MLE. Improving upon the standard
+approach universally would be impossible, but we will demonstrate empirically
+that substantial improvements are possible in some situations, especially when the
+real-world input data do not perfectly conform to any known parametric distribu-
+tion, as is frequently the case in practice. For completeness we also evaluate our
+model-average distribution bF against F c, which we can do because we will create
+the input data.
+
+Nelson et al.: Input Model Averaging
+10
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+3.
+Input Model Averaging
+To motivate the method that follows, recall that we have a set F of q candidate
+parametric distributions for F c; for instance, F could contain
+1. Exponential: f1(x) = θe−xθ,
+x ∈[0,∞),
+2. Normal: f2(x) =
+1
+(2πσ2)1/2e−(x−µ)2/(2σ2),
+x ∈R,
+3. Shifted Gamma: f3(x) =
+βα
+Γ(α)(x −ξ)(α−1)e−(x−ξ)β,
+x ∈(ξ,∞)
+where fm(x),m = 1,2,3, are density functions for F = {F1,F2,F3}, and θ,σ,β,α > 0
+and µ,ξ ∈R are unknown parameters.
+Let bFm(x) and bfm(x) be the estimators of F c(x) and f c(x) under the mth can-
+didate distribution, and let w = (w1,w2,...,wq)T be a weight vector belonging to
+the set W = {w ∈[0,1]q : Pq
+m=1 wm = 1}. The model-average estimator of F c(x) is
+bF(x,w) =
+q
+X
+m=1
+wm bFm(x)
+(3)
+and taking its derivative with respect to x we have the model average estimator of
+f c(x)
+bf(x,w) =
+q
+X
+m=1
+wm bfm(x).
+(4)
+Clearly bF(x,w) includes each of the individual candidate distributions as a spe-
+cial case of w, but it increases ﬂexibility by allowing averages. A good choice of w
+is one that makes bF(x,w) close to F c(x) in a comprehensive way that we deﬁne
+precisely below. Of course, F c(x) is unknown, but the ED with cdf
+¯F(x) = N −1
+N
+X
+i=1
+I(xi ≤x)
+is unbiased and consistent for it, so we use ¯F as a stand-in for F c in ﬁtting. Finally,
+to guard against overﬁtting we use cross-validation (CV) with ¯F(x) to select w;
+we describe the CV method in the next section. Given the CV-estimated weight
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+11
+bw, variate generation is easy: Each time a value of X is needed, generate integer
+M ∼bw to select the distribution, then generate X ∼bFM.
+Remark 1. Averaging distributions as dissimilar as exponential, normal and
+shifted-gamma may not seem sensible. However, practitioners often use software
+that ﬁts a long list of distributions, and as we show later we can easily ﬁnd the
+empirically optimal model average even for such heterogeneous cases.
+Remark 2. The model-average distribution bF(x,w) is clearly a mixture distri-
+bution, but it is diﬀerent in spirit from mixing a ﬁnite number of distributions from
+a common family, which is a well-known distribution ﬁtting approach (McLachlan
+and Peel 2004). We can, in fact, exploit ﬁnite mixtures of a common distribution
+by including such models in the candidate set F provided we have a method for
+ﬁtting them.
+3.1.
+Cross-Validation for Input Model Averaging
+Let xN = (x1,x2,...,xN) be the real-world data, which we model as i.i.d. copies
+of the random variable X ∼F c. Here we develop a “frequentist model averaging”
+approach to estimate F c(x) by F(x,w) using J-fold CV to tune w to xN; it is
+in the spirit of the Jackknife model average (JMA) of Hansen and Racine (2012),
+developed originally for improving the eﬃciency of estimators in a heteroscedastic
+linear regression model. Hansen and Racine (2012) proved that the JMA estimator
+of the regression coeﬃcients has the smallest asymptotic expected squared errors
+among a large class of linear estimators including the least squares, ridge, Nadaraya-
+Watson and spline estimators. They also showed that the JMA estimator frequently
+outperforms the AIC and BIC model selection estimators, and Hansen (2007)’s
+Mallows model average estimators in ﬁnite samples. Zhang et al. (2013) showed
+that the merits of the JMA estimator carry over to models that admit a lagged
+dependent variable as a regressor and a non-diagonal error covariance structure.
+To implement the JMA scheme for input modeling in stochastic simulation, we
+partition the data set xN into J groups, such that for each group we have S = N/J
+
+Nelson et al.: Input Model Averaging
+12
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+observations. For the jth group, the observations are labelled as x(j−1)S+1,...,xjS,
+where j = 1,2,...,J. Let eF (−j)
+m
+(x) be the estimator (e.g., via MLE) of F c(x) with
+the observations of the jth group removed from the data set for the mth candi-
+date distribution. Correspondingly, the model average estimator with the jth group
+removed is
+eF (−j)(x,w) =
+q
+X
+m=1
+wm eF (−j)
+m
+(x).
+The ED estimator of F c(x) using only the jth group is
+¯F(j)(x) = S−1
+S
+X
+s=1
+I(x(j−1)S+s ≤x)
+(5)
+and it is well known that E
+  ¯F(j)(x)
+
+= F c(x). Our J-fold CV criterion is formulated
+to be
+CVJ(w) =
+J
+X
+j=1
+S
+X
+s=1
+n
+eF (−j)(x(j−1)S+s,w) −¯F(j)(x(j−1)S+s)
+o2
+.
+In other words, we consider the squared diﬀerence between the model-average esti-
+mator constructed without the jth group of real-world data, and the ED constructed
+from only the jth group, summed across all groups. The empirically optimal weight
+vector resulting from this criterion is
+bw = argminw∈WCVJ(w)
+leading to the model average estimator bF(x, bw) of F c(x).
+The optimization problem we need to solve to ﬁnd bw can be formulated as a
+quadratic program (QP); see Jiang and Nelson (2018) for the formulation, and
+Nocedal and Wright (2006) for solving QPs. Speciﬁcally,
+minimize: CVJ(w) =
+J
+X
+j=1
+S
+X
+s=1
+n
+eF (−j)(x(j−1)S+s,w) −¯F(j)(x(j−1)S+s)
+o2
+=
+J
+X
+j=1
+S
+X
+s=1
+(
+q
+X
+m=1
+wm
+
+eF (−j)
+m
+(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+)2
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+13
+=
+J
+X
+j=1
+S
+X
+s=1
+(
+q
+X
+m=1
+wmcmjs
+)2
+=
+J
+X
+j=1
+S
+X
+s=1
+w⊤Cjs w = w⊤Cw
+subject to:
+q
+X
+m=1
+wm = 1
+wm ≥0, m = 1,2,...,q
+where the matrices Cjs and C are deﬁned in the obvious way. If the q × q
+matrix C is positive deﬁnite, then the objective function is strictly convex and
+the QP has a unique optimal solution; we refer to this as the empirically opti-
+mal model average. That each matrix Cjs is positive semi-deﬁnite is clear from
+their construction. When X is continuous-valued and at least one of the candi-
+date distributions is continuous, we show in Appendix C of the online supplement
+that the probability of there existing a w′ ̸= 0 for which (w′)⊤Cw′ = 0 is zero;
+therefore, C is positive deﬁnite almost surely. The QP is easily solved via stan-
+dard methods (Nocedal and Wright 2006). Notice that the construction of C is
+a one-time calculation, and that QPs of such small size (q ≤40) can be solved
+very eﬃciently. The ﬁtting algorithm is implemented in our R package FMAdist
+(https://cran.r-project.org/package=FMAdist).
+Remark 3. Model averaging is intuitively appealing, as it enlarges the space of
+input model choices beyond F while still including the individual candidate distri-
+butions in F as special cases; it employs cross-validation as a robust method for
+ﬁtting; and the empirically optimal solution is easy to ﬁnd under weak assumptions.
+Under more restrictive assumptions we show in Section 3.3 that this empirically
+optimal choice is in fact the best possible choice as N →∞.
+
+Nelson et al.: Input Model Averaging
+14
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+3.2.
+Relationships to Other Input Modeling Methods
+The greatest progress in input uncertainty quantiﬁcation to date has been when the
+distribution family of F c is assumed known (e.g., gamma(α,β)), so that the only
+uncertainty comes from the parameter estimates (e.g., bα, bβ). In our opinion, it is not
+universally the case that real-world data both conform perfectly to a parametric
+distribution and are measured to suﬃcient precision to be indistinguishable, even
+though parametric distributions are often good approximations.
+There has been some work on input uncertainty quantiﬁcation that allows for
+distribution family uncertainty, speciﬁcally Chick (2001) and Zouaoui and Wil-
+son (2004). Both papers take a Bayesian perspective, placing a prior distribution
+on the correct model family (e.g., exponential, Weibull, gamma), as well as each
+distributions’ parameters, and derive the posterior distributions given xN. While
+variate generation of inputs is identical to our method—ﬁrst choosing the distri-
+bution family from the posterior, then generating variates—their goal is to fully
+represent input uncertainty in the posterior predictive distribution of the output
+Y , rather than trying to reduce it as we do; in fact we provide no estimate of input
+uncertainty.
+Another appealing solution is to use a parametric function bF that has the ﬂexi-
+bilty to get close to any F c, and many distributions have been created for this pur-
+pose, including the generalized lambda distribution (Karian and Dudewicz 2000)
+to match moments or percentiles, and the B´ezier distribution (Wagner and Wilson
+1996) that can have an arbitrary number of parameters. However, these distri-
+butions were created to be ﬂexible, rather than to conform to particular process
+physics, leading to the possibility of overﬁtting or manifesting unusual features that
+are not consistent with the data. There is, after all, a reason that the standard
+arsenal of normal, lognormal, logistic, Weibull, gamma, Pareto, etc. continue to be
+used: their existence is implied by theory that can hold approximately in practice.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+15
+As described in the previous section, the input model averaging approach allows
+us to exploit these tried-and-true families, but to extend their reach through aver-
+aging. To resist overﬁtting we use CV to select the weights; CV insures that the
+weights do not give an average that is inconsistent with the distribution of the
+data, and the empirically optimal weights are unique and easily found.
+3.3.
+Asymptotic Properties of Input Model Averages
+In this section we establish asymptotic properties of the empirically optimal model
+average under certain restrictions on the true distribution F c, the individual can-
+didate distributions in F, and whether or not the ED ¯F is in F: As N →∞, (a)
+for certain classes of candidate distributions F, when neither F c nor ¯F are in F
+individually, the empirically optimal model-average weights become the squared-
+error-optimal weights; and (b) when ¯F is included in F, then its weight converges
+to 1. The ﬁrst result implies that under certain conditions cross validation provides
+the best-possible weights when no candidate distribution ﬁts perfectly, while the
+second implies that it is consistent for F c if we include the ED as a candidate.
+We ﬁrst establish the restrictions. Let βm be the unknown parameter vector in
+the mth candidate distribution, and let bβm be its MLE for m = 1,2,...,q, which
+we assume exists. It is worth noting that bβm (1 ≤m ≤q) is determined from each
+candidate distribution individually, and not by the optimized linear combination
+of distributions. Further, let bβ =
+
+bβ
+T
+1 ,..., bβ
+T
+q
+T
+with dimension κ. We require that
+the size q of the candidate set is ﬁnite. Furthermore, we assume that the following
+conditions hold:
+(i) For each x ∈R, the density function fm(x;βm) of the mth candidate distri-
+bution is continuous at every βm in the corresponding compact parameter space
+Θm.
+(ii) E[logf c(x)] exists and |logfm(x;βm)| < l(x), where l(x) is integrable with
+respect to F c.
+
+Nelson et al.: Input Model Averaging
+16
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+(iii) There exists a vector β∗
+m at which the Kullback-Leibler information
+R
+R log[f c(x)/fm(x;βm)]|f c(x)dx attains a unique minimum.
+Under these conditions bβ →β∗=
+ β∗T
+1 ,...,β∗T
+q
+T almost surely as N →∞, i.e.,
+the MLEs converge even when the distributions are misspeciﬁed. White (1982)
+further showed that
+bβ −β∗= Op(N −1/2).
+(6)
+We assume that (6) is in force. The validity of (6) depends on Conditions (i)–(iii)
+as well as Assumptions A4, A5 and A6 of White (1982).
+Remark 4. The canonical parameter space for many standard distributions is
+not compact, as assumed in (i); e.g., for the normal distribution σ > 0. However,
+as a practical matter assuming that there exists a large, but compact space in
+which each parameter lies, e.g., σ ∈[10−10,1010], is reasonable since there is no
+requirement that the bound be known. In this sense all of the distributions that
+have a density in the examples in Section 4 below satisfy this condition.
+We next deﬁne the notations needed to state our main results. Let F0 =
+(F c(x1),...,F c(xN))T, the values of the true cdf evaluated at the data points, and
+bFm = ( bFm(x1),..., bFm(xN))T, the corresponding quantity for the mth candidate
+ﬁtted distribution, for m = 1,2,...,q. We assume the ED is not one of the q can-
+didates. For any ﬁxed w, deﬁne a corresponding vectors of values for the averaged
+distribution, with parameters ﬁtted from data, bF(w) = ( bF(x1,w),..., bF(xN,w))T,
+and with the limiting parameters F∗(w) = bF(w) |bβ=β∗.
+Recall that CV leaves out sets of S consecutive data values in turn. In
+eF(w) = ( eF (−1)(x1,w),..., eF (−1)(xS,w), eF (−2)(xS+1,w),..., eF (−J)(xN,w))T we col-
+lect the cdf values for each data point based on the model average that excludes
+it; ¯F = ( ¯F(1)(x1),..., ¯F(1)(xS), ¯F(2)(xS+1),..., ¯F(J)(xN))T is the corresponding vector
+using the ED. We assume J is ﬁxed, so that S →∞as N →∞.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+17
+Finally, deﬁne the discrepancy L∗
+N(w) = ∥F∗(w) −F0∥2, and let ξN =
+infw∈W L∗
+N(w) (with all weights assigned to distributions other than the ED).
+For proving the results, we need the following regularity conditions:
+Condition 1 There exists a neighborhood N of β∗such that
+sup
+eβ∈N
+
+∂bF(xi,w)
+∂bβ
+bβ=eβ
+ = Op(1)
+uniformly for i = 1,2,...,N and w ∈W.
+Condition 2 For all w ∈W, N −1/2∥bF(w) −eF(w)∥2 = Op(1), and N −1/2{bF(w) −
+eF(w)}T{bF(w) −¯F} = Op(1).
+Condition 3 When N →∞, there exists a sequence cN →0 such that ξ2
+N ≥N/cN
+almost surely.
+Condition 3 is well-deﬁned even if F c is a nontrivial mixture of two or more elements
+of the candidate set F. It can be seen that
+bF(w) −eF(w) =
+ 
+q
+X
+m=1
+wm
+n
+bFm(x1) −eF (−1)
+m
+(x1)
+o
+,...,
+q
+X
+m=1
+wm
+n
+bFm(xS) −eF (−1)
+m
+(xS)
+o
+,
+q
+X
+m=1
+wm
+n
+bFm(xS+1) −eF (−2)
+m
+(xS+1)
+o
+,...,
+q
+X
+m=1
+wm
+n
+bFm(xN) −eF (−J)
+m
+(xN)
+o!T
+.
+(7)
+Hence Condition 2 requires the diﬀerence between the regular and leave-S out
+estimators to decrease suﬃciently quickly as N increases. On the other hand, Con-
+dition 3 requires that ξN grows at a rate no slower than N 1/2. This in turn implies
+that the correct input distribution F c must not be among the candidate distribu-
+tions in the model average.
+Theorem 1. If F c ̸∈F, ¯F ̸∈F, and Conditions 1–3 hold, then as the real-world
+sample size N →∞
+PN
+i=1
+h
+bF(xi, bw) −F c(xi)
+i2
+infw∈W
+PN
+i=1
+h
+bF(xi,w) −F c(xi)
+i2
+P
+−→1.
+(8)
+
+Nelson et al.: Input Model Averaging
+18
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+The proof is in Appendix A of the online supplement. Notice that the numerator
+and denominator are the sum of squared deviations of the model average estimator
+from the true distribution, a comprehensive measure of ﬁt. In the numerator the
+weight bw is obtained via J-fold CV with the empirical distribution; while in the
+denominator the minimum possible squared deviation weight is chosen. The result
+shows that as the sample size increases, J-fold CV yields error no larger than
+the minimum possible error with the given set of candidate distributions, which
+we would expect to be smaller than choosing any one distribution from F when
+F c ̸∈F. Notice that the condition “F c ̸∈F” does not prohibit F c from being a
+nontrivial mixture of two or more elements of F.
+Theorem 1 does not establish that bF(xi, bw) is asymptotically consistent for F c.
+However, as noted earlier, the ED is unbiased and consistent for F c, Therefore, we
+also consider including ¯F in the candidate set F for model averaging. While (8) no
+longer holds, model averaging becomes consistent in the sense that in the limit all
+of the weight is on the ED.
+Theorem 2. If F c ̸∈F but ¯F ∈F, and if Conditions 1–3 hold, then bwED
+P→1
+as N →∞.
+The proof is in Appendix B of the online supplement. The eﬀect of including ¯F
+is that the other parametric distributions smooth the ED and provide better tail
+behavior. This is important because the ED being unbiased does not imply that the
+output ¯Y ∼FY (y | ¯F) has the same distribution, or even the same mean, as the ideal
+output Y c because the simulation is in general a highly nonlinear transformation
+of inputs to outputs. See the commentary in Song et al. (2015). Nevertheless, we
+will show empirically that the ED of the entire data set, ¯F, is often a good choice
+when the criterion is recovering the distribution of Y c, and model averaging with
+the ED can be superior to either the ED alone or model averaging of parametric
+distributions.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+19
+Remark 5. Among the list of possible candidates F could be kernel density
+estimators and the more-recent log-concave density estimators (Kim et al. 2016,
+Cule et al. 2010). These semi-parametric methods do not leverage process physics—
+an advantage of our approach—but do have excellent convergence rates to the
+true distribution. However, we would expect our ﬁts to be smoother for small to
+moderate N. That said, these methods are not natural candidates for our model
+averaging because they directly estimate the density, while we require the cdf.
+4.
+Experiments
+In this section we evaluate our proposal empirically. Recall that our interest is
+in how properties of the simulation output bY ∼FY (y | bF) compare to the ideal
+output Y c ∼FY (y | F c) (Section 4.1), and also how our ﬁtted model-average dis-
+tribution bF(x; bw) compares to the distribution that generated the input data F c
+(Section 4.2). The assessments in this section are quantitative; see Jiang and Nel-
+son (2018) for some graphical illustrations of the attained ﬁts and the online data
+supplement for additional documentation
+We reach the following broad conclusions: Model averaging, especially including
+the ED as a candidate, is often substantially superior to any single choice from F,
+and typically no worse. Given a large number q of candidate distributions it is best
+to screen out obviously poor choices ﬁrst and do model averaging over a smaller
+subset of F. When either the size of the real-world data sample N is large, or none
+of the candidate distributions has the capability to ﬁt well (e.g., data are multi-
+modal but choices in F are all unimodal), then the weight on the ED, bwED, tends
+to be large. Thus, the ED provides protection against a badly chosen candidate
+set (which can occur when using the built-in set in a software package) as well
+as providing the consistency established by Theorem 2. Although not speciﬁcally
+targeted in our experiments, it seems clear that employing a candidate set with
+common, appropriate support, and containing candidates that are well justiﬁed by
+
+Nelson et al.: Input Model Averaging
+20
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+process physics when available, is helpful. Finally, we found no systematic diﬀerence
+from using J = 5 or 10 folds for CV; we would never use more than 10 folds, and
+recommend J = 5 when N is small.
+4.1.
+Evaluation of the Output Distribution
+To evaluate the various methods with respect to the output distribution, we use the
+relative distribution method of Handcock and Morris (2006). A brief explanation
+of the method follows: Let the distributions of bY and Y c be denoted by FbY (y) and
+FY c(y), respectively. Deﬁne the grade transformation of bY to Y c as
+U = FY c(bY ),
+(9)
+obtained by transforming bY by FY c. The CDF of U can be expressed as
+G(u) = FbY (F −1
+Y c (u))
+(10)
+for 0 ≤u ≤1, where F −1
+Y c (u) = inf{y | FY c(y) ≥u} is the quantile function of FY c.
+It is easily seen that if bY
+D= Y c, then the CDF of U is a 45◦line. When bY
+D
+̸= Y c,
+then the closer G(u) is to the 45◦line, the better the ﬁt provided by bY . In our
+analysis, we use the unsigned area between G(u) and the 45◦line over 0 ≤u ≤1 to
+evaluate the eﬀectiveness of the method. We denote the gap by A(u) = |G(u) −u|,
+so that the area is A =
+R 1
+0 A(u)du. Clearly we could compare a list of individual
+properties, such as the mean and variance, but A provides a comprehensive measure
+of performance. The relative distribution method is in the same spirit as the tail-
+probability plot method (see, for instance, Heyde and Kou (2004)). When the true
+distribution of Y c is not available, as in most of our examples, then it is represented
+by a very large sample from FY c; this is possible for us because the distributions of
+the inputs F c are known. To implement the relative distribution analysis we used
+the codes at https://csde.washington.edu/~handcock/RelDist/Software/R/.
+The following are features of our empirical evaluation:
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+21
+• We apply input model averaging to cases of the SAN, GI/G/1 and HRS sim-
+ulations as described in Sections 2.1–2.3, for diﬀerent quantities of real-world data,
+N, used to ﬁt the input models. We generate the “real-world data” from fully
+speciﬁed distributions.
+• We consider instances in which the candidate set F does, or does not, contain
+the true input distributions F c. The single “best ﬁt” distribution, which represents
+common input-modeling practice, is selected from this set both by minimum AIC
+and minimum BIC.
+• We refer to our frequentist model averaging method as JFCV (for J-fold cross-
+validation). The ED is considered both as an individual input distribution method,
+and a candidate within the JFCV model average. We refer to the JFCV method
+that includes the ED as a default candidate as the JFCV(ED) method. Thus, our
+ﬁve competing methods are AIC, BIC, ED, JFCV and JFCV(ED).
+• When evaluating the performance of the methods we consider both the area
+A discussed above and the tail area Atail =
+R 1
+0.9 A(u)du. We are interested in Atail
+because there is a common belief that the ED, which does not model the tail of
+the distribution beyond the largest data point in the real-world sample, may be
+an inferior method when interest centers on the tail of the simulation output Y .
+Each experiment is repeated for 100 macroreplications and the results reported
+are averages of A or Atail across these 100 macroreplications. When presenting the
+results we usually normalize the average area (of A or Atail depending on the focus
+of interest) generated by the JFCV method to 1 although in some cases we also
+present the raw average area. Hence, if the relative average area produced by a
+method is larger than 1 then it is inferior to JFCV, and vice versa, based on this
+metric. All results are displayed to statistically meaningful digits of precision. We
+also examine how the JFCV weight bw changes as N increases.
+• For the SAN experiment we also very precisely estimate the mean squared
+error (MSE) of a point estimate for the probability of late project completion.
+
+Nelson et al.: Input Model Averaging
+22
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+4.1.1.
+SAN Experiment We begin with the SAN described in Section 2.1, for
+which there are ﬁve input distributions for the ﬁve activity times, X1,X2,...,X5.
+For Cases I–III the true distributions are made up of mixture distributions that are
+not contained in any of the candidate sets; whereas Cases IV–V includes distribu-
+tions that are contained in the candidate sets. Results for Cases I–V are reported
+in Appendix D of the online supplement. Here we report Case VI, which uses a
+candidate set F that is common to all commercial distribution ﬁtting products:
+F4 = {normal,lognormal,beta,exponential,gamma,Weibull} plus possibly the ED.
+In addition to the candidate set F4, we also consider a smaller subset within it
+containing the “best” three based on minimum AIC and BIC selections. We refer
+to this subset as F(3)
+4
+and apply the JFCV methods under this subset as well as
+the full set F4. In the event that AIC and BIC do not lead to the same set of best
+distributions, averaging under F(3)
+4
+will involve more than three distributions.
+The true activity-time distributions are Pareto, Rayleigh and loglogistic, as
+shown in Table 1. In each case the mean activity time is approximately 1. None of
+these are contained in the candidate set.
+The results are displayed in Table 2. JFCV is superior to any single choice made
+via best AIC or BIC, and JFCV(ED), which includes the ED in the candidate set,
+is substantially better than JFCV alone. In this example selecting a subset of the
+top 3 distributions before modeling averaging has little or no eﬀect; however, in
+Appendix D of the online supplement we show it can be useful in other scenarios for
+the SAN, as well as in our distribution-to-distribution comparisons in Section 4.2.
+Although A provides a comprehensive measure of output-distribution perfor-
+mance, we also display some results for the MSE of a point estimate of Pr{Y c >
+6.65}, since the probablity of completing beyond a due date is often important in
+project planning; 6.65 is the 0.9 quantile (based on a side experiment with 1 million
+replications). This case is to give a sense of the eﬀect of modeling averaging on
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+23
+Table 1
+True activity-time distributions for Case VI SAN example.
+Activity Distribution Parameters
+CDF
+X1
+Rayleigh
+σ = π/2
+1 −exp(x2/(2σ2)),x ≥0
+X2
+Pareto
+µ = 1/4,σ = 3/16,ξ = 3/4
+1 −(1 + ξ(x −µ)/σ)−1/ξ,x ≥µ
+X3
+Pareto
+µ = 1/2,σ = 1/4,ξ = 1/2
+1 −(1 + ξ(x −µ)/σ)−1/ξ,x ≥µ
+X4
+loglogistic
+α = 0.23,β = 1.21
+1
+1 + (x/α)−β ,x ≥0
+X5
+loglogistic
+α = 2/π,β = 2
+1
+1 + (x/α)−β ,x ≥0
+Table 2
+Numerical results for SAN experiment Case VI.
+Actual Average A
+Relative Average A
+Scenario
+JFCV
+AIC BIC
+ED
+JFCV(ED)
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+F4
+0.05
+0.06
+0.06
+0.06
+0.04
+1.00
+1.07
+1.07
+1.06
+0.77
+F (3)
+4
+0.06
+0.06
+0.06
+0.06
+0.04
+1.00
+1.05
+1.05
+1.05
+0.76
+Table 3
+MSE results for SAN experiment, Case VI,
+for estimating Pr{Y c > 6.65}.
+N
+R
+Candidates
+MSE
+SE(MSE)
+100
+1000
+ED
+0.00254
+4.8E-05
+100
+1000
+Best AIC
+0.00116
+1.6E-05
+100
+1000
+F4 + ED
+0.00079
+1.8E-05
+1000
+1000
+ED
+0.00016
+2.9E-06
+1000
+1000
+Best AIC
+0.00093
+8.2E-06
+1000
+1000
+F4 + ED
+0.00015
+3.1E-06
+point-estimator performance. Table 3 displays results for real-world sample sizes
+N = 100,1000 and R = 1000 replications of the SAN; a large number of replications
+are required so that point estimator variance does not overwhelm the bias reduc-
+tion we hope to be revealed. The MSE is estimated from 5000 macroreplications
+of the entire experiment, and the standard error of the estimate is also displayed.
+We see that when N is small, model averaging yields substantial improvement
+over the ED or best AIC choices; when N is larger the ED and model average are
+indistinguishable.
+4.1.2.
+GI/G/1 Experiment Next we examine results for two cases of the
+GI/G/1 queue described in Section 2.2: An M/M/1 queue (Case VII), meaning
+
+Nelson et al.: Input Model Averaging
+24
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+exponential interarrival and service times, and a GI/G/1 queue with balanced
+hyperexponential interarrival times
+X1 ∼
+
+
+
+exponential(1) with probability 1/2
+exponential(20) with probability 1/2
+and service times that follow the mixture distribution,
+X2 ∼
+
+
+
+unif(10,20)
+with probability 2/5
+gamma(2.875,1/2) with probability 3/5
+which we label as Case VIII. In both cases the implied traﬃc intensity is
+E(X2)/E(X1) = 0.9, and the output we consider is the waiting time of the 5th
+arrival Y5. We consider candidate sets
+F1 = {truncated normal, beta, gamma}
+F2 = F1 ∪{lognormal, Weibull}
+F3 = F2 ∪{negative binomial,discrete uniform,Poisson,continuous uniform,loglogistic,
+inverse Gaussian,Pareto,binomial}
+Tables 4 and 5 contain the M/M/1 results for relative average A and Atail,
+respectively. For capturing the entire output distribution of Y5 as measured by A,
+JFCV and JFCV(ED) tend to be better than AIC, BIC and ED, even though the
+true exponential distribution is in all candidate sets F1–F3 in the form of the gamma
+distribution, and again in sets F2–F3 in the form of the Weibull distribution. AIC
+and BIC improve substantially in capturing the tail behavior as measured by Atail,
+but do not beat JFCV(ED).
+Tables 6 and 7 present corresponding results for the GI/G/1. When interest
+centers on A, the JFCV(ED) method is the clear favorite, followed by the ED,
+which has an edge over the JFCV that in turn delivers better performance than
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+25
+Table 4
+Numerical results for M/M/1 queue with N = 100.
+Relative Average A
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+VII
+F1
+1.00
+1.04
+1.04
+1.00
+0.98
+F2
+1.00
+1.04
+1.04
+1.01
+0.98
+F3
+1.00
+1.00
+0.99
+0.96
+0.94
+F (3)
+3
+1.00
+1.09
+1.08
+1.05
+1.00
+F (6)
+3
+1.00
+1.07
+1.06
+1.02
+0.98
+Table 5
+Numerical results for M/M/1 queue, tail estimation,
+with N = 100.
+Relative Average Atail
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+VII
+F1
+1.00
+0.74
+0.74
+1.24
+0.84
+F2
+1.00
+0.71
+0.71
+1.17
+0.71
+F3
+1.00
+0.43
+0.42
+0.65
+0.47
+F (3)
+3
+1.00
+0.82
+0.81
+1.26
+0.77
+F (6)
+3
+1.00
+0.53
+0.53
+0.82
+0.51
+Table 6
+Numerical results for GI/G/1 queue with N = 100.
+Relative Average A
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+VIII
+F1
+1.00
+0.94
+0.94
+0.90
+0.83
+F2
+1.00
+1.05
+1.05
+0.96
+0.88
+F3
+1.00
+1.15
+1.16
+0.81
+0.78
+F (3)
+3
+1.00
+1.30
+1.31
+0.92
+0.84
+F (6)
+3
+1.00
+1.24
+1.25
+0.88
+0.82
+AIC and BIC in the majority of cases. When interest centers on Atail, JFCV(ED)
+remains the best, the ED can yield worse performance than the JFCV, and AIC
+and BIC selections can be particularly bad when there is a large set of candidate
+distributions.
+4.1.3.
+HRS Experiment Finally, we consider the HRS example of Section 2.3.
+We consider the following setup, labelled as Case IX in our subsequent presentation
+of results. Let the inputs be
+X1 ∼
+
+
+
+unif(0,1),
+with probability 0.5
+exponential(1), with probability 0.5
+
+Nelson et al.: Input Model Averaging
+26
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+Table 7
+Numerical results for GI/G/1 queue, tail estimation,
+with N = 100.
+Relative Average Atail
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+VIII
+F1
+1.00
+0.64
+0.64
+0.99
+0.58
+F2
+1.00
+0.82
+0.82
+1.35
+0.67
+F3
+1.00
+1.40
+1.42
+0.68
+0.37
+F (3)
+3
+1.00
+2.49
+2.54
+1.22
+0.59
+F (6)
+3
+1.00
+1.66
+1.69
+0.81
+0.38
+Table 8
+Numerical results for HRS with N = 100.
+Relative Average A
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+IX
+F1
+1.00
+1.00
+1.00
+0.58
+0.37
+F2
+1.00
+0.73
+0.73
+0.64
+0.41
+F3
+1.00
+1.26
+1.27
+1.27
+0.75
+F (3)
+3
+1.00
+1.17
+1.18
+1.18
+0.70
+F (6)
+3
+1.00
+1.29
+1.31
+1.30
+0.79
+X2 ∼
+
+
+
+N(100,100),
+with probability 0.5
+gamma(20,0.2), with probability 0.5.
+Notice that E(X1) = 1 and E(X2) = 100. Recall that Y is thought of as the time to
+failure.
+Tables 8 and 9 present the results. This is a very diﬃcult problem for which
+the distribution of Y is very sensitive to the input distributions. This makes the
+performance of JFCV(ED) impressive as it is clearly the best across all cases. The
+performance of the JFCV, AIC, BIC and ED methods is rather diverse. AIC’s
+performance is either on a par with, or slightly better than, BIC. None of the
+JFCV, AIC, BIC and ED can strictly dominate the others, although JFCV tends
+to be the winner when considering A.
+4.2.
+Evaluation of the Input Distribution
+In this section we present results that directly assess the quality of the model
+average ﬁt bF(x; bw) with respect to the true distribution F c. In the unlikely event
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+27
+Table 9
+Numerical results for HRS, tail estimation, with
+N = 100.
+Relative Average Atail
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+IX
+F1
+1.00
+1.00
+1.00
+0.66
+0.55
+F2
+1.00
+0.85
+0.85
+0.70
+0.57
+F3
+1.00
+0.74
+0.75
+0.70
+0.51
+F (3)
+3
+1.00
+1.20
+1.22
+1.13
+0.82
+F (6)
+3
+1.00
+0.83
+0.85
+0.79
+0.61
+that F c ∈F, one should not expect model averaging to do better since an empirical
+weight of precisely 1 assigned to any particular distribution, including F c, is a
+probability 0 outcome. Therefore, we focus on cases in which F c ̸∈F.
+Speciﬁcally, our candidate set is all or part of
+F = {normal,lognormal,exponential,Weibull,gamma,ED}
+while F c is Rayleigh, Pareto, generalized lambda (Karian and Dudewicz 2000),
+hyperexponential, or mixtures of these. For measures of ﬁt, we compared the mean
+and variance of the ﬁtted distributions to those of F c (as a sanity check), but more
+importantly compute
+Kolmogorov-Smirnov distance (K-S): max
+x
+ bF(x; bw) −F c(x)
+
+Cram´er von-Mises distance (Cv-M):
+Z h
+bF(x; bw) −F c(x)
+i2
+dF c(x)
+Anderson-Darling distance (A-D):
+Z h
+bF(x; bw) −F c(x)
+i2
+F c(x)(1 −F c(x)) dF c(x).
+K-S examines the largest absolute gap between the cdfs; Cv-M and A-D are like-
+lihood weighted squared areas between them, with A-D further emphasizing dif-
+ferences in the tails. We also recorded the weights assigned to each distribution in
+the model average. Real-world sample sizes of N = 100,1000 were employed, and
+all results were averaged over 1000 macroreplications of the experiment.
+We present results that represent the more-favorable and less-favorable perfor-
+mance of model averaging from this large number of cases. Not surprisingly, no
+
+Nelson et al.: Input Model Averaging
+28
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+approach dominates on all instances and all measures, so “favorable” is somewhat
+subjective. Overall, we found the following:
+• Model averaging can improve over any single choice from F, and the best
+model average tends never to be worse.
+• Including the ED in F is almost always valuable for measures other than K-S;
+ED alone often has the poorest K-S performance, which makes sense as it is a
+discrete approximation to a continuous F c.
+• Reducing the size of F to the top AIC/BIC choices before model averaging
+improves ﬁt; often model averaging the single best ﬁt and the ED is the concensus
+best choice.
+• The more distinct F c is from any other choice in F, the more weight is applied
+to the ED; for instance, this occurred when we created a bimodel true distribution
+F c via a mixture (all of the candidates in F are unimodal).
+• In a targeted test to study the eﬀect of nested distributions, we found
+that using F = {exponential,Weibull,gamma} for model averaging when F c is
+exponential leads to a noticably poorer ﬁt than choosing any one of the candidates.
+A tentative recommendation is to avoid nesting, such as including exponential and
+Erlang in a set that already includes Weibull and gamma.
+4.2.1.
+More-favorable
+Performance Here F c is Rayleigh with parameter
+0.5 from which we have N = 1000 observations, with full candidate set F =
+{normal,lognormal,exponential,gamma,ED}, and we use J = 5 folds for ﬁtting the
+weights. The gamma distribution is always the best AIC ﬁt. Results are shown in
+Table 10. Either gamma+ED or using all of F provide arguably the best ﬁts based
+on our three performance measures. For the same experiment with only N = 100
+“real-world” observations, gamma+ED was the best choice, and better than model
+averaging larger sets. This suggests that when the quantity of input data is small
+it is even more important to ﬁrst screen the larger set F before model averaging.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+29
+Table 10
+Results from 1000 macroreplications for N = 1000 observations from a
+Rayleigh distribution F c.
+Distributions
+w
+K-S
+Cv-M
+A-D
+gamma
+1
+0.034
+0.501
+3.137
+ED
+1
+0.028
+0.172
+1.021
+gamma+ED
+(0.257, 0.743)
+0.026
+0.182
+1.080
+F
+(0.387, 0.052, 0.017, 0.479, 0.065)
+0.018
+0.148
+1.941
+Table 11
+Results from 1000 macroreplications for N = 100 observations from a Pareto distribution
+F c.
+Distributions
+w
+K-S
+Cv-M
+A-D
+lognormal
+1
+0.065
+0.203
+1.256
+gamma
+1
+0.064
+0.206
+1.259
+Weibull
+1
+0.054
+0.144
+0.931
+ED
+1
+0.085
+0.164
+0.990
+logn+ED
+(0.748, 0.252)
+0.064
+0.164
+1.002
+Weibull+ED
+(0.678 0.322)
+0.060
+0.137
+0.849
+gamma+ED
+(0.407, 0.593)
+0.071
+0.152
+0.914
+logn+Weibull+ED
+(0.571, 0.312, 0.117)
+0.056
+0.143
+0.875
+logn+gamma+Weibull+ED
+(0.575, 0.217, 0.098, 0.110)
+0.056
+0.142
+0.872
+F
+(0.073, 0.668, 0.039, 0.118, 0.103)
+0.060
+0.154
+1.261
+For a second favorable example, F c is Pareto with location parameter 1 and
+shape parameter 3 from which we have N = 100 observations, with full candidate
+set F = {normal,lognormal,gamma,Weibull,ED}, and we use J = 5 folds for ﬁtting
+the weights. Either the gamma, lognormal or Weibull distribution was chosen as
+the best AIC ﬁt in some macroreplication, so we included them all as individual
+choices. Results are shown in Table 11. Individually the Weibull provides a good
+ﬁt in this case, yet improvement is still possible by model averaging a smaller set
+of distributions than the full set.
+Although not shown here because the result is obvious, model averaging includ-
+ing the ED had very favorable performance relative to any single choice when F c
+was obtained by a mixture (e.g., of two Rayleigh’s with diﬀerent parameters) so
+as to create a bimodel distribution; in such cases the ED received a weight of
+around 0.9. This illustrates that model averaging with the ED provides protection
+against a poorly chosen candidate set, which might occur if distribution ﬁtting
+
+Nelson et al.: Input Model Averaging
+30
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+Table 12
+Results from 1000 macroreplications for N = 100 observations from a generalized lambda
+distribution F c.
+Distributions
+w
+K-S
+Cv-M
+A-D
+logn
+1
+0.090
+0.266
+4.119
+logn+ED
+(0.170, 0.830)
+0.080
+0.162
+1.079
+logn+gamma+normal
+(0.810, 0, 0.190)
+0.096
+0.269
+4.164
+logn+gamma+normal+ED
+(0.091, 0, 0.011, 0.8)
+0.079
+0.163
+1.091
+F
+(0.014, 0.381, 0.130, 0.008, 0.008, 0.459)
+0.111
+0.231
+9.118
+was automated. Of course, bimodal and mixture distributions can be included as
+candidates.
+4.2.2.
+Less-favorable Performance In all of our experiments there was some
+model average distribution that did as well or better than any single choice, but in
+a few cases this was very sensitive to the distributions chosen as candidates; the
+most extreme case follows.
+In this example F c is a generalized lambda distribution with λ1 = 3, λ2 = 2, λ3 =
+1.5 and λ4 = 0.5. With these choices the density has a bathtub shape. On each of
+1000 macroreplications, we obtained N = 100 observations, with full candidate set
+F = {normal,lognormal,exponential,gamma,Weibull,ED}, and used J = 5 folds
+for ﬁtting the weights. The lognormal was chosen as the best AIC ﬁt, but we
+explored other combinations as well. Results are shown in Table 12. Notice that
+averages of lognormal+ED and lognormal+gamma+normal+ED oﬀer signiﬁcant
+improvement on all measures over the single lognormal choice, but lognormal +
+gamma + normal and the full set F have inferior A-D statistics.
+5.
+Conclusions
+Model risk due to input uncertainty arises because the ﬁtted input distribution
+bF deviates from the true distribution of the input data F c. When F c is known
+to belong to a certain parametric family, then it makes sense to use statistically
+eﬃcient parameter estimates, which would often be the MLEs. Many methods for
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+31
+quantifying the impact of input parameter uncertainty on simulation performance
+estimates for this case have been proposed.
+However, at best we should expect a standard parametric family to be a good
+approximation for F c, which means that there is error that does not disappear even
+as the real-world input sample size N →∞. When the input data are also used to
+select the family, as is common practice, then the possible error is compounded.
+In this paper we proposed using frequentist model averaging as an innovative way
+to construct better input models, meaning input models that yield more faithful
+output performance. Since the optimal weights are unknown, we estimated them
+using J-fold cross-validation. We showed that under mild conditions the empirically
+optimal model average is unique and easily obtained; and under more restrictive
+conditions the empirically optimal weights yield the best possible weighted average
+distribution as the sample size increases. This method augments current input
+modeling practice, and requires no alternation of the simulation model or additional
+simulation runs.
+We also observed that the empirical distribution (ED) is frequently a very good
+input-modeling choice when the objective is to get close to the ideal output dis-
+tribution, FY c; this seems not to be very well known. Including the ED in the
+candidate set F for model averaging hedges against possible inadequacy of the
+ED, as occurred in some of our examples, especially when tail behavior of Y is of
+interest. The JFCV(ED) input models were often the best by a signiﬁcant margin,
+were always very good performers in our experiments and seem to be a powerful
+addition to the standard input modeling pallet.
+Acknowledgments
+Nelson’s work was partially supported by the National Science Foundation of the United States
+under Grant Number CMMI-1634982. Wan’s work was supported by the City University of Hong
+Kong (Grant No. 7004985), Hong Kong Research Grants Council (Grant No. CityU 11500419) and
+
+Nelson et al.: Input Model Averaging
+32
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+the National Natural Science Foundation of China (Grant No. 71973116). Zou’s work was supported
+by the Ministry of Science and Technology of China (Grant No. 2016YFB0502301) and the National
+Natural Science Foundation of China (Grant Nos. 11971323 and 11529101). The authors thank
+Eunhye Song for insights on averaging with the empirical distribution, and the area editor, associate
+editor and referees for enlightening reviews.
+References
+Ankenman BE, Nelson BL (2012) A quick assessment of input uncertainty. Laroque C, Himmelspach
+J, Pasupathy R, Rose O, Uhrmacher AM, eds., Proceedings of the 2012 Winter Simulation
+Conference, 21:1–21:10 (Piscataway, NJ, USA: IEEE Press).
+Banks J, Carson J, Nelson B, Nicol D (2010) Discrete-Event System Simulation (Upper Saddle
+River, New Jersey: Prentice Hall).
+Barton RR (2012) Tutorial: Input uncertainty in output analysis. Laroque C, Himmelspach J, Pasu-
+pathy R, Rose O, Uhrmacher AM, eds., Proceedings of the 2012 Winter Simulation Conference,
+1–12 (Piscataway, NJ, USA: IEEE Press), ISSN 0891-7736.
+Barton RR, Nelson BL, Xie W (2013) Quantifying input uncertainty via simulation conﬁdence
+intervals. INFORMS Journal on Computing 26(1):74–87.
+Burt JM, Garman MB (1971) Conditional Monte Carlo: A simulation technique for stochastic
+network analysis. Management Science 18(3):207–217.
+Cheng RCH, Holland W (1997) Sensitivity of computer simulation experiments to errors in input
+data. Journal of Statistical Computation and Simulation 57(1-4):219–241.
+Cheng RCH, Holland W (1998) Two-point methods for assessing variability in simulation output.
+Journal of Statistical Computation and Simulation 60(3):183–205.
+Chick SE (2001) Input distribution selection for simulation experiments: Accounting for input
+uncertainty. Operations Research 49(5):744–758.
+Corlu C, Biller B (2013) A subset selection procedure under input parameter uncertainty. Pasupa-
+thy R, Kim SH, Tolk A, Hill R, Kuhl ME, eds., Proceedings of the 2013 Winter Simulation
+Conference, 463–473 (Piscataway, NJ, USA: IEEE Press).
+Cule M, Samworth R, Stewart M (2010) Maximum likelihood estimation of a multi-dimensional
+log-concave density. Journal of the Royal Statistical Society: Series B (Statistical Methodology)
+72(5):545–607.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+33
+Fan W, Hong LJ, Zhang X (2013) Robust selection of the best. Pasupathy R, Kim SH, Tolk A, Hill R,
+Kuhl ME, eds., Proceedings of the 2013 Winter Simulation Conference, 868–876 (Piscataway,
+NJ, USA: IEEE Press), URL http://dl.acm.org/citation.cfm?id=2675983.2676094.
+Ghosh S, Lam H (2015) Mirror descent stochastic approximation for computing worst-case stochas-
+tic input models. Yilmaz L, Chan WKV, Moon I, Roeder TMK, Macal C, Rossetti MD, eds.,
+Proceedings of the 2015 Winter Simulation Conference, 425–436 (Piscataway, NJ, USA: IEEE
+Press).
+Glynn PW, Lam H (2018) Constructing simulation output intervals under input uncertainty via data
+sectioning. Rabe M, Juan A, Mustafee N, Skoogh A, Jain S, Johansson B, eds., Proceedings
+of the 2018 Winter Simulation Conference, 1551–1562 (IEEE).
+Gross D, Shortle JF, Thompson JM, Harris CM (2008) Fundamentals of Queueing Theory (New
+York: Wiley), 4th edition.
+Handcock MS, Morris M (2006) Relative Distribution Methods in the Social Sciences (New York:
+Springer).
+Hansen BE (2007) Least squares model averaging. Econometrica 75:1175–1189.
+Hansen BE, Racine J (2012) Jackknife model averaging. Journal of Econometrics 167(1):38–46.
+Heyde C, Kou S (2004) On the controversy over tailweight distributions. Operations Research Letters
+32:399–408.
+Hjort NL, Claeskens G (2003) Frequentist model average estimators. Journal of the American
+Statistical Association 98:879–899.
+Jiang WX, Nelson BL (2018) Better input modeling via model averaging. Rabe M, Juan A, Mustafee
+N, Skoogh A, Jain S, Johansson B, eds., Proceedings of the 2018 Winter Simulation Confer-
+ence, 1575–1586 (IEEE).
+Karian ZA, Dudewicz EJ (2000) Fitting Statistical Distributions: The Generalized Lambda Distri-
+bution and Generalized Bootstrap Methods (New York: CRC Press).
+Kim AK, Samworth RJ, et al. (2016) Global rates of convergence in log-concave density estimation.
+The Annals of Statistics 44(6):2756–2779.
+Lam H (2016) Input uncertainty and robust analysis in stochastic simulation: Advanced tutorial.
+Roeder TMK, Frazier PI, Szechtman R, Zhou E, Huschka T, Chick SE, eds., Proceedings of
+the 2016 Winter Simulation Conference, in press (Piscataway, NJ, USA: IEEE Press).
+
+Nelson et al.: Input Model Averaging
+34
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+Lam H, Qian H (2018) Subsampling variance for input uncertainty quantiﬁcation. Rabe M, Juan A,
+Mustafee N, Skoogh A, Jain S, Johansson B, eds., Proceedings of the 2018 Winter Simulation
+Conference, 1611–1622 (IEEE).
+Law AM, Kelton WD (1991) Simulation Modeling and Analysis (New York: McGraw-Hill), 2nd
+edition.
+Liang H, Zou G, Wan ATK, Zhang X (2011) On optimal weight choice in a frequentist model
+average estimator. Journal of the American Statistical Association 106:1053–1066.
+McLachlan G, Peel D (2004) Finite Mixture Models (John Wiley & Sons).
+Nocedal J, Wright SJ (2006) Numerical Optimization (New York: Springer), 2nd edition.
+Song E, Nelson BL (2015) Quickly assessing contributions to input uncertainty. IIE Transactions
+47:1–17.
+Song E, Nelson BL, Hong LJ (2015) Input uncertainty and indiﬀerence-zone ranking & selection.
+Yilmaz L, Chan WKV, Moon I, Roeder TMK, Macal C, Rossetti MD, eds., Proceedings of
+the 2015 Winter Simulation Conference, 414–424 (Piscataway, NJ, USA: IEEE Press), ISBN
+978-1-4673-9741-4, URL http://dl.acm.org/citation.cfm?id=2888619.2888665.
+Song E, Nelson BL, Pegden CD (2014) Advanced tutorial: Input uncertainty quantiﬁcation. Tolk
+A, Diallo S, Ryzhov I, Yilmaz L, Buckley S, Miller J, eds., Proceedings of the 2014 Winter
+Simulation Conference, 162–176 (Piscataway, NJ, USA: IEEE Press).
+Wagner M, Wilson J (1996) Using univariate B´ezier distributions to model simulation input pro-
+cesses. IIE Transactions 28(9):699–711.
+Wan ATK, Zhang X, Zou G (2010) Least squares model averaging by Mallows criterion. Journal
+of Econometrics 156:277–283.
+White H (1982) Maximum likelihood estimation of misspeciﬁed models. Econometrica 50:1–25.
+Whitt W (1981) Approximating a point process by a renewal process: The view through a queue,
+an indirect approach. Management Science 27(6):619–636.
+Xie W, Nelson BL, Barton RR (2014) A Bayesian framework for quantifying uncertainty in stochas-
+tic simulation. Operations Research 62(6):1439–1452.
+Zhang X, Wan ATK, Zou G (2013) Model averaging by jackknife criterion in models with dependent
+data. Journal of Econometrics 174(2):82–94.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+35
+Zhou E, Xie W (2015) Simulation optimization when facing input uncertainty. Yilmaz L, Chan
+WKV, Moon I, Roeder TMK, Macal C, Rossetti MD, eds., Proceedings of the 2015 Winter
+Simulation Conference, 3714–3724 (Piscataway, NJ, USA: IEEE Press), ISBN 978-1-4673-
+9741-4, URL http://dl.acm.org/citation.cfm?id=2888619.2889116.
+Zouaoui F, Wilson JR (2004) Accounting for input-model and input-parameter uncertainties in
+simulation. IIE Transactions 36(11):1135–1151.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+1
+Online Supplement
+Appendix A:
+Proof of Optimality
+We ﬁrst provide the lemma below that is useful for proving the main results that follow. This lemma
+is based on the idea of Li (1987).
+Lemma 1. Assume that the random functions Ln(w) and an(w) are continuous in w, and Rn(w)
+is a real-valued function, where w ∈W and W is a compact set in Rq. Let
+bw = argmin
+w∈W {Ln(w) + an(w)}.
+If Ln(w) > 0 and Rn(w) > 0 almost surely for large n, and
+sup
+w∈W
+|an(w)|
+Rn(w)
+P
+−→0
+(11)
+and
+sup
+w∈W
+
+Ln(w)
+Rn(w) −1
+
+P
+−→0,
+(12)
+then
+Ln(bw)
+infw∈WLn(w)
+P
+−→1.
+Proof.
+Our proof is a modiﬁcation of Gao et al. (2019). From the deﬁnition of inﬁmum, for any
+ﬁxed n, there exist a non-negative sequence ϑn,m and a weight vector sequence wn,m ∈W such that
+as m →∞, ϑn,m →0 and
+inf
+w∈W Ln(w) = Ln(wn,m) −ϑn,m inf
+w∈W Ln(w).
+So we have,
+0 ≤1 −
+inf
+w∈W Ln(w)
+Ln(bw)
+=
+Ln(bw) + an(bw) −an(bw) −Ln(wn,m) + ϑn,m inf
+w∈W Ln(w)
+Ln(bw)
+=
+min
+w∈W[Ln(w) + an(w)] −an(bw) −Ln(wn,m) + ϑn,m inf
+w∈W Ln(w)
+Ln(bw)
+≤
+Ln(wn,m) + an(wn,m) −an(bw) −Ln(wn,m) + ϑn,m inf
+w∈W Ln(w)
+Ln(bw)
+≤|an(wn,m)|
+Ln(bw)
++ |an(bw)|
+Ln(bw) + ϑn,m
+≤|an(wn,m)|
+inf
+w∈W Ln(w) + |an(bw)|
+Ln(bw) + ϑn,m
+
+Nelson et al.: Input Model Averaging
+2
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+=
+|an(wn,m)|/Ln(wn,m)
+1 −ϑn,m inf
+w∈W Ln(w)/Ln(wn,m) + |an(bw)|
+Ln(bw) + ϑn,m
+≤
+sup
+w∈W{|an(w)|/Ln(w)}
+1 −ϑn,m inf
+w∈W Ln(w)/Ln(wn,m) + sup
+w∈W
+|an(w)|
+Ln(w) + ϑn,m.
+Letting m →∞on both sides of the equation above we obtain
+0 ≤1 −
+inf
+w∈W Ln(w)
+Ln(bw)
+≤2 × sup
+w∈W
+|an(w)|
+Ln(w) .
+(13)
+In the following, we will show that
+sup
+w∈W
+|an(w)|
+Ln(w)
+P
+−→0.
+(14)
+Together with (13), this proves Lemma 1.
+Now, it is clear that
+sup
+w∈W
+|an(w)|
+Ln(w) ≤sup
+w∈W
+|an(w)|
+Rn(w) × sup
+w∈W
+Rn(w)
+Ln(w) .
+By (11), it suﬃces to show that
+sup
+w∈W
+Rn(w)
+Ln(w) = Op(1).
+(15)
+It can be veriﬁed that
+−sup
+w∈W
+
+Ln(w)
+Rn(w) −1
+ ≤inf
+w∈W
+Ln(w)
+Rn(w) −1 ≤sup
+w∈W
+
+Ln(w)
+Rn(w) −1
+,
+which, together with (12), implies that
+ inf
+w∈W
+Ln(w)
+Rn(w) −1
+ ≤sup
+w∈W
+
+Ln(w)
+Rn(w) −1
+ = op(1).
+Thus, we have
+inf
+w∈W
+Ln(w)
+Rn(w) = 1 + op(1),
+which shows that (15) is true. This completes the proof of the lemma.
+□
+Proof of Theorem 1.
+Recall from Section 3.3 that βm is the unknown parameter vector in
+the mth candidate distribution, m = 1,2,...,q, bβm its MLE that we assume exists, and bβ =
+
+bβ
+T
+1 ,..., bβ
+T
+q
+T
+with dimension κ and q being ﬁnite. As stated in Section 3.3, from White (1982),
+under some regularity conditions, there exists a vector β∗such that
+bβ −β∗= Op(N −1/2),
+(16)
+as N →∞. In other words, the MLEs converge even when the distributions are misspeciﬁed. Our
+asymptotic results hold when (16) and Conditions (i)–(iii) are in force.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+3
+In addition to the notation in Section 3.3, deﬁne the κ×1 vector νi(w, eβi) = ∂bF(xi,w)/∂bβ|bβ=eβi,
+where eβi is a κ−dimensional vector, i = 1,2,...,N. Further, write Q(w) = Q(w, eβ1,..., eβN) =
+
+ν1(w, eβ1),...,νN(w, eβN)
+T
+, and denote LN(w) = ||bF(w) −F0||2.
+First, using the notations in Theorem 1, the conditions of Ln(w) > 0 and Rn(w) > 0 almost surely
+given in Lemma 1 are implied by
+inf
+w∈W LN(w) > 0 (a.s.)
+and
+ξN > 0 (a.s.)
+(17)
+for large N. The second part of (17) holds automatically for large N (say N ≥N0) under Condition 3,
+which implies that ξN has a non-zero lower bound (a.s.) for large N. To explain the ﬁrst part of (17),
+recognizing that LN(w) is continuous and W is compact, we can write inf
+w∈W LN(w) = LN(w(N)),
+where w(N) = (w(N)
+1
+,··· ,w(N)
+q
+)T ∈W and the superscript (N) means that the corresponding sample
+size is N. If
+inf
+w∈W LN(w) = 0
+a.s.
+(inﬁnitely often)
+then there is a subsequence of {N}, say {Nl}, such that LNl(w(Nl)) = 0 (a.s.), l = 1,2,···. That is,
+for Nl (l = 1,2,···), the following holds almost surely:
+||bF(w(Nl)) −F0||2 = 0
+⇔
+Nl
+X
+i=1
+h
+bF(xi,w(Nl)) −F c(xi)
+i2
+= 0
+⇔
+Nl
+X
+i=1
+h
+q
+X
+m=1
+w(Nl)
+m
+Fm(xi, bβ
+(Nl)
+m
+) −F c(xi)
+i2
+= 0
+⇔
+q
+X
+m=1
+w(Nl)
+m
+Fm(xi, bβ
+(Nl)
+m
+) = F c(xi),
+i = 1,··· ,Nl.
+(18)
+Because w(Nl) = (w(Nl)
+1
+,··· ,w(Nl)
+q
+)T is a bounded sequence in Rq and q is ﬁxed, there is a subse-
+quence
+n
+wNl,k
+o
+(k = 1,2,···), which is convergent. Without loss of generality, we let w(Nl) →w∗=
+(w∗
+1,··· ,w∗
+q)T. It is clear that w∗∈W.
+Now, from (16) and (18) and the continuity of Fm in βm, we have
+q
+X
+m=1
+w∗
+mFm(xi,β∗
+m) = F c(xi),
+i = 1,··· ,N0.
+(a.s.)
+Thus,
+ξN0 ≤||F∗(w∗) −F0||2
+=
+h
+q
+X
+m=1
+w∗
+mFm(x1,β∗
+m) −F c(x1)
+i2
++ ··· +
+h
+q
+X
+m=1
+w∗
+mFm(xN0,β∗
+m) −F c(xN0)
+i2
+
+Nelson et al.: Input Model Averaging
+4
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+= 0,
+(a.s.)
+which contradicts the fact that ξN0 > 0 (a.s.). Therefore, inf
+w∈W LN(w) = 0 (a.s.) holds only for ﬁnitely
+many sample sizes, and hence the ﬁrst part of (17) is satisﬁed.
+Next, we prove (8). Let us decompose LN(w) and CVJ(w) as follows.
+LN(w) =
+bF(w) −F0
+
+2
+= L∗
+N(w) +
+bF(w) −F∗(w)
+
+2
++ 2{F∗(w) −F0}T n
+bF(w) −F∗(w)
+o
+≡L∗
+N(w) + ΠN(w)
+and
+CVJ(w) =
+eF(w) −¯F
+
+2
+= LN(w) +
+bF(w) −eF(w)
+
+2
+−2
+n
+bF(w) −eF(w)
+oT n
+bF(w) −¯F
+o
++2
+n
+bF(w) −eF(w)
+oT
+(F0 −¯F) + 2eF(w)T(F0 −¯F) −(F0 + ¯F)T(F0 −¯F)
+≡LN(w) + ΞN(w) −(F0 + ¯F)T(F0 −¯F).
+Note that the last term in the expression above is independent of the weight vector w, so
+bw = argminw∈W {LN(w) + ΞN(w)}.
+Hence, from Lemma 1, to prove (8), it suﬃces to prove
+sup
+w∈W
+|ΞN(w)|
+L∗
+N(w) = op(1)
+(19)
+and
+sup
+w∈W
+|ΠN(w)|
+L∗
+N(w) = op(1).
+(20)
+From (16) and assuming that Condition 1 holds, we have, uniformly for all w ∈W,
+N −1/2 Q(w)(bβ −β∗)
+
+2
+≤N −1/2 bβ −β∗
+2
+λmax
+
+QT(w)Q(w)
+ 
+= N −1/2Op(N −1)Op(N)
+= Op(N −1/2),
+(21)
+where λmax(·) denotes the maximum eigenvalue of a matrix; recognizing also that the elements of
+vector |F∗(w) −F0| are uniformly upper bounded by 2. Then
+N −1/2 {F∗(w) −F0}T Q(w)(bβ −β∗) = N −1/2Op(N 1/2) = Op(1).
+(22)
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+5
+By the Taylor-series expansion,
+bF(w) −F∗(w) = Q(w)(bβ −β∗).
+(23)
+From (21)–(23), Condition 3, and recognizing that any element of the vector |F∗(w)−F0| is upper
+bounded by 2, we have
+sup
+w∈W
+|ΠN(w)|
+L∗
+N(w)
+≤ξ−1
+N
+sup
+w∈W
+bF(w) −F∗(w)
+
+2
++ 2ξ−1
+N
+sup
+w∈W
+{F∗(w) −F0}T n
+bF(w) −F∗(w)
+o
+= N 1/2
+ξN
+N −1/2 sup
+w∈W
+Q(w)(bβ −β∗)
+
+2
++ 2N 1/2
+ξN
+N −1/2 sup
+w∈W
+{F∗(w) −F0}T Q(w)(bβ −β∗)
+
+= op(1),
+which is (20). Similarly, from Conditions 2 and 3, we have
+sup
+w∈W
+
+bF(w) −eF(w)
+
+2
+−2
+n
+bF(w) −eF(w)
+oT n
+bF(w) −¯F
+o
++ 2
+n
+bF(w) −eF(w)
+oT
+(F0 −¯F)
+
+L∗
+N(w)
+=
+op(1).
+(24)
+Now, consider F0(x) −¯F(j)(x). Note that the Kolmogorov-Smirnov statistic (Billingsley 1968),
+√
+S sup
+x |F0(x) −¯F(j)(x)|
+is convergent in distribution. Hence, for any x, from (5), we have
+F0(x) −¯F(j)(x) = F0(x) −S−1
+S
+X
+s=1
+I(x(j−1)S+s ≤x) = Op(S−1/2),
+and thus,
+max
+i∈{1,2,...,N}|F0(xi) −¯F(j)(xi)| ≤sup
+x |F0(x) −¯F(j)(x)| = Op(S−1/2),
+which, along with the fact that x1,...,xN are i.i.d., implies that, uniformly for i ∈{1,2,...,N},
+F0(xi) −¯F(j)(xi) = Op(S−1/2).
+(25)
+From cN →0, (25), and recognizing that any element of |bFm| is upper bounded by 1, we obtain, for
+any j ∈{1,2,...,J},
+c1/2
+N S−1/2
+
+S
+X
+s=1
+eF (−j)
+m
+(x(j−1)S+s)
+
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+ 
+
+≤c1/2
+N S−1/2
+S
+X
+s=1
+ eF (−j)
+m
+(x(j−1)S+s)
+
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+ 
+
+Nelson et al.: Input Model Averaging
+6
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+≤c1/2
+N S−1/2
+S
+X
+s=1
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+
+= op(1),
+which, along with Condition 3 and the assumption that J is ﬁnite, implies that
+ξ−1
+N
+sup
+w∈W
+eF(w)T(F0 −¯F)
+
+≤
+q
+X
+m=1
+N 1/2
+ξN
+N −1/2 eFT
+m(F0 −¯F)
+
+=
+q
+X
+m=1
+J −1/2 N 1/2
+ξN
+
+J
+X
+j=1
+S−1/2
+S
+X
+s=1
+eF (−j)
+m
+(x(j−1)S+s)
+
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+ 
+
+≤
+q
+X
+m=1
+J −1/2c1/2
+N
+
+J
+X
+j=1
+S−1/2
+S
+X
+s=1
+eF (−j)
+m
+(x(j−1)S+s)
+
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+ 
+
+=
+q
+X
+m=1
+J −1/2
+
+J
+X
+j=1
+c1/2
+N S−1/2
+S
+X
+s=1
+eF (−j)
+m
+(x(j−1)S+s)
+
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+ 
+
+≤
+q
+X
+m=1
+J −1/2
+J
+X
+j=1
+c1/2
+N S−1/2
+S
+X
+s=1
+ eF (−j)
+m
+(x(j−1)S+s)
+
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+ 
+≤
+q
+X
+m=1
+J −1/2
+J
+X
+j=1
+c1/2
+N S−1/2
+S
+X
+s=1
+F0(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+
+≤qJ −1/2
+J
+X
+j=1
+c1/2
+N S−1/2 · S
+max
+i∈{1,2,...,N}|F0(xi) −¯F(j)(xi)|
+= c1/2
+N
+· Op(1)
+(26)
+= op(1).
+(27)
+From (24) and (27), we obtain (19) and this completes the proof.
+□
+Appendix B:
+Convergence of the Weight on ED
+Proof of Theorem 2.
+Here we show that when we employ JFCV(ED) the weight on the ED
+converges to 1 as the real-world sample size N →∞. This is important because the ED is unbiased
+and asymptotically consistent for F c, so as the sample size increases the incorrect choices in F
+should not enter into the average. The following result shows that this is indeed the case when the
+weights are estimated via J-fold CV.
+Because the proof is easier to follow, we begin with the case of q = 2 candidate distributions,
+the ﬁrst being a misspeciﬁed parametric distribution and the second being the ED. Denote their
+weights chosen by the proposed cross-validation criterion as bw1 and bwED respectively and write
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+7
+bw = ( bw1, bwED)T. We will prove that bwED →1 in probability as N →∞. To facilitate the proof,
+consider the weight vector ew = (0,1)T. From the proof in Appendix A and Condition 2, we know
+that
+CVJ(ew) = Op(1)
+(28)
+and
+CVJ(bw) = Op(N 1/2) + bw2
+1
+bF1 −¯F
+
+2
+as N →∞. These yield
+bw2
+1 =
+bF1 −¯F
+
+−2
+CVJ(bw) −
+bF1 −¯F
+
+−2
+Op(N 1/2).
+(29)
+Since bw = argminw∈WCVJ(w), we have CVJ(ew) ≥CVJ(bw), which, along with (28), implies
+CVJ(bw) = Op(1).
+(30)
+By (29) and (30), we have
+bw2
+1 = Op(N 1/2)
+bF1 −¯F
+
+−2
+,
+We now establish the relationship between ||bF1 −¯F|| and ξN. Let w(1) = (1,0)T. Then bF1 can be
+written as bF(w(1)). Hence we have
+||bF1 −¯F|| = ||bF(w(1)) −¯F||
+≥||F∗(w(1)) −F0|| −||bF(w(1)) −F∗(w(1))|| −||F0 −¯F||
+≥
+p
+ξN −||bF(w(1)) −F∗(w(1))|| −||F0 −¯F||.
+From equations (21) and (23), it is seen that
+||bF(w(1)) −F∗(w(1))|| = Op(1),
+which, together with ||F0 −¯F|| = Op(1), implies that
+||bF1 −¯F|| ≥
+p
+ξN + Op(1).
+Recognising this relationship between ||bF1 −¯F|| and √ξN, and using Condition 3, we obtain
+N −1/4||bF1 −¯F|| ≥(ξ2
+N/N)1/4 + op(1) ≥c
+−1/4
+N
++ op(1).
+As cN →0, we have N 1/4||bF1 −¯F||−1 = op(1). Hence, bw1 = op(1) and thus
+bwED →1
+
+Nelson et al.: Input Model Averaging
+8
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+in probability, as N →∞.
+Next we consider the general case of q ≥2 candidate distributions with the ﬁrst q −1 being
+misspeciﬁed parametric distributions and the qth being the ED. Denote their weights chosen
+by the proposed cross-validation criterion by bw1, bw2,··· , bwq−1, bwED respectively and write bw =
+( bw1, bw2,··· , bwq−1, bwED)T. We will prove that bwED →1 in probability as N →∞. Consider the
+weight vector ew = (0,0,··· ,0,1)T, ¯w = (w1/(1 −wED),w2/(1 −wED),··· ,wq−1/(1 −wED),0)T and
+b¯w = ( bw1/(1 −bwED), bw2/(1 −bwED),··· , bwq−1/(1 −bwED),0)T. Let ¯FED = ( ¯F(x1),..., ¯F(xN))T. Note
+that
+LN(w) =
+bF(w) −F0
+
+2
+=
+(1 −wED)bF( ¯w) + wED ¯FED −F0
+
+2
+=
+(1 −wED)(bF( ¯w) −F0) + wED(¯FED −F0)
+
+2
+= (1 −wED)2 bF( ¯w) −F0
+
+2
++ w2
+ED
+¯FED −F0
+2
++2(1 −wED)wED(bF( ¯w) −F0)T(¯FED −F0).
+Together with the proof in Appendix A and Condition 2, and recognizing that ||F0 −¯F|| = Op(1)
+and ||F0 −¯FED|| = Op(1), we have
+CVJ(ew) = Op(1)
+and
+CVJ(bw) = Op(N 1/2) + (1 −bwED)2 bF(b¯w) −F0
+
+2
+as N →∞. As bw = argminw∈WCVJ(w), we have CVJ(ew) ≥CVJ(bw), which, along with the two
+results given above, implies that
+(1 −bwED)2 = Op(N 1/2)
+bF(b¯w) −F0
+
+−2
+.
+(31)
+By the deﬁnition of ξN, we know that
+bF(b¯w) −F0
+ ≥
+F∗(b¯w) −F0
+ −
+bF(b¯w) −F∗(b¯w)
+
+≥
+p
+ξN −
+bF(b¯w) −F∗(b¯w)
+
+(32)
+almost surely. From equations (19) and (21), it is seen that
+||bF(b¯w) −F∗(b¯w)|| = Op(1),
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+9
+which, together with (32), implies that
+||bF(b¯w) −F0|| ≥
+p
+ξN + Op(1).
+Together with (31) and Condition 3, this implies
+1 −bwED = op(1),
+and thus
+bwED →1
+in probability, as N →∞.
+□
+Appendix C:
+Uniqueness of the Model-Average Weight
+Recall that
+CVJ(w) =
+J
+X
+j=1
+S
+X
+s=1
+n
+eF (−j)(x(j−1)S+s,w) −¯F(j)(x(j−1)S+s)
+o2
+=
+J
+X
+j=1
+S
+X
+s=1
+(
+q
+X
+m=1
+wm
+
+eF (−j)
+m
+(x(j−1)S+s) −¯F(j)(x(j−1)S+s)
+)2
+=
+J
+X
+j=1
+S
+X
+s=1
+(
+q
+X
+m=1
+wmcmjs
+)2
+=
+J
+X
+j=1
+S
+X
+s=1
+w⊤Cjs w = w⊤Cw
+and we need to establish that C is positive deﬁnite (it is clearly at least positive semi-deﬁnite).
+Without loss of generality, assume that within each fold j, the data are sorted so that x(j−1)S+1 <
+x(j−1)S+2 < ··· < xjS. Then for C to be only positive semi-deﬁnite, there must be a weight vector
+w′ ̸= 0 such that
+q
+X
+m=1
+w′
+mcmjs =
+q
+X
+m=1
+w′
+m
+
+eF (−j)
+m
+(x(j−1)S+s) −s
+S
+
+= 0.
+Therefore,
+q
+X
+m=1
+w′
+m eF (−j)
+m
+(x(j−1)S+s) = s
+S
+for each j = 1,2,...,J and s = 1,2,...,S. If X has a density, then x(j−1)S+s and x(j′−1)S+s are
+distinct with probabilty 1 when j ̸= j′, and we would expect eF (−j)
+m
+(·) to be distinct for each j,m
+(although not required in our argument). Since any continuous eF (−j)
+m
+is increasing, the existence of
+w′ has probability 0.
+
+Nelson et al.: Input Model Averaging
+10
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+Appendix D:
+Additional SAN Empirical Evaluation
+This appendix summarizes a large collection of empirical results for the SAN problem that further
+explore the use of model averaging. We employed the following candidate sets of distributions for
+this evaluation:
+F1 = {truncated normal, beta, gamma}
+F2 = F1 ∪{lognormal, Weibull}
+F3 = F2 ∪{negative binomial, discrete uniform, Poisson,
+continuous uniform, loglogistic, inverse Gaussian, Pareto, binomial}
+See Table 13 for the true distribution cases of X1,X2,...,X5.
+We start with Cases I–III, for which F c is not in the candidate set. We can see from Table 14 that
+for these cases, applying model averaging without including the ED in the candidate set does not
+always lead to an improvement in eﬃciency relative to the AIC and BIC choices. The JFCV method
+results in improved eﬃciency over the AIC and BIC choices only in a small number of situations.
+Although there are exceptions, AIC and BIC typically yield the same performance. The ED method
+invariably results in the most accurate outcomes among the JFCV, AIC, BIC and ED methods.
+Signiﬁcantly, when the ED is included as a candidate distribution in the model average, then the
+resultant JFCV(ED) estimator has a very clear advantage over all of the methods considered and
+outperforms the ED convincingly. The JFCV(ED) estimator may be viewed as a smoothed variant
+of the ED. The superior performance of the JFCV(ED) method indicates that there is an advantage
+to smoothing the ED using the other candidate distributions as “smoothers.”
+For Cases IV–V the true activity-time distributions are included in the candidate sets, except
+under F1. The JFCV(ED) method is not found to be superior to the AIC and BIC model selections,
+which generally result in the best estimation outcomes; however, the performance of JFCV(ED)
+is close to AIC and BIC. The ED usually performs worse than AIC, BIC and JFCV, and the
+JFCV(ED) remains superior to the JFCV for the majority of situations. The less compelling per-
+formance of JFCV and JFCV(ED) for Cases IV–V is attributed to the fact that the true input
+distributions, namely the lognormal and Weibull distributions, are contained in the candidate sets
+F2 and F3. These are distinctive distributions and it comes as no surprise that the AIC and BIC
+methods successfully identify them as the true distributions. On the other hand, under F1, the can-
+didate set does not contain the true input distributions, and the ranking of the various estimators
+is very similar to that observed for Cases I–III.
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+11
+We also investigate the impact of varying the sample size on the performance of the various
+methods. We focus on Case I, and vary N from 20 to 1000. Table 15 presents the results. To evaluate
+the eﬀect of a change in N on the actual diﬀerence between G(u) produced by a given method and
+the 45◦line, we also report the actual average area A in addition to the relative average area for
+each method. The results show that with few exceptions, other things being equal, an increase in N
+has the eﬀect of bringing the distribution of bY closer to the distribution of Y c. For the comparisons
+in terms of relative area, the pattern of results observed for N=100 in Table 14 also apply in broad
+terms for other values of N. Speciﬁcally, for all values of N considered, JFCV(ED) is always the
+best of all methods; with few exceptions, ED yields more eﬃcient estimates than the JFCV, which
+can have an advantage over AIC and BIC selection although the converse can also be true.
+In addition, we examine the change in the empirical weight bwED for the ED in the JFCV(ED)
+estimator as N varies, using Case I as an example. The results, also reported in Table 15, show
+that other things being equal, an increase in N is invariably accompanied by an increase in bwED.
+When N=1000, bwED is very close to unity under all candidate sets. This ﬁnding corroborates the
+theoretical result in Appendix B which shows that bwED converges in probability to unity as N
+approaches inﬁnity.
+In experiments not reported here, we also varied the number of CV folds J = 5,10 for sample
+sizes N = 100,1000 and found the conclusions above to be robust to the choice of J.
+The results above are for the average area, A. Table 16 reports the results when interest centers on
+Atail. At a high level, notice that the ED can perform quite badly when tail behavior of the output
+is of interest, and that AIC and BIC perform better when the true distribution is in the candidate
+set, but JFCV(ED) is quite close. Under Cases I–III, the JFCV(ED) estimator usually delivers the
+best outcome; exceptions occur under F1 for Cases I and II, where it is found that the JFCV(ED)
+estimator can have slightly worse performance than the JFCV estimator. Again, the AIC and BIC
+selection methods are not always inferior strategies; in fact, they yield better estimates than the
+JFCV method, although worse estimates than the JFCV(ED) for most situations in Cases I–III.
+Similar to the situation when interest focuses on A, for Cases IV–V AIC and BIC generally yield
+the best estimates except under F1. Comparing Tables 14 and 16, there is an apparent deterioration
+in the relative performance of the ED method when interest is shifted to Atail. As noted previously,
+one deﬁciency of the ED method is that it takes no account of information beyond the largest
+data point in the real-world sample, and as such it may fail to accurately generate the tail of the
+simulation output. The worse performance of the ED observed in Table 16 for Cases IV–V is likely
+a reﬂection of this deﬁciency.
+
+Nelson et al.: Input Model Averaging
+12
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+Table 13
+True input distributions for SAN experiment, where Bi ∼Bernoulli(pi), i = 1,2,...,5, with (p1,p2,...,p5) = (0.5,0.5,0.5,0.5,0.5), and
+BiGi(x) + (1 −Bi)Hi(x), meaning that Xi follows Gi(x) when Bi = 1 and Hi(x) when Bi = 0.
+Case
+X1
+X2
+X3
+X4
+X5
+I
+B1exponential(1/1.5)
++(1 −B1)exponential(10)
+B1exponential(1/1.8)
++(1 −B1)exponential(15)
+B1exponential(1/1.2)
++(1 −B1)exponential(1/0.08)
+B1exponential(1/1.8)
++(1 −B1)exponential(5)
+B1exponential(1/1.5)
++(1 −B1)exponential(20)
+II
+B1lognormal(10,
+√
+10)
++(1 −B1)lognormal(5,
+√
+10)
+B1exponential(1/1.8)
++(1 −B1)exponential(15)
+B1Weibull(2, 6)
++(1 −B1)exponential(1/0.08)
+B1exponential(1/1.8)
++(1 −B1)exponential(5)
+B1Weibull(1, 6)
++(1 −B1)exponential(20)
+III
+B1unif(0, 2)
++(1 −B1)exponential(15)
+B2HalfNor(0, 0, 4)
++(1 −B2)unif(10, 20)
+B3exponential(2)
++(1 −B3)exponential(12)
+B4gamma(15, 1)
++(1 −B4)lognormal(10,
+√
+10)
+B5gamma(15, 1)
++(1 −B5)beta(0.5, 0.5)
+IV
+lognormal(10,
+√
+10)
+lognormal(10,
+√
+10)
+lognormal(5,
+√
+10)
+lognormal(10,
+√
+10)
+lognormal(10,
+√
+10)
+V
+Weibull(2, 6)
+Weibull(2, 6)
+Weibull(1, 6)
+Weibull(2, 6)
+Weibull(2, 6)
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+13
+Table 14
+Numerical results for SAN Experiment with N = 100.
+Relative Average A
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+I
+F1
+1.0000 1.0001
+1.0001
+0.9624
+0.7999
+F2
+1.0000 1.2277
+1.2277
+0.8090
+0.7236
+F3
+1.0000 0.5916
+0.5916
+0.3880
+0.3526
+F (3)
+3
+1.0000 0.9653
+0.9653
+0.6332
+0.5435
+F (6)
+3
+1.0000 0.9101
+0.9101
+0.5969
+0.5073
+II
+F1
+1.0000 0.9384
+0.9384
+0.7343
+0.5675
+F2
+1.0000 0.6593
+0.6593
+0.4628
+0.3743
+F3
+1.0000 0.7619
+0.7619
+0.5538
+0.4653
+F (3)
+3
+1.0000 0.7843
+0.7843
+0.5700
+0.4515
+F (6)
+3
+1.0000 0.9185
+0.9185
+0.6676
+0.5185
+III
+F1
+1.0000 0.6655
+0.6655
+0.8816
+0.6590
+F2
+1.0000 1.0312
+1.0312
+0.7109
+0.5333
+F3
+1.0000 0.6552
+0.6588
+0.4309
+0.3556
+F (3)
+3
+1.0000 0.7628
+0.7670
+0.5016
+0.3845
+F (6)
+3
+1.0000 0.7619
+0.7661
+0.5010
+0.3883
+IV
+F1
+1.0000 0.8947
+0.8947
+1.1735
+0.8293
+F2
+1.0000 0.6306
+0.6306
+0.9502
+0.6783
+F3
+1.0000 0.9363
+0.9363
+1.4419
+0.9736
+F (3)
+3
+1.0000 0.9836
+0.9836
+1.5148
+1.0275
+F (6)
+3
+1.0000 0.9850
+0.9850
+1.5168
+1.0096
+V
+F1
+1.0000 0.6587
+0.6587
+0.8005
+0.5806
+F2
+1.0000 0.5111
+0.5111
+0.7192
+0.6207
+F3
+1.0000 0.7800
+0.7800
+1.0957
+0.8384
+F (3)
+3
+1.0000 0.8921
+0.8921
+1.2531
+0.9462
+F (6)
+3
+1.0000 0.9126
+0.9126
+1.2819
+0.9691
+
+Nelson et al.: Input Model Averaging
+14
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+Table 15
+Numerical results for SAN experiment Case I with varying N.
+Actual Average A
+Relative Average A
+Weight
+Sample
+Size
+Scenario JFCV
+AIC
+BIC
+ED
+JFCV
+(ED)
+JFCV
+AIC
+BIC
+ED
+JFCV
+(ED)
+on the ED
+in JFCV(ED)
+20
+F1
+0.0602 0.0576 0.0576 0.0756 0.0593 1.0000 0.9559 0.9559 1.2561 0.9856
+0.9564
+F2
+0.0666 0.0719 0.0719 0.0756 0.0598 1.0000 1.0807 1.0807 1.1365 0.8980
+0.9290
+F3
+0.0863 0.0806 0.0806 0.0756 0.0629 1.0000 0.9337 0.9337 0.8760 0.7279
+0.9123
+F (3)
+3
+0.0775 0.0806 0.0806 0.0756 0.0615 1.0000 1.0402 1.0402 0.9759 0.7928
+0.9276
+F (6)
+3
+0.0784 0.0806 0.0806 0.0756 0.0610 1.0000 1.0284 1.0284 0.9649 0.7780
+0.9154
+50
+F1
+0.0357 0.0357 0.0357 0.0469 0.0344 1.0000 1.0000 1.0000 1.3151 0.9650
+0.9741
+F2
+0.0401 0.0517 0.0517 0.0469 0.0362 1.0000 1.2894 1.2894 1.1712 0.9020
+0.9583
+F3
+0.0841 0.0530 0.0530 0.0469 0.0421 1.0000 0.6298 0.6298 0.5579 0.5005
+0.9347
+F (3)
+3
+0.0564 0.0530 0.0530 0.0469 0.0351 1.0000 0.9395 0.9395 0.8323 0.6220
+0.9393
+F (6)
+3
+0.0603 0.0530 0.0530 0.0469 0.0352 1.0000 0.8785 0.8785 0.7782 0.5836
+0.9374
+100
+F1
+0.0338 0.0338 0.0338 0.0325 0.0270 1.0000 1.0001 1.0001 0.9624 0.7999
+0.9796
+F2
+0.0402 0.0493 0.0493 0.0325 0.0291 1.0000 1.2277 1.2277 0.8090 0.7236
+0.9699
+F3
+0.0838 0.0496 0.0496 0.0325 0.0295 1.0000 0.5916 0.5916 0.3880 0.3526
+0.9474
+F (3)
+3
+0.0514 0.0496 0.0496 0.0325 0.0279 1.0000 0.9653 0.9653 0.6332 0.5435
+0.9575
+F (6)
+3
+0.0545 0.0496 0.0496 0.0325 0.0276 1.0000 0.9101 0.9101 0.5969 0.5073
+0.9541
+200
+F1
+0.0252 0.0252 0.0252 0.0230 0.0187 1.0000 1.0000 1.0000 0.9105 0.7428
+0.9904
+F2
+0.0274 0.0489 0.0489 0.0230 0.0194 1.0000 1.7831 1.7831 0.8375 0.7062
+0.9785
+F3
+0.0916 0.0487 0.0485 0.0230 0.0222 1.0000 0.5315 0.5298 0.2505 0.2423
+0.9585
+F (3)
+3
+0.0521 0.0487 0.0485 0.0230 0.0185 1.0000 0.9339 0.9310 0.4402 0.3550
+0.9718
+F (6)
+3
+0.0497 0.0487 0.0485 0.0230 0.0181 1.0000 0.9791 0.9761 0.4616 0.3646
+0.9680
+500
+F1
+0.0213 0.0213 0.0213 0.0123 0.0097 1.0000 1.0000 1.0000 0.5778 0.4564
+0.9937
+F2
+0.0234 0.0491 0.0491 0.0123 0.0098 1.0000 2.1043 2.1043 0.5280 0.4202
+0.9885
+F3
+0.0853 0.0485 0.0486 0.0123 0.0121 1.0000 0.5686 0.5696 0.1445 0.1413
+0.9752
+F (3)
+3
+0.0506 0.0485 0.0486 0.0123 0.0100 1.0000 0.9588 0.9606 0.2437 0.1981
+0.9838
+F (6)
+3
+0.0465 0.0485 0.0486 0.0123 0.0107 1.0000 1.0440 1.0459 0.2653 0.2308
+0.9809
+1000
+F1
+0.0205 0.0205 0.0205 0.0105 0.0069 1.0000 1.0000 1.0000 0.5129 0.3346
+0.9969
+F2
+0.0240 0.0503 0.0503 0.0105 0.0070 1.0000 2.0927 2.0927 0.4376 0.2923
+0.9929
+F3
+0.0904 0.0507 0.0508 0.0105 0.0082 1.0000 0.5611 0.5618 0.1163 0.0906
+0.9827
+F (3)
+3
+0.0521 0.0507 0.0508 0.0105 0.0077 1.0000 0.9736 0.9748 0.2018 0.1478
+0.9913
+F (6)
+3
+0.0478 0.0507 0.0508 0.0105 0.0077 1.0000 1.0622 1.0636 0.2201 0.1618
+0.9894
+
+Nelson et al.: Input Model Averaging
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+15
+Table 16
+Numerical results for SAN experiment, tail estimation, with
+N = 100.
+Relative Average Atail
+Case
+Scenario
+JFCV
+AIC
+BIC
+ED
+JFCV(ED)
+I
+F1
+1.0000 1.0055
+1.0055
+1.3160
+1.0107
+F2
+1.0000 2.3594
+2.3594
+1.2719
+0.9784
+F3
+1.0000 0.8978
+0.8978
+0.4734
+0.4049
+F (3)
+3
+1.0000 0.7232
+0.7232
+0.3813
+0.3253
+F (6)
+3
+1.0000 0.7113
+0.7113
+0.3751
+0.3168
+II
+F1
+1.0000 1.0055
+1.0055
+1.3160
+1.0107
+F2
+1.0000 2.3594
+2.3594
+1.2719
+0.9784
+F3
+1.0000 0.8978
+0.8978
+0.4734
+0.4049
+F (3)
+3
+1.0000 0.7232
+0.7232
+0.3813
+0.3253
+F (6)
+3
+1.0000 0.7113
+0.7113
+0.3751
+0.3168
+III
+F1
+1.0000 0.9838
+0.9838
+1.0550
+0.8540
+F2
+1.0000 1.0795
+1.0795
+1.0658
+0.8150
+F3
+1.0000 0.8768
+0.8909
+0.7875
+0.6275
+F (3)
+3
+1.0000 0.7930
+0.8058
+0.7123
+0.5508
+F (6)
+3
+1.0000 0.8536
+0.8673
+0.7667
+0.6033
+IV
+F1
+1.0000 0.9543
+0.9543
+1.3362
+0.6634
+F2
+1.0000 0.6131
+0.6131
+1.4322
+0.6836
+F3
+1.0000 0.7875
+0.7875
+1.9576
+0.9596
+F (3)
+3
+1.0000 0.9548
+0.9548
+2.3735
+1.1548
+F (6)
+3
+1.0000 0.9460
+0.9460
+2.3515
+1.1396
+V
+F1
+1.0000 0.9250
+0.9250
+0.8011
+0.4883
+F2
+1.0000 0.7296
+0.7296
+1.3324
+0.8154
+F3
+1.0000 0.6188
+0.6188
+1.1271
+0.7072
+F (3)
+3
+1.0000 0.6621
+0.6621
+1.2059
+0.6789
+F (6)
+3
+1.0000 0.7137
+0.7137
+1.2999
+0.7856
+
+Nelson et al.: Input Model Averaging
+16
+Article submitted to INFORMS Journal on Computing; manuscript no. JOC-2017-01-OA-012
+References
+Billingsley, P. 1968. Convergence of Probability Measures. New York: John Wiley and Sons.
+Gao, Y., Zhang, X., Wang, S., Chong, T. T. L. and Zou, G. 2019. Frequentist model averaging for
+threshold models. Annals of the Institute of Statistical Mathematics 71, 275–306.
+Li, K. C. 1987. Asymptotic optimality for Cp, CL, cross-validation and generalized cross-validation:
+Discrete index set. Annals of Statistics 15, 958–975.
+White, H. 1982. Maximum likelihood estimation of misspeciﬁed models. Econometrica 50, 1–25.

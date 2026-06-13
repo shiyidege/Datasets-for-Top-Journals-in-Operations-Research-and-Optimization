@@ -1,0 +1,4288 @@
+TITLE: Modeling and Engineering Constrained Shortest Path Algorithms for Battery Electric Vehicles
+JOURNAL: Transportation_Science
+YEAR: 2020
+DOI: https://doi.org/10.1287/trsc.2020.0981
+---
+
+Modeling and Engineering Constrained Shortest
+Path Algorithms for Battery Electric Vehicles∗
+Moritz Baum1, Julian Dibbelt2, Dorothea Wagner1 and Tobias Zündorf1
+1Karlsruhe Institute of Technology, Germany,
+moritz@ira.uka.de,dorothea.wagner@kit.edu,tobias.zuendorf@kit.edu
+2Sunnyvale, CA, United States, algo@dibbelt.de
+Abstract
+We study the problem of computing constrained shortest paths for battery electric vehicles.
+Since battery capacities are limited, fastest routes are often infeasible. Instead, users are interested
+in fast routes on which the energy consumption does not exceed the battery capacity. For that,
+drivers can deliberately reduce speed to save energy. Hence, route planning should provide
+both path and speed recommendations. To tackle the resulting NP-hard optimization problem,
+previous work trades correctness or accuracy of the underlying model for practical running times.
+We present a novel framework to compute optimal constrained shortest paths (without charging
+stops) for electric vehicles that uses more realistic physical models, while taking speed adaptation
+into account. Careful algorithm engineering makes the approach practical even on large, realistic
+road networks: We compute optimal solutions in less than a second for typical battery capacities,
+matching the performance of previous inexact methods. For even faster query times, the approach
+can easily be extended with heuristics that provide high quality solutions within milliseconds.
+1. Introduction
+Battery electric vehicles (EVs) have matured, giving the prospect of high powertrain eﬃciency and
+independence of fossil fuels, but a major hindrance of their adoption remains the limited battery
+capacity of most vehicles combined with a lengthy recharge time. To overcome range anxiety, careful
+route planning that prevents battery depletion during a ride is paramount. To avoid time-consuming
+charging stops, it can pay oﬀto save energy by deliberately driving below posted speed limits,
+especially along high-speed roads. Speed planning becomes even more relevant with the advent of
+autonomous vehicles, where driving speeds can be planned in advance to ensure that the target
+is reached. Another substantial diﬀerence to vehicles run by combustion engines is the ability to
+recuperate energy when braking. In this work, we study route planning algorithms that incorporate
+these modeling considerations to capture the characteristics and needs of EVs. We discuss diﬀerent
+ways to model adaptive speeds and propose algorithmic solutions to solve the resulting NP-hard
+problem of ﬁnding a fast route on which the target can be reached without intermediate recharging.
+We demonstrate the practicality of our approaches in a comprehensive evaluation on realistic input.
+∗Our work was partially supported by DFG Research Grant WA 654/16–2 and DFG Research Grant WA 654/23–1.
+This manuscript is the full version of an extended abstract that appeared in the proceedings of the 25th Annual
+European Symposium on Algorithms [15]. It builds upon the PhD thesis of one of the authors [9]
+1
+arXiv:2011.10400v1 [cs.DS] 20 Nov 2020
+
+Related Work.
+Classic route planning approaches make use of a graph-based representation of
+the considered transportation network, where scalar arc costs correspond to, e. g., travel times. A
+shortest path is then found by Dijkstra’s algorithm [29]. A wide range of speedup techniques [5] enable
+provably correct but faster queries in practice. For instance, A* search [49] uses vertex potentials
+to guide the search towards the target. Contraction Hierarchies (CH) introduced by Geisberger
+et al. [41] employs a preprocessing step to obtain a search graph that allows skipping vast parts of
+the network at query time. For that, CH iteratively contracts vertices according to a heuristic vertex
+ranking, while adding shortcut arcs to maintain distances within the remaining graph. Extensions
+to multicriteria settings exist for both A* search [31, 66, 67, 75] and CH [38, 40, 80]. Moreover,
+A* search and CH can be combined to Core-ALT [8], where all but the highest-ranked vertices are
+contracted, which form the core graph. On that, a variant of A* search uses precomputed distances
+to landmark vertices for potentials [43].
+Route planning for EVs involves battery capacity constraints and negative arc weights due to
+recuperation, which is tractable when optimizing energy consumption as a single criterion, i. e.,
+ignoring driving speed entirely [13, 30, 74]. Such energy-optimal routes often exhibit disproportionate
+detours, as using minor, slow roads can save energy due to less air drag [13]. Variants of the NP-hard
+Constrained Shortest Path (CSP) problem [47] overcome this by minimizing energy consumption
+without exceeding a given time limit [59, 64, 79] or ﬁnding the fastest route (without adaptive speeds)
+that does not exceed battery constraints [11, 88]. These works extend well-known bicriteria search
+algorithms [48, 68] to tackle CSP problem variants for EVs. Storandt [79] proposes a combination
+with CH, which computes optimal results in the order of milliseconds on subcountry-scale networks.
+All works mentioned so far assume that the driving speed per road segment is ﬁxed in the sense
+that it cannot be adjusted by the driver, neglecting attractive solutions that may still use major
+roads (e. g., motorways) and save energy by deliberately driving below posted speed limits. Flores
+et al. [33] consider the problem of planning driving speeds of an EV for a given route in the network,
+i. e., they only plan speeds, but not the route itself. Lv et al. [65] introduce a dynamic programming
+approach to optimally plan the speed of a solar-powered EV. Designed for simulation purposes, it is
+too slow for interactive applications. Fontana [34] proposes a variant of the CSP problem with the
+additional requirement of determining velocities for all road segments. Taking robustness criteria
+into account to deal with uncertainty wrt. time and energy consumption, a heuristic approach
+based on Lagrangian relaxation achieves reasonable running times (few seconds) on small graphs.
+By sampling discrete alternative speeds, tradeoﬀs can also be modeled as parallel arcs [12], but
+this yields too many nondominated intermediate solutions, growing exponentially even for chains
+of vertices. Accordingly, only heuristics oﬀer acceptable performance for common vehicle ranges
+when using parallel arcs. Instead, Hartmann and Funke [50] model tradeoﬀs as continuous functions,
+assuming the driver can go at any speed up to a given speed limit per arc. However, their solution
+is still based on discrete sampling of these continuous functions (it also ignores battery constraints).
+Despite employing a variant of CH as a preprocessing-based speedup technique, their approach does
+not scale well to large networks, with query times in the order of minutes. Alternatively, two-phase
+paths consist of a fastest and an energy-optimal subpath [45], where driving speed along arcs is
+determined by the type of the respective subpath. This allows for reasonably fast queries in the order
+of seconds (without preprocessing), but results are not optimal in general. Strehler et al. [81] give
+theoretical insights for a CSP problem including variable speeds for EVs. Most importantly, they
+develop a fully polynomial-time approximation scheme (FPTAS) for this problem. Unfortunately,
+the algorithm is slow in practice. They also propose a heuristic search based on discretized speeds,
+but do not evaluate their approach.
+Speed planning and multicriteria optimization are also relevant in related Crew Scheduling
+and Vehicle Routing Problems (VRPs). A subproblem that is often considered in this context is
+2
+
+called Shortest Path Problem with Resource Constraints (SPPRC) [55], which exists in many variants
+and can be seen as a generalization of CSP in which a shortest path subject to one or more resource
+constraints is sought. These constraints can be represented by resource extension functions [54],
+which deﬁne the change in resource consumption or state when traversing an arc of the network [78].
+Often, these state transitions are modeled as linear [53, 63, 85] or nonlinear functions [52]. Another
+common approach is to use parallel arcs to represent diﬀerent tradeoﬀchoices [39, 62]. For an
+overview of variants of SPPRC and the VRP with realistic constraints and road attributes, see Ticha
+et al. [83]. Works dealing with speed planning can be found in Bektaş et al. [18] and Fukasawa
+et al. [37]. Another related problem is the Pollution Routing Problem [19], which aims at minimizing
+emissions of vehicles. EVs are explicitly considered in several works [27, 42, 70, 77]. As a general
+observation, VRP settings are very complex, as they extend the Traveling Salesman Problem and
+often involve routing of multiple vehicles. Consequently, approaches in the literature (typically
+making use of mathematical programming and heuristics) do not scale to large, fully modeled road
+networks. Finally, we note that speed planning for vehicles is relevant not only in the context of
+route planning for EVs, but also in several other areas of transportation, such as supply chain
+management [20], aviation [89], or ship routing [69, 72].
+Contribution and Outline.
+We study a generalization of the CSP problem that considers continuous,
+adaptive speeds for EVs: We allow the vehicle to adjust its speed to reach its target quickly and
+without recharging (if possible). We derive a realistic, nonlinear consumption model and develop
+an algorithm to solve the resulting NP-hard problem optimally on challenging, realistic instances.
+This complements our previous work [11], in which we considered fastest feasible routes with
+charging stops (but for ﬁxed driving speeds). In what follows, we ﬁrst recap the CSP problem
+and discuss adaptive speed models in Section 2. We propose functions mapping travel time to
+energy consumption, which yield the most challenging but precise problem setting. Afterwards,
+Section 3 discusses realistic, nonlinear consumption models and derives operations to compute and
+compare speed–consumption tradeoﬀs on paths of the network. In Section 4, we introduce our
+basic exponential-time algorithm that uses these operations. Propagating continuous consumption
+functions during network exploration, it aims to improve both running time and solution quality
+compared to previous discretized approaches. In Section 4, we extend known variants of A* search
+to our setting, improving the practical performance of our basic algorithm. We then incorporate
+a technique based on CH in Section 6, for which a particular challenge is the computation of
+shortcuts that represent bivariate functions to capture the constraints imposed by our consumption
+model.
+Combining A* search and CH, we obtain our fastest approach, which is presented in
+Section 7. Our experimental evaluation, given in Section 8, reveals that we can compute optimal
+solutions within seconds and below for typical battery capacities, on par or faster than previous
+heuristic algorithms. Our own heuristic variant provides high-quality solutions and is fast enough
+for interactive applications. We conclude our work with ﬁnal remarks in Section 9.
+2. Models and Problem Settings
+We begin by introducing a basic problem setting in Section 2.1, in which we assume that the speed
+on every arc is ﬁxed. We discuss a simple way to extend graphs to take adaptive speeds into account
+by adding multi-arcs and demonstrate its drawbacks. Afterwards, we introduce a more sophisticated
+model of adaptive speeds and the corresponding problem generalization in Section 2.2. Finally,
+Section 2.3 illustrates how solutions can be obtained in this model on a simpliﬁed example.
+3
+
+In each setting discussed below, we are given a directed graph G = (V, A). Arcs in the graph
+are directed to model, e. g., one-way streets. Traversing an arc in the graph consumes both time
+and energy. While the time to traverse an arc is always (strictly) positive, energy consumption can
+become negative to model recuperation, e. g., when going downhill. Moreover, the vehicle is equipped
+with a battery that has a given capacity M ∈R≥0. This imposes constraints on the feasibility of
+paths, as the state of charge (SoC) of the vehicle must not drop below 0. Additionally, the SoC can
+become at most M after traversing an arc with negative energy consumption.
+In what follows, we focus on computing fastest feasible paths for EVs, i. e., fastest paths under the
+constraint that they are reachable by the EV (given its initial SoC). However, we point out that it is
+not hard to adapt the algorithms we present to closely related problem settings, such as
+• computing a path with minimum driving time such that the target is reached with at least a
+certain minimum SoC;
+• computing a path with minimum driving time such that the SoC does not fall below a certain
+threshold at any point during a journey;
+• computing an energy-optimal path that does not exceed a certain travel time;
+• computing the full Pareto set of nondominated solutions at the target (wrt. driving time and
+energy consumption).
+2.1. Constrained Shortest Paths for EVs
+In a problem resembling traditional CSP settings, we are given a graph G = (V, A) together with
+two cost functions d: A →R>0 and c: A →R representing driving time and energy consumption
+on an arc, respectively. Although energy consumption can become negative, physical constraints
+prevent that cycles in the graph have negative energy consumption. In addition to that, the battery
+constraints mentioned above apply: If the battery of the EV has the SoC bu ∈[0, M] at some
+vertex u ∈V , then traversing an arc (u, v) ∈A results in the SoC
+bv :=
+
+
+
+
+
+
+
+−∞
+if bu −c(u, v) < 0,
+M
+if bu −c(u, v) > M,
+bu −c(u, v)
+otherwise.
+Here, an SoC of −∞implies that the arc cannot be traversed because the battery would run empty.
+A path is feasible if the SoC never drops to −∞when traversing its arcs. We consider the EV
+Constrained Shortest Path (EVCSP) Problem, which is deﬁned as follows.
+Deﬁnition 1 (EV Constrained Shortest Path). Given a source vertex s ∈V , a target vertex t ∈V ,
+and an initial SoC bs ∈[0, M], ﬁnd a path that is feasible and minimizes driving time.
+Note that if we did not allow recuperation and hence, all consumption values became nonnegative,
+this problem would be equivalent to the well-known NP-hard CSP problem [47], which (in the
+terminology of our setting) asks for a path with minimum driving time such that energy consumption
+does not exceed the threshold bs. Consequently, our problem at hand is NP-hard, too.
+The Bicriteria Shortest Path Algorithm.
+To solve the EVCSP problem, we can adapt the well-
+known exponential-time bicriteria shortest path (BSP) algorithm [48, 68] in a straightforward manner.
+The algorithm maintains label sets, in our case containing tuples (τ, β) of driving time τ ∈R≥0
+4
+
+s
+v
+t
+10, 7
+20, 4
+30, 1
+1, 2
+11, 1
+(0, 10)
+(10, 3)
+(30, 9)
+(11, 1)
+(21, 2)
+(31, 7)
+(41, 8)
+(a)
+s
+v
+t
+1, 2
+2, 1
+1, 2
+2, 1
+2, 4
+4, 2
+(0, 5)
+(2, 1)
+(3, 2)
+(4, 3)
+(b)
+Figure 1.: Adaptive speeds modeled as parallel arcs. Arc labels indicate tuples of driving time and
+energy consumption. We also show the label sets of vertices as computed by the BSP
+algorithm in an s–t query (ignoring dashed arcs). (a) The initial SoC is 10. Adding the
+dashed arc (s, v) results in a new label (20, 6) at v and a label (21, 4) at t, which dominates
+the label (21, 2) in the current set. (b) The initial SoC is 5. Assume that the original
+graph consists only of the vertices s and t, connected by the two dashed arcs. Thus,
+there are two labels (2, 1) and (4, 3) at the target vertex when the algorithm terminates.
+Inserting the vertex v, e. g., for visualization in practice, results in the depicted graph
+with solid arcs. Even though the distances between s and t are maintained, the algorithm
+now computes the additional label (3, 2) on the modiﬁed input.
+and SoC β ∈R. A label (τ, β) dominates another label (τ ′, β′) if τ ≤τ ′ and β ≥β′. Starting with
+the label (0, bs) at the source s, the algorithm settles in each step the label ℓ= (τ, β) with minimum
+driving time τ ≥0 among any labels not settled before. For all arcs (u, v) ∈A outgoing from the
+vertex u ∈V this label belongs to, it then generates a new label ℓ′ with driving time τ + d(u, v).
+We set the SoC of the new label ℓ′ to min{M, β −c(u, v)}. If this results in nonnegative SoC, the
+label ℓ′ represents a feasible path and is added to the labels at v if it is not dominated by any of
+them. Labels at v dominated by ℓ′ are discarded. Given that driving times are strictly positive,
+this algorithm is label setting, i. e., settled labels are never dominated afterwards.1 An optimal
+(constrained) solution is found when a label at the target t is settled.
+Modeling Adaptive Speeds in the EVCSP Problem.
+The BSP algorithm ﬁnds the fastest route
+subject to battery constraints. As argued before, travel time and energy consumption are not only
+aﬀected by the choice of the route itself, but also by driving behavior. Allowing multiple driving
+speeds (and consumption values) per road segment, one could, e. g., save energy on the motorway by
+driving at reasonable speeds below the posted speed limits. Therefore, we consider adaptive speeds,
+i. e., we allow the EV to adjust its speed within reasonable limits to reach the destination as fast as
+possible and with suﬃcient SoC. In addition to the actual route from the source to the target, we
+then also have to specify (optimal) driving speeds along that route.
+A straightforward way to model adaptive speeds is to sample reasonable speeds for each road
+segment [12, 45, 50, 81]. Then, one can add parallel arcs in the underlying graph representation,
+which correspond to alternative driving speeds (inducing certain values of driving time and energy
+consumption); see Figure 1. The major beneﬁt of this approach is its simplicity: Since we still
+obtain an instance of EVCSP, we can immediately apply the BSP algorithm to solve the problem.
+However, it also comes with several drawbacks. First of all, parallel arcs greatly increase running
+1Note that if we were scanning vertices in increasing order of energy consumption instead (which may be negative),
+potential shifting would be necessary to make the algorithm label setting [13, 30, 58, 74].
+5
+
+time, due to a larger number of nondominated solutions. In fact, the number of nondominated (i. e.,
+Pareto-optimal) solutions can be exponential even on a single route; see Figure 1a and c. f. Letchford
+et al. [62]. Consequently, only heuristic algorithms achieve practical running times [12, 45, 50]. By
+discretizing a continuous range of tradeoﬀs, parallel arcs that model alternative speeds have other
+undesirable eﬀects, such as producing many insigniﬁcant, yet nondominated solutions. Figure 1a
+shows such an example in which some solutions at the target vertex t provide rather unattractive
+tradeoﬀs, namely, spending ten extra units of time to save only one unit of energy. Adding another
+sample (indicated by the dashed arc), on the other hand, would result in a new label at t that
+dominates one of these less favorable solutions. In other words, the number of samples inﬂuences
+both running time and quality of the results: More samples increase running time, but fewer samples
+reduce quality. Similarly, adding or contracting degree-two vertices in the graph, which are commonly
+included for visualization purposes, aﬀects the solution space even if distances are maintained; see
+Figure 1b. This is clearly not desirable, since such modeling decisions should not have any impact
+on the optimal solution. To remedy the above issues, we propose a more sophisticated model, which
+uses continuous functions to model the tradeoﬀs on arcs.
+2.2. Constrained Shortest Paths with Continuous Adaptive Speeds
+In the EVCSP problem, scalar values represent driving time and energy consumption of an arc
+a ∈A in the input graph G = (V, A). Instead, we now assume that there is a tradeoﬀfunction
+ga : R>0 →R based on a physical consumption model, mapping a desired driving time x ∈R>0
+along a to the resulting energy consumption ga(x). In reality, the driving time on a road segment
+cannot be chosen arbitrarily. Lower bounds are induced by speed limits and the maximum speed
+of a vehicle. On the other hand, driving slower than a reasonable minimum speed would mean to
+become an obstacle for other drivers. Additionally, there is a certain point at which driving slower
+will no longer pay oﬀin terms of energy consumption. This yields (positive) minimum and maximum
+driving times ¯τa ∈R>0 and ¯τa ∈R>0, respectively, for the function ga, with ¯τa ≤¯τa. We incorporate
+these bounds into a consumption function ca : R≥0 →R ∪{∞} with
+ca(x) :=
+
+
+
+
+
+
+
+∞
+if x < ¯τa,
+ga(¯τa)
+if x > ¯τa,
+ga(x)
+otherwise.
+(1)
+Thus, driving times below ¯τa are infeasible (modeled as inﬁnite consumption) and driving times
+above ¯τa become unproﬁtable. A driving time x ∈R≥0 is also called admissible if x ∈[¯τa, ¯τa], i. e.,
+it lies in the relevant subdomain of ca. In the special (degenerate) case ¯τa = ¯τa, the function ca
+represents a constant pair (¯τa, ca(¯τa)) of ﬁxed driving time and energy consumption. We call a and
+ca constant in this case, as the arc allows no speed adaptation. Due to physical constraints, the
+minimum values ca(¯τa) of the consumption functions ca of arcs a ∈A must not induce cycles with
+negative energy consumption in the graph (going in a cycle cannot increase the SoC).
+As before, we assume that the EV is equipped with a battery that has a certain capacity M ∈R≥0
+and that its SoC must not drop below 0 nor exceed M. When incorporating these constraints into
+our setting, we obtain a bivariate SoC function fa : R≥0 × [0, M] ∪{−∞} →[0, M] ∪{−∞} for every
+arc a = (u, v) ∈A, mapping the SoC at u to the resulting SoC at v when traversing a with a speciﬁc
+driving time. The function fa is given by
+fa(x, b) :=
+
+
+
+
+
+
+
+−∞
+if b −ca(x) < 0,
+M
+if b −ca(x) > M,
+b −ca(x)
+otherwise,
+(2)
+6
+
+where an SoC of −∞denotes an empty battery. Hence, fa(x, b) = −∞implies that the arc cannot
+be traversed at the corresponding speed (as it would cause the battery to run empty). Further, we
+have fa(x, −∞) = −∞for arbitrary x ∈R≥0.
+Given the SoC bs ∈[0, M] at a source s ∈V , an s–t path [s = v1, . . . , vk = t], and driving times
+xi ∈R≥0 for the arcs (vi, vi+1) of the path, with i ∈{1, . . . , k −1}, we can determine a corresponding
+SoC bt ∈[0, M] ∪{−∞} at the target t ∈V as follows. Starting at the source s = v1, the SoC at
+vk = t is obtained after iteratively evaluating the SoC function f(vi,vi+1) at xi and the SoC at the
+previous vertex vi. Formally, we get
+b1 := bs,
+bi+1 := f(vi,vi+1)(xi, bi)
+for i ∈{1, . . . , k −1},
+bt := bk.
+(3)
+Note that bt = −∞holds if the path is infeasible (for the given driving times).
+Using this more sophisticated model, Deﬁnition 2 formally introduces the EV Continuous Adaptive
+Speeds Shortest Path (EVCAS) Problem, which we examine in the subsequent sections of this work.
+Deﬁnition 2 (EV Continuous Adaptive Speeds Shortest Path). Given a source vertex s ∈V , a
+target vertex t ∈V , and an initial SoC bs ∈[0, M], ﬁnd an s–t path P = [s = v1, v2 . . . , vk = t]
+together with driving times xi ∈R≥0 for every arc (vi, vi+1) of P, with i ∈{1, . . . , k −1}, such that
+battery constraints are respected, i. e., bt ≥0 in Equation 3, and the overall driving time x := Pk−1
+i=1 xi
+is minimized.
+An instance of EVCAS where all functions are degenerate constant tuples is also an input instance
+to EVCSP, which is NP-hard. Hence, EVCAS is NP-hard as well.
+2.3. Solving EVCAS on a Simpliﬁed Example Instance
+In this work, we focus on solving the EVCAS problem. To gain insights about the structure of
+optimal solutions, we now derive consumption functions and (bivariate) SoC functions for given
+paths instead of arcs. We illustrate such functions in an example using piecewise linear tradeoﬀ
+functions. Note that piecewise linear functions are commonly used to model constraints in variants
+of the SPPRC [53, 63, 85] and in time-dependent route planning [7, 14, 26, 60]. In Section 3, we
+propose a more realistic nonlinear model, which is used in the remainder of this work.
+For now, assume that the tradeoﬀfunction ga of every arc a ∈A is decreasing and linear, i. e.,
+ga(x) = αx+β for all x ∈R≥0, where α ∈R≤0 and β ∈R are constant coeﬃcients. The values α and
+β may diﬀer between arcs, though, to reﬂect diﬀerent road types or other relevant factors [22, 90].
+Figure 2a and Figure 2b show consumption functions (plugging in limits ¯τ(u,v) and ¯τ(u,v) on driving
+time) for two arcs (u, v) ∈A and (v, w) ∈A.
+To ﬁnd the minimum driving time from u to w, we are interested in the consumption function of
+the path P = [u, v, w], i. e., a function cP that maps driving time x ∈R≥0 spent on the u–w path
+to the minimum energy consumption cP (x) on the path. Formally, to get the value of cP (x) for
+some driving time x ∈R≥0, we have to pick (nonnegative) values x1 ∈R≥0 and x2 ∈R≥0, such that
+x = x1 + x2 and c(u,v)(x1) + c(v,w)(x2) is minimized. The shaded area in Figure 2c indicates possible
+distributions of driving times x1 and x2 among the two arcs and the resulting energy consumption.
+The lower envelope of this area yields the desired function cP . Intuitively, we want to spend as
+much of the available extra time (exceeding the minimum 2) as possible on the arc that provides
+the best tradeoﬀ, i. e., the consumption function with the steeper slope (where spending additional
+time saves most energy). As a result, the consumption function of a path is always convex on the
+7
+
+x1
+c(u,v)(x1)
+1
+2
+3
+0
+1
+2
+3
+4
+∞
+(a)
+x2
+c(v,w)(x2)
+1
+2
+3
+−4
+−3
+−2
+−1
+0
+∞
+(b)
+x
+cP (x = x1 + x2)
+∞
+2
+3
+4
+5
+6
+−3
+−2
+−1
+0
+1
+(c)
+Figure 2.: Consumption functions in a simplistic model. (a) The consumption function c(u,v) of an
+arc (u, v) with minimum driving time ¯τ(u,v) = 1 and maximum driving time ¯τ(u,v) = 3.
+(b) The consumption function c(v,w) of an arc (v, w) with minimum driving time ¯τ(u,v) = 1
+and maximum driving time ¯τ(u,v) = 2. (c) The consumption function cP of the path
+P = [u, v, w]. The shaded area indicates possible pairs of driving time and consumption
+along the path.
+subdomain where its image is ﬁnite; see Figure 2c. Observe that, while tradeoﬀfunctions of single
+arcs a ∈A are linear on the interval [¯τa, ¯τa] of admissible driving times, the tradeoﬀfunction of a
+path is piecewise linear on the interval induced by its minimum and maximum driving time. The
+number of linear subfunctions deﬁning the function cP is bounded by the number of arcs in the path.
+Battery Constraints.
+The situation becomes more involved if we also take battery constraints
+into account. Then, energy consumption not only depends on the driving time we are willing to
+spend along a path, but also on the initial SoC. Hence, we obtain a bivariate function fP , which
+maps driving time and initial SoC at u to the SoC at w. Note that consumption is positive on the
+ﬁrst arc (u, v) and negative on the second arc (v, w) in Figure 2. As before, the second arc (v, w)
+provides the better tradeoﬀ. However, for low initial SoC, we have to ensure that the ﬁrst arc (u, v)
+can be traversed. Hence, spending some additional time on this arc may be inevitable to obtain a
+feasible solution. In contrast, high SoC values may prevent recuperation along the second arc (v, w),
+so driving slower no longer pays oﬀat some point. Figure 3 sketches the resulting bivariate SoC
+function for speciﬁc values of initial SoC and driving time. For a given initial SoC b ∈[0, M] at u,
+we see how spending more time on the u–v path can increase the SoC at w (Figure 3a). When ﬁxing
+the driving time x ∈R≥0 (Figure 3b), the optimal amount of time spent on each arc varies with the
+initial SoC at u. Consequently, even if we ﬁx the total driving time that is spent on the path, the
+SoC function of a path P no longer has the speciﬁc form as in the case of scalar energy consumption
+values [16, 30].
+The optimal solution to EVCAS is the minimum driving time of cP for the corresponding initial
+SoC (which is part of the input). For example, the optimal driving time is 4 if the initial SoC is 1,
+or 2 if the initial SoC is at least 2.
+3. Realistic Consumption Functions and Basic Operations
+Realistic tradeoﬀfunctions are nonlinear. We introduce such tradeoﬀfunctions in Section 3.1.
+Although these realistic functions require a more technical analysis, many observations made for
+8
+
+x
+fP (x, b)
+b = 4
+b = 3
+b = 2
+b = 1
+2
+3
+4
+5
+0
+1
+2
+3
+4
+−∞
+(a)
+b
+fP (x, b)
+x = 5
+x = 4
+x = 3
+x = 2
+1
+2
+3
+4
+0
+1
+2
+3
+4
+−∞
+(b)
+Figure 3.: The bivariate SoC function of the path P from Figure 2, assuming a battery capacity
+of M = 4. (a) The SoC fP (x, b) at w, subject to driving time x ∈R≥0 on P for diﬀerent
+ﬁxed values b ∈{1, 2, 3, 4} of initial SoC. (b) The SoC fP (x, b) at w, subject to initial
+SoC b ∈[0, M] for diﬀerent ﬁxed driving times x ∈{2, 3, 4, 5}.
+the simplistic, linear model discussed in Section 2.3 carry over to the realistic, nonlinear tradeoﬀ
+functions.
+If we want to incorporate the propagation of consumption functions into the BSP algorithm in
+order to solve EVCAS, we need to generalize some of its basic operations. First, BSP computes
+scalar sums to obtain the driving time and the SoC at a vertex. Since we are now dealing with
+continuous functions, we require operations that compute functions for (best) tradeoﬀs of paths
+instead of arcs. In the previous section, we sketched how such consumption functions can be obtained
+in a simplistic model based on piecewise linear functions. In Section 3.2, we describe how this is done
+in the realistic model. Second, the BSP algorithm identiﬁes dominated labels to keep the number of
+labels small. We discuss generalized dominance schemes for consumption functions in Section 3.3.
+3.1. A Realistic Consumption Model
+Both considered metrics, driving time and energy consumption, depend on the vehicle’s speed. In
+accordance with realistic physical models established in the literature [1, 4, 17, 32, 50, 61, 65], we
+assume that energy consumption on a certain road segment a ∈A can be expressed by a function
+ha : R>0 →R given as
+ha(v) = λ1v2 + λ2s + λ3,
+(4)
+where v ∈R>0 is the (constant) vehicle speed, s ∈R is the (constant) slope of the road segment,
+and λ1 ∈R≥0, λ2 ∈R≥0, and λ3 ∈R≥0 are constant nonnegative coeﬃcients of the consumption
+model. The term λ1v2 is caused by aerodynamic drag, which increases with driving speed in a
+quadratic fashion. Note that energy consumption can become negative for downhill segments with
+s < 0. The parameters λ1, λ2, and λ3 may vary for diﬀerent arcs due to, e. g., diﬀerent road types or
+other factors aﬀecting energy consumption [22, 82, 90]. Assuming constant speed and slope per arc
+is not a restriction, since we can add intermediate vertices in the graph to model changing conditions.
+Furthermore, one can show that deliberately varying the speed along a single road segment (with
+constant slope and speed limit) never pays oﬀin our model [50, Corollary 1].
+Since we are interested in functions mapping driving time x ∈R>0 to energy consumption ga(x),
+we substitute v = ℓ/x in Equation (4), where ℓ∈R>0 denotes the length of the road segment. As
+slope and length of an arc are ﬁxed, we simplify this below by setting α := λ1ℓ2 and γ := λ2s + λ3.
+Observe that α ∈R≥0 is nonnegative, while γ ∈R may be a negative value (for downhill arcs).
+9
+
+x
+c(x)
+¯τ
+¯τ
+3
+(x−1)2 + 1
+1
+2
+3
+4
+5
+6
+7
+8
+0
+1
+2
+3
+4
+5
+∞
+Figure 4.: A consumption function, deﬁned by a single tradeoﬀfunction with parameters α = 3, β = 1,
+and γ = 1. The indicated subdomain borders induced by its minimum and maximum
+driving time, respectively, are ¯τ = 2 and ¯τ = 6.
+We introduce a third constant β ∈R≥0, which we will need later to shift functions along the time
+axis. Altogether, we obtain the tradeoﬀfunction ga : R>0 →R mapping driving time to energy
+consumption, which is deﬁned as
+ga(x) :=
+α
+(x −β)2 + γ.
+(5)
+For single arcs, we always obtain β = 0 and assume driving time x to be strictly positive. Thus, the
+term x −β in the denominator is strictly positive and ga(x) is a ﬁnite real value. Furthermore, note
+that ga is decreasing and convex on its domain R>0 in this case. Tradeoﬀfunctions of paths may
+require values 0 < β < x to reﬂect additional time spent on previous arcs. In the simplistic model
+discussed above, we saw that tradeoﬀfunctions of paths may be piecewise linear. Similarly, we allow
+tradeoﬀfunctions in the realistic model to be deﬁned as piecewise functions, so they may consist of
+multiple subfunctions of the form of Equation (5).
+Given a tradeoﬀfunction g: R>0 →R, we plug in the minimum and maximum driving times ¯τ ∈
+R>0 and ¯τ ∈R>0 to obtain the corresponding consumption function c: R≥0 →R∪{∞}; see Figure 4
+for an example. In general, we require consumption functions to be continuous in the interval [¯τ, ∞),
+but not necessarily diﬀerentiable. In particular, we demand that β < x holds for all subfunctions of
+the form of Equation (5) within their respective subdomain of [¯τ, ¯τ]. Hence, the denominator term
+x −β is always strictly positive. Together with the assumption α ≥0, this implies that consumption
+functions are either constant (if α = 0, in which case we further assume ¯τ = ¯τ) or strictly decreasing
+on the interval [¯τ, ¯τ], i. e., c(x1) > c(x2) holds for all x1, x2 ∈[¯τ, ¯τ] with x1 < x2. At certain points
+below, we also make use of the inverse function c−1 : [c(¯τ), c(¯τ)] →R>0 of a consumption function c.
+Observe that it is well-deﬁned on the speciﬁed domain.
+3.2. Linking Consumption Functions
+To compute best possible tradeoﬀs on paths consisting of multiple arcs, we deﬁne a link operation
+link: F×F →F on the function space F of consumption functions as speciﬁed in Section 3.1. For two
+paths P1 = [v1, . . . , vi] and P2 = [vi, . . . , vk] in the graph, let P1 ◦P2 := [v1, . . . , vi, . . . , vk] denote
+their concatenation. Given two consumption functions c1 and c2 representing energy consumption on
+two paths P1 and P2, respectively, linking c1 and c2 results in a consumption function c := link(c1, c2)
+that maps driving time spent when traversing the path P := P1 ◦P2 to the minimum possible
+energy consumption (if we ignore battery constraints for now). Let ¯τ1 ∈R>0 and ¯τ1 ∈R>0 denote
+10
+
+x1
+c1(x1)
+4
+(x−1)2 −1
+2
+3
+4
+5
+−1
+0
+1
+2
+3
+4
+∞
+(a)
+x2
+c2(x2)
+0.5
+(x−1)2 + 1
+2
+3
+4
+5
+−1
+0
+1
+2
+3
+4
+∞
+(b)
+x = x1 + x2
+c(x)
+4
+(x−3)2 + 1
+2
+13.5
+(x−2)2
+0.5
+(x−5)2 + 4
+9
+x1 = ∆opt(x)
+¯τ ∗
+2
+¯τ ∗
+1
+4
+5
+6
+7
+8
+9
+0
+1
+2
+3
+4
+5
+∞
+(c)
+Figure 5.: Linking two consumption functions. (a) The consumption function c1, deﬁned by the
+parameters α1 = 4, β1 = 1, γ1 = −1, ¯τ1 = 2, and ¯τ1 = 4.
+(b) The consumption
+function c2, deﬁned by the parameters α2 = 0.5, β2 = 1, γ2 = 1, ¯τ2 = 2, and ¯τ2 =
+5. (c) The consumption function c = link(c1, c2), with c(x) = c1(∆opt(x)) + c2(x −
+∆opt(x)) on the interval [4, 9]. It is deﬁned by three subfunctions with the indicated
+subdomains [4, 5], [5, 6.5], and [6.5, 9].
+the minimum and maximum driving time of c1, respectively. Similarly, let ¯τ2 ∈R>0 and ¯τ2 ∈R>0
+denote the corresponding driving times of c2. Clearly, we obtain c(x) = ∞for all x < ¯τ1 +¯τ2 and
+c(x) = c1(¯τ1) + c2(¯τ2) for x > ¯τ1 + ¯τ2. For any remaining value x ∈[¯τ1 + ¯τ2, ¯τ1 + ¯τ2], we have to
+determine times x1 ∈[¯τ1, ¯τ1] and x2 ∈[¯τ2, ¯τ2] that sum up to x1 + x2 = x and minimize overall
+consumption (as in the simple model discussed in Section 2). We set ∆:= x1 below, which yields
+c(x) =
+min
+∆∈[¯τ1,¯τ1]
+∆∈[x−¯τ2,x−¯τ2]
+c1(∆) + c2(x −∆)
+(6)
+for all x ∈[¯τ1 + ¯τ2, ¯τ1 + ¯τ2]. In other words, to minimize the energy consumption for a given
+time x ∈[¯τ1 +¯τ2, ¯τ1 + ¯τ2], we have to divide the amount of time that exceeds the minimum possible
+total driving time ¯τ1 +¯τ2 among the two paths, such that consumption is minimized. We would like
+to spend this additional amount of time x −(¯τ1 + ¯τ2) on the path corresponding to the function
+with steeper slope, since it provides the better tradeoﬀ(we save more energy per additional unit of
+time spent on the corresponding arc). This is illustrated in Figure 5. In what follows, we formally
+derive the link operation.
+Linking Functions Deﬁned by Single TradeoﬀFunctions.
+For now, assume that each of the given
+functions c1 and c2 is deﬁned by a single tradeoﬀsubfunction, rather than multiple ones. For example,
+this is the case if both paths P1 and P2 consist of single arcs, i. e., P1 = [u, v] and P2 = [v, w] for
+some (u, v) ∈A and (v, w) ∈A. The result c := link(c1, c2) of linking c1 and c2 is a piecewise-deﬁned
+consumption function, which may consist of multiple subfunctions of the form as in Equation (5);
+see Figure 5 for an example. Intuitively, the ﬁrst subfunction of c represents a shifted part of the
+steeper input function for small values of x. It is followed by a combination of both functions and a
+subfunction that corresponds to the input function that is gentler for large values of x. Any of these
+parts may collapse (for example, the combined part only exists if one can pick admissible driving
+times such that both functions have identical negative slopes).
+We now show how c = link(c1, c2) is computed. Apparently, the best choice of ∆in Equation (6)
+depends on the value x ∈[¯τ1 +¯τ2, ¯τ1 + ¯τ2]. Therefore, we consider the ∆-function ∆opt : [¯τ1 +¯τ2, ¯τ1 +
+11
+
+¯τ2] →R≥0 that maps every admissible value of x to the optimal choice of ∆. Then, we immediately
+get for arbitrary x ∈R≥0 that
+c(x) =
+
+
+
+
+
+
+
+∞
+if x < ¯τ1 +¯τ2,
+c1(¯τ1) + c2(¯τ2)
+if x > ¯τ1 + ¯τ2,
+c1(∆opt(x)) + c2(x −∆opt(x))
+otherwise.
+(7)
+Hence, we essentially need to compute ∆opt to obtain the desired function c. To this end, consider an
+arbitrary ﬁxed driving time x ∈[¯τ1 +¯τ2, ¯τ1 + ¯τ2]. To identify the optimal value ∆opt(x), we examine
+the derivative c′
+x of the term cx(∆) := c1(∆) + c2(x −∆). We obtain a unique zero ∆∗
+x for this
+derivative under the assumption that β1 < ∆and ∆< x −β2; see Appendix A.1 for details. The
+value ∆∗
+x minimizes energy consumption for an unrestricted distribution of driving times that sum
+up to x. However, from Equation (6) we get the additional constraints ∆opt(x) ≥max{¯τ1, x −¯τ2}
+and ∆opt(x) ≤min{¯τ1, x −¯τ2}. Since ∆∗
+x is the unique zero of c′
+x in the open interval (β1, x −β2),
+monotonicity of cx in the intervals (β1, ∆∗
+x] and [∆∗
+x, x −β2) follows and we get
+∆opt(x) =
+
+
+
+
+
+
+
+max{¯τ1, x −¯τ2}
+if ∆∗
+x < max{¯τ1, x −¯τ2},
+min{¯τ1, x −¯τ2}
+if ∆∗
+x > min{¯τ1, x −¯τ2},
+∆∗
+x
+otherwise.
+(8)
+Equations (7) and (8) together are suﬃcient to specify the desired function c.
+In Appendix A.1, we show that the resulting function c is indeed a consumption function, i. e., a
+function that has the general form as in Equation (1), is continuous and decreasing on the interval
+[¯τ1 +¯τ2, ∞), and whose tradeoﬀfunction is deﬁned by a (small) constant number of subfunctions
+that have the form as in Equation (5). Degenerate cases are possible, too. For example, if c1 or c2 is
+constant, the link operation becomes a simple shift on the x-axis and y-axis. In conclusion, the link
+operation requires constant time in the special case where both input functions are deﬁned by a
+single tradeoﬀfunction. Lemma 1 summarizes our results.
+Lemma 1. Given two consumption functions c1 and c2, each deﬁned by a single tradeoﬀsubfunction
+as deﬁned in Equation 5, the link operation link(c1, c2) requires constant time and its result is a
+consumption function that is uniquely described by at most three tradeoﬀsubfunctions as deﬁned in
+Equation 5.
+Linking General Consumption Functions.
+We tackle the general case, in which we are given two
+consumption functions c1 and c2, each possibly consisting of multiple tradeoﬀsubfunctions with the
+general form as in Equation (5), and want to compute the function c := link(c1, c2). Consider a
+tradeoﬀsubfunction g of c1 and its subdomain [¯τg, ¯τg). The subfunction g itself induces a consumption
+function cg with minimum driving time ¯τg and maximum driving time ¯τg; see Equation (1). By the
+fact that c1 is decreasing and by construction of the consumption function cg, we get cg(x) ≥c1(x)
+for all x ∈R≥0 and cg(x) = c1(x) for all x ∈[¯τg, ¯τg). Since the same argument can be made for
+subfunctions of c2, it follows directly from Equation (6) that we obtain c after applying the constant-
+time link operation from Lemma 1 to all pairs of consumption functions induced by subfunctions of
+c1 and c2. The lower envelope of all resulting candidate subfunctions yields the desired function c.
+Obviously, c is again a piecewise function. Moreover, as the lower envelope of functions that are
+decreasing on a common domain must be decreasing on this domain as well, the function c is
+decreasing. Finally, the following Lemma 2 claims that c is also continuous on its interval of
+admissible driving time (see Appendix A.2 for a formal proof). Therefore, the function space of
+12
+
+consumption functions is indeed closed under the link operation. Note that the link operation is also
+commutative and associative.
+Lemma 2. Given two consumption functions c1 and c2, each deﬁned by an arbitrary number of sub-
+functions as deﬁned in Equation 5, the function c := link(c1, c2) is continuous on the interval [¯τ, ∞),
+where ¯τ ∈R>0 denotes the minimum driving time of c.
+The running time of the naïve link operation described above is quadratic in the number of
+subfunctions of c1 and c2. In Appendix A.3, we show how the complexity of the link operation for
+general consumption functions can be reduced to linear time. In our experiments, the number of
+subfunctions per consumption function was relatively small on average, so the speedup provided
+by the more sophisticated linear-time method was limited (less than 10 %). Hence, the algorithm
+presented in Appendix A.3 may rather be considered to be of theoretical interest.
+3.3. Dominance Tests for Consumption Functions
+If we are given multiple consumption functions corresponding to paths between the same pair of
+vertices, we only want to propagate those which represent optimal tradeoﬀs. Assume we are given
+two consumption functions c1 and c2 corresponding to two such paths, each possibly deﬁned by
+multiple subfunctions (c. f. Section 3.2). We say that c1 dominates c2 if c1(x) ≤c2(x) holds for
+all x ∈R≥0. Apparently, c2 cannot be part of an optimal solution in this case, so it would not need
+to be propagated by the search algorithm.
+To eﬃciently test whether c1 dominates c2, we inspect their respective subfunctions g1
+1, . . . , gk
+1
+and g1
+2, . . . , gℓ
+2. For some i ∈{1, . . . , k} and j ∈{1, . . . , ℓ}, consider the pair gi
+1 and gj
+2 of subfunctions,
+both having the form of Equation (5), and let [¯τ i
+1, ¯τ i
+1) and [¯τ j
+2, ¯τ j
+2) denote their respective subdomains.
+Observe that if the subdomains do not overlap, dominance can be checked easily by inspecting
+function values at the endpoints of these subdomains. Hence, assume that their intersection is not
+empty, i. e., [¯τ i
+1, ¯τ i
+1) ∩[¯τ j
+2, ¯τ j
+2) ̸= ∅. We can test in constant time whether gi
+1(x) ≤gj
+2(x) holds for
+all x ∈[max{¯τ i
+1,¯τ j
+2}, min{¯τ i
+1, ¯τ j
+2}] as follows. The subfunction gi
+1 dominates the subfunction gj
+2 in this
+interval if and only if gi
+1(x) ≤gj
+2(x) holds for the two values x = max{¯τ i
+1,¯τ j
+2} and x = min{¯τ i
+1, ¯τ j
+2}
+at the borders of their subdomain intersection, as well as the unique extreme point of gi
+1 −gj
+2 (if
+it falls within the considered intersection of their subdomains; see also Appendix A.4). Since we
+only have to compare subfunctions if their subdomains intersect, we can test whether c1 dominates
+c2 in a single linear scan (comparing subfunctions in increasing order of driving time). Hence, the
+running time of a dominance test is linear in the number of subfunctions of c1 and c2.
+Computing Dominated Subfunctions.
+The dominance test described above enables pairwise com-
+parison of consumption functions to identify dominates ones, similar to the pairwise checks between
+labels in the BSP algorithm. However, since we are dealing with continuous functions, a consumption
+function may also be partially dominated or dominated only by a set L of other consumption
+functions corresponding to paths to the same vertex; see Figure 6. In other words, even if c is
+not dominated by any other consumption function alone, it is possible that for some (or even all)
+admissible driving times x ∈[¯τ, ¯τ] of c, there is a function c∗∈L with c∗(x) ≤c(x). We discuss
+diﬀerent strategies to eﬃciently identify dominated subfunctions of c.
+A common approach in the literature to avoid pairwise dominance checks in related settings is
+to explicitly compute the lower envelope of all functions currently stored at a vertex [26, 53]. This
+can also go in hand with a change in the label propagation strategy [73]. Unfortunately, managing
+lower envelopes comprising multiple functions (each consisting of several tradeoﬀsubfunctions) is
+diﬃcult in our setting, because the quadratic-time link operation described in Section 3.2 becomes
+13
+
+x
+c(x)
+1
+2
+3
+4
+5
+6
+0
+1
+2
+3
+4
+5
+∞
+(a)
+x
+c(x)
+¯τ
+¯τ ∗
+¯τ
+1
+2
+3
+4
+5
+6
+0
+1
+2
+3
+4
+5
+∞
+(b)
+Figure 6.: Dominance of consumption functions. The consumption function c (blue) is compared to
+other functions corresponding to a set of alternative paths (red). Shaded areas indicate
+function values that are dominated by these other functions. (a) The consumption function
+c is not dominated by any function alone, but by the lower envelope of their two functions.
+In other words, for each x ∈R≥0, one of the two other functions yields lower consumption.
+Hence, c does not provide an optimal solution for any driving time. (b) The consumption
+function c is partially dominated by the other function, so its minimum driving time can
+be increased from ¯τ to ¯τ ∗.
+too expensive. However, our linear-time operation requires convex consumption functions (see
+Appendix A.3). It is easy to see that the lower envelope of multiple convex consumption function is
+not convex in general. Although one can generalize the link operation to handle non-convex functions
+(by essentially dividing it into convex subfunctions), label propagation becomes more expensive
+in theory and in practice [2]. Another important aspect that makes this approach much more
+complicated in practice is the fact that computing the lower envelope of multiple functions requires
+us to identify their intersection points, i. e., given two consumption functions c1 ∈L and c2 ∈L,
+we have to ﬁnd driving times x ∈R≥0 with c1(x) = c2(x). While this equation has at most two
+solutions, it is relatively expensive to solve, as expanding the above equation results in a large
+number of terms. In addition to that, computing intersection points is prone to rounding errors
+and numerical instability, which can have a signiﬁcant eﬀect on maintainability and the quality of
+solutions in practice.
+Instead, we propose an alternative approach that avoids pairwise dominance checks, but does not
+require us to explicitly compute and maintain the lower envelope of multiple consumption functions.
+It tries to identify dominated parts of the function c in question. To this end, we compute a value
+¯τ ∗∈[¯τ, ¯τ] such that for all x ∈[¯τ,¯τ ∗], there is at least one function c∗in the set L with c∗(x) ≤c(x).
+This value ¯τ ∗can be computed in a single (coordinated) linear scan over the subfunctions of c
+and all subfunctions of the functions in L. If we obtain ¯τ ∗= ¯τ in this scan, c is dominated for
+all x ∈R≥0, so it cannot be part of an optimal solution. Otherwise, we set ¯τ = ¯τ ∗. Analogously,
+we then compute a value ¯τ ∗∈[¯τ ∗, ¯τ] such that c is dominated for all x ∈[¯τ ∗, ¯τ] and set ¯τ = ¯τ ∗.
+Afterwards, we discard any subfunction of c whose subdomain does not intersect [¯τ ∗, ¯τ ∗].
+To compute the values of ¯τ ∗and ¯τ ∗, we still face the problem that we may have to compute
+the intersection points of (subfunctions of) c and c∗∈L. To avoid the costly and error-prone
+computation of intersection points, our implementation computes approximate values ¯τ ∗and ¯τ ∗. It
+uses the simple test described before to identify subfunctions that dominate a subfunction of c in the
+whole intersection of their respective subdomains. Clearly, we do not necessarily ﬁnd the optimal
+14
+
+values for ¯τ ∗and ¯τ ∗that way. Furthermore, note that there may still exist values x in the open
+interval (¯τ ∗, ¯τ ∗) with c∗(x) ≤c(x) for some function c∗∈L, which we could also aim to identify [52].
+However, as argued above, the fact that we avoid the computation of intersection points makes our
+dominance test eﬃcient while keeping it relatively easy to implement and maintain.
+4. The TradeoﬀFunction Propagating Algorithm
+We are now ready to describe our tradeoﬀfunction propagating (TFP) algorithm, which utilizes the
+tools from Section 3 to generalize the exponential-time BSP algorithm and solve EVCAS. For a
+source s ∈V , a target t ∈V , and an initial SoC bs ∈[0, M], it computes the fastest s–t path and
+optimal driving times such that battery constraints are respected.
+4.1. Algorithm Description
+Algorithm 1 shows pseudocode of TFP. The algorithm exploits the fact that the SoC at the source
+is part of the query input. Rather than computing bivariate SoC functions (c. f. Equation (2) in
+Section 2.2 and the example from Section 2.3), this enables us to propagate univariate consumption
+functions (deﬁned by sequences of tradeoﬀsubfunctions) and ensure on-the-ﬂy that battery constraints
+are not violated.
+Data Structures.
+To keep the number of label comparisons small, we use the same method as in a
+previous publication [11], in which each vertex v ∈V maintains a set Lset(v) and a heap Luns(v)
+containing settled (i. e., extracted) and unsettled labels, respectively. Each label is a (piecewise)
+consumption function, mapping the driving time on a certain s–v path to energy consumption. The
+key of a label c at the vertex v is deﬁned as
+key(v, c) := ¯τc,
+(9)
+i. e., its minimum driving time. The corresponding maximum energy consumption c(¯τc) is used to
+break ties. (Observe that the key does not depend on the vertex v, however, we will need v as a
+parameter of the key function when we modify it in Section 5.)
+As in Baum et al. [11], we maintain the invariant that for each v ∈V , Luns(v) is empty or the
+unsettled label in Luns(v) with minimum key is not dominated by any settled label in Lset(v). New
+labels are pushed into Luns(v). Whenever the minimum element of Luns(v) changes (because an
+element is added or extracted), we check whether the new minimum element is dominated by some
+settled label in Lset(v) and discard it in this case. The algorithm uses a priority queue to determine
+the next vertex to be scanned. Note that unlike the BSP algorithm, our priority queue contains
+vertices rather than labels. This does not alter the order in which labels are scanned by the algorithm,
+but the number of entries in the priority queue is smaller.
+In summary, we use the following data structures: The label sets Luns(·) and Lset(·) store the
+consumption functions of a vertex (keys are calculated on-the-ﬂy from these functions if required, so
+they do not have to be stored explicitly), whereas the priority queue operates on pairs of vertices
+and keys.
+Label Propagation.
+Label sets and the priority queue are initialized in lines 1–5 of Algorithm 1.
+Initially, all label sets are empty, except for the constant function cs ≡M −bs at the source s (the
+admissible driving time is 0 and the “consumption” at s equals the diﬀerence between the battery
+15
+
+Algorithm 1: Pseudocode of the TFP algorithm.
+// initialize label sets
+1 foreach v ∈V do
+2
+Lset(v) ←−∅
+3
+Luns(v) ←−∅
+4 Luns(s) ←−{cs ≡M −bs}
+5 Q.insert(s, key(s, cs))
+// run main loop
+6 while Q.isNotEmpty() do
+// extract next vertex
+7
+u ←−Q.minElement()
+8
+cu ←−Luns(u).deleteMin()
+9
+Lset(u).insert(cu)
+// return if target found
+10
+if u = t then
+// see Section 4.2 for full solution retrieval
+11
+return key(u, cu)
+// update priority queue
+12
+if Luns(u).isNotEmpty() then
+13
+c ←−Luns(u).minElement()
+14
+Q.update(u, key(u, c))
+15
+else
+16
+Q.deleteMin()
+// scan outgoing arcs
+17
+foreach (u, v) ∈A do
+18
+c ←−link(cu, c(u,v))
+19
+¯τc ←−min({∞} ∪{x ∈R≥0 | c(x) ≤M})
+20
+¯τc ←−max({¯τc} ∪{x ∈R≥0 | c(x) ≥0})
+21
+if c ̸≡∞then
+22
+Luns(v).insert(c)
+23
+if c = Luns(v).minElement() then
+24
+Q.update(v, key(v, c))
+16
+
+capacity and the initial SoC). The source vertex is also added to the priority queue, which uses the
+minimum key among any unsettled labels of a vertex as its key; c. f. Equation (9).
+In each step of its main loop, the algorithm extracts some vertex u ∈V with minimum key from
+the priority queue and settles the corresponding label cu by taking it from the set Luns(u) and
+inserting it into Lset(u) (lines 7–9 of Algorithm 1). Afterwards, the priority queue and the set
+Luns(u) are updated accordingly (lines 12–16). Finally, outgoing arcs are scanned (lines 17–24). For
+every arc (u, v) ∈A, the function c := link(cu, c(u,v)) is computed. Note that c may violate battery
+constraints, so we set the minimum driving time ¯τc to the smallest driving time value that yields
+a consumption of at most M in line 19 of Algorithm 1 (if no such value exists, we set ¯τc = ∞to
+indicate that there are no admissible driving times). Similarly, we identify ¯τc, the largest nonnegative
+consumption value (a consumption of 0 corresponds to a fully charge battery) in line 20. To ﬁnd
+these values eﬃciently in practice, we ﬁrst check whether 0 or M are in the domain of the inverse
+c−1 of c. If this is the case, we set the minimum driving time of c to ¯τc = c−1(M) or the maximum
+driving time to ¯τc = c−1(0), respectively. Observe that this corresponds to setting c(x) = ∞for all
+driving times x ∈R≥0 with c(x) > M and c(x) = 0 for all x ∈R≥0 with c(x) < 0. If the resulting
+function yields ﬁnite consumption for some driving time, it is added to Luns(v) and the key of v in
+the priority queue is updated, if necessary.
+Note that because minimum driving times are strictly positive, the algorithm is label setting, i. e.,
+labels extracted from the queue are never dominated by another label later on. Thus, an optimal
+path is found as soon as a label at t is extracted. The minimum driving time of this label is the
+optimal driving time; see line 11 of Algorithm 1.
+Dominance Tests.
+In accordance with Section 3.3, we distinguish diﬀerent ways to identify domi-
+nated labels. First, our basic TFP algorithm implements the lightweight pairwise dominance tests
+described at the beginning of Section 3.3. For a consumption function c in the set Luns(v) of some
+vertex v ∈V , we perform a pairwise comparison with each function in Lset(v) to determine whether
+c is dominated by one of them. Recall that in doing so, the algorithm may miss that c is dominated
+by a set of other labels (as in Figure 6a) or partially dominated (as in Figure 6b).
+Second, our improved variant computes values ¯τ ∗∈R≥0 and ¯τ ∗∈R≥0 as described in Section 3.3,
+such that for each x < ¯τ ∗and x > ¯τ ∗, there is at least one function c∗contained in the set Lset(v)
+with c∗(x) ≤c(x). Note that after this procedure, even if c is not discarded (because it is not
+dominated for all x ∈R≥0), it may no longer be the function with minimum key in Luns(v), in which
+case we repeat the dominance check for the new minimum element of Luns(v). Using the improved
+dominance check greatly reduces the number of labels in practice, at the cost of (little) additional
+overhead per dominance test (we now require a coordinated scan over multiple subfunctions).
+Recall from Section 3.3 that we avoid exact computation of ¯τ ∗and ¯τ ∗for the sake of numerical
+stability. To distinguish, we call this variant of our improved dominance check stable, as opposed to
+the exact variant that requires intersection points to ﬁnd the actual values of ¯τ ∗and ¯τ ∗. Note that
+all three variants (lightweight, improved stable, and improved exact) maintain correctness of the
+algorithm, but the number of labels and subfunctions the algorithm has to propagate may diﬀer.
+4.2. Path Retrieval
+To obtain the actual s–t path, each label maintains two pointers to its corresponding parent label
+and vertex. To retrieve the optimal driving time (and speed) per arc, we explicitly store with each
+label c the function ¯∆opt, given as ¯∆opt(x) := x −∆opt(x), wrt. the previous link operation that led
+to the creation of c (see Section 3.2 and Appendix B.1). It is deﬁned on the domain [¯τ, ¯τ] induced
+by the minimum driving time ¯τ ∈R>0 and the maximum driving time ¯τ ∈R>0 of c.
+17
+
+After the search has found the target t, the following backtracking routine yields the path itself
+and driving times on all arcs. We start backtracking from t. Let x = ¯τc denote the minimum
+accumulated driving time of the label c extracted at t and let v ∈V be the parent vertex of c. Then
+the driving time on the arc (v, t) is ¯∆opt(x), where ¯∆opt is the function stored with the label c. We
+continue this procedure recursively at its parent label and for the driving time value x −¯∆opt(x),
+until the source vertex s is reached.
+4.3. A Polynomial-Time Heuristic
+Even with improved dominance checks, TFP has exponential running time. However, the algorithm
+can easily be extended to a more eﬃcient heuristic search, at the cost of inexact results. We propose
+a polynomial-time approach that is based on ε-dominance [6]. During the search, when performing
+the dominance test for a label c ∈Luns(v) in the unsettled label set of some vertex v ∈V , it is kept
+in Luns(v) only if it yields an improvement over settled labels in Lset(v) by at least a certain fraction
+εM, with ε ∈(0, 1], for some driving time. Thus, when identifying dominated parts of c, we test
+for each driving time x ∈R≥0 whether c∗(x) ≤c(x) + εM holds for some settled label c∗∈Lset(v).
+Lemma 3 shows that this implies that the number of settled labels per label set can become at
+most ⌈1/ε⌉+1, provided that exact improved dominance checks are applied. Given that the algorithm
+is label setting, each of these labels is extracted from the priority queue and added to Lset(·) at most
+once, so this yields polynomial running time in |V | and ⌈1/ε⌉. For a formal proof of Lemma 3, see
+Appendix B.2.
+Lemma 3. The number of settled labels contained in the set Lset(v) of each vertex v ∈V is at most
+⌈1/ε⌉+ 1 when running TFP with ε-dominance and exact improved dominance checks.
+5. A* Search
+Even the heuristic variant of the TFP algorithm described above remains impractical for realistic
+ranges and reasonable values of ε. Therefore, this section proposes extensions of A* search to
+speedup TFP and its heuristic variant, whereas Section 6 discusses extensions of CH.
+Potential Shifting.
+A well-known approach to reduce (practical) running times in multicriteria
+settings is the adaptation of A* search [49, 67]. The key idea of this approach is to guide the
+search towards the target by assigning smaller keys (in the priority queue) to vertices that are
+closer to the target. This is achieved by making use of a potential function π: V →R on the
+vertices [58]. The potential function is called consistent (wrt. a cost function z : A →R on the arcs)
+if z(u, v) −π(u) + π(v) ≥0 for all (u, v) ∈A. Vertex potentials are added to the keys of labels in the
+priority queue. Using a consistent potential function, the label-setting property of search algorithms
+is maintained.
+In Section 5.1 and Section 5.2 below, we propose two variants of A* search that compute a
+consistent potential function at query time, prior to running TFP. We use these potentials to modify
+the keys of labels when running Algorithm 1; c. f. Equation (9).
+5.1. Potentials Based on Single-Criterion Search
+Similar to the approach by Tung and Chew [86], our ﬁrst variant aims at directing the search towards
+the target by preferring arcs on (unrestricted) fastest paths. Before running TFP, we execute a
+single backward search (i. e., Dijkstra’s algorithm running on the reverse input graph ¯G, which has
+18
+
+all arc directions reversed) from the target t ∈V . This search uses the cost function ¯d: A →R≥0
+with ¯d(a) := ¯τa for all a ∈A, representing minimum driving time on an arc. This yields, for each
+vertex v ∈V , the minimum unrestricted driving time from v to t, denoted dist
+¯d(v, t), which is a lower
+bound on the constrained driving time from v to t. We obtain a potential function πd : V →R≥0 by
+setting πd(v) := dist
+¯d(v, t). By the triangle inequality, the potential function πd fulﬁlls the condition
+x −πd(u) + πd(v) ≥0 for all arcs (u, v) ∈A and all admissible driving times x ∈[¯τa, ¯τa]. Thus, TFP
+is label setting when using πd, which implies that correctness of the algorithm is maintained [58].
+We replace the key function from Equation (9) by
+key(v, c) := ¯τc + πd(v)
+for a given consumption function c with minimum driving time ¯τc at some vertex v ∈V .
+Improvements.
+To compute πd, the backward search described above visits all vertices in the
+(reverse) graph.
+This can be wasteful, especially for small vehicle ranges.
+To avoid scans of
+unreachable vertices, we make use of a second cost function ¯c: A →R with ¯c(a) := ca(¯τa) for
+all a ∈A, which yields the minimum energy consumption of an arc. We run a backward search
+on ¯G using this cost function to compute, for all v ∈V , lower bounds dist
+¯c(v, t) on the energy
+consumption required to reach t from v. As some arc costs may be negative, we use a label-correcting
+variant of Dijkstra’s algorithm, i. e., a variant in which the label of a vertex is not necessarily ﬁnal
+when it is extracted from the queue (the vertex may be reinserted and extracted from the queue
+several times). This algorithm has exponential running time in the worst case [56], but it performs
+well in practice if the number arcs with negative costs is small2 [3, 11, 13]. We prune the search,
+i. e., we do not relax any outgoing arcs, whenever the distance label of some scanned vertex exceeds
+the battery capacity M. Then, we run Dijkstra’s algorithm on ¯G to compute πd(v) as before, but
+restrict the search to vertices for which lower bound on energy consumption is below M. Afterwards,
+we restrict the TFP search to the same set of vertices. Note that a similar approach can be used to
+compute vertex potentials for the BSP algorithm when solving EVCSP on a graph with multi-arcs
+and scalar costs [12].
+Additionally, we use lower bounds dist
+¯c(·, ·) for pruning in TFP: Before adding a new label
+c to the label set of some vertex v ∈V , we ﬁrst set c(x) = ∞for all driving times x ∈R≥0
+with c(x) + dist
+¯c(v, t) > M. To do so, we check (in a linear scan over the subfunctions deﬁning the
+inverse function c−1) whether M −dist
+¯c(v, t) is in the domain of c−1 and set the minimum driving
+time of c to c−1(M −dist
+¯c(v, t)) if this is the case. Otherwise, we either obtain c ≡∞or the function
+c remains unchanged.
+5.2. Potentials Based on Bound Function Propagation
+The potential function πd may be too conservative if the consumption on the fastest path is very
+high. In such cases, it pays oﬀto adapt the potential function πϕ : V × [0, M] ∪{−∞} →R≥0 ∪{∞}
+introduced in a previous work [11]. The potential function πϕ incorporates the current SoC at a
+vertex to provide more accurate bounds. For each vertex v ∈V , it uses a convex, piecewise linear
+function ϕv : R →R≥0 ∪{∞} that maps the current SoC at v to a lower bound on the remaining
+driving time from v to t. As higher SoC allows the EV to drive faster, ϕv is also decreasing wrt.
+SoC. We say that the potential function πϕ is consistent if the condition
+x −πϕ(u, b) + πϕ(v, f(u,v)(x, b)) ≥0
+2Note that we could also apply the shifting technique of Johnson [58] to make the search label setting and restore
+polynomial running time if its performance became an issue.
+19
+
+holds for all (u, v) ∈A, x ∈[¯τ(u,v), ¯τ(u,v)], and b ∈[0, M]. In other words, the above term must be
+nonnegative for any admissible parameter choice for the SoC function f(u,v). We deﬁne πϕ(u, −∞) :=
+∞. We further require that the potential πϕ(t, b) at the target t ∈V equals 0 for all b ∈[0, M],
+which implies that consistent potentials maintain correctness of TFP; see a previous work [11] for
+details on consistency of vertex potentials that incorporate SoC.
+Computing Vertex Potentials.
+The functions representing the potentials πϕ(·, ·) are determined in
+a label-correcting backward search from t. This search operates on the reverse graph ¯G = (V, ¯A) of the
+input graph and maintains a piecewise linear function ϕv : R →R≥0∪{∞} for each v ∈V , represented
+by a sequence Φv = [(b1, x1), . . . , (bk, xk)] of breakpoints, such that bi < bj for i < j, ϕv(b) = ∞
+for b < b1, and ϕv(b) = xk for b ≥bk. For arbitrary values bi ≤b < bi+1, with i ∈{1, . . . , k −1},
+we evaluate ϕv by linear interpolation between two consecutive breakpoints. We ignore battery
+constraints in the search, so we obtain lower bounds on SoC values, which can also become negative.
+See Appendix C.1 for the pseudocode.
+Each vertex stores a single label consisting of its (tentative) lower bound function. The search is
+initialized with a function ϕt at the target t ∈V that evaluates to 0 for arbitrary nonnegative SoC.
+Labels are extracted in increasing order of their minimum driving time. Given the label extracted at
+some u ∈V , the search links the lower bound in this label with each outgoing arc (u, v) ∈A. To this
+end, it ﬁrst converts the consumption function c(u,v) mapping driving time to energy consumption
+to a piecewise linear function ϕ(u,v) mapping SoC to a lower bound on driving time. Let ¯τ ∈R>0
+and ¯τ ∈R>0 denote the minimum and maximum driving time of c(u,v), respectively. If c(u,v) is
+constant (i. e., ¯τ = ¯τ), we immediately obtain the lower bound deﬁned by Φ(u,v) := [(c(u,v)(¯τ),¯τ)].
+Otherwise, we consider two geometric lines ℓ1 and ℓ2 deﬁned as follows; see also Figure 7. The
+ﬁrst line ℓ1 passes through the point p = (c(u,v)(¯τ), ¯τ) with slope equal to the (right) derivative
+of the inverse c−1
+(u,v) of c(u,v) at c(u,v)(¯τ). The second line ℓ2 goes through q = (c(u,v)(¯τ),¯τ) and
+its slope equals the (left) derivative of c−1
+(u,v) at c(u,v)(¯τ). Since ¯τ ̸= ¯τ and c−1
+(u,v) is convex on its
+domain [c(u,v)(¯τ), c(u,v)(¯τ)], the lines ℓ1 and ℓ2 intersect in a unique point r ∈R2. Then, a convex
+lower bound ϕ(u,v) is deﬁned by the breakpoints [p, r, q]. To increase accuracy of the lower bound,
+we may repeat this operation recursively for initial points p or q together with the unique point
+r′ ∈R2 on the inverse of c(u,v) that has the same c-coordinate as r; see Figure 7. Recursion stops
+as soon as the maximum diﬀerence between c−1
+(u,v) and the function ϕ(u,v) induced by the current
+sequence of points falls below a predeﬁned threshold ε > 0. Note that this diﬀerence is obtained in
+constant time, since it always occurs in the latest point r that was added to ϕ(u,v).
+We link the function ϕu at u with the resulting lower bound ϕ(u,v) by computing, for any SoC
+value b ∈R, an optimal distribution of the available amount b of energy among the arc (u, v) and
+the remaining u–t path. Formally, the resulting function ϕ = link(ϕu, ϕ(u,v)) evaluates to
+ϕ(b) := min
+b∗∈R ϕ(u,v)(b∗) + ϕu(b −b∗)
+for all b ∈R.
+This function can be computed in a linear scan over the breakpoints of both
+functions [11]. To improve running times in practice, we can discard the label ϕ at this point if
+ϕ(b) > M for all b ∈R.
+After scanning the arc, we merge the resulting function ϕ with the function ϕv in the label of v,
+i. e., we compute the pointwise minimum ϕv = merge(ϕv, ϕ) in a linear scan over the breakpoints of
+ϕv and ϕ. To ensure that the resulting function ϕv is again convex, we apply the linear-time scan of
+Graham [46]: Starting with an empty sequence of breakpoints, it iteratively appends the breakpoints
+of ϕv in increasing order of driving time, each time removing previously added breakpoints from the
+tail of the sequence if that is necessary to maintain the function’s convexity.
+20
+
+c
+x
+¯τ
+¯τ
+ε
+c(u,v)(x)
+ℓ1
+ℓ2
+p
+q
+r
+r′
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+1
+2
+3
+4
+5
+6
+7
+Figure 7.: Constructing the lower bound function ϕ(u,v). It is deﬁned by the endpoints p and q of
+the inverse of the consumption function c(u,v) with ¯τ = 2 and ¯τ = 6, and the intersection
+of the tangents ℓ1 and ℓ2. The value ε indicates the maximum error of the lower bound.
+Recursion starts at r′.
+Running TFP with Vertex Potentials.
+Once the backward search has terminated, we deﬁne
+πϕ(v, b) := ϕv(b) for all v ∈V and b ∈[0, M] (see Appendix C.2 for a formal proof of potential
+consistency). Afterwards, we start the actual TFP search, during which we obtain the key of a label
+c at some vertex v ∈V by setting it to
+key(v, c) := min
+x∈R≥0 x + πϕ(v, M −c(x)).
+Recall that M −c(x) yields the SoC at v for a driving time of x (c. f. line 4 of Algorithm 1 in
+Section 4.1). Computing the key requires a linear scan over the subfunctions deﬁning c and the
+lower bound function ϕv at v. In each step of the scan, we update the minimum by evaluating the
+term x + ϕv(M −c(x)) at up to three values x ∈R≥0, namely, the boundaries of the intersection of
+the subdomains of the considered subfunctions of c and ϕv and at the unique extreme point of their
+sum (if it falls within the current intersection of subdomains).
+6. Contraction Hierarchies
+We propose an adaptation of the speedup technique CH [41] to the EVCAS problem. The algorithm
+distinguishes an oﬄine preprocessing phase and an online query phase [5]. Plain CH [41] accelerates
+single-criterion shortest-path queries wrt. a given cost function z : A →R≥0 by augmenting the graph
+with shortcut arcs. These shortcuts are computed during a preprocessing routine that iteratively
+contracts all vertices of the input graph in a (heuristic) order. To this end, a core graph G′ is
+maintained, initially set to G′ = G. When a vertex v ∈V is contracted, it is removed from G′
+together with all its incident arcs, while shortcut arcs are added between its neighbors to preserve
+distances, if necessary: Let u ∈V and w ∈V be neighbors of v in G′. To determine whether a
+shortcut candidate (u, v) with cost z∗:= z(u, v) + z(v, w) is needed, a witness search runs Dijkstra’s
+algorithm to compute the distance distz(u, w) in G′ (after removing v, but before adding the shortcut).
+If distz(u, w) ≤z∗holds, the shortcut is not required. Eventually, contracting all vertices results
+in an “empty” graph G′ = (∅, ∅). As ﬁnal step of the preprocessing stage, an augmented graph
+is constructed, which consists of all vertices and arcs of the original graph G, together with all
+shortcuts that were inserted into the core graph at some point during preprocessing.
+Given a source s ∈V and a target t ∈V , the query algorithm runs a bidirectional variant of
+Dijkstra’s algorithm on the augmented graph: a forward search from s and a backward search from t.
+21
+
+Each search scans only upward arcs in the augmented graph wrt. the contraction order, i. e., only
+those arcs where the tail vertex was contracted before the head vertex. One can show that this
+algorithm computes the distance between s and t in the input graph [41].
+Adapting CH to the EVCAS problem.
+As in plain CH [41], we contract vertices iteratively
+during preprocessing and insert shortcut arcs to maintain distances. However, we contract only
+a subset of the vertices, leaving an uncontracted core graph—a common approach in complex
+settings [10, 28, 50, 79]. The query algorithm then scans upward arcs and all arcs that are still
+contained in the core graph.
+Unfortunately, the SoC at the target vertex t ∈V is not known at query time. This makes
+backward search diﬃcult, since it would require us to propagate SoC functions. Their bivariate
+nature makes explicit construction and comparison of SoC functions rather involved. Therefore,
+we ﬁrst run (at query time) a breadth-ﬁrst search (BFS) from t on the backward graph including
+shortcuts from preprocessing, scanning only downward arcs (no core arcs), i. e., arcs for which the
+head (wrt. direction in G) was contracted before the tail, marking each as visited. Afterwards,
+we execute TFP from the source vertex s ∈V , but let it only scan upward arcs, core arcs, and
+downward arcs marked by the BFS. In other words, we use Algorithm 1, with the sole modiﬁcation
+that only the arcs mentioned above are scanned.
+In the remainder of this section, we discuss changes that need to be made to the preprocessing
+routine to adapt it to our setting. Most importantly, the SoC at a vertex is only known at query
+time. Hence, any shortcut would have to store a bivariate SoC function (c. f. Section 2.3). As argued
+before, this is rather impractical. In Section 6.1, we examine special categories of SoC functions that
+enable both a simple representation and eﬃcient dominance tests. Afterwards, we describe how CH
+can utilize these simple SoC functions if we modify several key steps of the preprocessing routine:
+• We only allow vertex contraction in cases where all resulting shortcuts fall into the aforemen-
+tioned categories (Section 6.2).
+• We eﬃciently decide which shortcuts to keep if there are multiple candidates connecting the
+same pair of vertices (Section 6.3).
+• We adapt the witness search to deal with bivariate SoC functions (Section 6.4).
+Omitted proofs can be found in Appendix D.1. In what follows, we say that an SoC function f1
+dominates another SoC function f2 if f1(x, b) ≥f2(x, b) holds for all x ∈R≥0 and b ∈[0, M].
+6.1. Simple Representations of Bivariate Functions
+First, we derive the bivariate SoC functions of paths where all consumption values are nonnegative.
+Consider the consumption functions c1, . . . , ck−1 of the arcs of a path P = [v1, . . . , vk] in G. Assume
+that ci(x) ≥0 holds for all driving times x ∈R≥0 and i ∈{1, . . . , k −1}. In this case, battery
+constraints can render driving at high speed infeasible. On the other hand, recuperation never
+occurs on P. Therefore, the best speed on an arc depends only on the slope of its consumption
+function, but not on the position of the arc in the path (in contrast to the situation discussed in
+Section 2.3 and sketched in Figure 2, where the order of arcs clearly matters). Consequently, it is
+suﬃcient to ﬁrst link the consumption functions and apply battery constraints only once afterwards.
+Lemma 4 speciﬁes the resulting bivariate SoC function, which is represented by a single univariate
+(consumption) function.
+22
+
+Lemma 4. Let P = [v1, . . . , vk] be a path in G and let ci denote the consumption function of the
+arc (vi, vi+1) for i ∈{1, . . . , k −1}. If all consumption functions are nonnegative, i. e., ci(x) ≥0
+holds for all x ∈R≥0 and i ∈{1, . . . , k −1}, the SoC function of P evaluates to
+f(x, b) =
+(
+−∞
+if b < c(x),
+b −c(x)
+otherwise,
+where c denotes the function obtained after iteratively linking the functions c1, . . . , ck−1.
+Note that the functions c1, . . . , ck−1 can be linked in arbitrary order, since the link operation is
+both commutative and associative. Thus, we can easily construct a shortcut for P by iteratively
+contracting its internal vertices v2, . . . , vk−1 in any given order, each time linking the consumption
+functions of both incident (shortcut) arcs to compute a new shortcut.
+A symmetric argument holds for paths consisting of only nonpositive consumption functions.
+Consequently, we can allow contraction of a vertex if all (ﬁnite) values of consumption functions
+assigned to any of its incident arcs have the same sign, since the resulting bivariate SoC functions
+can be represented eﬃciently. On real-world instances, where the majority of consumption values is
+positive, this approach already allows contraction of large parts of the graph (more than 50 % of the
+vertices in our tests). Nevertheless, the size of the resulting core graph is still too large to achieve
+signiﬁcant speedups.
+Discharging Paths.
+We discuss simple representations in more general cases, exploiting that most
+consumption values are positive in realistic instances. We say that a path P is discharging if the
+SoC on P never exceeds the (arbitrary) initial SoC, i. e., there is no preﬁx of P that has negative
+minimum consumption for any driving time. Deﬁnition 3 formalizes this notion.
+Deﬁnition 3 (Discharging Path). A path P = [v1, . . . , vk] in the graph is discharging if for arbitrary
+admissible driving times xi ∈R≥0 with i ∈{1, . . . , k −1}, we obtain Pj
+i=1 c(vi,vi+1)(xi) ≥0 for
+every j ∈{1, . . . , k −1}, i. e., the total energy consumption on the path is nonnegative on each preﬁx
+[v1, . . . , vj+1] of P, including P itself.
+Note that even though the total consumption on a discharging path must be nonnegative, it may
+still contain subpaths with negative consumption (as long as they are preceded by subpaths with
+at least as much positive consumption). Apparently, it is not necessary for us to explicitly check
+whether the SoC exceeds M on a discharging path, since this will never occur. Hence, making sure
+that battery constraints are not violated becomes easier. We now show how the SoC function of a
+discharging path is represented by at most two consumption functions.
+Clearly, a path consisting of only arcs with nonnegative consumption values (for arbitrary driving
+times) is discharging. We already showed how it can be represented by a single consumption function.
+As a more intricate example, assume we are given a path P = P1 ◦P2 consisting of two subpaths P1
+and P2 that can be represented by two consumption functions c1 and c2. Let ¯τ1, ¯τ1, ¯τ2, and ¯τ2
+denote the respective minimum and maximum driving times of c1 and c2. Moreover, assume that the
+consumption c1(x) > 0 is positive for all x ∈R≥0, while c2(x) ≤0 is nonpositive for all x ∈[¯τ2, ∞).
+Finally, assume that |c1(¯τ1)| ≥|c2(¯τ2)|, i. e., the cost of P1 is higher than the gain of P2 for any
+driving time, so P is discharging. We derive the SoC function of P, represented by a positive part c+
+with c+(x) := c1(x −¯τ2) and a negative part c−(x) with c−(x) := c2(x +¯τ2). The original functions
+are shifted along the x-axis to simplify the analysis (note that the minimum driving time of c−is 0).
+Given some initial SoC b ∈[0, M], the positive part c+, and the negative part c−, we deﬁne the
+23
+
+x1
+c1(x1)
+4
+x2 + 41
+9
+2
+3
+4
+5
+2
+3
+4
+5
+6
+7
+8
+∞
+(a)
+x2
+c2(x2)
+4
+(x−1)2 −5
+2
+3
+4
+5
+−5
+−4
+−3
+−2
+−1
+0
+1
+∞
+(b)
+x
+b = 5
+c+(x = x1 + x2)
+c+
+b (x)
+c(x) =
+4
+(x−4)2
+4
+5
+6
+7
+8
+9
+0
+1
+2
+3
+4
+5
+6
+∞
+(c)
+Figure 8.: Construction of a consumption function depending on initial SoC. (a) The consumption
+function c1 of a path P1 with positive consumption. (b) The consumption function c2
+of a path P2 with negative consumption. (c) Deriving the consumption function of the
+path P := P1 ◦P2. Due to battery constraints, the minimum driving time of c+ is 5 for
+an initial SoC b = 5. This yields the consumption function c := link(c+
+b , c−) for the path
+P (the function c−, which corresponds to c2 being shifted to the left, is not shown). The
+shaded area indicates possible images of consumption functions for diﬀerent values of
+initial SoC.
+constrained positive part c+
+b : R≥0 →R≥0 ∪{∞} as
+c+
+b (x) :=
+(
+∞
+if b < c+(x),
+c+(x)
+otherwise,
+which ensures that battery constraints along P1 are not violated if the initial SoC is b; see Figure 8.
+Then, the SoC function f of the path P evaluates to f(x, b) = b −link(c+
+b , c−)(x) for arbitrary
+x ∈R≥0 and b ∈[0, M]. Given some initial SoC, the function f ﬁrst checks battery constraints
+on the positive part c+ and links the resulting function c+
+b with the negative part c−. Since the
+underlying path P is discharging, we know that no further constraints need to be checked for c−, so
+the function computed by link(c+
+b , c−) yields minimum energy consumption subject to driving time
+for the initial SoC b.
+6.2. Vertex Contraction
+We use our insights about discharging paths to establish a preprocessing routine for CH. For the sake
+of simplicity, we assume that for each arc in the graph, the energy consumption is either nonnegative
+for all admissible driving times or nonpositive for all admissible driving times. Note that we can
+always enforce this by splitting an arc a ∈A with ca(¯τa) > 0 and ca(¯τa) < 0 into two consecutive
+arcs corresponding to the positive part and the (shifted) negative part of ca, respectively.
+Active Vertices.
+Shortcuts that represent either discharging paths or paths consisting solely of
+arcs whose energy consumption is nonpositive for all admissible driving times are called discharging
+or nonpositive, respectively. In both cases, we can use the simple representations we derived above
+to eﬃciently store their SoC functions. Consequently, we only allow a vertex v ∈V to be contracted
+24
+
+if all new shortcuts created as part of its contraction are discharging or nonpositive. We call v active
+in this case. Note that the number of active vertices grows as contraction proceeds, since this results
+in longer shortcuts, which are more likely to consist of signiﬁcant positive parts. It remains to show
+how to decide eﬃciently whether a vertex is active during preprocessing and construct the necessary
+shortcuts if it is indeed contracted.
+Assume that at some point during preprocessing, we want to know if a vertex v ∈V incident to
+two (original or shortcut) arcs (u, v) and (v, w) in the core graph is active. We have to determine
+whether a new shortcut (u, w) can be constructed from (u, v) and (v, w) that is either discharging or
+nonpositive. Clearly, a nonpositive shortcut can be constructed if and only if both (u, v) and (v, w)
+are nonpositive. Otherwise, we want to know whether we can construct a discharging shortcut.
+Let P1 be the underlying path in the original graph represented by (u, v) and let P2 be the path
+represented by (v, w). We have to decide whether P = P1 ◦P2 is a discharging path, i. e., energy
+consumption is nonnegative on every preﬁx of P, regardless of the driving time. Apparently, this
+can only be the case if P1 is a discharging path itself. For P2, we distinguish two cases. First, if P2
+is discharging as well, to follows immediately that also P must be discharging. Second, if P2 is not a
+discharging path, it must consist solely of arcs for which energy consumptions are nonpositive for
+arbitrary (admissible) driving times, since a shortcut (v, w) would not have been created otherwise.
+Hence, P2 is represented by a single consumption function c2 with minimum and maximum driving
+times ¯τ2 ∈R>0 and ¯τ2 ∈R>0, such that c2(x) ≤0 for all x ∈[¯τ2, ∞). To test whether a discharging
+shortcut (u, w) can be constructed in this case, we consider the positive part c+
+1 and the negative
+part c−
+1 of P1 with corresponding maximum driving times ¯τ +
+1 and ¯τ −
+1 . The path P is discharging if
+and only if c+
+1 (¯τ +
+1 ) + c−
+1 (¯τ −
+1 ) + c2(¯τ2) ≥0, as these driving times minimize consumption on P (or
+any preﬁx of P that ends at a vertex of P2).
+Constructing Shortcuts.
+When we contract an active vertex, we have to insert new shortcuts
+from pairs of existing incident arcs in the current graph. To this end, we have to compute the
+corresponding SoC function from two given discharging or nonpositive shortcuts. As before, let
+v ∈V denote the vertex to be contracted and let (u, v) and (v, w) denote two incident (shortcut)
+arcs representing underlying paths P1 and P2 in the core graph.
+If both (u, v) and (v, w) are nonpositive, we simply have to link their underlying consumption
+functions. Otherwise, (u, v) is discharging, since v is an active vertex. Let its SoC function be
+deﬁned by two consumption functions c+
+1 and c−
+1 . We now construct the SoC function for the
+path P := P1 ◦P2, which must be discharging as well. If (v, w) is nonpositive, let its consumption
+function be given as c2. We immediately obtain the positive part c+ and the negative part c−of the
+discharging path P, with c+(x) = c+
+1 (x −¯τ2) and c−(x) = link(c−
+1 , c2)(x +¯τ2) for all x ∈R≥0.
+Finally, assume that P2 is a discharging path as well, with the respective consumption functions
+c+
+2 and c−
+2 . Apparently, if we know the initial SoC, we can compute the energy consumption on
+P by computing link(link(link(c+
+1 , c−
+1 ), c+
+2 ), c−
+2 ) and applying battery constraints before each link
+operation, like in the TFP algorithm (see Section 4.1). However, we want to represent P with
+only two consumption functions c+ and c−. Recall that the only constraint we have to check for
+discharging paths is whether the SoC drops below 0. Since both c−
+1 and c−
+2 are nonpositive for
+all admissible driving times, the constraint needs only to be checked for c+
+1 and c+
+2 (i. e., before
+the ﬁrst and third link operation). To integrate these checks into a single new positive part c+,
+we ﬁrst compute the consumption function h := link(c−
+1 , c+
+2 ). Clearly, the battery can only run
+empty on P2 if this consumption function is positive for some admissible driving time (otherwise, we
+always gain more energy with c−
+1 than is lost on c+
+2 ). To distinguish, we split h into a positive part
+h+ : R≥0 →R≥0 ∪{∞} with h+(x) := max{h(x), 0} and a negative part h−: R≥0 →R≤0 ∪{∞}
+25
+
+with
+h−(x) :=
+(
+∞
+if x < ¯τ and h(x) > 0,
+min{h(x), 0}
+otherwise,
+where ¯τ ∈R>0 denotes the maximum driving time of h. Since h is a valid consumption function, so
+are both h+ and h−. Observe that in case h yields nonnegative (nonpositive) energy consumption for
+all admissible driving times, the function h−(h+) always evaluates to 0 on its subdomain with ﬁnite
+image. We derive the positive part c+ of P by setting c+(x) := link(c+
+1 , h+)(x) for all x ∈R≥0 and
+the negative part c−of P by setting c−(x) := link(h−, c−
+2 )(x +¯τ) for all x ∈R≥0, where ¯τ ∈R>0 is
+the minimum driving time of h−(we shift the function to ensure that its minimum driving time is 0).
+Our way of splitting the function h ensures that battery constraints are only applied to preﬁxes of P
+with positive energy consumption. The SoC function of P is obtained from c+ and c−as described
+in Section 6.1.
+6.3. Comparing Shortcut Candidates
+In a bicriteria setting, vertex contraction may result in multi-arcs between neighbors of the contracted
+vertex. In such cases, we only want to keep shortcuts if their SoC function is not dominated by
+SoC functions of parallel arcs. Hence, after the contraction of a vertex, we want to delete (parts
+of) SoC functions of shortcut candidates that are dominated by existing functions between the
+same pair of vertices (and vice versa). To this end, we require eﬃcient dominance checks for SoC
+functions that are either discharging, i. e., represent a discharging path, or have nonpositive energy
+consumption for all admissible driving times. Assume two given SoC functions f1 and f2 deﬁned by
+the respective consumption functions c+
+1 , c−
+1 , c+
+2 , and c−
+2 (we assume that the positive part evaluates
+to 0 for all admissible driving times if consumption is always nonpositive). Further, we assume
+that our goal is to remove dominated parts of f2, i. e., we want to identify intervals I ⊆R≥0 where
+f1(x, b) ≥f2(x, b) holds for all driving times x ∈I and all values b ∈[0, M] of initial SoC. If both
+SoC functions have nonpositive consumption, each is represented by a single consumption function
+and we can immediately apply the dominance tests described in Section 3.3. For the remaining cases,
+note that a discharging SoC function cannot dominate a function with nonpositive consumption for
+all possible values of initial SoC. Thus, we consider the case where at least f2 is discharging. We
+propose a method that may miss dominated parts of SoC functions, but requires only a linear scan
+over the consumption functions that deﬁne the SoC functions f1 and f2. Thereby, correctness is
+maintained, but unnecessary shortcuts may be inserted. Let ε ≥0 denote the smallest nonnegative
+real value such that c−
+1 (x) ≤c−
+2 (x) + ε holds for all x ∈R≥0. This value can be computed in a
+linear scan over the subfunctions of c−
+1 and c−
+2 , similar to a dominance test. Lemma 5 claims that
+if c+
+1 (x) + ε ≤c+
+2 (x) holds for some x ∈R≥0, choosing a driving time of x for the positive part c+
+2
+always results in a solution that is dominated by f1, regardless of the initial SoC.
+Lemma 5. Given a nonpositive or discharging SoC function f1 and a discharging SoC function f2,
+such that their respective consumption functions are c+
+1 , c−
+1 , c+
+2 , and c−
+2 , let the value ε ≥0 be deﬁned
+as described above. If c+
+1 (x+) + ε ≤c+
+2 (x+) holds for some x+ ∈R≥0, any solution where x+ is the
+(optimal) amount of time spent for c+
+2 is dominated by f1, i. e., we obtain either c+
+2 (x+) = ∞or
+f1(x+ + x−, b) ≥f2(x+ + x−, b) = b −(c+
+2 (x+) + c−
+2 (x−)) for all x−∈R≥0 and b ∈[0, M].
+After creating a new shortcut (u, v) with positive part c+, we compare it to existing shortcuts
+between u ∈V and v ∈V as follows. First, we compute the value ε deﬁned above wrt. each
+existing shortcut. Then, we determine parts of c+ that are dominated by existing positive parts
+26
+
+x
+c+(x) =
+4
+(x−2)2 + 50
+9
+c+
+a (x) + c−
+a (¯τ −) =
+4
+(x−2)2
+4
+5
+6
+7
+8
+9
+10
+0
+1
+2
+3
+4
+5
+6
+∞
+Figure 9.: Bound functions computed by the witness search for the SoC function depicted in Figure 8c.
+The shaded area indicates possible values taken by this SoC function depending on driving
+time and SoC. It is upper bounded by the function c+ (red) computed by the witness
+search. The lower bound (blue) is used to identify dominated parts of the SoC function if
+it represents a shortcut candidate.
+(after we increase their consumption by ε) and set c+(x) = ∞for such values x ∈R≥0. We do
+this in a coordinated linear scan over c+ and the positive parts of consumption functions of all
+existing shortcuts, as in our basic dominance tests (see Section 3.3). If c+ ≡∞holds afterwards, we
+remove the shortcut. Analogously, we identify parts of SoC functions of existing shortcuts that are
+dominated by the SoC function of the new shortcut candidate.
+6.4. Witness Search
+Consider a discharging shortcut candidate (u, v) from u ∈V to v ∈V that is neither dominated
+by any existing parallel shortcut (from u to v) nor dominates an existing parallel shortcut itself.
+Before adding (u, v) to the graph, we run a witness search (as in plain CH) to test if the shortcut is
+necessary to maintain distances in the current graph G′ (for some values of driving times and SoC).
+An exact approach would compute bivariate SoC functions representing u–v paths in G′ to identify
+dominated parts of the shortcut candidate. Like before, this is diﬃcult and potentially expensive due
+to the lack of eﬃcient operations for construction and comparison of such SoC functions. Instead,
+we only compute univariate upper bounds on energy consumption during witness search.
+As a key idea, the search drops negative parts from SoC functions entirely, so labels in the search
+consist of only the positive parts. Clearly, these labels are upper bounds on energy consumption.
+Our witness search runs the basic TFP algorithm from u on G′, but ignores battery constraints and
+links labels only with positive parts of arcs (we assume that the positive part evaluates to 0 for all
+admissible driving times if consumption on the corresponding arc is always nonpositive). As a result,
+each label stores an upper bound on overall (ﬁnite) consumption that is independent of initial SoC
+and represented by a single consumption function c+; see Figure 9. Moreover, since the majority of
+arcs have positive consumption in realistic instances, the upper bounds have relatively small error in
+most cases.
+Witness Comparisons.
+Whenever a label c+ at the head vertex v of the shortcut candidate
+a := (u, v) is extracted during the witness search, we compare the witness c+ to the SoC function fa
+of the shortcut candidate as follows. Let c+
+a and c−
+a denote the consumption functions deﬁning fa.
+27
+
+Moreover, let c−
+a (¯τ −) be the minimum consumption of c−
+a . We know that fa cannot be a (unique)
+optimal choice for a driving time x ∈R≥0 if c+(x) ≤c+
+a (x) + c−
+a (¯τ −), i. e., the upper bound c+
+provides better or equal consumption than a lower bound on the consumption of fa; see Figure 9.
+We proceed along the lines of the dominance tests described in Section 3.3 to identify such values
+x ∈R≥0 and remove them from the subdomain of admissible driving times of c+
+a . If c+
+a ≡∞holds
+afterwards, the shortcut is not required. Otherwise, the witness search stops once the minimum
+driving time of a scanned label exceeds the maximum driving time of the shortcut candidate. During
+the search, we can discard labels if their minimum consumption exceeds the maximum consumption
+c+
+a (¯τ +) + c−
+a (¯τ −) of the lower bound of the shortcut candidate.
+Simpliﬁed Upper Bounds.
+Going even further, we replace upper bounds deﬁned by multiple
+subfunctions that are computed during the witness search with single (less accurate) tradeoﬀ
+functions. Then, the witness search propagates labels of constant size, enabling faster operations and
+better data locality, since we can preallocate memory for the labels (making cache misses become
+less likely). Moreover, we use lightweight dominance tests that employ pairwise label comparison
+(see Section 3.3), which are faster in this simpliﬁed setting. In Appendix D.2, we describe in detail
+how good bounds of constant descriptive complexity are computed.
+7. CHAsp
+It is straightforward to combine our variants of A* search and CH to obtain our fastest algorithm,
+which we refer to as CHAsp (CH, A*, Adaptive Speeds). Queries are answered by ﬁrst computing a
+potential function on the CH search graph and afterwards running TFP (or its heuristic variant)
+on it, utilizing the corresponding key function. Note that CHAsp does not alter the output of
+the underlying basic algorithm, so correctness is maintained when using plain TFP. Running time
+remains exponential in the worst case, but we observe signiﬁcant speedups in practice (see Section 8).
+Moreover, CHAsp can be combined with our polynomial-time heuristic in just the same way. In
+summary, our algorithm consists of several alternative building blocks and both its preprocessing and
+query stage comprise diﬀerent steps, which we recap in the overview given below. For implementation
+details, see also Appendix E.
+Preprocessing.
+In the preprocessing stage, we are given the input graph G = (V, A) and the
+consumption functions of all arcs, on which we perform the following steps.
+1. Determine a heuristic vertex order by assigning a priority to each vertex (see Geisberger
+et al. [41] and Appendix E) and identify active vertices (see Section 6.2).
+2. Initialize the core graph by setting it to G′ = G. Contract active vertices in the given order,
+until no active vertices are left or the average degree of active vertices reaches a certain
+threshold. When contracting a vertex v ∈V ,
+• construct shortcut candidates for each pair of neighbors of v and compare each with any
+existing arcs in the core graph between the same pair of neighbors (see Section 6.3);
+• run witness searches between pairs of neighbors with any remaining shortcut candidates
+to identify unnecessary candidates (see Section 6.4);
+• remove v from G′, add remaining shortcut candidates to G′, update the priority and
+activity status of all neighbors of v.
+28
+
+Table 1.: Considered input instances. We report the number of vertices, arcs, arcs with negative
+consumption (as a fraction of total number of arcs), and nonconstant arcs (as a fraction of
+total number of arcs).
+Instance
+# Vertices
+# Arcs
+# Arcs with c < 0
+# Nonconstant Arcs
+Ger-AX
+4 692 091
+10 805 429
+846 505 (7.83 %)
+2 730 390 (25.27 %)
+Ger-PG
+4 692 091
+10 805 429
+1 317 969(12.20 %)
+2 730 390 (25.27 %)
+Eur-AX
+22 198 628
+51 088 095
+4 887 770 (9.57 %)
+19 212 330 (37.61 %)
+Eur-PG
+22 198 628
+51 088 095
+6 607 508(12.93 %)
+19 212 330 (37.61 %)
+3. Output the contraction order and the graph G enriched with all shortcuts that at some point
+were added to or are still present in G′ (arcs still present are called core arcs).
+Queries.
+After completion of the preprocessing stage, queries consist of a source vertex s ∈V , a
+target vertex t ∈V , and an initial SoC bs ∈[0, M]. A query is answered by executing the steps
+listed below.
+1. Run a BFS from both s and t, scanning only upward and downward arcs (wrt. the contraction
+order), respectively, and no core arcs. Build a search graph Gs,t consisting of all arcs visited
+by either BFS and all core arcs.
+2. Compute either the vertex potential πd or πϕ by running the corresponding backward search
+from t on Gs,t (see Section 5).
+3. Run TFP (see Section 4.1) or its heuristic variant (see Section 4.3) from s on Gs,t, but use the
+respective key function from Section 5.
+8. Experiments
+We implemented all approaches in C++, using g++ 7.3.1 (ﬂag -O3) as compiler. Experiments were
+conducted on a single core of a 4-core Intel Xeon E5-1630v3 clocked at 3.7 GHz, with 128 GiB of
+DDR4-2133 RAM, 10 MiB of L3 cache, and 256 KiB of L2 cache.
+We consider two graphs representing the road networks of Europe with 22 198 628 vertices
+and 51 088 095 arcs, and Germany with 4 692 091 vertices and 10 805 429 arcs, kindly provided
+by PTV AG.3 Applying elevation data from the Shuttle Radar Topography Mission, v4.1,4 we
+derived realistic energy consumption functions from two detailed micro-scale emission models [51].
+The ﬁrst is a vehicle model that is calibrated to a Peugeot iOn. The second is an artiﬁcial model [84]
+that, in contrast to the ﬁrst, takes power demand of auxiliary consumers (e. g., air conditioning)
+into account. These data sources are proprietary, but enable evaluation on detailed and realistic
+input data. We extracted functions following Equation (4) from given samples of speed and energy
+consumption via regression. Combining reasonable minimum speeds for diﬀerent road types (e. g.,
+80 km/h on motorways and 30 km/h in residential areas) with the posted speed limits (if higher), we
+get intervals of admissible speeds per road segment. As a result, 25 % and 38 % of the arcs allow
+adapting the speed for the network of Germany and Europe, respectively. The respective average
+speed interval lengths among those arcs are 17 km/h and 27 km/h for the two instances. The notable
+diﬀerences between the two instances can be explained by a larger percentage of arcs corresponding
+3ptvgroup.com
+4srtm.csi.cgiar.org
+29
+
+Table 2.: Beneﬁts of our approach (Ger-PG, 2 kWh). For each basic technique (BSP, TFP with
+pairwise dominance checks, TFP-d with improved dominance checks), we report average
+ﬁgures of 100 queries on the thousandth part of the number of settled labels (# Labels),
+relaxed arcs (# Rel.), and pairwise label comparisons during dominance checks (# Cmp).
+We further show the average time for a single link operation or dominance check (in
+nanoseconds), as well as the median (Med.), average (Avg.) with standard deviation (Std.),
+and maximum (Max.) running time of each algorithm (in milliseconds).
+Query Statistics
+Query Times
+# Labels
+# Rel.
+# Cmp.
+Lnk.
+Dom.
+Med.
+Avg.
+Std.
+Max.
+Algo.
+[k]
+[k]
+[k]
+[ns]
+[ns]
+[ms]
+[ms]
+[ms]
+[ms]
+BSP
+35 586
+66 217
+76 457 603
+25
+2 418
+46 223
+174 810
+347 083
+2 165 515
+TFP
+58
+81
+1 035
+221
+1 161
+18
+130
+314
+2 314
+TFP-d
+33
+46
+302
+181
+725
+11
+53
+116
+645
+to local or residential roads in the Germany instance, which only allow for little speed adaptation,
+but also by diﬀerences in road categories and speeds of the diﬀerent countries in the input data
+in general. We denote our instances by Germany-Aux (Ger-AX), Germany-Peugeot (Ger-PG),
+Europe-Aux (Eur-AX), and Europe Peugeot (Eur-PG). They have negative consumption (at least
+for maximum driving times) on 7.8 % (Ger-AX) to 12.9 % (Eur-PG) of their arcs. Table 1 gives an
+overview of the diﬀerent input instances.
+Battery capacities are measured in kWh, where 1 kWh corresponds to a range of roughly 5–10 km
+(depending on speed and terrain). Most experiments use realistic ranges of 16–64 kWh, but we resort
+to queries of shorter range when necessary to evaluate slower baseline approaches.
+Unless mentioned otherwise, our study evaluates random in-range queries, i. e., we pick a source
+vertex s ∈V uniformly at random. Among all vertices in range from s with an initial SoC bs = M, we
+pick the target t ∈V uniformly at random. Since unreachable targets can be detected by backward
+search phases of A* search or by any algorithm for computing energy-optimal routes [13, 30, 74],
+this results in more diﬃcult and interesting queries for us.
+8.1. Model Validation
+We argued that an approach based fully on consumption functions unlocks both better tractability
+and improved solution quality compared to discrete speeds. Therefore, we also consider instances
+with multi-arcs to model speed adaptation—as was best practice in previous approaches [12, 45, 50].
+We generate multi-arcs in a rather conservative way, by sampling consumption functions at velocity
+steps of 20 km/h. Optimal paths (wrt. to the simple model) are then computed by the BSP algorithm
+described in Section 2.1. Indeed, we observe a signiﬁcant speedup by simply switching to our more
+realistic model, as Table 2 shows. Even for a small range (2 kWh), we see that TFP is three orders
+of magnitudes faster than BSP, since it evaluates speed-consumption tradeoﬀs more ﬁne-granularly
+and with less overhead: Instead of huge discrete Pareto sets, each route is represented by a single
+continuous function represented by few parameters. As a result, the number of labels settled by
+TFP (each representing a distinct route) is up to three orders of magnitudes less compared to the
+labels scanned by BSP (each representing a distinct combination of speed samples on some route).
+Pairwise label comparisons even drop by more than ﬁve orders of magnitude.
+Regarding query statistics, note that the number of arc relaxations coincides with the number of
+link operations. BSP spends almost an order of magnitude less time per operation (essentially, only
+30
+
+Table 3.: Running BSP with varying speed steps (Ger-PG, 2 kWh). Using A*-πd to render query
+times feasible, we ran 100 queries of BSP for diﬀerent step sizes, resulting in the indicated
+number of arcs. We also consider instances with two multi-arcs per tradeoﬀfunction (step
+size ∞), the original instance without speed adaptation (cnst.), and continuous functions
+(step size 0). We report average label scans and comparisons, running time and standard
+deviation, as well as average and maximum quality loss of solutions (due to discretized
+speeds).
+Step
+Query
+Quality Loss
+[km/h]
+# Arcs
+# Labels
+# Cmp.
+Avg. [ms]
+Std.
+Avg.
+Max.
+1
+60 511 294
+1 457 402
+10 448 724 562
+93 407.2
+382 901.2
+1.000001
+1.000051
+2
+36 861 919
+899 737
+5 907 007 043
+24 573.5
+108 487.2
+1.000020
+1.000215
+5
+22 672 294
+398 377
+1 622 249 986
+2 848.7
+11 097.0
+1.000136
+1.000872
+10
+17 942 419
+202 525
+402 370 894
+595.5
+2 419.5
+1.000377
+1.002332
+20
+14 778 112
+117 205
+135 477 211
+203.2
+688.4
+1.001481
+1.022579
+∞
+13 535 819
+35 006
+11 070 106
+26.7
+64.0
+1.006657
+1.091806
+cnst.
+10 805 429
+181
+204
+4.4
+3.8
+1.022592
+1.225135
+0
+10 805 429
+342
+922
+6.2
+4.2
+1.000000
+1.000000
+two pairs of real values have to be added up). In case of BSP, the number of arc relaxations further
+coincides with the number of dominance tests, whereas it is an upper bound for TFP (we postpone
+dominance tests by managing sets of unsettled labels; recall Section 4.1). Although label comparisons
+are much simpler for BSP (comparing two pairs of real-valued numbers), the average running time of
+a single dominance test is higher compared to TFP. This is due to a larger number of labels per set,
+resulting in signiﬁcantly more pairwise comparisons for BSP. For TFP-d (using improved dominance
+checks), each dominance test compares a new label to a set of k settled labels in a single coordinated
+sweep, which we count as k comparisons in Table 2. Even though the coordinated sweep comes
+at some overhead, the average time per dominance check actually decreases, as more dominated
+(sub)functions are detected and the number of required comparisons is reduced by more than a
+factor of 3. Linking becomes somewhat faster for the same reason (labels store fewer subfunctions).
+Overall, dominance tests take more than 90 % of the running time of BSP. For TFP, linking and
+dominance tests require roughly 15 % and 70 % of the overall running time, respectively. Although
+atomic operations (linking and comparing labels) are more expensive for TFP, the drastic reduction
+in the number of vertex scans explains the speedup. This is interesting, as sampling was expressly
+considered to manage tractability [12, 45, 50, 81].
+We observe that the average query time of all approaches is mostly determined by outliers, which
+is not surprising given that their asymptotic complexity is exponential. As a result, most queries are
+actually answered much faster than the average, with the median running time being about a factor
+of 5 lower on average.
+Speed Resolution.
+In Table 3, we evaluate the eﬀect of diﬀerent step sizes on the performance
+of BSP and solution quality (see Appendix F for corresponding plots of query times and result
+quality). Since including more multi-arcs can slow down the algorithm signiﬁcantly, we use A* search
+with the potential function πd; see Baum et al. [12] and Section 5.1. Each row of the table shows
+the result of running BSP (with potentials) on the graph resulting from sampling each tradeoﬀ
+function at the indicated rate (1–20 km/h). We also provide results when each function corresponds
+to exactly two samples at its minimum and maximum driving time, respectively (step size ∞), on
+31
+
+Table 4.: Varying speed interval lengths (Ger-PG, 16 kWh). Each row shows a modiﬁed instance,
+shrinking speed intervals (0 %, 25 %, or 50 %) or increasing the minimum adaptive speed
+(60 km/h, 80 km/h, or 100 km/h). For 100 in-range queries of TFP with the potential
+function πd, we report the average number of settled labels and label comparisons, average
+running time, and standard deviation. Further, we show the number of optimal results
+found (using our original instance as ground truth), as well as average and maximum
+quality loss.
+Query
+Quality Loss
+Corridor
+# Labels
+# Cmp.
+Avg. [ms]
+Std.
+Opt.
+Avg.
+Max.
+0 %
+1 503 555
+269 194 933
+8 226
+29 298
+50 %
+1.06733
+1.48192
+25 %
+656 629
+51 987 431
+6 737
+26 019
+56 %
+1.03245
+1.22557
+50 %
+541 874
+37 728 672
+5 342
+22 417
+62 %
+1.01693
+1.14067
+100 %
+364 662
+17 808 829
+2 680
+12 748
+100 %
+1.00000
+1.00000
+≥60 km/h
+553 521
+52 183 681
+5 351
+25 812
+97 %
+1.00002
+1.00050
+≥80 km/h
+875 462
+140 608 647
+10 772
+44 813
+79 %
+1.01180
+1.10670
+≥100 km/h
+1 323 155
+242 448 187
+9 689
+37 055
+60 %
+1.05274
+1.48192
+the unaltered original graph (cnst.), and when running TFP on continuous functions (step size 0). In
+instances with multi-arcs, we always include the arc that minimizes energy consumption to maintain
+reachability of the target (by contrast, only 77 % of the targets could be reached on the unaltered
+original instance).
+Note that using A* search comes at the cost of side eﬀects: In cases where the target is (almost)
+reachable on the unconstrained fastest route, potentials ensure that BSP and TFP (almost) only
+scan vertices on the shortest route. Therefore, the median query time on every instance considered
+in Table 3 is below 10 ms (not reported in the table). Furthermore, the average time of faster
+approaches with small search spaces, such as TFP, is dominated by the backward search (more than
+90 % of its total running time).
+On average, TFP is signiﬁcantly faster than BSP, even if only two multi-arcs are added per
+tradeoﬀfunction, and several orders of magnitudes faster for sensible speed steps. At the same
+time, it ﬁnds paths that are up to 9.1 % quicker (within battery constraints). While quality loss
+quickly decreases with smaller speed steps (sampling 10 km/h steps suﬃces to keep it below 1 %), its
+running time makes BSP impractical: The number of arcs in the graph less than doubles for step
+sizes up to 10 km/h, but the number of labels can grow exponentially even along a single route (see
+Section 2.1).
+Varying Speed Interval Lengths.
+Minimum speeds of tradeoﬀfunctions in our instances are chosen
+such that driving slower would become unproﬁtable or cause the EV to impede traﬃc ﬂow. However,
+as adapting the driving speed pays oﬀthe most on faster roads, one could consider increasing
+minimum adaptive speeds. Below, we evaluate such modiﬁcations, by either increasing the minimum
+speed on every nonconstant arc to shrink its speed interval to a certain fraction of its original length
+(0 %, 25 %, or 50 %) or by only allowing adaptive speeds up to a certain lower threshold (60 km/h,
+80 km/h, or 100 km/h).
+Table 4 shows the results of 100 queries for each setting, chosen such that the target is in range
+for even the most restrictive setting (0 %, i. e., constant speed on all arcs). As in the previous
+experiment, we use A* search with the potential function πd to enable a longer range of 16 kWh for
+this experiment. As before, this aﬀects the distribution of query times (the median is 300–400 ms in
+32
+
+0
+25
+50
+100
+125
+150
+175
+200
+2
+4
+6
+8
+10
+Interval Size [%]
+Time [s]
+avg. time
+avg. loss
+2
+4
+6
+8
+10
+Quality Loss [%]
+(a)
+0
+60
+80
+100
+∞
+2
+4
+6
+8
+10
+Interval Limit [km/h]
+Time [s]
+2
+4
+6
+8
+10
+Quality Loss [%]
+(b)
+Figure 10.: Average relative increase of query time and quality loss for the settings considered in
+Table 4. (a) Results when shrinking all speed intervals to a given fraction of the original
+size (100 %) or increasing the speed interval size (150 %, 200 %). (b) Results for intervals
+with a given minimum speed (0 corresponds to the original instance, ∞to an instance
+in which all arcs have constant driving time).
+all cases), but we still observe diﬀerences in average performance. Interestingly, shrinking the interval
+actually increases query times in most cases: Shorter intervals imply that more functions are required
+to cover the whole Pareto front, so more labels have to be propagated. At the same time, solution
+quality consistently deteriorates, as there are fewer speed options. For the ﬁrst category of instances
+(shrinking intervals of admissible driving times), the number of tradeoﬀfunctions remains unchanged
+(about 25 % of all arcs; see Table 1). The second category, however, adjusting the minimum adaptive
+speed means that arcs for which the maximum speed does not exceed this minimum become constant.
+Since the majority of arcs in a road graph represent slower roads, the number of (nonconstant)
+tradeoﬀfunctions decreases signiﬁcantly to 9 % (3.5 %, 0.5 %) of all arcs for a minimum adaptive
+speed of 60 km/h (80 km/h, 100 km/h). This also explains why query times decrease again if we only
+allow speed adaption beyond 100 km/h: Most labels are tuples of constant values and dominance
+tests become simpler. A similar eﬀect explains why compared to intervals shrunk to 25 % of their
+original size, the number of comparisons when using only constant labels (ﬁrst row of the table)
+increases by a factor of more than 5, but the query time just is slightly higher.
+Shrinking the admissible intervals of all tradeoﬀfunctions consistently deteriorates solution quality.
+Compared to our basic setting (100 %), results are up to 50 % worse. Interestingly, we observe almost
+no quality loss if we employ a lower adaptive speed limit of 60 km/h. Query times still increase,
+indicating that adaptive speeds on slower roads are not needed for result quality, but to remove
+unimportant tradeoﬀs from label sets. Figure 10 plots running times and quality for the diﬀerent
+settings shown in Table 4. For comparison, we also include extended speed intervals (compared
+to our basic instance). Larger intervals actually improve performance further, but running times
+and quality improvements converge (and we argued that speed recommendations below reasonable
+thresholds are not meaningful in practice).
+8.2. CHAsp
+In what follows, we focus on the evaluation of diﬀerent variants of our fastest approach, CHAsp. A
+comparison of CHAsp and basic algorithms is presented in Section 8.3.
+Table 5 shows details on CH preprocessing eﬀort and its impact on query performance subject
+to diﬀerent core sizes on Ger-PG, assuming a battery capacity of 16 kWh. Vertex contraction was
+33
+
+Table 5.: Impact of core size on performance (CHAsp, Ger-PG, 16 kWh). Vertex contraction stopped
+once the average degree of active vertices in the core reached a given threshold (Ø Deg.).
+We report the resulting core size (# Vertices) and remaining active (i. e., contractable)
+vertices (# Active), preprocessing time, and average query times of 1 000 queries using
+CHAsp with potential functions πd and πϕ, respectively.
+Core size
+Prepr.
+Query [ms]
+Ø Deg.
+# Vertices
+# Active
+[h:m:s]
+CHAsp-πd
+CHAsp-πϕ
+0
+—
+—
+—
+3 253.6
+4 828.8
+8
+720 514 (15.36 %)
+326 527 (6.96 %)
+4:59
+728.6
+798.3
+16
+400 174
+(8.53 %)
+114 510 (2.44 %)
+12:55
+485.9
+485.0
+24
+333 819
+(7.11 %)
+75 108 (1.60 %)
+21:22
+445.7
+442.6
+32
+305 301
+(6.51 %)
+58 796 (1.25 %)
+30:28
+441.1
+434.0
+48
+279 943
+(5.97 %)
+44 301 (0.94 %)
+47:40
+461.7
+451.0
+64
+268 436
+(5.72 %)
+37 455 (0.80 %)
+1:05:42
+492.2
+473.1
+128
+251 410
+(5.36 %)
+26 920 (0.57 %)
+2:22:36
+632.3
+586.1
+256
+242 817
+(5.18 %)
+21 040 (0.45 %)
+5:39:15
+901.8
+802.3
+stopped as soon as the average degree of active (i. e., contractable) vertices in the core reached
+the indicated threshold (Ø Deg.). We report resulting core sizes and preprocessing time, as well as
+query times of our fastest exact algorithms. We see that contraction becomes much slower beyond a
+core degree of 32, due tp the small number of remaining active vertices: Only 58 796 out of 305 301
+remaining vertices in the core are active when the average degree reaches 32. This also explains why
+the speedup compared to the baseline (a threshold of 0 for the average degree of active core vertices
+yields plain TFP combined with A* search) is much smaller than in single-criterion CH with scalar
+arc costs [41]. Similar deteriorations in speedup were observed in other complex problems, such as
+time-dependent proﬁle computation [7], time-dependent aircraft ﬂight planning [21], and multicriteria
+routing [38]. Nevertheless, CH still yields an improvement by up to an order of magnitude in our
+case.
+In all experiments below, we picked an average core degree of 32 as stopping criterion of CH
+preprocessing, as it yields best results not only in terms of average query times, but also all other
+considered time measures (median, standard deviation, maximum; not reported in the table). The
+resulting core size depends on diﬀerent parameters, including vehicle range and error thresholds (of
+heuristic variants). Relative core sizes thus vary between 2.8 % for Ger-AX and 8.5 % for Eur-PG,
+which is explained by the diﬀerence in the amount of arcs with negative consumption. Recall that this
+has a signiﬁcant impact on the number of active vertices and the contraction order (see Section 6).
+Exact CHAsp.
+Table 6 shows the performance of CHAsp on all four considered instances. We
+report vertex scans and dominance tests of the forward search only, excluding the A* backward
+search (query times include both the forward and the backward search, though). Timings of only
+the A* backward search of each approach are shown for comparison.
+Preprocessing time mostly depends on the graph size, taking about 6 times longer on Europe, but
+not on the vehicle model: The inclusion of auxiliary consumers reduces the number of negative arcs
+and hence, contraction can proceed faster, but it also takes longer to reach the threshold degree in
+the core graph. As a result, the core graph size (not reported in the table) is reduced by almost a
+factor of 2 after about the same computation time.
+34
+
+Table 6.: Preprocessing and query performance of CHAsp.
+For each instance, we provide CH
+preprocessing times and query times of exact CHAsp, using the potential functions πd
+and πϕ, respectively. Query ﬁgures are average values of 1 000 in-range queries (999 queries
+on Eur-PG for a range of 64 kWh and the potential πd, indicated by an asterisk). We
+show timings of the A* backward search, the number of settled labels (# Labels) and label
+comparisons (# Cmp.) during the forward search, and total query timings.
+Prepr.
+Backward
+Forward
+Query [ms]
+Ins. M
+Pot.
+[h:m:s]
+Avg. [ms]
+Std.
+# Labels
+# Cmp.
+Med.
+Avg.
+Std.
+Ger-AX
+16
+πd
+29:21
+2.8
+1.6
+153
+3 789
+3.1
+4.0
+5.0
+16
+πϕ
+29:21
+15.8
+11.7
+62
+448
+13.8
+16.5
+12.0
+64
+πd
+29:22
+31.2
+14.1
+9 424
+1 004 292
+38.9
+172.2
+441.7
+64
+πϕ
+29:22
+685.3
+276.3
+249
+4 040
+660.3
+686.9
+276.4
+Eur-AX
+16
+πd
+3:01:41
+2.8
+2.8
+125
+2 175
+2.7
+3.8
+4.6
+16
+πϕ
+3:01:41
+14.6
+26.2
+74
+1 006
+11.3
+15.3
+26.3
+64
+πd
+3:01:41
+33.2
+22.1
+17 426
+3 914 318
+39.8
+455.2
+3 935.7
+64
+πϕ
+3:01:41
+605.7
+369.5
+608
+31 143
+595.0
+615.8
+384.4
+Ger-PG
+16
+πd
+30:12
+27.4
+15.0
+32 774
+6 352 489
+49.1
+442.9
+1 832.5
+16
+πϕ
+30:12
+341.5
+193.7
+6 008
+491 173
+380.5
+420.5
+309.7
+64
+πd
+30:14
+189.6
+24.6
+4 047 690
+6 438 508 333
+1 898.1
+335 399.8
+1 304 029.5
+64
+πϕ
+30:14
+11 885.0
+2 464.7
+25 998
+3 585 423
+11 519.2
+12 428.3
+3 015.3
+Eur-PG
+16
+πd
+2:59:32
+23.7
+19.2
+23 305
+5 024 403
+42.2
+337.5
+1 450.8
+16
+πϕ
+2:59:32
+235.7
+200.5
+6 630
+800 431
+233.0
+329.8
+516.3
+64
+πd*
+2:59:48
+267.1
+122.0
+3 100 076
+7 618 974 437
+5 180.6
+343 288.6
+1 418 006.5
+64
+πϕ
+2:59:48
+15 113.1
+9 198.6
+47 257
+16 209 990
+15 349.6
+16 684.1
+11 279.6
+Regarding queries, we observe signiﬁcant diﬀerences in performance, depending on the input
+instance and vehicle range. For the artiﬁcial model, we achieve quite practical times in the order of
+milliseconds for a realistic range of 16 kWh and less than a second on average for the long range
+of 64 kWh. For the Peugeot model, on the other hand, average running times exceed tens of seconds
+and even minutes, with outliers well beyond an hour of running time, depending on the vehicle range.
+This gap in running time between both consumption models is explained by the diﬀerence in the
+number of arcs with negative cost. One could argue that the instances Ger-PG and Eur-PG are
+rather excessive in this regard, by not accounting for any auxiliary consumers at all. As a result,
+these instances are signiﬁcantly more diﬃcult to solve for our algorithms.
+The search space is consistently smaller when using the potential function πϕ, but the backward
+search is more expensive. In fact, it becomes the major bottleneck for a battery capacity of 16 kWh
+on the easier instances. Consequently, average query times are slowed down by about a factor of 4
+in this case. For the harder instances (no auxiliary consumers), the potential function πϕ provides
+better results due to its better scalability and more stable query times. This becomes evident in
+particular for the longer range of 64 kWh: On Eur-PG, one query did not terminate within a preset
+time limit of ten hours when using the potential πd. Hence, all reported statistics only take the
+remaining 999 queries into account (indicated by the asterisk in Table 6).
+Average running times are aﬀected by outliers in most cases, with median query times being up
+to two orders of magnitude lower. Comparing the two road networks Germany and Europe, we
+achieve slightly better running times on Europe for the medium range (explained by diﬀerences in
+the length of admissible speed intervals), but Germany is easier to solve for long ranges (searches
+35
+
+Table 7.: Performance of the heuristic variant of CHAsp-πd, for diﬀerent choices of the parameter ε
+on Ger-PG and Eur-PG. We show ﬁgures on query performance for the same 1 000 random
+queries as in Table 6. Additionally, we report the percentage of feasible (F.) and optimal
+(O.) results, as well as the average and maximum relative error of all queries in which a
+feasible solution was found.
+Pr.
+Query
+Result Quality
+Ins. M
+ε
+[h:m:s]
+# Labels
+# Cmp.
+Avg. [ms]
+Std.
+F. [%]
+O. [%]
+Avg.
+Max.
+Ger-PG
+16
+0.00
+30:12
+32 774
+6 352 489
+442.9
+1 832.5
+100.0
+100.0
+1.0000
+1.0000
+16
+0.01
+29:21
+19 922
+1 949 458
+218.8
+678.4
+100.0
+89.4
+1.0001
+1.0047
+16
+0.10
+25:04
+6 891
+208 058
+71.4
+142.3
+98.9
+62.8
+1.0013
+1.0502
+16
+1.00
+17:28
+1 743
+11 150
+29.4
+29.9
+95.1
+47.6
+1.0144
+1.2294
+64
+0.00
+30:14
+4 047 690
+6 438 508 333
+335 399.8
+1 304 029.5
+100.0
+100.0
+1.0000
+1.0000
+64
+0.01
+27:23
+602 227
+70 352 417
+10 119.0
+18 049.5
+99.9
+58.7
+1.0005
+1.0180
+64
+0.10
+19:56
+163 434
+4 798 549
+2 029.8
+3 131.9
+98.2
+44.2
+1.0058
+1.1217
+64
+1.00
+15:28
+50 488
+459 291
+645.0
+818.9
+93.6
+37.1
+1.0345
+1.1785
+Eur-PG
+16
+0.00
+2:59:32
+23 305
+5 024 403
+337.5
+1 450.8
+100.0
+100.0
+1.0000
+1.0000
+16
+0.01
+2:57:02
+12 804
+1 132 685
+143.2
+461.4
+100.0
+82.8
+1.0001
+1.0145
+16
+0.10
+2:41:39
+5 046
+126 663
+57.6
+102.0
+99.5
+57.5
+1.0020
+1.0418
+16
+1.00
+2:11:29
+1 429
+7 642
+26.9
+33.8
+92.7
+45.8
+1.0203
+1.3960
+64
+0.00
+2:59:48
+3 100 076
+7 618 974 437
+343 288.6
+1 418 006.5
+100.0
+100.0
+1.0000
+1.0000
+64
+0.01
+2:50:24
+388 548
+41 533 224
+7 391.8
+13 019.9
+99.8
+48.6
+1.0010
+1.0249
+64
+0.10
+2:22:52
+110 189
+3 184 124
+1 734.7
+2 684.2
+95.2
+36.9
+1.0108
+1.1771
+64
+1.00
+2:01:57
+24 652
+179 941
+447.3
+567.6
+85.8
+34.5
+1.0394
+1.3255
+are more likely to reach the border of the graph). In summary, we solve EVCAS optimally in less
+than a second on average for typical ranges, even on hard instances. For long ranges, our algorithm
+computes the optimal solution within seconds on the most diﬃcult instance when using the potential
+function πϕ, despite its exponential worst-case running time.
+Heuristic CHAsp.
+Table 7 evaluates our heuristic approach for diﬀerent choices of the parameter ε
+(in % of total battery capacity; see Section 4.3). During preprocessing of CHAsp, new shortcuts are
+included only if they signiﬁcantly improve over the existing ones. Thus, preprocessing becomes faster
+and core sizes (not reported in the table) decrease down to around 70–80 % of their original size.
+We also observe a drop in query times: For a range of 16 kWh, we achieve a considerable speedup
+of an order of magnitude. Regarding quality of results, the choice of ε clearly matters. For ε = 0.01,
+the decrease in quality is negligible, but speedup (about a factor of 2) is moderate. For ε = 0.1, on
+the other hand, the optimal solution is still found in many cases. The average error is roughly 0.2 %,
+while the overall maximum is 5 %, which is acceptable in practice. Finally, for ε = 1.0, both the
+average and maximum error increase signiﬁcantly. Given that speedup is limited compared to the
+case ε = 0.1, we conclude that the latter provides the best tradeoﬀin terms of quality and query
+performance. Providing high-quality solutions, it enables query times of well below 100 ms, which is
+fast enough even for interactive applications. Moreover, note that in cases where no path is found
+(about 1 % of all queries for ε = 0.1), a simple fallback could return the energy-optimal path, which
+can be computed quickly [13, 30, 74].
+Considering the longer range of 64 kWh, the choice of ε as a percentage of the battery capacity
+aﬀects (relative) preprocessing and query times, which decrease to a smaller fraction of the exact
+36
+
+28
+210
+212
+214
+216
+218
+220
+222
+224
+1
+10
+100
+1
+10
+100
+0.01
+0.1
+0.1
+0.01
+CHAsp-πδ
+CHAsp-πϕ
+Rank
+Running Time [s]
+Figure 11.: Running times of CHAsp subject to Dijkstra rank. We show results for both potential
+functions πd and πϕ. For each rank, we consider 1 000 random queries on Eur-PG,
+assuming a battery capacity of 16 kWh.
+variant (dominance checks become coarser, allowing more shortcuts and labels to be pruned).
+We achieve a query speedup by more than two orders of magnitude and observe milder outliers.
+For ε ≥0.1, query times of a couple of seconds and less are quite practical. However, quality suﬀers
+from the coarser dominance relaxation and we observe average errors of around 1 %, with outliers
+exceeding 10 % in quality loss. Depending on the application, a value ε ∈[0.01, 0.1] provides the
+most reasonable tradeoﬀbetween running time and quality.
+For the easier instances Ger-AX and Eur-AX (not reported in the table), we generally observe
+smaller errors, but also a smaller speedup. This is due to the fact that the A* backward search
+quickly becomes the bottleneck when combined with a heuristic variant of TFP. Similarly, using the
+more sophisticated potential function πϕ does not pay oﬀ(even for the harder instances). Finally,
+recall that our actual implementation does not utilize exact dominance checks for the sake of
+avoiding expensive and numerically instable intersection tests. Although this means that the bound
+established in Lemma 3 does not hold in theory, it was not exceeded once in our experiments.
+8.3. Evaluating Scalability
+To assess the scalability of CHAsp, we consider two diﬀerent input parameters that have a big impact
+on the size of the search space: the distance between the source and the target of a query, and the
+range of the vehicle. The ﬁrst experiment presented below evaluates our fastest exact algorithms
+following the methodology of Dijkstra ranks, deﬁned for a query as the number of vertex scans when
+running Dijkstra’s algorithm with costs representing unconstrained driving time [5, 76]. Thus, higher
+ranks correspond to harder queries (of longer distance). In the second experiment, we compare
+the diﬀerent approaches discussed in this work and examine how their query times depend on the
+vehicle’s range.
+Query Times Subject to Dijkstra Rank.
+Figure 11 shows results for our fastest exact approaches
+on Eur-PG, assuming a battery capacity of 16 kWh. We ran 1 000 random queries per Dijkstra rank
+(note that these are not necessarily in-range queries). Queries of higher rank correspond to a longer
+37
+
+0.25
+0.5
+1
+2
+4
+8
+16
+32
+64
+128
+256
+512
+1 024
+10−1
+100
+101
+102
+103
+104
+105
+106
+Battery capacity [kWh]
+Time [ms]
+BSP
+BSP-A*
+TFP
+TFP-d
+A*-πd
+CHAsp-πd
+CHAsp-πϕ
+CHAsp-ε-πd
+Figure 12.: Median running times for diﬀerent battery capacities. For each considered capacity
+(ranging from 0.25 kWh to 1 024 kWh), the plot shows the median running time of 100
+random in-range queries, provided that no query exceeded an hour of computation
+time. We evaluate the BSP algorithm using multi-arcs corresponding to speed samples,
+A* search for BSP with the potential function πd (BSP-A*), the TFP algorithm using
+pairwise dominance tests, TFP with improved dominance tests (TFP-d), and our proposed
+speedup techniques (A*-πd, CHAsp-πd, and CHAsp-πϕ). We also show our heuristic
+approach with parameter choice ε = 0.1, denoted CHAsp-ε-πd.
+distance between source and target. It turns out that median running times of both CHAsp-πd and
+CHAsp-πϕ are quite robust towards varying Dijkstra ranks. We obtain the most expensive queries
+at ranks from 217 to 219. (Note that random in-range queries are likely to be among these most
+diﬃcult ranks.) For higher ranks, the target is often unreachable. In most cases, this is detected
+by the backward searches for potential computation, as lower bounds on consumption exceed the
+battery capacity (see Section 5). We could achieve further speedup for high ranks by running any
+technique that quickly computes energy-optimal routes to detect unreachable targets [13, 30, 74].
+For lower ranks (i. e., more local queries), the target is often reachable on an unconstrained shortest
+path, so goal direction of the potential functions works very well. In such cases, the backward phase
+of A* search becomes the major bottleneck of the query, hence the lightweight potential πd yields
+better query times. Note that query times vary even for these very low or high ranks, as they largely
+depend on the portion of the core graph that is inspected by the backward search.
+Although the median running time of CHAsp-πϕ is consistently higher than the median of CHAsp-
+πd, the former is also more robust in that it produces fewer outliers. Its more sophisticated potential
+function pays oﬀespecially for harder queries. Nevertheless, as worst-case running time is exponential,
+we observe a few outliers that exceed the median by several orders of magnitude.
+Query Times Subject to Vehicle Range.
+While query times are relatively stable for diﬀerent
+Dijkstra ranks, the range of an EV has a major inﬂuence on performance.
+We evaluate our
+approaches for diﬀerent battery limits in Figure 12. For every considered battery capacity, we report
+the median running time of 100 random in-range queries up to the range at which at least one query
+did not terminate within one hour. For small capacities, this enables our basic approaches, which
+are shown in the plot as well. We also evaluate the BSP algorithm, using multi-arcs to model speed
+adaptation (20 km/h step width). As before, we observe a considerable speedup by switching to
+38
+
+0.25
+0.5
+1
+2
+4
+8
+16
+32
+64
+128
+256
+512
+1 024
+10−1
+100
+101
+102
+103
+104
+105
+106
+Battery capacity [kWh]
+Time [ms]
+BSP
+BSP-A*
+TFP
+TFP-d
+A*-πd
+CHAsp-πd
+CHAsp-πϕ
+CHAsp-ε-πd
+Figure 13.: Maximum running times for diﬀerent battery capacities. For the same sets of queries as
+in Figure 12, this plot shows the corresponding maximum running times of 100 random
+in-range queries (unless this maximum exceeded an hour of computation time).
+our more realistic model, which is based on consumption functions. As discussed in Section 8.1, a
+vast reduction in the number of label scans more than compensates for the more expensive basic
+operations when using TFP. It achieves a speedup by up to two orders of magnitude over BSP.
+Plugging in the improved dominance checks described in Section 4 pays oﬀas well, as it yields further
+speedup for battery capacities beyond 1 kWh. Adding A* search, we achieve reasonable median
+running times of about a second for capacities of up to 32 kWh, without any preprocessing. Our
+technique CHAsp-πd adds preprocessing to provide further speedup by another order of magnitude.
+Matching our previous observations, median running times of CHAsp-πϕ are slower for all ranges up
+to 32 kWh. However, this algorithm is more robust against outliers and is the only exact method
+that terminates within an hour for all queries at 64 kWh and up. As a result, we are able to compute
+provably optimal results for (hypothetical) ranges of up to 512 kWh (around 3 000 km) in less than
+an hour. Finally, our heuristic variant scales well with vehicle range. Query times actually bottom
+out for large battery capacities, as the vehicle range gets close to the graph diameter (for 1 024 kWh,
+the whole graph is always reachable).
+Figure 13 shows maximum running times for the same sets of queries (see Appendix F for a
+plot showing average running times). Naturally, these outliers are subject to noise, so curves are
+less smooth. Our most robust technique, CHAsp-πϕ, starts to pays oﬀat a range of 16 kWh (at
+lower ranges, its backward search is too expensive). Interestingly, the maximum running time of
+the heuristic variant of CHAsp drops to about a second for the longest considered range: Since
+the target is always reachable with either no or only little speed adaptation, goal direction makes
+the forward search ﬁnd the target almost immediately. In case of exact CHAsp-πϕ, the expensive
+backward search prevents the algorithm from always terminating within one hour. In practice, it
+would therefore pay oﬀto ﬁrst check whether the target is reachable on the fastest path (without
+speed adaptation) before resorting to either CHAsp-πd or CHAsp-πϕ. The better choice between
+the two potentials depends on the vehicle range and by how much the target is missed on the
+unconstrained fastest route.
+39
+
+9. Conclusion
+We introduced a novel framework for computing constrained shortest paths for EVs in practice,
+using realistic consumption models. Our TFP algorithm respects battery constraints and accounts
+for adaptive speeds in a mathematically sounder way that unlocks both better query performance
+and improved solution quality when compared to previous approaches using discretized, sampled
+speeds. Nontrivial speedup techniques based on A* search and CH make the algorithm practical. It
+computes optimal solutions in less than a second on sensible instances, making it the ﬁrst practical
+exact approach—with running times similar to previous inexact methods [12, 45, 50]. Our own
+heuristic enables even faster queries while retaining high-quality solutions.
+The result of our computations is not only the suggested route from source to target but also optimal
+driving speeds along that route. In practice, these can be passed to the driver as recommendations or
+directly to a cruise control unit. With the advent of autonomous vehicles, the output of our algorithms
+can also be utilized for speed planning of self-driving EVs, either directly or after reﬁnement [33].
+The CHAsp algorithm can further be used as a subroutine in more complex scenarios, such as ﬂeet
+management or load-balanced routing. For the latter, computing several Pareto optimal routes could
+provide a set of alternative candidates to choose from [12]. Another next step would be the the
+integration of planned charging stops [11, 79]; see also Niklaus [71].
+To enable faster heuristic variants, it would be useful to precompute potentials for A* search, as in
+ALT [43, 44], or integrate other known approximate or heuristic approaches [6, 12, 87]. We are also
+interested in the integration of variable speed limits imposed by, e. g., time-dependent travel times
+based on historic knowledge of traﬃc patterns [7, 14, 26, 35]. From a more theoretical perspective,
+eﬃcient representation and comparison of (general) bivariate SoC functions is an open issue. One
+could also extend EVCAS by asking for an optimal solution for every initial SoC wrt. given source
+and target vertices, similar to proﬁle queries in time-dependent or energy-optimal routing [7, 13].
+References
+[1] Shubham Agrawal, Hong Zheng, Srinivas Peeta, and Amit Kumar. Routing Aspects of Electric
+Vehicle Drivers and their Eﬀects on Network Performance. Transportation Research Part D:
+Transport and Environment, 46:246–266, 2016.
+[2] Simeon Andreev. Consumption and Travel Time Proﬁles in Electric Vehicle Routing. Master’s
+thesis, Karlsruhe Institute of Technology, 2015.
+[3] Andreas Artmeier, Julian Haselmayr, Martin Leucker, and Martin Sachenbacher. The Shortest
+Path Problem Revisited: Optimal Routing for Electric Vehicles. In Proceedings of the 33rd
+Annual German Conference on Advances in Artiﬁcial Intelligence (KI’10), volume 6359 of
+Lecture Notes in Computer Science, pages 309–316. Springer, 2010.
+[4] Johannes Asamer, Anita Graser, Bernhard Heilmann, and Mario Ruthmair. Sensitivity Analysis
+for Energy Demand Estimation of Electric Vehicles. Transportation Research Part D: Transport
+and Environment, 46:182–199, 2016.
+[5] Hannah Bast, Daniel Delling, Andrew V. Goldberg, Matthias Müller-Hannemann, Thomas Pajor,
+Peter Sanders, Dorothea Wagner, and Renato F. Werneck. Route Planning in Transportation
+Networks. In Algorithm Engineering: Selected Results and Surveys, volume 9220 of Lecture
+Notes in Computer Science, pages 19–80. Springer, 2016.
+40
+
+[6] Lucas S. Batista, Felipe Campelo, Frederico G. Guimarães, and Jaime A. Ramírez. A Comparison
+of Dominance Criteria in Many-Objective Optimization Problems. In Proceedings of the 13th
+IEEE Congress on Evolutionary Computation (CEC’11), pages 2359–2366. IEEE, 2011.
+[7] Gernot V. Batz, Robert Geisberger, Peter Sanders, and Christian Vetter. Minimum Time-
+Dependent Travel Times with Contraction Hierarchies. ACM Journal of Experimental Algorith-
+mics, 18:1.4:1–1.4:43, 2013.
+[8] Reinhard Bauer, Daniel Delling, Peter Sanders, Dennis Schieferdecker, Dominik Schultes, and
+Dorothea Wagner. Combining Hierarchical and Goal-Directed Speed-up Techniques for Dijkstra’s
+Algorithm. ACM Journal of Experimental Algorithmics, 15:2.3:1–2.3:31, 2010.
+[9] Moritz Baum. Engineering Route Planning Algorithms for Battery Electric Vehicles. Phd thesis,
+Karlsruhe Institute of Technology, 2018.
+[10] Moritz Baum, Julian Dibbelt, Andreas Gemsa, Dorothea Wagner, and Tobias Zündorf. Shortest
+Feasible Paths with Charging Stops for Battery Electric Vehicles. In Proceedings of the 23rd
+ACM SIGSPATIAL International Conference on Advances in Geographic Information Systems
+(GIS’15), pages 44:1–44:10. ACM, 2015.
+[11] Moritz Baum, Julian Dibbelt, Andreas Gemsa, Dorothea Wagner, and Tobias Zündorf. Shortest
+Feasible Paths with Charging Stops for Battery Electric Vehicles. Transportation Science,
+53(6):1501–1799, 2019.
+[12] Moritz Baum, Julian Dibbelt, Lorenz Hübschle-Schneider, Thomas Pajor, and Dorothea Wagner.
+Speed-Consumption Tradeoﬀfor Electric Vehicle Route Planning. In Proceedings of the 14th
+Workshop on Algorithmic Approaches for Transportation Modeling, Optimization, and Systems
+(ATMOS’14), volume 42 of OpenAccess Series in Informatics (OASIcs), pages 138–151. Schloss
+Dagstuhl–Leibniz-Zentrum für Informatik, 2014.
+[13] Moritz Baum, Julian Dibbelt, Thomas Pajor, and Dorothea Wagner. Energy-Optimal Routes
+for Electric Vehicles. In Proceedings of the 21st ACM SIGSPATIAL International Conference
+on Advances in Geographic Information Systems (GIS’13), pages 54–63. ACM, 2013.
+[14] Moritz Baum, Julian Dibbelt, Thomas Pajor, and Dorothea Wagner. Dynamic Time-Dependent
+Route Planning in Road Networks with User Preferences. In Proceedings of the 15th International
+Symposium on Experimental Algorithms (SEA’16), volume 9685 of Lecture Notes in Computer
+Science, pages 33–49. Springer, 2016.
+[15] Moritz Baum, Julian Dibbelt, Dorothea Wagner, and Tobias Zündorf. Modeling and Engineering
+Constrained Shortest Path Algorithms for Battery Electric Vehicles. In Proceedings of the
+25th Annual European Symposium on Algorithms (ESA’17), volume 87 of Leibniz International
+Proceedings in Informatics (LIPIcs), pages 11:1–11:16. Schloss Dagstuhl–Leibniz-Zentrum für
+Informatik, 2017.
+[16] Moritz Baum, Jonas Sauer, Dorothea Wagner, and Tobias Zündorf. Consumption Proﬁles
+in Route Planning for Electric Vehicles: Theory and Applications.
+In Proceedings of the
+16th International Symposium on Experimental Algorithms (SEA’17), volume 75 of Leibniz
+International Proceedings in Informatics (LIPIcs), pages 19:1–19:18. Schloss Dagstuhl–Leibniz-
+Zentrum für Informatik, 2017.
+41
+
+[17] Luca Bedogni, Luciano Bononi, Marco Di Felice, Alfredo D’Elia, Randolf Mock, Francesco
+Morandi, Simone Rondelli, Tullio Salmon Cinotti, and Fabio Vergari. An Integrated Simulation
+Framework to Model Electric Vehicles Operations and Services. IEEE Transactions on Vehicular
+Technology, 65(8):5900–5917, 2016.
+[18] Tolga Bektaş, Emrah Demir, and Gilbert Laporte. Green Vehicle Routing. In Green Trans-
+portation Logistics, volume 226 of International Series in Operations Research & Management
+Science, pages 243–265. Springer, 2016.
+[19] Tolga Bektaş and Gilbert Laporte. The Pollution-Routing Problem. Transportation Research
+Part B: Methodological, 45(8):1232–1250, 2011.
+[20] Peter Berling and Victor Martínez de Albéniz. Dynamic Speed Optimization in Supply Chains
+with Stochastic Demand. Transportation Science, 50(3):1114–1127, 2016.
+[21] Marco Blanco, Ralf Borndörfer, Nam-Dung Hoang, Anton Kaier, Adam Schienle, Thomas
+Schlechte, and Swen Schlobach. Solving Time Dependent Shortest Path Problems on Airway
+Networks Using Super-Optimal Wind. In Proceedings of the 16th Workshop on Algorithmic
+Approaches for Transportation Modelling, Optimization, and Systems (ATMOS’16), volume 54
+of OpenAccess Series in Informatics (OASIcs), pages 12:1–12:15. Schloss Dagstuhl–Leibniz-
+Zentrum für Informatik, 2016.
+[22] Karin Brundell-Freij and Eva Ericsson. Inﬂuence of Street Characteristics, Driver Category and
+Car Performance on Urban Driving Patterns. Transportation Research Part D: Transport and
+Environment, 10(3):213–229, 2005.
+[23] Boris V. Cherkassky, Andrew V. Goldberg, and Tomasz Radzik. Shortest Paths Algorithms:
+Theory and Experimental Evaluation. Mathematical Programming, 73(2):129–174, 1996.
+[24] Thomas H. Cormen, Charles E. Leiserson, Ronald L. Rivest, and Cliﬀord Stein. Introduction to
+Algorithms. MIT Press, third edition edition, 2009.
+[25] Daniel Delling. Engineering and Augmenting Route Planning Algorithms. Phd thesis, Karlsruhe
+Institute of Technology, 2009.
+[26] Daniel Delling and Dorothea Wagner. Time-Dependent Route Planning. In Robust and Online
+Large-Scale Optimization, volume 5868 of Lecture Notes in Computer Science, pages 207–230.
+Springer, 2009.
+[27] Guy Desaulniers, Fausto Errico, Stefan Irnich, and Michael Schneider. Exact Algorithms for
+Electric Vehicle-Routing Problems with Time Windows. Operations Research, 64(6):1388–1405,
+2016.
+[28] Julian Dibbelt, Thomas Pajor, and Dorothea Wagner. User-Constrained Multi-Modal Route
+Planning. ACM Journal of Experimental Algorithmics, 19:3.2:1–3.2:19, 2015.
+[29] Edsger W. Dijkstra.
+A Note on Two Problems in Connexion with Graphs.
+Numerische
+Mathematik, 1(1):269–271, 1959.
+[30] Jochen Eisner, Stefan Funke, and Sabine Storandt. Optimal Route Planning for Electric Vehicles
+in Large Networks. In Proceedings of the 25th AAAI Conference on Artiﬁcial Intelligence
+(AAAI’11), pages 1108–1113. AAAI Press, 2011.
+42
+
+[31] Stephan Erb, Moritz Kobitzsch, and Peter Sanders. Parallel Bi-Objective Shortest Paths
+Using Weight-Balanced B-Trees with Bulk Updates. In Proceedings of the 13th International
+Symposium on Experimental Algorithms (SEA’14), volume 8504 of Lecture Notes in Computer
+Science, pages 111–122. Springer, 2014.
+[32] Chiara Fiori, Kyoungho Ahn, and Hesham A. Rakha. Power-Based Electric Vehicle Energy
+Consumption Model: Model Development and Validation. Applied Energy, 168:257–268, 2016.
+[33] Carlos Flores, Vicente Milanés, Joshué Pérez, David González, and Fawzi Nashashibi. Optimal
+Energy Consumption Algorithm Based on Speed Reference Generation for Urban Electric
+Vehicles. In Proceedings of the 11th IEEE Intelligent Vehicles Symposium (IV’15), pages
+730–735. IEEE, 2015.
+[34] Matthew W. Fontana. Optimal Routes for Electric Vehicles Facing Uncertainty, Congestion,
+and Energy Constraints. Phd thesis, Massachusetts Institute of Technology, 2013.
+[35] Luca Foschini, John Hershberger, and Subhash Suri. On the Complexity of Time-Dependent
+Shortest Paths. Algorithmica, 68(4):1075–1097, 2014.
+[36] Michael L. Fredman and Robert E. Tarjan. Fibonacci Heaps and Their Uses in Improved
+Network Optimization Algorithms. Journal of the ACM, 34(3):596–615, 1987.
+[37] Ricardo Fukasawa, Qie He, Fernando Santos, and Yongjia Song. A Joint Vehicle Routing and
+Speed Optimization Problem. INFORMS Journal on Computing, 30(4):694–709, 2018.
+[38] Stefan Funke and Sabine Storandt. Polynomial-Time Construction of Contraction Hierarchies
+for Multi-Criteria Objectives. In Proceedings of the 15th Meeting on Algorithm Engineering &
+Experiments (ALENEX’13), pages 31–54. SIAM, 2013.
+[39] Thierry Garaix, Christian Artigues, Dominique Feillet, and Didier Josselin. Vehicle Routing
+Problems with Alternative Paths: An Application to On-Demand Transportation. European
+Journal of Operational Research, 204(1):62–75, 2010.
+[40] Robert Geisberger, Moritz Kobitzsch, and Peter Sanders. Route Planning with Flexible Objective
+Functions. In Proceedings of the 12th Workshop on Algorithm Engineering & Experiments
+(ALENEX’10), pages 124–137. SIAM, 2010.
+[41] Robert Geisberger, Peter Sanders, Dominik Schultes, and Christian Vetter. Exact Routing in
+Large Road Networks Using Contraction Hierarchies. Transportation Science, 46(3):388–404,
+2012.
+[42] Dominik Goeke and Michael Schneider. Routing a Mixed Fleet of Electric and Conventional
+Vehicle. European Journal of Operational Research, 245(1):81–99, 2015.
+[43] Andrew V. Goldberg and Chris Harrelson. Computing the Shortest Path: A* Search Meets Graph
+Theory. In Proceedings of the 16th Annual ACM–SIAM Symposium on Discrete Algorithms
+(SODA’05), pages 156–165. SIAM, 2005.
+[44] Andrew V. Goldberg and Renato F. Werneck. Computing Point-to-Point Shortest Paths from
+External Memory. In Proceedings of the 7th Workshop on Algorithm Engineering & Experiments
+(ALENEX’05), pages 26–40. SIAM, 2005.
+43
+
+[45] Michael T. Goodrich and Paweł Pszona. Two-Phase Bicriterion Search for Finding Fast and
+Eﬃcient Electric Vehicle Routes. In Proceedings of the 22nd ACM SIGSPATIAL International
+Conference on Advances in Geographic Information Systems (GIS’14), pages 193–202. ACM,
+2014.
+[46] Ronald L. Graham. An Eﬃcient Algorithm for Determining the Convex Hull of a Finite Planar
+Set. Information Processing Letters, 1(4):132–133, 1972.
+[47] Gabriel Y. Handler and Israel Zang. A Dual Algorithm for the Constrained Shortest Path
+Problem. Networks, 10(4):293–309, 1980.
+[48] Pierre Hansen. Bicriterion Path Problems. In Multiple Criteria Decision Making – Theory
+and Application, volume 177 of Lecture Notes in Economics and Mathematical Systems, pages
+109–127. Springer, 1980.
+[49] Peter E. Hart, Nils J. Nilsson, and Bertram Raphael.
+A Formal Basis for the Heuristic
+Determination of Minimum Cost Paths. IEEE Transactions on Systems Science and Cybernetics,
+4(2):100–107, 1968.
+[50] Frederik Hartmann and Stefan Funke. Energy-Eﬃcient Routing: Taking Speed into Account.
+In Proceedings of the 37th Annual German Conference on Advances in Artiﬁcial Intelligence
+(KI’14), volume 8736 of Lecture Notes in Computer Science, pages 86–97. Springer, 2014.
+[51] Stefan Hausberger, Martin Rexeis, Michael Zallinger, and Raphael Luz. Emission Factors
+from the Model PHEM for the HBEFA Version 3. Technical report I-20/2009, University of
+Technology, Graz, 2009.
+[52] Qie He, Stefan Irnich, and Yongjia Song. Branch-Cut-and-Price for the Vehicle Routing Problem
+with Time Windows and Convex Node Costs. Transportation Science, 53(5):1213–1499, 2019.
+[53] Irina Ioachim, Sylvie Gélinas, François Soumis, and Jacques Desrosiers. A Dynamic Programming
+Algorithm for the Shortest Path Problem with Time Windows and Linear Node Costs. Networks,
+31(3):193–204, 1998.
+[54] Stefan Irnich. Resource Extension Functions: Properties, Inversion, and Generalization to
+Segments. OR Spectrum, 30(1):113—-148, 2008.
+[55] Stefan Irnich and Guy Desaulniers. Shortest Path Problems with Resource Constraints. In
+Column Generation, pages 33–65. Springer, 2005.
+[56] Donald B. Johnson. A Note on Dijkstra’s Shortest Path Algorithm. Journal of the ACM,
+20(3):385–388, 1973.
+[57] Donald B. Johnson. Priority Queues with Update and Finding Minimum Spanning Trees.
+Information Processing Letters, 4(3):53–57, 1975.
+[58] Donald B. Johnson. Eﬃcient Algorithms for Shortest Paths in Sparse Networks. Journal of the
+ACM, 24(1):1–13, 1977.
+[59] Tomas Jurik, Arben Cela, Redha Hamouche, René Natowicz, Abdellatif Reama, Silviu-Iulian
+Niculescu, and Jérôme Julien. Energy Optimal Real-Time Navigation System. IEEE Intelligent
+Transportation Systems Magazine, 6(3):66–79, 2014.
+44
+
+[60] Spyros Kontogiannis and Christos Zaroliagis. Distance Oracles for Time-Dependent Networks.
+Algorithmica, 74:1404–1434, 2016.
+[61] James Larminie and John Lowry. Electric Vehicle Technology Explained, 2nd Edition. John
+Wiley & Sons, Ltd., 2012.
+[62] Adam N. Letchford, Saeideh D. Nasiri, and Amar Oukil. Pricing Routines for Vehicle Routing
+with Time Windows on Road Networks. Computers & Operations Research, 51:331–337, 2014.
+[63] Federico Liberatore, Giovanni Righini, and Matteo Salani. A Column Generation Algorithm
+for the Vehicle Routing Problem with Soft Time Windows. 4OR – A Quarterly Journal of
+Operations Research, 9(1):49–82, 2011.
+[64] Yaqiong Liu, Hock Soon Seah, and Guochu Shou. Constrained Energy-Eﬃcient Routing in
+Time-Aware Road Networks. GeoInformatica, 21(1):89–117, 2017.
+[65] Mingsong Lv, Nan Guan, Ye Ma, Dong Ji, Erwin Knippel, Xue Liu, and Wang Yi. Speed
+Planning for Solar-Powered Electric Vehicles. In Proceedings of the 7th International Conference
+on Future Energy Systems (e-Energy’16), pages 6:1–6:10. ACM, 2016.
+[66] Enrique Machuca and Lawrence Mandow. Multiobjective Heuristic Search in Road Maps. Expert
+Systems with Applications, 39(7):6435–6445, 2012.
+[67] Lawrence Mandow and José-Luis Pérez-de-la-Cruz. Multiobjective A* Search with Consistent
+Heuristics. Journal of the ACM, 57(5):27:1–27:24, 2010.
+[68] Ernesto Q. V. Martins. On a Multicriteria Shortest Path Problem. European Journal of
+Operational Research, 16(2):236–245, 1984.
+[69] Qiang Meng, Shuaian Wang, Henrik Andersson, and Kristian Thun. Containership Routing
+and Scheduling in Liner Shipping: Overview and Future Research Directions. Transportation
+Science, 48(2):265–280, 2014.
+[70] Alejandro Montoya, Christelle Guéret, Jorge E. Mendoza, and Juan G. Villegas. The Electric
+Vehicle Routing Problem with Nonlinear Charging Function. Transportation Research Part B:
+Methodological, 103:87–110, 2017.
+[71] Patrick Niklaus. A Uniﬁed Framework for Electric Vehicle Routing. Master’s thesis, Karlsruhe
+Institute of Technology, 2017.
+[72] Inge Norstad, Kjetil Fagerholt, and Gilbert Laporte. Tramp Ship Routing and Scheduling with
+Speed Optimization. Transportation Research Part C: Emerging Technologies, 19(5):853–865,
+2011.
+[73] Andrea Raith and Matthias Ehrgott. A Comparison of Solution Strategies for Biobjective
+Shortest Path Problems. Computers & Operations Research, 36(4):1299–1331, 2009.
+[74] Martin Sachenbacher, Martin Leucker, Andreas Artmeier, and Julian Haselmayr. Eﬃcient
+Energy-Optimal Routing for Electric Vehicles. In Proceedings of the 25th AAAI Conference on
+Artiﬁcial Intelligence (AAAI’11), pages 1402–1407. AAAI Press, 2011.
+[75] Peter Sanders and Lawrence Mandow. Parallel Label-Setting Multi-Objective Shortest Path
+Search. In Proceedings of the 27th IEEE International Parallel and Distributed Processing
+Symposium (IPDPS’13), pages 215–224. IEEE, 2013.
+45
+
+[76] Peter Sanders and Dominik Schultes. Highway Hierarchies Hasten Exact Shortest Path Queries.
+In Proceedings of the 13th Annual European Conference on Algorithms (ESA’05), volume 3669
+of Lecture Notes in Computer Science, pages 568–579. Springer, 2005.
+[77] Michael Schneider, Andreas Stenger, and Dominik Goeke. The Electric Vehicle-Routing Problem
+with Time Windows and Recharging Stations. Transportation Science, 48(4):500–520, 2014.
+[78] René Schönfelder and Martin Leucker. Abstract Routing Models and Abstractions in the
+Context of Vehicle Routing. In Proceedings of the 24th International Joint Conference on
+Artiﬁcial Intelligence (IJCAI’15), pages 2639–2645. AAAI Press, 2015.
+[79] Sabine Storandt. Quick and Energy-Eﬃcient Routes: Computing Constrained Shortest Paths
+for Electric Vehicles. In Proceedings of the 5th ACM SIGSPATIAL International Workshop on
+Computational Transportation Science (IWCTS’12), pages 20–25. ACM, 2012.
+[80] Sabine Storandt.
+Route Planning for Bicycles - Exact Constrained Shortest Paths Made
+Practical via Contraction Hierarchy. In Proceedings of the 22nd International Conference on
+Automated Planning and Scheduling (ICAPS’12), pages 234–242. AAAI Press, 2012.
+[81] Martin Strehler, Sören Merting, and Christian Schwan. Energy-eﬃcient shortest routes for
+electric and hybrid vehicles. Transportation Research Part B: Methodological, 103:111–135,
+2017.
+[82] Walter J. Sweeting, Allan R. Hutchinson, and Shaun D. Savage. Factors Aﬀecting Electric
+Vehicle Energy Consumption. International Journal of Sustainable Engineering, 4(3):192–201,
+2011.
+[83] Hamza Ben Ticha, Nabil Absi, Dominique Feillet, and Alain Quilliot. Vehicle Routing Problems
+with Road-Network Information: State of the Art. Networks, 72(3):393–406, 2018.
+[84] Tessa Tielert, David Rieger, Hannes Hartenstein, Raphael Luz, and Stefan Hausberger. Can V2X
+Communication Help Electric Vehicles Save Energy? In Proceedings of the 12th International
+Conference on ITS Telecommunications (ITST’12), pages 232–237. IEEE, 2012.
+[85] Christian Tilk, Nicola Bianchessi, Michael Drexl, Stefan Irnich, and Frank Meisel. Branch-
+and-Price-and-Cut for the Active-Passive Vehicle-Routing Problem. Transportation Science,
+52(2):300–319, 2018.
+[86] Chi Tung Tung and Kim Lin Chew. A Multicriteria Pareto-Optimal Path Algorithm. European
+Journal of Operational Research, 62(2):203–209, 1992.
+[87] Sibo Wang, Xiaokui Xiao, Yin Yang, and Wenqing Lin. Eﬀective Indexing for Approximate
+Constrained Shortest Path Queries on Large Road Networks.
+Proceedings of the VLDB
+Endowment, 10(2):61–72, 2016.
+[88] Yan Wang, Jianmin Jiang, and Tingting Mu.
+Context-Aware and Energy-Driven Route
+Optimization for Fully Electric Vehicles via Crowdsourcing. IEEE Transactions on Intelligent
+Transportation Systems, 14(3):1331–1345, 2013.
+[89] Yan Xu, Ramon Dalmau, and Xavier Prats. Eﬀects of Speed Reduction in Climb, Cruise and
+Descent Phases to Generate Linear Holding at No Extra Fuel Cost. In Proceedings of the 7th
+International Conference on Research in Air Transportation (ICRAT’16), 2016.
+46
+
+[90] Enjian Yao, Zhiqiang Yang, Yuanyuan Song, and Ting Zuo. Comparison of Electric Vehicle’s
+Energy Consumption Factors for Diﬀerent Road Types. Discrete Dynamics in Nature and
+Society, 2013, 2013.
+47
+
+A. Omitted Details and Proofs from Section 3
+In what follows, we provide technical details for linking consumption functions in the special case
+considered in Section 3.2, in which both functions represent arcs (Appendix A.1), give a formal proof
+of Lemma 2 (Appendix A.2), and show how general consumption functions can be linked in linear
+time (Appendix A.3). Finally, Appendix A.4 mentions technical details omitted from Section 3.3.
+A.1. Linking Functions Deﬁned by Single TradeoﬀFunctions
+We show how c = link(c1, c2) can be computed in constant time in the case where each of the
+two given consumption functions c1 and c2 is deﬁned by a single tradeoﬀsubfunction, rather than
+multiple ones (c. f. Section 3.2). Recall Equation (6) from Section 3.2 restated below:
+c(x) =
+min
+∆∈[¯τ1,¯τ1]
+∆∈[x−¯τ2,x−¯τ2]
+c1(∆) + c2(x −∆).
+(6)
+As argued in Section 3.2, the best choice of ∆depends on the value x ∈[¯τ1 +¯τ2, ¯τ1 + ¯τ2]. Therefore,
+we consider the ∆-function ∆opt : [¯τ1 +¯τ2, ¯τ1 + ¯τ2] →R≥0 that maps every admissible value of x to
+the optimal choice of ∆. Then, we immediately get for arbitrary x ∈R≥0 that
+c(x) =
+
+
+
+
+
+
+
+∞
+if x < ¯τ1 +¯τ2,
+c1(¯τ1) + c2(¯τ2)
+if x > ¯τ1 + ¯τ2,
+c1(∆opt(x)) + c2(x −∆opt(x))
+otherwise.
+(7)
+Hence, we essentially need to compute ∆opt to obtain the desired function c. To this end, consider
+an arbitrary ﬁxed driving time x ∈[¯τ1 + ¯τ2, ¯τ1 + ¯τ2]. To identify the optimal value ∆opt(x), we
+examine the derivative c′
+x of the term cx(∆) := c1(∆) + c2(x −∆). It evaluates to
+c′
+x(∆) =
+2α1
+(β1 −∆)3 +
+2α2
+(x −∆−β2)3 ,
+where α1, β1, α2, and β2 are the corresponding coeﬃcients in the tradeoﬀfunctions of c1 and c2. We
+assume that α1 > 0 and α2 > 0 are positive (the other cases α1 = 0 or α2 = 0 are trivial: at least
+one of the consumption functions is constant in this case and hence, has a unique admissible driving
+time). Then, we obtain a unique zero ∆∗
+x for this derivative under the assumption that β1 < ∆
+and ∆< x−β2. This holds true for valid choices of ∆, because ∆≥¯τ1 > β1 and ∆≤x−¯τ2 < x−β2
+always holds; see Equation (6). Therefore, solving the equation c′
+x(∆) = 0 for ∆yields
+∆∗
+x =
+x −β2 + β1 3q α2
+α1
+1 +
+3qα2
+α1
+.
+The value ∆∗
+x minimizes energy consumption for an unrestricted distribution of driving times that
+sum up to x. From Equation (6) we get the additional constraints ∆opt(x) ≥max{¯τ1, x −¯τ2}
+and ∆opt(x) ≤min{¯τ1, x −¯τ2}. Since ∆∗
+x is the unique zero of c′
+x in the open interval (β1, x −β2),
+monotonicity of cx in the intervals (β1, ∆∗
+x] and [∆∗
+x, x −β2) follows. Thus, we get
+∆opt(x) =
+
+
+
+
+
+
+
+max{¯τ1, x −¯τ2}
+if ∆∗
+x < max{¯τ1, x −¯τ2},
+min{¯τ1, x −¯τ2}
+if ∆∗
+x > min{¯τ1, x −¯τ2},
+∆∗
+x
+otherwise.
+(8)
+48
+
+We already argued in Section 3.2 that Equation (7) and Equation (8) together are suﬃcient to
+specify the desired function c. Since we want to explicitly represent c using tradeoﬀfunctions, we
+now derive the actual subfunctions that deﬁne c, depending on the value ∆∗
+x.
+First, solving the conditions ∆∗
+x < max{¯τ1, x −¯τ2} and ∆∗
+x > min{¯τ2, x −¯τ2} in Equation (8) for
+x yields four equivalences in total, namely
+∆∗
+x < ¯τ1
+⇔
+x < ¯τ ∗
+1 := ¯τ1 + β2 + (¯τ1 −β1)
+3
+rα2
+α1
+,
+(10)
+∆∗
+x < x −¯τ2
+⇔
+x > ¯τ ∗
+2 := ¯τ2 + β1 + (¯τ2 −β2)
+3
+rα1
+α2
+,
+(11)
+∆∗
+x > ¯τ1
+⇔
+x > ¯τ ∗
+1 := ¯τ1 + β2 + (¯τ1 −β1)
+3
+rα2
+α1
+,
+(12)
+∆∗
+x > x −¯τ2
+⇔
+x < ¯τ ∗
+2 := ¯τ2 + β1 + (¯τ2 −β2)
+3
+rα1
+α2
+.
+(13)
+Note that we obtain similar statements when solving for equality, e. g., we have ∆∗
+x = ¯τ1 if and
+only if x = ¯τ ∗
+1 . Consequently, we also get ∆∗
+x > ¯τ1 if and only if x > ¯τ ∗
+1 (and analogous results for
+Equations (11)–(13)). To obtain the actual function c and its subfunctions, we use the following
+Lemma A-1.
+Lemma A-1. Let c1 and c2 be two consumption functions, such that each is deﬁned by a single
+tradeoﬀfunction g1 and g2, respectively. Moreover, let ¯τ1, ¯τ1, ¯τ2, and ¯τ2 denote their respective
+minimum and maximum driving times. Then the following statements hold for their derivatives g′
+1
+and g′
+2 (even if we replace all occurrences of the relation “≤” by “=”).
+1. g′
+1(¯τ1) ≤g′
+2(¯τ2) ⇔¯τ ∗
+1 ≤¯τ1 +¯τ2 ≤¯τ ∗
+2 ,
+2. g′
+1(¯τ1) ≤g′
+2(¯τ2) ⇔¯τ ∗
+1 ≤¯τ1 + ¯τ2 ≤¯τ ∗
+2 ,
+3. g′
+1(¯τ1) ≤g′
+2(¯τ2) ⇔¯τ ∗
+1 ≤¯τ ∗
+2 ,
+4. g′
+1(¯τ1) ≤g′
+2(¯τ2) ⇔¯τ ∗
+1 ≤¯τ ∗
+2 .
+Proof. All equivalences follow after simple rearrangements.
+As an example, we show the ﬁrst
+part of the ﬁrst statement, namely, g′
+1(¯τ1) ≤g′
+2(¯τ2) if and only if ¯τ ∗
+1 ≤¯τ1 + ¯τ2. For i ∈{1, 2},
+let αi and βi denote the coeﬃcients of the tradeoﬀfunction gi as in Equation (5). We exploit
+that α1 > 0, α2 > 0, ¯τ1 > β1, and ¯τ2 > β2 must hold to get
+g′
+1(¯τ1) ≤g′
+2(¯τ2)
+⇔
+−
+2α1
+(¯τ1 −β1)3 ≤−
+2α2
+(¯τ2 −β2)3
+⇔
+(¯τ2 −β2)3 ≥2α2
+2α1
+(¯τ1 −β1)3
+⇔
+¯τ2 ≥β2 +
+3
+rα2
+α1
+(¯τ1 −β1)
+⇔
+¯τ1 +¯τ2 ≥¯τ1 + β2 +
+3
+rα2
+α1
+(¯τ1 −β1) = ¯τ ∗
+1 .
+All other statements follow from similar rearrangements.
+49
+
+Together with Equations (10)–(13), Lemma A-1 enables us to construct the desired function c =
+link(c1, c2), depending on the slopes (i. e., the derivatives) of c1 and c2 at their respective subdomain
+borders. Exploiting that ¯τ1 ≤¯τ1 and ¯τ2 ≤¯τ2 hold by deﬁnition, we obtain the function c after
+the following case distinction. As in Lemma A-1, let g1 denote the (unique) tradeoﬀfunction
+deﬁning c1 and similarly, let g2 be the tradeoﬀfunction deﬁning c2. We consider the slopes of these
+tradeoﬀfunctions at certain subdomain borders of c1 and c2. Without loss of generality, assume
+that g′
+1(¯τ1) ≤g′
+2(¯τ2) holds (the other case is symmetric). This leaves us with only three possible
+cases, which are presented below.
+1. g′
+1(¯τ1) ≤g′
+2(¯τ2) ≤g′
+1(¯τ1) ≤g′
+2(¯τ2): Consider the relevant subdomain borders ¯τ1 +¯τ2 and ¯τ1 + ¯τ2
+corresponding to the minimum and maximum driving time of the function c obtained after
+linking c1 and c2. By the ﬁrst, second, and third statement of Lemma A-1, we know that
+¯τ ∗
+1 ≤¯τ1 +¯τ2 ≤¯τ ∗
+2 ≤¯τ ∗
+1 ≤¯τ1 + ¯τ2 ≤¯τ ∗
+2 .
+For arbitrary values x ∈[¯τ1 + ¯τ2,¯τ ∗
+2 ), we use the fact x ≥¯τ ∗
+1 and Equation (10) to infer the
+inequality ∆∗
+x ≥¯τ1. Similarly, the fact x < ¯τ ∗
+2 and Equation (11) yield ∆∗
+x > x −¯τ2. Hence,
+we have ∆∗
+x ≥max{¯τ1, x −¯τ2} and the ﬁrst case of Equation (8) does not apply. On the other
+hand, we know that both x < ¯τ ∗
+1 and x < ¯τ ∗
+2 hold, so by Equation (12) and Equation (13) we
+get x −¯τ2 < ∆∗
+x < ¯τ1. This means that we are in the second case of Equation (8) and therefore,
+∆opt(x) = min{¯τ1, x−¯τ2} = x−¯τ2 is the optimal choice for any x ∈[¯τ1+¯τ2,¯τ ∗
+2 ). Making similar
+observations for the cases x ∈[¯τ ∗
+2 , ¯τ ∗
+1 ) and x ∈[¯τ ∗
+1 , ¯τ1 + ¯τ2), we obtain corresponding values
+∆opt(x) = ∆∗
+x and ∆opt(x) = ¯τ1, respectively. This yields the desired function c = link(c1, c2),
+which is given by
+c(x) =
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+∞
+if x < ¯τ1 +¯τ2,
+c1(x −¯τ2) + c2(¯τ2)
+if ¯τ1 +¯τ2 ≤x < ¯τ ∗
+2 ,
+c1(∆∗
+x) + c2(x −∆∗
+x)
+if ¯τ ∗
+2 ≤x < ¯τ ∗
+1 ,
+c1(¯τ1) + c2(x −¯τ1)
+if ¯τ ∗
+1 ≤x < ¯τ1 + ¯τ2,
+c1(¯τ1) + c2(¯τ2)
+otherwise.
+2. g′
+1(¯τ1) ≤g′
+1(¯τ1) ≤g′
+2(¯τ2) ≤g′
+2(¯τ2): In this case, we know by the four statements in Lemma A-1
+that the order ¯τ ∗
+1 ≤¯τ ∗
+1 ≤¯τ1 + ¯τ2 ≤¯τ1 + ¯τ2 ≤¯τ ∗
+2 ≤¯τ ∗
+2 must hold. Equations (10)–(13) yield
+∆∗
+x ≥max{¯τ1, x −¯τ2} and ∆∗
+x > min{¯τ1, x −¯τ2} in the whole subdomain [¯τ1 + ¯τ2, ¯τ1 + ¯τ2).
+Consequently, we obtain the optimal value ∆opt(x) = min{¯τ1, x −¯τ2} and the function
+c = link(c1, c2) is deﬁned as
+c(x) =
+
+
+
+
+
+
+
+
+
+
+
+
+
+∞
+if x < ¯τ1 +¯τ2,
+c1(¯τ1) + c2(x −¯τ1)
+if ¯τ1 +¯τ2 ≤x < ¯τ1 +¯τ2,
+c1(x −¯τ2) + c2(¯τ2)
+if ¯τ1 +¯τ2 ≤x < ¯τ1 + ¯τ2,
+c1(¯τ1) + c2(¯τ2)
+otherwise.
+50
+
+3. g′
+1(¯τ1) ≤g′
+2(¯τ2) ≤g′
+2(¯τ2) ≤g′
+1(¯τ1): Along the lines of the ﬁrst case, Lemma A-1 and Equa-
+tions (10)–(13) yield that the function c = link(c1, c2) evaluates to
+c(x) =
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+∞
+if x < ¯τ1 +¯τ2,
+c1(x −¯τ2) + c2(¯τ2)
+if ¯τ1 +¯τ2 ≤x < ¯τ ∗
+2 ,
+c1(∆∗
+x) + c2(x −∆∗
+x)
+if ¯τ ∗
+2 ≤x < ¯τ ∗
+2 ,
+c1(x −¯τ2) + c2(¯τ2)
+if ¯τ ∗
+2 ≤x < ¯τ1 + ¯τ2,
+c1(¯τ1) + c2(¯τ2)
+otherwise.
+Due to convexity of both g1 and g2, no other cases remain. Hence, the function c constructed
+above is deﬁned by at most ﬁve subfunctions (two of which are constant). In each expression, we
+can expand the functions c1 and c2 to obtain a term that has the general form of a tradeoﬀfunction
+as in Equation (5). In particular, the denominator in the tradeoﬀfunctions of both c1 and c2 is
+(strictly) positive in all cases, i. e., we always have x > β. Moreover, it is easy to verify that c is
+continuous and decreasing on the interval [¯τ1 +¯τ2, ∞), by inspecting the corresponding limits at the
+endpoints of each subdomain of c. In conclusion, the link operation requires constant time in the
+special case where both input functions are deﬁned by a single tradeoﬀfunction. Lemma 1 from
+Section 3.2 summarizes these insights. It is restated below.
+Lemma 1. Given two consumption functions c1 and c2, each deﬁned by a single tradeoﬀsubfunction,
+the link operation link(c1, c2) requires constant time and its result is a consumption function that is
+uniquely described by at most three tradeoﬀsubfunctions.
+A.2. Proof of Lemma 2
+Lemma 2 from Section 3.2 claims that linking two consumption functions results in a function that
+is continuous on its interval of admissible driving time. The proof is given below.
+Lemma 2. Given two consumption functions c1 and c2, the function c := link(c1, c2) is continuous
+on the interval [¯τ, ∞), where ¯τ ∈R>0 denotes the minimum driving time of c.
+Proof. Assume for contradiction that c has a discontinuity at some x > ¯τ. By construction of c, a
+discontinuity in the interval [¯τ, ∞) corresponds to a discontinuity of some candidate function c∗
+induced by a tradeoﬀsubfunction of c1 or c2 (see Section 3.2). Without loss of generality, let c∗
+be a subfunction of c1. We know that c∗has exactly one discontinuity at its minimum driving
+time ¯τ ∗∈R>0. Thus, we have c(x) = c1(¯τ ∗) + c2(x −¯τ ∗). We distinguish two cases.
+Case 1: If ¯τ ∗is not the minimum driving time of c1, we know that c1 is continuous in the
+neighborhood of ¯τ ∗. Since c is decreasing and has a discontinuity at x, there exists an ε > 0 such
+that c1(¯τ ∗−ε) + c2(x −¯τ ∗) < c(x −ε), contradicting the fact that c minimizes this term.
+Case 2: If ¯τ ∗is in fact the minimum driving time of c1, we know that the corresponding driving
+time x −¯τ ∗of c2 must exceed its minimum driving time ¯τ2, since x > ¯τ = ¯τ ∗+ ¯τ2. Hence, c2 is
+continuous in the neighborhood of x−¯τ ∗and along the lines of the ﬁrst case we obtain a contradiction,
+because now c1(¯τ ∗) + c2(x −¯τ ∗−ε) < c(x −ε) must hold for some ε > 0.
+A.3. Linking General Consumption Functions in Linear Time
+In Section 3.2, we described a naïve link operation, which has quadratic running time in the number
+of subfunctions of c1 and c2. In what follows, we show how the complexity of the link operation for
+general consumption functions can be reduced to linear time. We say that a consumption function
+51
+
+x
+c(x)
+∆opt(x)
+x −∆opt(x)
+¯τ ∗
+2
+¯τ ∗
+1
+4
+5
+6
+7
+8
+9
+0
+1
+2
+3
+4
+5
+∞
+Figure 14.: The functions ∆opt and x −∆opt (red), indicating how the available time is shared
+between the functions c1 and c2 from Figure 5, in order to obtain the function c.
+c with minimum driving time ¯τ ∈R>0 is convex if it is convex on the interval [¯τ, ∞). Note that
+this holds true for consumption functions of single arcs; see Section 2. Our more sophisticated link
+operation exploits the fact that consumption functions are always convex, which we now prove
+formally. Consider the ∆-function ∆opt of c = link(c1, c2), deﬁned as the optimal choice of ∆in
+Equation (6). See Figure 14 for an example. (Note that we did not formally prove that the value ∆is
+distinct in the general case, but we may as well pick the minimum value ∆that fulﬁlls Equation (6)
+to ensure that ∆opt is well-deﬁned.) Presuming that c1 and c2 are convex, the following Lemma A-2
+shows that both ∆opt and the value x −∆opt(x) increase wrt. x ∈[¯τ1 +¯τ2, ¯τ1 + ¯τ2].
+Lemma A-2. Let ∆opt : [¯τ1 +¯τ2, ¯τ1 + ¯τ2] →R≥0 denote the ∆-function for two convex consumption
+functions c1 and c2 with corresponding minimum and maximum driving times ¯τ1, ¯τ1, ¯τ2, and ¯τ2.
+Moreover, let ¯∆opt(x) := x −∆opt(x) be deﬁned on the domain of ∆opt. Then both ∆opt and ¯∆opt
+are continuous and increasing.
+Proof. We begin by showing that ∆opt is increasing. Assume for contradiction that this is not the case,
+i. e., for some value x in the domain of ∆opt, there are values ε > 0 and δ > 0 such that ∆= ∆opt(x) >
+∆opt(x+ε) = ∆−δ. First of all, note that the inequality c1(∆)+c2(x−∆) ≤c1(∆−δ)+c2(x−∆+δ)
+must hold, since ∆minimizes this term by deﬁnition of ∆opt. Further, ∆= ∆opt(x) is the smallest
+among all values that minimize the term by deﬁnition, so plugging in ∆−δ < ∆actually yields a
+strictly greater result. Analogously, we have c1(∆−δ) + c2(x + ε −∆+ δ) ≤c1(∆) + c2(x + ε −∆),
+as this term is minimized by ∆−δ. Therefore, we obtain
+c1(∆−δ) −c1(∆) ≤c2(x + ε −∆) −c2(x + ε −∆+ δ)
+≤c2(x −∆) −c2(x −∆+ δ)
+< c1(∆−δ) −c1(∆),
+a contradiction. Here, we exploit the fact that c2 is convex and decreasing and hence, c2(x −∆) −
+c2(x −∆+ δ) must be decreasing wrt. x for ﬁxed values ∆and δ (the gap between two function
+values with constant diﬀerence on the x-axis must decrease if x increases).
+Regarding ¯∆opt, monotonicity follows from a very similar argument. As before, assume for
+contradiction that ¯∆opt(x) > ¯∆opt(x+ε) for some ε > 0, so the inequality x−∆opt(x) > x+ε−∆opt(x+
+ε) holds. We plug in ∆= ∆opt(x) and ∆+δ = ∆opt(x+ε) to obtain δ > ε > 0. As in the ﬁrst case, we
+get c1(∆)+c2(x−∆) ≤c1(∆+δ)+c2(x−∆−δ) and c1(∆+δ)+c2(x+ε−∆−δ) < c1(∆)+c2(x+ε−∆)
+by the deﬁnition of ∆opt. Along the lines of the ﬁrst case, this yields a contradiction.
+52
+
+Finally, we show that ∆opt and ¯∆opt are continuous. Since the sum of ∆opt(x) and x −∆opt(x)
+always equals x, their sum increases by exactly ε for any x + ε with ε > 0 in the neighborhood
+of x. Hence, a discontinuity in either function would imply that at least one of the two terms must
+decrease, but we showed before that both ∆opt(x) and x −∆opt(x) increase wrt. x.
+Note that in order to show that a consumption function c with minimum driving time ¯τ and
+maximum driving time ¯τ is convex, it is suﬃcient to consider the interval [¯τ, ¯τ), since we already
+know that c is decreasing and that for all x ∈[¯τ, ∞), the value c(x) = c(¯τ) is constant. The following
+Lemma A-3 proves this property and hence, implies that linking two convex consumption functions
+indeed yields a decreasing and convex function. Consequently, Lemma A-2 applies to all consumption
+functions of the general form.
+Lemma A-3. Given two consumption functions c1 and c2 that are convex on their subdomains
+[¯τ1, ¯τ1] and [¯τ2, ¯τ2] of admissible driving times, the function c := link(c1, c2) is convex on the interval
+[¯τ1 +¯τ2, ¯τ1 + ¯τ2).
+Proof. Assume for the sake of contradiction that c = link(c1, c2) is not convex on the indicated
+interval. We use the previous Lemma A-2, which implies that the ∆-function wrt. c1 and c2 is
+increasing. Moreover, both (right) derivatives c′
+1 and c′
+2 are increasing on their respective subdomains
+[¯τ1, ¯τ1) and [¯τ2, ¯τ2) by assumption, as c1 and c2 are decreasing and convex. Given that c is not
+convex, its (right) derivative c′ must be decreasing on some subinterval of [¯τ1 +¯τ2, ¯τ1 + ¯τ2). Thus,
+there exist values x ∈[¯τ1 +¯τ2, ¯τ1 + ¯τ2) and ε > 0 such that x + ε < ¯τ1 + ¯τ2 and we get
+c′(x) > c′(x + ε)
+= c′
+1(∆opt(x + ε)) + c′
+2(x + ε −∆opt(x + ε))
+≥c′
+1(∆opt(x)) + c′
+2(x −∆opt(x))
+= c′(x),
+a contradiction. This completes the proof.
+A Linear-Time Algorithm for Linking Consumption Functions.
+Given that the functions ∆opt
+and ¯∆opt (as deﬁned in Lemma A-2) of an arbitrary pair of consumption functions are continuous
+and increasing, we are able to perform the link operation in a single coordinated linear scan, in which
+we keep track of ∆opt and ¯∆opt. For two piecewise functions c1 and c2, let g1
+1, . . . , gk
+1 and g1
+2, . . . , gℓ
+2
+denote their deﬁning tradeoﬀfunctions, given in increasing order of their subdomains. For some
+subfunction gj
+1 with j ∈{1, . . . , k} or gj
+2 with j ∈{1, . . . , ℓ}, we denote by [¯τ j
+i , ¯τ j
+i ) its subdomain and
+by cj
+i its induced consumption function. The linear-time link operation proceeds as follows. First, it
+links the consumption functions c1
+1 and c1
+2 induced by the two tradeoﬀfunctions g1
+1 and g1
+2 with least
+admissible driving times. This results in a new convex consumption function link(c1
+1, c1
+2), which is
+deﬁned by at most three tradeoﬀfunctions. Let ∆opt and ¯∆opt be the ∆-functions associated with
+this link operation. We determine the next pair of consumption functions that are linked. To this
+end, we consider the points x1
+1 := ∆−1
+opt(¯τ 1
+1 ) and x1
+2 := ¯∆−1
+opt(¯τ 1
+2 ) at which the induced consumption
+functions c1
+1 and c1
+2 reach their maximum driving time in the linked function. If x1
+1 < x1
+2, we continue
+with link(c2
+1, c1
+2), so ∆opt can take values greater than ¯τ 1
+1 . Similarly, if x1
+1 > x1
+2 holds, we compute
+link(c1
+1, c2
+2) next, so that ¯∆opt may exceed ¯τ 1
+2 . Finally, in the special case x1
+1 = x1
+2 we proceed
+with link(c2
+1, c2
+2). We continue this procedure until we reach the maximum driving time and link
+the consumption functions induced by gk
+1 and gℓ
+2. The lower envelope of the (linear number of)
+computed consumption functions yields the desired result link(c1, c2). Obviously, the running time
+of this procedure is in O(k + ℓ).
+53
+
+A.4. Omitted Details from Section 3.3
+The unique extreme point of the diﬀerence gi
+1 −gj
+2 of the subfunctions gi
+1 and gj
+2 of two consumption
+functions (c. f. Section 3.3) is given by
+x =
+β2 −β1 3qα2
+α1
+1 −
+3q α2
+α1
+.
+B. Omitted Details and Proofs from Section 4
+Below, Appendix B.1 mentions technical details from Section 4.2, whereas Appendix B.2 proves
+Lemma 3 from Section 4.3.
+B.1. Omitted Details from Section 4.2
+As mentioned in Section 4.2, we store a function ¯∆opt with each label c to enable path and speed
+retrieval after the search has terminated. The function ¯∆opt is given as ¯∆opt(x) = x −∆opt(x), wrt.
+the link operation that resulted in the label c, and it is a piecewise function with subfunctions that
+have the general form
+¯∆opt(x) = x −x −λ
+µ
+,
+with nonnegative coeﬃcients λ ∈R≥0 and µ ∈R>0; c. f. Equation (8) in Section 3.2.
+B.2. Proof of Lemma 3
+Lemma 3 proves that the number of settled labels per vertex of the heuristic approach described in
+Section 4.3 is upper bounded by ⌈1/ε⌉+ 1, which implies that the algorithm itself runs in polynomial
+time.
+Lemma 3. The number of settled labels contained in the set Lset(v) of each vertex v ∈V is at most
+⌈1/ε⌉+ 1 when running TFP with exact improved dominance checks.
+Proof. Let k := ⌈1/ε⌉+ 1 and assume for contradiction that after running TFP, the label set Lset(v)
+of some vertex v ∈V contains at least k + 1 consumption functions. We denote these functions by
+c1, . . . , ck+1 and without loss of generality, we assume they are given in increasing order of minimum
+driving time (and hence, were inserted into the label set in this order). Since exact dominance checks
+are applied, we know that c2 yields an improvement over c1 by at least εM at its minimum driving
+time ¯τ2 ∈R>0. Consequently, we have c2(¯τ2) ≤c1(¯τ2) −εM. We can apply the same argument to
+any function ci with i ∈{2, . . . , k + 1} and it follows that ci(¯τi) ≤ci−1(¯τi) −εM. Thus, we obtain
+ck+1(¯τk+1) ≤ck(¯τk+1) −εM
+≤c1(¯τ2) −kεM
+≤M −
+1
+ε
+
++ 1
+
+εM
+< 0.
+This contradicts the fact that ck+1 must have nonnegative consumption for all admissible driving
+times, since the algorithm ensures that battery constraints are not violated for a consumption
+function before running any dominance checks with it.
+54
+
+Algorithm 2: Pseudocode of the function-propagating potential search for TFP
+// initialize labels
+1 foreach v ∈V do
+2
+ϕv ←−∅
+3 ϕt ←−[(0, 0)]
+4 Q.insert(t, 0)
+// run main loop
+5 while Q.isNotEmpty() do
+6
+u ←−Q.deleteMin()
+// scan outgoing arcs
+7
+foreach (u, v) ∈¯A do
+8
+ϕ(u,v) ←−convert(c(u,v))
+9
+ϕ ←−link(ϕu, ϕ(u,v))
+10
+if ∃x ∈R: ϕ(x) < ϕv(x) then
+11
+ϕv ←−merge(ϕv, ϕ)
+12
+Q.update(v, key(v, ϕv))
+C. Omitted Details and Proofs from Section 5
+This appendix contains omitted details about the potential function based on piecewise linear
+functions, introduced in Section 5.2. We ﬁrst provide pseudocode and a brief description of the
+backward search to compute the potential function πϕ (Appendix C.1). Afterwards, we formally
+prove that the resulting potential function is consistent (Appendix C.2).
+C.1. Pseudocode of the Label-Correcting Backward Search
+Algorithm 2 shows pseudocode of the search that is executed from the target t ∈V in order to
+compute the functions representing the vertex potential πϕ : V × [0, M] ∪{−∞} →R≥0 ∪{∞}.
+Recall that each vertex stores a single label consisting of its (tentative) lower bound function.
+The search is initialized with a function ϕt at the target t ∈V that evaluates to 0 for arbitrary
+nonnegative SoC, represented by the single breakpoint (0, 0); see lines 1–4 of Algorithm 2. In the
+main loop, scanning an outgoing arc (u, v) ∈A of some vertex u ∈V corresponds to linking the
+two lower bounds representing the label at u and the arc (u, v), respectively. We ﬁrst convert
+the consumption function c(u,v) mapping driving time to energy consumption to a piecewise linear
+function ϕ(u,v) mapping SoC to a lower bound on driving time (line 8 of Algorithm 2). Afterwards,
+the algorithm merges the result with the existing label at v to obtain a new convex function (line 11).
+C.2. Potential Function Consistency
+Below, Lemma C-1 formally proves that the potential function πϕ is consistent when setting
+πϕ(v, b) := ϕv(b) for all v ∈V and b ∈[0, M], using the piecewise linear functions computed as
+described above.
+Lemma C-1. The potential function πϕ is consistent.
+55
+
+Proof. For some arc (u, v) ∈A, let ϕu and ϕv be the piecewise linear functions at u and v, respectively,
+after the backward search has terminated. Let ϕ(u,v) denote the lower bound function of (u, v). We
+know that ϕu is upper bounded by the function computed by link(ϕv, ϕ(u,v)), since this function was
+merged into ϕu at some point during the backward search. For an arbitrary driving time x ∈R≥0,
+let b∗:= c(u,v)(x) denote the corresponding energy consumption on the arc (u, v). Then, we obtain
+for all b ∈[0, M] that
+x + πϕ(v, f(u,v)(x, b)) = x + ϕv(f(u,v)(x, b))
+≥x + ϕv(b −c(u,v)(x))
+= c−1
+(u,v)(b∗) + ϕv(b −b∗)
+≥ϕ(u,v)(b∗) + ϕv(b −b∗)
+≥min
+b∗∈R ϕ(u,v)(b∗) + ϕu(b −b∗)
+≥πϕ(u, b),
+which implies that the term x −πϕ(u, b) + πϕ(v, f(u,v)(x, b)) is nonnegative. This completes the
+proof.
+D. Omitted Details and Proofs from Section 6
+The following Appendix D.1 provides proofs from Section 6 that were omitted from the main
+manuscript. Afterwards, Appendix D.2 describes how upper bound functions represented by a single
+tradeoﬀsubfunction are derived for the witness search presented in Section 6.4.
+D.1. Omitted Proofs from Section 6.1 and Section 6.3
+Lemma 4 formally proves that the bivariate SoC function of a path consisting solely of nonnegative
+consumption functions can be represented by a single univariate (consumption) function.
+Lemma 4. Let P = [v1, . . . , vk] be a path in G and let ci denote the consumption function of the
+arc (vi, vi+1) for i ∈{1, . . . , k −1}. If all consumption functions are nonnegative, i. e., ci(x) ≥0
+holds for all x ∈R≥0 and i ∈{1, . . . , k −1}, the SoC function of P evaluates to
+f(x, b) =
+(
+−∞
+if b < c(x),
+b −c(x)
+otherwise,
+where c denotes the function obtained after iteratively linking the functions c1, . . . , ck−1.
+Proof. More formally, let c := link(. . . link(. . . link(c1, c2), . . . ), ck−1). First, consider the SoC function
+fi of the consumption function ci of an individual arc (vi, vi+1) with i ∈{1, . . . , k −1}. It equals
+fi(x, b) =
+(
+−∞
+if b < ci(x),
+b −ci(x)
+otherwise,
+since ci has only nonnegative values by assumption, so the SoC at vi+1 never exceeds M. We
+prove the lemma by induction. Assume that for some i ∈{1, . . . , k −2}, we are given the result
+c1,...,i := link(. . . link(. . . link(c1, c2), . . . ), ci) of linking all arcs in [v1, . . . , vi+1] and the corresponding
+SoC function is
+f1,...,i(x, b) =
+(
+−∞
+if b < c1,...,i(x),
+b −c1,...,i(x)
+otherwise.
+56
+
+We construct the SoC function f1,...,i+1 using c1,...,i+1 := link(c1,...,i, ci+1). Since ci+1(x) is nonnegative
+for all x ∈R≥0, we obtain c1,...,i(x) ≤c1,...,i+1(x) for arbitrary driving times x ∈R≥0. Hence, the
+path is infeasible for a pair of driving time x ∈R≥0 and initial SoC b ∈[0, M] if and only if b <
+max{c1,...,i(x), c1,...,i+1(x)} = c1,...,i+1(x). Otherwise, the function c1,...,i+1 minimizes consumption
+on the path by deﬁnition of the link operation (still, no recuperation is possible). We obtain the
+function
+f1,...,i+1(x, b) =
+(
+−∞
+if b < c1,...,i+1(x),
+b −c1,...,i+1(x)
+otherwise,
+which completes the proof.
+Lemma 5, restated below, is used in Section 6.3 to derive a simple method for comparing bivariate
+SoC function when inserting new shortcuts. It is proven formally here.
+Lemma 5. Given a nonpositive or discharging SoC function f1 and a discharging SoC function
+f2, such that their respective consumption functions are c+
+1 , c−
+1 , c+
+2 , and c−
+2 , let the value ε ≥0 be
+deﬁned as described above. If c+
+1 (x+) + ε ≤c+
+2 (x+) holds for some x+ ∈R≥0, any solution where x+
+is the (optimal) amount of time spent for c+
+2 is dominated by f1, i. e., we obtain either c+
+2 (x+) = ∞
+or f1(x+ + x−, b) ≥f2(x+ + x−, b) = b −(c+
+2 (x+) + c−
+2 (x−)) for all x−∈R≥0 and b ∈[0, M].
+Proof. Assume for the sake of contradiction that there exists some value x+ ∈R≥0 such that c+
+1 (x+)+
+ε ≤c+
+2 (x+) and for some time x−∈R≥0 and SoC b ∈[0, M], the value b −(c+
+2 (x+) + c−
+2 (x−)) is a
+feasible solution that is not dominated by f1(x++x−, b). Since ε ≥0, we know that c+
+1 (x+) ≤c+
+2 (x+)
+holds. This implies that c+
+1 (x+) + c−
+1 (x−) is a feasible solution for an SoC of b (recall that the
+minimum driving time of c−
+1 is 0). Finally, we know that c+
+1 (x+) ≤c+
+2 (x+) −ε holds by assumption
+and c−
+1 (x−) ≤c−
+2 (x−) + ε holds by the deﬁnition of ε. This yields
+f1(x+ + x−, b) ≥b −
+ c+
+1 (x+) + c−
+1 (x−)
+
+≥b −
+ c+
+2 (x+) −ε + c−
+2 (x−) + ε
+,
+which contradicts our assumption and completes the proof.
+D.2. Upper Bound Functions Described by a Constant Number of Coeﬃcients
+In Section 6.4, we mentioned that our witness search can utilize upper bounds represented by single
+tradeoﬀsubfunctions to enable faster operations and better data locality. To derive such bounds,
+consider a piecewise-deﬁned consumption function c with minimum and maximum driving time
+¯τ ∈R>0 and ¯τ ∈R>0, respectively, that is deﬁned by several tradeoﬀsubfunctions g1, . . . , gk. We
+seek a tradeoﬀfunction ¯g that has the general form ¯g(x) = α/(x −β)2 + γ as in Equation (5) for all
+x ∈[¯τ, ¯τ] in the interval of admissible driving times. Further, we demand that ¯g(x) ≥c(x) holds for
+all x ∈[¯τ, ¯τ]. To achieve this, we ﬁrst set
+β :=
+min
+i∈{1,...,k} βi
+(14)
+where βi denotes the coeﬃcient of the tradeoﬀsubfunction gi of c (see Equation (5)). Then, we can
+ﬁx the function values ¯g(¯τ) := c(¯τ) and ¯g(¯τ) := c(¯τ) at its domain borders to uniquely deﬁne the
+two remaining coeﬃcients α and γ from Equation (5). In particular, we obtain
+γ = c(¯τ)(β −¯τ)2 −c(¯τ)(β −¯τ)2
+(β −¯τ)2 −(β −¯τ)2
+,
+(15)
+α = (c(¯τ) −γ)(¯τ −β)2.
+(16)
+57
+
+Lemma D-1 shows that the resulting function is in fact an upper bound on c. Upper bounds are
+also robust towards incremental linking in the sense that the error does not increase if we recompute
+the upper bound whenever linking several bound functions results in a bound consisting of multiple
+subfunctions. This is due to the fact that the bounds are uniquely deﬁned by their (minimum)
+coeﬃcient β and the domain borders of the original functions, which remain unchanged in the upper
+bound.
+During witness search, whenever linking two bound functions results in a function deﬁned by more
+than one tradeoﬀsubfunction, we compute and store the upper bound instead. Note that we do not
+even have to link functions explicitly, but simply compute the new coeﬃcient β in a linear scan that
+simulates the link operation.
+Lemma D-1. The function ¯g deﬁned by Equations (14)–(16) is an upper bound on the original
+consumption function c within the interval [¯τ, ¯τ], i. e., ¯g(x) ≥c(x) holds for all x ∈[¯τ, ¯τ].
+Proof. Let g1, . . . , gk denote the tradeoﬀsubfunctions deﬁning c and without loss of generality,
+assume that these subfunctions are given in increasing order of their admissible driving times. First,
+we argue that it is suﬃcient to prove the lemma for the case k = 2. To show this, we deﬁne an
+operation bound: F × F →F that takes as input two consumption functions, each deﬁned by a single
+tradeoﬀsubfunction, and computes an upper bound as described above. For i ∈{1, . . . , k −1},
+consider two consumption functions ci and ci+1 induced by two consecutive tradeoﬀfunctions gi
+and gi+1 (see Section 3.2 for the deﬁnition of induced consumption functions). Let their corresponding
+minimum and maximum driving times be ¯τi, ¯τi = ¯τi+1, and ¯τi+1. The bound operation computes
+the consumption function ci,i+1 := bound(ci, ci+1) with minimum driving time ¯τi, maximum driving
+time ¯τi+1, and a single tradeoﬀsubfunction ¯gi,i+1. According to Equations (14)–(16), the coeﬃcients
+of this tradeoﬀfunction depend only on the values β = min{βi, βi+1}, the driving times ¯τi and ¯τi+1, as
+well as the consumption values ci(¯τi) = ¯gi,i+1(¯τi) and ci+1(¯τi+1) = ¯gi,i+1(¯τi+1) at the domain borders
+of ¯gi,i+1. Linking the consumption function ci,i+1 with another consecutive (induced) consumption
+function yields a new function deﬁned by the same corresponding values. Consequently, the result
+bound(. . . bound(. . . bound(c1, c2), . . . ), ck) of iteratively applying the bound operation to the k
+induced consumption functions of c is the function that is deﬁned by the coeﬃcient β = mini∈{0,...,k} βi
+(see Equation (14)), the minimum driving time ¯τ = ¯τ1, the maximum driving time ¯τ = ¯τk, the
+maximum consumption c(¯τ) = c1(¯τ1), and the minimum consumption c(¯τ) = ck(¯τk). This is exactly
+the function ¯g deﬁned above. Thus, we can construct ¯g by iteratively applying the bound operation
+to consumption functions induced by the tradeoﬀsubfunctions of c. To prove the lemma, we now
+show that each function constructed by the operation bound is in fact an upper bound on its two
+input functions. Observe that this implies that ¯g is an upper bound on c within the interval [¯τ, ¯τ].
+In the remainder of the proof, let c be a consumption function deﬁned by two tradeoﬀsubfunctions
+g1 and g2, which induce two consumption functions c1 and c2. We prove that the function ¯g: R>0 →R
+computed by bound(c1, c2) yields an upper bound on c on the interval [¯τ, ¯τ]. Let the subdomains of
+g1 and g2 be [¯τ, τ) and [τ, ¯τ), respectively. By continuity of c on the interval [¯τ, ¯τ] and by continuity
+of both g1 and g2 on R>0, we know that g1(τ) = g2(τ). To prove the lemma, we use the following
+three claims.
+1. The inequality ¯g(τ) ≥g1(τ) = g2(τ) holds.
+2. The slopes (i. e., the derivatives) of ¯g and g1 are equal at ¯τ if and only if ¯g ≡g1 ≡g2. Otherwise,
+the slope of ¯g is greater at this point.
+3. The slopes of ¯g and g2 are equal at ¯τ if and only if ¯g ≡g1 ≡g2. Otherwise, the slope of ¯g is
+smaller at this point.
+58
+
+Then, ¯g(τ) ≥g1(τ) holds by our ﬁrst claim, ¯g and g1 intersect at ¯τ by construction, and ¯g(¯τ + ε) ≥
+g1(¯τ + ε) holds for ε > 0 in the neighborhood of ¯τ by our second claim. This implies that ¯g must be
+an upper bound on g1 on the interval [¯τ, τ], because the functions ¯g and g1 can intersect at most
+twice in this interval unless ¯g ≡g1. This is easy to verify by determining the number of zeros of ¯g −g1
+within the considered interval [¯τ, τ]. A similar argument holds for ¯g and g2 on the interval [τ, ¯τ].
+Hence, the lemma follows after proving the three claims made above. We detail the rather technical
+proofs of these claims below.
+Assume that the functions g1 and g2 are given as gi(x) = αi/(x −βi)2 + γi for all x ∈R>0
+and for i ∈{1, 2}. For the sake of simplicity and without loss of generality, we presume that
+min{β1, β2} = 0. Note that we can always enforce this property by shifting both functions (and
+their subdomains) along the x-axis. Afterwards, we obtain the same function ¯g on the shifted
+subdomains. By a similar argument, we presume that γ1 = 0 holds. Below, we consider the case
+β1 = 0 and β2 ≥0. The case β1 ≥0 and β2 = 0 is analogous. Since γ2 ∈R is allowed to become
+negative, no further case distinction is necessary.
+To prove the ﬁrst claim, we have to show that ¯g(τ) ≥g1(τ) = g2(τ) holds. For the sake of
+contradiction, assume ¯g(τ) < g1(τ). As mentioned before, continuity of the consumption function c
+on the interval [¯τ, ¯τ] implies that g1(τ) = g2(τ), i. e.,
+α1
+τ 2 =
+α2
+(τ −β2)2 + γ2.
+(17)
+Furthermore, we know that c is a convex function (see Lemma A-3), so when evaluating the derivatives
+of g1 and g2 at τ, we get the inequality
+−2α1
+τ 3 ≤−
+2α2
+(τ −β2)3 .
+(18)
+Finally, we know that the inequalities 0 < ¯τ < τ < ¯τ, β2 ≥0, α1 > 0, α2 > 0, and τ > β2 hold
+by deﬁnition for consumption functions composed of multiple tradeoﬀsubfunctions. We now show
+that altogether, these inequalities yield a contradiction. First, we plug the values of α ∈R≥0
+from Equation (16) and γ ∈R from Equation (15) into the term ¯g(τ) = α/τ 2 + γ. Afterwards,
+we replace γ2 = α1/τ 2 −α2/(τ −β2)2 according to Equation (17) and exploit that the inequality
+α1 ≥α2τ 3/(τ −β2)3 > 0 holds by Equation (18) to obtain
+¯g(τ) = g1(¯τ)¯τ 2(¯τ 2 −τ 2) + g2(¯τ)¯τ 2(τ 2 −¯τ 2)
+τ 2(¯τ 2 −¯τ 2)
+< g1(τ)
+⇔
+g1(¯τ)¯τ 2(¯τ 2 −τ 2) −g1(τ)τ 2(¯τ 2 −¯τ 2) + g2(¯τ)¯τ 2(τ 2 −¯τ 2) < 0
+⇔
+(τ 2 −¯τ 2)
+
+α1(¯τ 2 −τ 2)(¯τ −β2)2(τ −β2)2 + α2τ 2¯τ 2 (τ −β2)2 −(¯τ −β2)2
+< 0
+⇒
+α2τ 2
+τ −β2
+
+τ(¯τ 2 −τ 2)(¯τ −β2)2 + ¯τ 2(τ −β2)
+ (τ −β2)2 −(¯τ −β2)2
+< 0
+⇔
+β2(¯τ 2 −τ 2)(2¯ττ −2¯τβ2 + ¯τ 2 −τβ2) < 0
+⇔
+2¯ττ −2¯τβ2 + ¯τ 2 −τβ2 < 0.
+This yields a contradiction, because we know that 0 ≤β2 < τ < ¯τ holds. Thus, both 2¯ττ −2¯τβ2
+and ¯τ 2 −τβ2 are positive terms and their sum cannot be negative.
+For the second claim, we examine the slopes of g1 and ¯g at the domain border ¯τ. Let the parameter
+α ∈R≥0 of ¯g be deﬁned as in Equation (16). Plugging in the coeﬃcient β = 0 and the value of
+γ ∈R according to Equation (15), we obtain
+α =
+ g1(¯τ) −g2(¯τ)
+
+¯τ 2¯τ 2
+¯τ 2 −¯τ 2
+.
+59
+
+As before, we use γ2 = α1/τ 2 −α2/(τ −β2)2 and the inequality α1 ≥α2τ 3/(τ −β2)3 > 0. For the
+diﬀerence between the derivatives ¯g′ and g′
+1 at ¯τ, this yields
+¯g′(¯τ) −g′
+1(¯τ) = 2α1
+¯τ 3 −2α
+¯τ 3
+= 2
+ g2(¯τ)¯τ 2
+¯τ 2 −α1¯τ 2
+¯τ 3 (¯τ 2 −¯τ 2)
+=
+2¯τ 2
+¯τ 3 (¯τ 2 −¯τ 2)
+ 
+α2¯τ 2 (τ −β2)2 −(¯τ −β2)2
+(¯τ −β2)2(τ −β2)2
++ α1
+ 
+¯τ 2
+τ 2 −1
+!!
+≥
+2α2¯τ 2
+¯τ 3(¯τ 2 −¯τ 2)
+ 
+¯τ 2 (τ −β2)2 −(¯τ −β2)2
+(¯τ −β2)2(τ −β2)2
++
+τ 3
+(τ −β2)3
+ 
+¯τ 2
+τ 2 −1
+!!
+= 2α2β2¯τ 2(¯τ −τ)2(2¯ττ −2¯τβ2 + ¯τ 2 −τβ2)
+¯τ 3(¯τ 2 −¯τ 2)(¯τ −β2)2(τ −β2)3
+.
+As in the proof of the ﬁrst claim, we observe that each term in the product of the numerator is
+nonnegative, while each term in the product of the denominator is positive. Moreover, the numerator
+is equal to 0 if and only if β2 = 0 holds. Using Equation (17), it is easy to verify that this implies
+α1 = α2 and γ2 = 0, which corresponds to the case where the three functions ¯g, g1, and g2 are
+equivalent.
+Finally, we deal with the slopes of g2 and ¯g at ¯τ to prove the third claim. Below, we ﬁrst replace
+the values α, α2, and γ2 as in our proof of the second claim. Afterwards, we exploit the fact that
+(τ 3 −x)(¯τ −β2)3 −(¯τ 3 −x)(τ −β2)3 decreases with increasing x ∈R≥0, since its derivative wrt. x
+is (τ −β2)3 −(¯τ −β2)3 < 0. After some further rearrangements, we obtain
+g′
+2(¯τ) −¯g′(¯τ) = 2α
+¯τ 3 −
+2α2
+(¯τ −β2)3
+≥2α2
+ (τ 3 −¯τ 2β2)(¯τ −β2)3 −(¯τ 3 −¯τ 2β2)(τ −β2)3
+¯τ(¯τ 2 −¯τ 2)(¯τ −β2)3(τ −β2)3
+≥2α2
+ (τ 3 −τ 2β2)(¯τ −β2)3 −(¯τ 3 −τ 2β2)(τ −β2)3
+¯τ(¯τ 2 −¯τ 2)(¯τ −β2)3(τ −β2)3
+= 2α2β2(¯τ −τ)2(¯ττ −¯τβ2 + ¯ττ −τβ2 + τ 2 −τβ2)
+¯τ(¯τ 2 −¯τ 2)(¯τ −β2)3(τ −β2)2
+.
+Again, we end up with products for which all factors are nonnegative (and strictly positive in case of
+the denominator). As before, the numerator equals 0 if and only if ¯g ≡g1 ≡g2. Hence, all three
+claims hold and the proof is complete.
+E. Implementation Details
+Our implementation stores graphs as adjacency arrays [24], following the dynamic data structures of
+Delling [25] for eﬃcient insertion and deletion of shortcuts during the preprocessing routine of CH.
+All algorithms use k-heaps [24, 57] as priority queue, where k = 4 except for unsettled label sets,
+which use k = 2. Compared to Fibonacci heaps [36], these heaps have a higher worst-case complexity,
+but are faster on sparse graphs (such as road networks) in practice [23]. Implementation details of
+our speedup techniques are given below.
+60
+
+A* Search.
+When computing the potential function πϕ (see Section 5.2), the number of breakpoints
+of lower bounds can become quite large. Therefore, we reduce it as follows (while slightly deteriorating
+the quality of the bounds). Before applying Graham’s scan, we replace consecutive pairs of breakpoints
+in the piecewise linear function by a single one if they are close to each other, i. e., their diﬀerence
+wrt. driving time or SoC is below a certain threshold ∆x ∈R≥0 or ∆b ∈R≥0, respectively. Two such
+points p = (bp, xp) and q = (bq, xq) are replaced by r := (min{bp, bq}, min{xp, xq}). Furthermore, if
+two consecutive segments pq and qr with p = (bp, xp), q = (bq, xq), and r = (br, xr) have similar
+slopes spq ≈sqr (i. e., the diﬀerence |spq −sqr| is below some threshold ∆s ∈R≥0), we replace them
+by a single segment from (bp, xp) to (b∗, xr) with slope min{spq, sqr}, which uniquely deﬁnes the
+value b∗∈R. Clearly, the modiﬁed function remains a lower bound. Moreover, consistency of
+the potential is maintained, as function values can only decrease and changes in the function are
+propagated by the search. Thus, all steps in the proof of Lemma C-1 still apply.
+Graham’s scan and the breakpoint reduction step are performed on-the-ﬂy during the merge
+operation. Moreover, we convert consumption functions ca of all arcs a ∈A to their corresponding
+lower bounds ϕa during preprocessing for faster query times. The thresholds ε to determine lower
+bound errors, ∆x and ∆b for close points, and ∆s for similar slopes are tuning parameters. Smaller
+thresholds increase accuracy of bounds, but also slow down the backward search. Therefore, we set
+above thresholds to 2δ−⌊log M⌋in our experiments, where δ ∈N is a constant and M is the battery
+capacity (assumed to be given in kWh). Hence, bounds are more accurate for higher capacities
+(where the forward search becomes more expensive). The value of δ is again a tuning parameter.
+In our experiments, we use δ = 10 for ∆x (the resulting threshold is measured in seconds), δ = 17
+for ∆b, and δ = 15 for ε (both measured in Wh). For example, a battery capacity of 16 kWh yields
+∆x = 64 (seconds), ∆b = 213 (Wh), and ε = 211 (Wh). The value ∆s = 2−4 is constant and chosen
+independently of M (all parameters were determined in preliminary experiments).
+Contraction Hierarchies.
+During preprocessing, we determine the next vertex to be contracted
+using the measures Edge Diﬀerence (ED) and Cost of Queries (CQ) according to Geisberger et al. [41].
+To reﬂect the complexity of SoC functions, we add another term Shortcut Complexity (SC), which
+is deﬁned as |c+| + k|c−| for the SoC function of a given shortcut candidate, where |c+| and |c−|
+denote the number of tradeoﬀsubfunctions that deﬁne the positive and negative part of a shortcut,
+respectively, and k ∈N is a tuning parameter. Using penalized weights for negative parts, we favor
+earlier contraction of SoC functions without a negative part (we use k = 4 in our experiments). The
+priority of a vertex (higher priority means higher importance) is then set to 64 ED + CQ + SC. We
+set the priority of all inactive vertices to ∞.
+Further, we employ a settled node limit [41] of 128, which limits the maximum number of queue
+extractions per witness search for better performance. If multiple shortcut candidates with the
+same tail vertex u ∈V are constructed during contraction of a vertex, we save time by running
+only a single multi-target witness search from u. Finally, to improve performance of the backward
+searches during a query (BFS and potential computation), we explicitly construct and store their
+more lightweight search graphs from the input graph (enriched with shortcuts, but storing less
+complex cost functions) during preprocessing.
+F. Omitted Plots from Section 8
+Figure 15 plots query times against solution qualities for diﬀerent speed step sizes (visualizing the
+same ﬁgures as in Table 3). Figure 16 shows average running times for the same queries as in
+61
+
+1
+2
+5
+10
+20
+∞
+cnst.
+101
+102
+103
+104
+105
+106
+Step Size [km/h]
+Time [ms]
+avg. time
+max. time
+(a)
+1
+2
+5
+10
+20
+∞
+cnst.
+10−4
+10−3
+10−2
+10−1
+100
+101
+Step Size [km/h]
+Quality Loss [%]
+avg. loss
+max. loss
+(b)
+Figure 15.: Trading accuracy for running time when using BSP (Ger-PG, 2 kWh). Both plots show
+query times and result quality for the same set of queries as in Table 3. (a) Average
+and maximum query times for diﬀerent speed steps. Horizontal lines correspond to the
+average and maximum query times when running TFP. (b) Average and maximum loss
+in quality compared to the result of TFP, i. e., continuous tradeoﬀs.
+Figure 12, comparing the scalability of diﬀerent approaches. Recall that a run was aborted if at
+least one of the 100 queries exceeded an hour of computation time.
+62
+
+0.25
+0.5
+1
+2
+4
+8
+16
+32
+64
+128
+256
+512
+1 024
+10−1
+100
+101
+102
+103
+104
+105
+106
+Battery capacity [kWh]
+Time [ms]
+BSP
+BSP-A*
+TFP
+TFP-d.
+A*-πd
+CHAsp-πd
+CHAsp-πϕ
+CHAsp-ε-πd
+Figure 16.: Average running times for diﬀerent battery capacities. For the same set of queries as
+in Figure 12, this plot shows the corresponding average running time of 100 random
+in-range queries.
+63

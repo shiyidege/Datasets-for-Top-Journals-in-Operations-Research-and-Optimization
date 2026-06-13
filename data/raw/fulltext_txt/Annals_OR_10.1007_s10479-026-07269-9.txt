@@ -1,0 +1,1789 @@
+TITLE: SGCN: A Robust Subsampling-Based GCN for Large-Scale Network with Out-of-Distribution Nodes
+JOURNAL: Annals_OR
+YEAR: 2026
+DOI: https://doi.org/10.1007/s10479-026-07269-9
+---
+
+Annals of Operations Research
+https://doi.org/10.1007/s10479-026-07269-9
+ORIGINAL RESEARCH
+SGCN: A Robust Subsampling-Based GCN for Large-Scale
+Network with Out-of-Distribution Nodes
+Yingqiu Zhu1 · Jialin Li2 · Lei Qin1,3 · Jing Yang4 · Mingchih Chen5,6
+Received: 30 November 2025 / Accepted: 4 May 2026
+© The Author(s) 2026
+Abstract
+Large-scale systems, including transportation networks, supply-chain structures and energy
+dispatch systems, typically exhibit high-dimensional graph structures with dynamic topol-
+ogy, heterogeneous connectivity and substantial noise. These characteristics create persistent
+challenges for Graph Convolutional Networks (GCNs) in terms of computational scalabil-
+ity and sensitivity to distributional shifts. To address these limitations, this study introduces
+Subsampling-based Graph Convolutional Network (SGCN), a uniﬁed framework that com-
+bines multi-subgraph parallel training with performance-aware weighting for parameter
+aggregation. By decomposing full-graph learning into a sequence of size-controlled sub-
+graph training tasks, SGCN removes the dependence on global neighborhood expansion and
+naturally supports large-scale parallel execution across GPUs, which signiﬁcantly reduces
+memory consumption and training time. Moreover, the performance-aware weighting adap-
+tively down-weights subgraphs that contain out-of-distribution(OOD) nodes or structural
+noise, enabling the model to obtain stable global representations without relying on explicit
+detection procedures. Experiments on the Cora, Pubmed and Amazon Computers datasets
+show that SGCN achieves predictive performance comparable to or exceeding that of standard
+B Jing Yang
+yangjing@bjut.edu.cn
+B Mingchih Chen
+081438@mail.fju.edu.tw
+Yingqiu Zhu
+inqzhu@uibe.edu.cn
+Jialin Li
+jlwith0506@gmail.com
+Lei Qin
+qinlei@uibe.edu.cn
+1
+School of Statistics, University of International Business and Economics, Beijing, China
+2
+School of Artiﬁcial Intelligence and Data Science, University of International Business and
+Economics, Beijing, China
+3
+Dong Fureng Institute of Economic and Social Development, Wuhan University, Wuhan, China
+4
+School of Mathematics, Statistics and Mechanics, Beijing University of Technology, Beijing, China
+5
+Graduate Institute of Business Administration, College of Management, Fu Jen Catholic University,
+New Taipei City, Taiwan R.O.C.
+6
+Artiﬁcial Intelligence Development Center, Fu Jen Catholic University, New Taipei City, Taiwan R.O.C.
+123
+
+Annals of Operations Research
+GCNs and widely used sampling-based methods, while providing substantial computational
+efﬁciency gains. Under a variety of OOD node corruption levels and structural perturbation
+settings, SGCN demonstrates consistently stronger robustness, particularly in high-noise
+environments. Overall, SGCN provides a scalable and robust training framework for deep
+graph models in operations research. It can be applied to problems such as trafﬁc prediction,
+routing, network ﬂow optimization, supply chain risk analysis, and power grid monitoring.
+Future work will focus on better subgraph scheduling, adaptive sampling for dynamic graphs,
+and extensions to heterogeneous, multilayer, and temporal graphs, so as to further improve
+its use in large-scale industrial systems.
+Keywords GCN · Subsampling · Large-scale Networks · Optimization
+1 Introduction
+In the ﬁeld of operations research and optimization, core problems such as network ﬂow,
+scheduling, transportation, supply chain management, and logistics planning are fundamen-
+tally formulated as resource allocation and risk control tasks on complex graph structures
+(Antony et al., 2025). As real world systems continue to expand in scale and exhibit increas-
+ingly dynamic network topologies, traditional optimization approaches based on heuristic
+rules or static linear models struggle to capture the high-dimensional correlations and local
+dependencies inherent in heterogeneous multi-source data, and are often inadequate for han-
+dling the structural perturbations and safety risks that frequently arise during system operation
+(Zhang et al., 2022). In recent years, graph neural networks (GNNs) have emerged as power-
+ful tools for improving predictive accuracy and mitigating decision risks due to their strong
+capability in modeling structured data, showing signiﬁcant potential in the development of
+trustworthy operating systems (Li et al., 2025). Among various architectures, graph convo-
+lutional networks (GCNs) have been widely adopted in supply chain security monitoring,
+network reliability analysis, and risk-sensitive scheduling tasks owing to their simple neigh-
+borhood aggregation mechanism and training stability (Liu et al., 2025).
+However, applying GCNs directly to large-scale, safety-critical industrial operating sys-
+tems still encounters signiﬁcant challenges in terms of stability and scalability. First, large
+graphs require substantial computation and memory, which makes full-graph training imprac-
+tical in real production environments. Transportation networks, communication networks,
+and supply chain networks across regions often contain millions of nodes and tens of mil-
+lions of edges. Loading the entire adjacency matrix and node features not only imposes
+substantial memory pressure but also introduces system latency, making it difﬁcult to meet
+the demands of real-time decision-making and safety monitoring (Lee et al., 2024). Sec-
+ond, large systems commonly exhibit noisy nodes, abnormal topological structures, and data
+drift. These out-of-distribution (OOD) nodes may arise from faulty sensors, unexpected trafﬁc
+events, supply chain disruptions, or even adversarial attacks (Han & Huang, 2025; Zhang et
+al., 2025). In addition, OOD nodes have been widely observed in practical network-analysis
+scenarios, and their presence can adversely affect learning on graphs in different ways. In
+relational graphs for anomaly and fraud detection, rare or manipulated entities may form
+atypical connections and feature patterns, which can bias neighborhood statistics and cause
+normal nodes to be mistakenly pulled toward anomalous representations during aggregation
+(Song & Wang, 2022). In spatio-temporal trafﬁc networks, incidents and sensor malfunc-
+tions can introduce abrupt distribution shifts; when such abnormal nodes or measurements
+123
+
+Annals of Operations Research
+enter neighborhood aggregation, they can distort local spatio-temporal dependencies and
+degrade forecasting or detection performance (Hu & Wang, 2024). In large-scale recom-
+mendation and e-commerce graphs, cold-start entities and atypical user groups often exhibit
+feature and topology shifts, and aggregating messages from these nodes can yield biased
+embeddings and unstable ranking signals (Li et al., 2025). More generally, recent studies
+on OOD generalization for GNNs emphasize that structural and feature-level shifts can cor-
+rupt message passing and reduce robustness, especially for methods relying on homophily
+or local smoothness assumptions (Li et al., 2022). In safety-sensitive settings, OOD nodes
+can propagate misleading signals across broader topological regions, undermining message
+passing and substantially degrading system controllability, stability, and reliability (Hu &
+Wang, 2024; Li et al., 2025). Given that the core mechanism of GCNs relies on neighbor-
+hood aggregation, once corrupted information is disseminated, its impact is ampliﬁed across
+successive layers of the system, potentially causing severe misjudgments in critical tasks and
+even leading to decision failures (Li et al., 2026). In safety-sensitive settings, OOD nodes
+can propagate misleading signals across broader topological regions, undermining message
+passing and substantially degrading system controllability, stability, and reliability (Hu &
+Wang, 2024; Li et al., 2025). Given that the core mechanism of GCNs relies on neighbor-
+hood aggregation, once corrupted information is disseminated, its impact is ampliﬁed across
+successive layers of the system, potentially causing severe misjudgments in critical tasks and
+even leading to decision failures (Li et al., 2026). Therefore, ensuring that GCNs remain
+robust under structural drift, localized anomalies, and adversarial perturbations, while still
+satisfying real-time and efﬁciency constraints, constitutes a central challenge in building
+reliable operating systems.
+To alleviate the computational burden of GCNs on large-scale graphs, researchers have
+proposed various sampling-based training methods. Node-wise or layer-wise sampling strate-
+gies (e.g., GraphSAGE, FastGCN) can reduce training costs but often distort graph structure,
+introduce gradient variance, and may even include OOD nodes that amplify noise, thereby
+weakening model robustness and system-level safety (Baygin et al., 2021; Chen et al.,
+2018). Graph partitioning and distributed training approaches (e.g., Cluster-GCN and multi-
+GPU/cluster frameworks) improve parallelism by dividing the topology, yet they still rely on
+the full network structure to construct computational blocks and therefore cannot fundamen-
+tally isolate OOD contamination (Ju et al., 2024; Xu et al., 2023). More recent robust GNN
+methods typically depend on explicit anomaly detection, conﬁdence estimation, or addi-
+tional regularization to mitigate OOD effects (Xu et al., 2021). Although these techniques
+can enhance stability on small- to medium-scale graphs, they often require extra labels,
+complex training procedures, or substantial computational overhead, making it difﬁcult to
+achieve real-time, scalable, and deployable “safe optimization”; in large-scale settings (Lin et
+al., 2025). In summary, existing approaches cannot simultaneously satisfy the requirements
+of large-scale scalability, robustness under structural perturbations, and system-level safety.
+Designing a new GCN framework that enables efﬁcient training, effective anomaly isola-
+tion, and controllable risk is therefore critical for building reliable and deployable modern
+management systems.
+Building on the above challenges, we propose the Subsampling-based Graph Convolu-
+tional Network (SGCN), a uniﬁed training framework designed to simultaneously address the
+scalability demands of large-scale graph structures and the robustness requirements of high-
+risk real-world environments. SGCN not only substantially improves the efﬁciency of graph
+learning, but also constructs a trustworthy model capable of maintaining stable behavior in the
+presence of structural perturbations, local anomalies, data drift, and pervasive noise, thereby
+supporting safe decision-making and reliable resource allocation in practical scenarios of
+123
+
+Annals of Operations Research
+operations research. The core idea of SGCN is to decompose the original large graph into
+multiple independent, parallelizable subgraphs, and to train lightweight GCN local models
+on each of them. Because abnormal structures are conﬁned within local regions, this subgraph
+decomposition naturally forms an inherent isolation and fault-tolerance mechanism that sup-
+pressesthepropagationofnoiseacrosstheglobaltopology.Leveragingthestructuraldiversity
+induced by subsampling, SGCN does not rely on anomaly labels or additional robustness
+regularization. Instead, it employs a performance-aware weighting for parameter aggregation
+that adaptively downweights subgraphs affected by OOD contamination, ensuring that the
+ﬁnal integrated model is dominated by structurally stable and signal-consistent subgraphs.
+Compared with existing robust GNN approaches that depend on complex anomaly detec-
+tion modules or computationally expensive optimization procedures, SGCN offers higher
+deployability and system-level stability. In terms of scalability, SGCN distributes the train-
+ing workload across multiple small subgraphs, allowing each to be processed independently
+on a single GPU and enabling efﬁcient parallelism in multi-GPU or distributed environ-
+ments, thereby signiﬁcantly reducing memory consumption and training time. In terms of
+robustness, the combination of subgraph isolation and quality-aware aggregation prevents
+structural noise from spreading across regions, avoiding the ampliﬁcation of local errors dur-
+ing GCN message passing. By achieving a new balance among efﬁciency, scale, and stability,
+SGCN provides a scalable and fault-tolerant training framework for reliably applying GCNs
+to real-world, large-graph datasets. The main contributions of this paper are summarized as
+follows:
+1. A scalable GCN training framework for large-scale networks. SGCN introduces
+a general subsampling mechanism that decomposes full-graph training into multiple
+independent subgraphs. This design preserves structural diversity, signiﬁcantly reduces
+GPU memory usage, and fully enables parallel training, fundamentally enhancing the
+scalability of GCNs on large graphs.
+2. A Performance-aware weighting for OOD robustness without explicit anomaly
+detection. By adaptively weighting local models according to their validation perfor-
+mance during aggregation, SGCN automatically suppresses subgraphs contaminated by
+noise or OOD nodes, ensuring that the ﬁnal global model is dominated by high-conﬁdence
+subgraphs and substantially improving stability under realistic noisy conditions.
+3. Extensive experiments demonstrating both efﬁciency and robustness on large and
+noisynetworks.ExperimentalresultsshowthatSGCNreducestrainingtimeandmemory
+consumption while achieving prediction performance comparable to or better than full-
+graph GCNs. Moreover, SGCN exhibits signiﬁcantly superior robustness in OOD nodes
+compared with existing methods.
+2 Related works
+For operations research, many core problems naturally manifest as complex graph-structured
+data. Typical scenarios such as transportation networks, supply-chain logistics systems,
+energy-dispatching networks, production scheduling, and network-ﬂow optimization are
+fundamentally composed of nodes and edges that represent physical connections, resource
+ﬂows, and operational constraints (Otala et al., 2021). Unlike traditional tabular or time-
+series data, graph structures serve not merely as a data organization format, but as carriers of
+essential operational information, including system constraints, risk-propagation pathways,
+spatial topologies, and inter-entity dependencies. In transportation and logistics systems,
+123
+
+Annals of Operations Research
+path feasibility and capacity limitations correspond to shortest-path formulations and ﬂow
+constraints on graphs. Supply-chain networks consisting of ﬁrms, warehouses, and trans-
+portation routes exhibit multi-tiered topologies, where risk propagation, redundancy design,
+and vulnerability characteristics depend on graph connectivity and community structure (Zhu
+et al., 2025, 2024). Energy-dispatching and power-allocation tasks must satisfy physical ﬂow
+laws while preserving topological stability; large-scale production scheduling, matching, and
+facility-location problems are likewise commonly expressed using bipartite graphs or ﬂow
+networks to model complex combinatorial constraints (Uzunoglu et al., 2024). Moreover,
+real-world systems are characterized by strong dynamics, heterogeneity, and multi-modal
+interactions: transportation networks evolve with congestion patterns, construction activities,
+and incidents; supply-chain structures undergo continual reconﬁguration driven by seasonal
+demand ﬂuctuations, node exits, or re-linking; and energy networks are strictly shaped by
+physical power-ﬂow constraints and safety requirements. These properties render graph struc-
+tures not only descriptive of system morphology but also determinative of feasible decision
+regions, risk-exposure patterns, and safety boundaries. Consequently, graph-based models
+have become fundamental mathematical tools for understanding, predicting, and optimizing
+operational systems, forming a crucial bridge between data-driven learning approaches and
+optimization mechanisms in support of system safety and reliable management.
+Against this backdrop, GCNs have gradually become a key tool for graph-based learning
+in operations research, owing to their ability to automatically aggregate local-neighborhood
+features and capture topological dependencies (Chen et al., 2022; Zhou et al., 2020).
+Unlike traditional approaches based on manually engineered descriptors, GCNs offer com-
+pact parameterization, stable optimization behavior, and the capacity to encode spatial
+relationships even with shallow architectures, making them particularly suitable for the
+heterogeneous and constraint-intensive topologies common in operating systems (Chen et
+al., 2025). In transportation networks, GCNs have been used to represent spatial correla-
+tions in road-network graphs for trafﬁc-ﬂow prediction and congestion-propagation analysis,
+with temporal gating and spatiotemporal fusion mechanisms further enhancing short- and
+mid-term travel-time forecasting (Chen et al., 2024; Wang et al., 2024). In supply-chain man-
+agement, GCNs provide a structured way to capture input–output dependencies, cross-tier
+risk-diffusion pathways, and supplier-relationship topologies, thereby supporting assess-
+ments of system resilience and long-run operational efﬁciency (Saen et al., 2024). Within
+energy systems, GCNs leverage the physical topology of power-grid networks for state
+estimation, power-ﬂow prediction, and anomaly or fault localization, which are central to
+ensuring system reliability and operational safety (Lee et al., 2024). In production scheduling
+and vehicle-routing problems (VRPs), GCNs effectively learn localized constraint patterns
+and characteristic substructures, improving both predictive accuracy and optimization out-
+comes (Hosny & Reda, 2024). As more studies in operations research integrate neural models
+into scheduling, routing, risk analysis, and efﬁciency-evaluation pipelines, including deep-
+learning-based prediction of supply-chain performance, R&D dynamics, and sustainability
+trajectories (Ahmed et al., 2025; Benzidia et al., 2021), the role of GCNs within applications
+of operations research is shifting from handcrafted modeling paradigms toward structure-
+aware, end-to-end learning frameworks capable of capturing the full complexity of real-world
+operational networks (Ye et al., 2025; Zhao et al., 2024).
+However, GCNs face a pronounced “neighborhood explosion” problem when trained
+on large-scale graphs. As the number of layers increases, the size of each node’s receptive
+ﬁeld grows exponentially, leading to rapidly escalating computational and memory demands,
+which restricts the applicability of GCNs on very large graphs. This limitation has motivated
+a series of scalable training strategies, including subgraph sampling, graph partitioning, and
+123
+
+Annals of Operations Research
+distributed training frameworks. Sampling-based approaches such as GraphSAGE (Hamil-
+ton et al., 2017), FastGCN (Chen et al., 2018), and GraphSAINT (Zeng et al., 2020) attempt
+to reduce computational cost by selecting local neighborhoods or random-walk-based sub-
+graphs. Nevertheless, their sampling rules are typically static, making them ill-suited for the
+dynamic evolution characteristic of networks. In highly connected supply chains or trans-
+portation backbone networks, where node interaction patterns are complex, sampling easily
+leads to loss of structural information. It is worth noting that the operations research com-
+munity has already introduced several subsampling-based structure-learning methods. For
+example, adaptive subsampling frameworks for multilayer networks have been shown to
+improve community-structure representation in sparse graphs (Xiao et al., 2025). These
+studies highlight the importance of preserving global topology and second-order neigh-
+borhood information, aligning closely with the structural-loss challenges encountered by
+GCN subgraph-sampling techniques. A recent line of work also explores memory-efﬁcient
+GNN architectures by decomposing large graphs into smaller components, such as the
+ME-MS-PGAN framework (R, 2025), which reduces attention memory through multi-scale
+progressive aggregation. However, its design still relies on approximated full-graph context
+and yields relatively limited accuracy on standard benchmarks (e.g., 0.463 on Cora and 0.431
+on PubMed), indicating that fundamental challenges in large-graph training and system-level
+reliability remain unresolved. Graph-partitioning approaches such as Cluster-GCN (Chiang
+et al., 2019) aim to improve large-graph training efﬁciency by reducing cross-cluster message
+passing through partitioning algorithms such as METIS. AliGraph (Zhu et al., 2019) further
+integrates asynchronous sampling and structural partitioning in industrial settings to enable
+large-scale parallel training. However, pre-deﬁned partitions struggle to track the dynamic
+evolution of networks: changes in supply-chain structure or power-grid topology can easily
+invalidate partition boundaries, preventing the model from adapting to network updates in
+a timely manner. Distributed frameworks such as Emma (Huang et al., 2025), G3 (Wan et
+al., 2023), DEPR (Mu et al., 2023), and GIST (Wolfe et al., 2024) further extend the scale
+of training and reduce communication overhead through techniques such as owner-compute
+execution, pipeline parallelism, and stochastic boundary-node sampling, achieving strong
+scalability on billion-scale graphs.
+Beyond scalability concerns, real-world systems also exhibit noise, OOD nodes, and
+structural irregularities, making OOD behavior a central challenge for deploying GCNs (Li
+et al., 2024). Because graph data rarely possess an ideal static structure, they are frequently
+affected by factors such as data acquisition errors, temporal dynamics, noise injection, or
+adversarial attacks (Jin et al., 2020). Existing studies have shown that real-world graph
+data, including transportation networks, energy systems, and visibility graph constructed
+from large-scale time series, often contain measurement errors, structural noise, and OOD
+nodes simultaneously (Chen et al., 2024; Hu et al., 2025). As a result, graphs encountered
+during testing may deviate substantially from the training set in both topology and attribute
+distribution. Without explicitly modeling and detecting such out of distribution nodes, GCNs
+can suffer from severe prediction bias and robustness degradation in practical deployment.
+Consequently, OOD behavior has become a key factor affecting the stability and security of
+GCN-based operating systems (Dai et al., 2025).
+To mitigate OOD disturbances, a variety of robust GNN approaches have been proposed,
+including regularization-based methods such as GNNGuard (Zhang et al., 2020) and Robust-
+GCN (Zhu et al., 2019), anomaly-oriented models such as OOGN (Li et al., 2022) and
+GraphDE (Li et al., 2022), and research on adversarial structural perturbations, exempli-
+ﬁed by Structack (Hussain et al., 2021). Collectively, these studies emphasize that noisy
+data, erroneous edges, and structural perturbations undermine the reliability of predictive
+123
+
+Annals of Operations Research
+models.However, most existing robustness techniques rely on explicit anomaly supervision
+or dense structural optimization, making them difﬁcult to scale to million- or billion-node
+graphs. A growing body of work also notes that edge anomalies are more subtle and more
+damaging than node anomalies, as they distort topology, blur community structures, and
+alter propagation pathways in supply-chain or ﬁnancial networks (Jin et al., 2020; Motie &
+Raahemi, 2024; Shah et al., 2016).
+Consequently, GCNs in applications of operations research face a twofold dilemma: on the
+one hand, the challenges of large-scale graph training, such as computational cost, neighbor-
+hood explosion, and structural dynamism, remain far from being resolved; on the other hand,
+high-frequency noise and OOD disturbances render conventional training procedures highly
+unstable in real environments, often inducing systematic biases in critical decision-making
+tasks. The deeper contradiction lies in the long-standing separation between scalability meth-
+ods (sampling, partitioning, distributed frameworks) and robustness methods: the former
+implicitly assume clean data, while the latter are typically unable to scale to large graphs. As
+a result, existing approaches struggle to satisfy the dual requirement of handling large-scale
+graphs while resisting OOD perturbations.
+Motivated by these challenges, we propose the SGCN framework. By performing multiple
+independent subsamplings of the large graph, training local GCNs in parallel on each sub-
+graph, and then fusing parameters through performance-aware weighting, SGCN naturally
+offsets local noise and OOD effects across diverse subgraph structures. At the same time, its
+fully parallel training framework effectively alleviates large-scale computational bottlenecks.
+Together, these properties offer a uniﬁed and scalable solution to the long-standing tension
+between scalability and OOD robustness.
+3 Methodology
+Let G = (V, E) be a graph with N = |V| nodes. Each node v ∈V is associated with a label
+yv and a p-dimensional feature vector xv ∈Rp. Let (·, G; θ) denote a GCN parameterized
+by θ, which outputs ˆyv = (xv, G; θ) for node v.
+When N is extremely large, full-graph training can be computationally prohibitive due
+to memory and latency constraints. We therefore train the GCN via subsampling: in each
+global epoch, we construct multiple small subgraphs and perform local training on them,
+then aggregate the resulting local parameter estimates into a global update. This yields an
+efﬁcient and scalable training scheme, denoted as SGCN.
+3.1 Training framework
+Suppose the training runs for T global epochs. At global epoch t ∈{1, . . . , T }, we maintain
+a global parameter estimate ˜θ(t−1) from the previous epoch and perform the following two
+steps.
+Step 1 (Local training on subsampled subgraphs). We generate R subgraphs
+G(t)
+1 , . . . , G(t)
+R from G using a network subsampling strategy (e.g., snowball sampling). Let
+S(t)
+r
+be the node set of G(t)
+r
+and enforce |S(t)
+r | ≤m for all r to control subgraph size. For
+each subgraph G(t)
+r , we initialize the local model with ˜θ(t−1) and obtain a local estimate by
+minimizing the empirical loss:
+123
+
+Annals of Operations Research
+ˆθ(t)
+r
+= arg min
+θ
+|S(t)
+r |−1 
+v∈S(t)
+r
+l
+
+yv, (xv, G(t)
+r ; θ | ˜θ(t−1))
+
+,
+(1)
+where l(·, ·) is a task-speciﬁc loss function (e.g., cross-entropy). Since the R local trainings
+share the same initialization but operate on different subgraphs, they can be executed in
+parallel.
+Step 2 (Performance-aware Weighting). After obtaining { ˆθ(t)
+r }R
+r=1, we evaluate each
+local model on a held-out validation set and record a score s(t)
+r
+(e.g., accuracy). We then
+update the global estimate via weighted averaging:
+˜θ(t) =
+R
+
+r=1
+w(t)
+r
+ˆθ(t)
+r ,
+w(t)
+r
+=
+s(t)
+r
+R
+j=1 s(t)
+j
+.
+(2)
+This performance-aware weighting prioritizes subgraphs that yield better validation perfor-
+mance and downweights subgraphs that are likely to be noisy or out-of-distribution (OOD),
+because such subgraphs typically lead to worse validation scores. The resulting ˜θ(t) is used
+as the initialization for epoch t + 1. Algorithm 1 summarizes the full training procedure, and
+Figure 1 illustrates the overall framework.
+Algorithm 1 Training process of SGCN
+Input: Graph G = (V, E), feature matrix X, label vector y,
+1:
+number of global epoch T , number of subgraphs in each global epoch R, subgraph size m, local training
+epochs L
+Output: Final global parameter estimate ˜θ(T)
+2: Initialize global parameter estimate ˜θ(0) randomly
+3: for t = 1 to T do
+4:
+for r = 1 to R in parallel do
+5:
+Generate a subsample (subgraph) G(t)
+r
+with at most m nodes from Vtrain via a chosen subsampling
+strategy
+6:
+Extract subgraph features Xr and labels yr
+7:
+Initialize the local model with parameters set to the current global estimate ˜θ(t−1)
+8:
+for ℓ= 1 to L do
+9:
+Train the GCN on G(t)
+r
+using (Xr, yr)
+10:
+end for
+11:
+Save the updated local parameter estimate as ˆθ(t)
+r
+12:
+Evaluate ˆθ(t)
+r
+on a held-out validation set to obtain a score s(t)
+r
+13:
+end for
+14:
+Compute weights: w(t)
+r
+=
+R
+j=1 s(t)
+j
+−1
+s(t)
+r
+for r = 1, . . . , R
+15:
+Update the global parameter estimate via weighted model averaging of local estimates: ˜θ(t) =
+R
+r=1 w(t)
+r
+ˆθ(t)
+r
+16: end for
+return ˜θ(T)
+3.2 Weighted truncation aggregation
+While performance-aware weighting in (2) reduces the inﬂuence of low-quality subgraphs,
+a small number of severely corrupted subgraphs may still introduce bias if their validation
+scores are small but non-zero. To further stabilize training, we introduce a weighted truncation
+123
+
+Annals of Operations Research
+Fig. 1 The framework of SGCN.
+Fig. 2 Subsampling in a network containing OOD nodes.
+aggregationmechanism,denotedasTruncWeighted,whichcombinessoftweightingwithhard
+selection.
+Since OOD nodes are relatively rare in the overall network, a sampled subgraph may
+contain no OOD nodes at all, or exhibit a lower OOD proportion than the original graph.
+As is shown in Figure 2, subgraph sampling therefore increases the chance of obtaining
+subgraphs that are cleaner or less affected by OOD perturbations, which can provide more
+reliable neighborhood statistics and more informative local training signals. Building on
+this, TruncWeighted aims to remove the worst-performing local models via truncation and to
+further attenuate the remaining low-quality local models through performance-aware weight-
+ing. As a result, local estimations learned from cleaner or less OOD-inﬂuenced subgraphs
+contribute more to the global update, while the inﬂuence of OOD-contaminated subgraphs
+is systematically suppressed, leading to smoother optimization and improved robustness on
+large-scale noisy graphs. The detailed procedure is described below.
+At epoch t, given validation scores {s(t)
+r }R
+r=1, we rank all local models in descending
+order and keep only the top-performing fraction speciﬁed by a truncation ratio ρtop ∈(0, 1].
+Speciﬁcally, let {s(t)
+(1), s(t)
+(2), · · · , s(t)
+(R)} denote the ordered scores in descending order. Let K =
+⌈Rρtop⌉. Based on K, we can deﬁne the index set of the top-K local models as I(t)
+top = {r :
+s(t)
+r
+≥s(t)
+(K)}. We then aggregate only over this index set:
+123
+
+Annals of Operations Research
+˜θ(t) =
+
+r∈I(t)
+top s(t)
+r
+ˆθ(t)
+r
+
+r∈I(t)
+top s(t)
+r
+.
+(3)
+Here ρtop is a hyperparameter controlling the retained fraction (e.g., ρtop = 0.9 keeps the
+top 90%). Intuitively, truncation performs hard removal of unreliable subgraphs, prevent-
+ing their small yet nonzero weights from accumulating into a biased global update, while
+performance-awareweightingprovidessoftreliabilityweightingwithintheretainedset.Their
+combination makes the aggregation dominated by consistent, high-quality local estimations
+without requiring explicit OOD labels, thereby improving robustness and training stability.
+4 Experiments
+To rigorously evaluate the performance, scalability, and efﬁciency of the proposed SGCN
+training framework, we conduct experiments on three widely-used benchmark datasets1:
+Cora Sen et al. (2008), PubMed Sen et al. (2008), and Amazon Computers Shchur et al.
+(2018). These datasets vary signiﬁcantly in scale and structural complexity, allowing us to
+evaluate the effectiveness of SGCN under diverse graph learning scenarios.
+4.1 Datasets and baselines
+To evaluate the performance of SGCN and competing methods, we adopt three open-sourced
+datasets, each containing graph-structured data with associated node features and class labels.
+• Cora is a citation network where each node represents a scientiﬁc publication, and edges
+denote citation relationships between papers. The node features are high-dimensional
+sparse binary vectors indicating the presence or absence of speciﬁc words in the docu-
+ment. Each paper is assigned a label corresponding to one of several research topics.
+• Pubmed is a biomedical citation graph in which nodes represent scientiﬁc articles, and
+edges indicate citation links. Node features are constructed using TF-IDF representations
+of words from the abstracts. Each article is labeled according to the medical subject
+category it belongs to.
+• AmazonComputersisaproductco-purchasenetworkwherenodesrepresentitemsinthe
+Computers category and edges indicate that two products are frequently bought together.
+Node features are bag-of-words representations extracted from product descriptions and
+metadata, and each node is assigned a label corresponding to the product category (or sub-
+category) for node classiﬁcation. Compared to citation networks, Amazon Computers
+typically exhibits noisier and more heterogeneous connectivity patterns, providing a
+complementary testbed for evaluating the robustness and efﬁciency of subgraph-based
+training.
+To evaluate the relative performance of SGCN, we compare it with four representative
+methods:
+• Standard GCN (Kipf & Welling, 2017) is a full-batch graph convolutional network that
+requires the entire graph to reside in memory during training.
+1 The
+datasets
+used
+are
+publicly
+available.
+Cora:
+https://github.com/shchur/gnn-benchmark/raw/
+master/data/npz/cora.npz;
+PubMed:
+https://github.com/shchur/gnn-benchmark/raw/master/data/npz/
+pubmed.npz;
+Amazon
+Computers:
+https://github.com/shchur/gnn-benchmark/raw/master/data/npz/
+amazon_electronics_computers.npz.
+123
+
+Annals of Operations Research
+• GraphSAGE (Hamilton et al., 2017) introduces ﬁxed-size neighbor sampling and aggre-
+gation to enable inductive learning.
+• GraphSAINT (Zeng et al., 2020) adopts node, edge, or random-walk-based subgraph
+sampling strategies, coupled with importance reweighting to ensure unbiased gradient
+estimation across training batches.
+• Cluster-GCN (Chiang et al., 2019) partitions the graph into densely connected clusters
+using METIS and performs mini-batch training on the resulting subgraphs.
+To ensure consistency and reproducibility, all baseline methods are implemented using
+their ofﬁcial released code. Each method is independently run for 10 trials per dataset, and
+the reported results are the mean values across runs. For a fair comparison, all methods
+are trained using the Adam optimizer with a learning rate of 0.01 and a weight decay of
+5 × 10−4. ReLU is used as the activation function, and a dropout rate of 0.5 is applied to
+prevent overﬁtting. The hidden dimension is set to 16 for Cora and 32 for Pubmed,reﬂecting
+the increasing complexity of the datasets.
+For SGCN, the hyperparameters are selected based on performance on the validation sets.
+Speciﬁcally, for Cora, we use T = 100 epochs, R = 10 subsamples per epoch, a maximum
+subgraph size of m = 100, and L = 10 local training steps. For Pubmed, we set T = 50,
+R = 20, m = 300, and L = 5. For Amazon Computers, we use T = 60, R = 20, m = 500,
+and L = 15.
+During training, we aggregate local model parameters obtained from subsamples in each
+epoch. The most basic aggregation method is to assign equal weights to all subsample models.
+However, to enhance model quality and training robustness, we adopt a more reﬁned heuristic
+weighting strategy: for each epoch, we evaluate the predictive performance of each local
+model on a held-out validation set and assign weights proportional to its validation accuracy.
+This performance-aware weighting allows more informative local models to contribute more
+to the global parameter update. In subsequent experiments, we also adopted this technique,
+which leads to consistently better results compared to uniform averaging.
+All experiments are performed on NVIDIA RTX 4090 GPU and 32GB RAM. The imple-
+mentation is built using PyTorch 2.1.0 with support from PyG library. We ensure that all
+experiments use consistent data splits, identical hardware, and ﬁxed random seeds for repro-
+ducibility. Source code and detailed conﬁgurations will be made publicly available.
+4.2 Configurations and setups for robustness evaluation
+To comprehensively evaluate the robustness of SGCN under network OOD conditions, we
+design controlled perturbation experiments that simulate realistic graph corruption such as
+erroneous connections, isolated nodes, and topic drifts. Speciﬁcally, we randomly select
+pood% of the training nodes as OOD nodes and rewire their edges according to a Bernoulli
+distribution with probability prc. Each selected node reconnects to other nodes with proba-
+bility prc, thereby creating structural perturbations of varying intensity.
+In our experiments, prc is set to 0.01, 0.05, and 0.1, corresponding to mild, moderate, and
+severe edge corruption, respectively. The validation and test graphs remain clean to ensure
+that all performance degradation originates solely from the corrupted training structures. For
+each (pood, prc) conﬁguration, we compare the Standard(full-graph) GCN baseline with
+three variants of the proposed SGCN framework:
+• SGCN-Avg: performs uniform averaging of model parameters obtained from all sub-
+graphs, i.e., each subgraph contributes equally to the global parameter update regardless
+of its validation performance.
+123
+
+Annals of Operations Research
+Table 1 Comparison of test
+accuracy and average training
+time per epoch of various
+methods on the Cora dataset
+Method
+Test Accuracy
+Avg. Training Time (s)
+Standard GCN
+0.811
+1.914
+GraphSAGE
+0.792
+0.037
+GraphSAINT
+0.795
+0.054
+Cluster-GCN
+0.708
+0.368
+SGCN (Ours)
+0.791
+0.035
+• SGCN-Weighted: aggregates subgraph parameters through a weighted average, where
+each subgraph’s contribution is proportional to its validation accuracy, thus reducing the
+inﬂuence of poorly trained subgraphs.
+• SGCN-TruncWeighted: further extends the weighted scheme by introducing a trunca-
+tion mechanism that retains only the top k subgraphs (determined by a predeﬁned ratio)
+for aggregation, effectively ﬁltering out subgraphs potentially contaminated by OOD
+nodes and producing more stable global updates.
+All variants share identical network architectures and optimization settings to ensure a fair
+comparison. The mean test accuracy is reported over multiple random runs. It is also worth
+noting that even without manually injected anomalies (pood = 0%), real-world graph datasets
+such as Cora naturally contain unlabeled outliers or noisy connections. These inherent irregu-
+larities are difﬁcult to identify explicitly yet can still affect model stability and generalization.
+The TruncWeighted mechanism, by automatically down-weighting or excluding poorly per-
+forming subgraphs during aggregation, implicitly mitigates the effect of such inherent noise
+without requiring explicit anomaly labels.
+4.3 Performance comparison
+In this section, we evaluate the overall performance of SGCN in terms of classiﬁcation
+accuracy and training efﬁciency. Experiments are conducted on the three datasets mentioned
+above. SGCN is compared with four representative methods: Standard GCN, GraphSAGE,
+GraphSAINT, and Cluster-GCN.
+We begin by evaluating the performance of SGCN on the Cora dataset, which consists of
+relatively small-scale but highly sparse graph-structured data. Each method is executed for
+10 independent trials, and we report the average test accuracy and average per-epoch training
+time.
+As summarized in Table 1, SGCN achieves a test accuracy of 79.11%, closely approaching
+that of GraphSAINT (79.53%) and GraphSAGE (79.21%), while being only 2.03% lower
+than the full-graph Standard GCN (81.14%). This result demonstrates that our subgraph-
+based training framework is capable of preserving the overall predictive performance even
+without access to full-graph computation during training.
+In terms of training efﬁciency, SGCN signiﬁcantly outperforms all baselines. It achieves
+the fastest average training time per epoch at just 0.0346 seconds–more than 55× faster
+than Standard GCN, and slightly faster than both GraphSAINT (0.0535s) and GraphSAGE
+(0.0369s). Compared to Cluster-GCN, which requires preprocessing of static METIS par-
+titions, SGCN is not only approximately 10× faster but also yields a notable 8.36% gain
+in accuracy. This validates the advantage of our performance-aware weighting, which allow
+efﬁcient training without sacriﬁcing expressiveness.
+123
+
+Annals of Operations Research
+Table 2 Comparison of test
+accuracy and average training
+time per epoch on Pubmed
+Method
+Test Accuracy
+Avg. Training Time (s)
+Standard GCN
+0.799
+2.549
+GraphSAGE
+0.777
+0.069
+GraphSAINT
+0.802
+0.106
+Cluster-GCN
+0.755
+0.416
+SGCN (Ours)
+0.814
+0.054
+To draw a conclusion, these results on Cora validate our hypothesis that full-graph com-
+putation is not strictly necessary for effective GCN training. Properly designed subgraph
+sampling and performance-aware weighting over local models can lead to efﬁcient, scalable,
+and high-performing models, even under limited graph access per iteration.
+To further assess the scalability and generalization of SGCN, we evaluate its performance
+on the Pubmed dataset, which is considerably larger and structurally more complex than
+Cora. This dataset poses greater challenges for representation learning due to its higher node
+count, deeper hierarchical structure, and lower average degree.
+As shown in Table 2, SGCN achieves the highest test accuracy among all evaluated meth-
+ods,reaching81.43%.ItoutperformsGraphSAINT(80.23%)andsigniﬁcantlysurpassesboth
+GraphSAGE (77.70%) and Cluster-GCN (75.50%). Notably, it also exceeds the performance
+of Standard GCN (79.91%), which has complete access to the global graph. This highlights
+the ability of our performance-aware weighting to capture essential structural information
+and global semantics, even in the absence of full-graph computation.
+From an efﬁciency perspective, SGCN again achieves the lowest average training time
+per epoch, at just 0.0541 seconds. Compared to GraphSAINT (0.1063s), Cluster-GCN
+(0.4161s), and Standard GCN (2.5494s), SGCN delivers speedups of 49%, 7.7×, and 47×,
+respectively. These results conﬁrm that our approach scales favorably with graph size while
+maintaining minimal computational overhead. Unlike Cluster-GCN, which relies on ﬁxed
+partitions that may not generalize well to heterogeneous topologies, or GraphSAINT, which
+involvesrepeatededgesamplingandnormalization,SGCNleveragescompact,subgraphsand
+performance-aware weighting to accelerate convergence without sacriﬁcing representation
+power.
+Beyond raw per-epoch speed, SGCN also delivers favorable performance when consider-
+ing accuracy-per-second metrics, achieving the highest ratio among all methods evaluated.
+This reﬂects not only its computational efﬁciency but also its ability to extract useful
+features quickly. In addition, the modular design of local training on multiple subgraphs
+allows for natural parallelism. With R subgraphs in each global epoch, the training pro-
+cess can be distributed across multiple GPUs or compute nodes, yielding potential speedups
+of up to min(R, K) times when using K devices. Such ﬂexibility is highly beneﬁcial in
+production-scale graph learning systems where fast retraining or frequent parameter updates
+are required. Furthermore, since SGCN avoids dynamic neighbor sampling and full-graph
+memory loading, it imposes signiﬁcantly lower memory demands compared to GCN-based
+or neighbor-aggregation-based methods. This makes it especially attractive for deployment
+in edge devices, limited-resource settings, or federated learning scenarios.
+All in all, these properties make SGCN not only efﬁcient in isolated benchmarks but also
+practical for real-world systems that demand high throughput, scalability, and low hardware
+overhead.
+123
+
+Annals of Operations Research
+Table 3 Comparison of test
+accuracy and average training
+time per epoch on Amazon
+Computers.
+Method
+Test Accuracy
+Avg. Training Time (s)
+Standard GCN
+0.6239
+0.8472
+GraphSAGE
+0.6630
+0.0386
+GraphSAINT
+0.6627
+0.0513
+Cluster-GCN
+0.6612
+0.0258
+SGCN (Ours)
+0.6630
+0.0259
+Finally, we evaluate the proposed SGCN on the Amazon Computers dataset, reporting
+both test accuracy and the average training time per epoch to assess predictive performance
+and efﬁciency.
+Table 3 shows that SGCN achieves a test accuracy of 0.6630. This result matches the best-
+performing baseline, GraphSAGE, and is slightly higher than GraphSAINT (0.6627) and
+Cluster-GCN (0.6612). In addition, SGCN improves substantially over the Standard GCN,
+which attains 0.6239. The improvement over Standard GCN demonstrates that subgraph-
+based training, combined with performance-aware weighting, can preserve and even enhance
+predictive performance on Amazon Computers.
+In terms of training efﬁciency, SGCN requires 0.0259 seconds per epoch on average,
+which is essentially identical to Cluster-GCN at 0.0258 seconds per epoch. Compared with
+GraphSAGE and GraphSAINT, SGCN reduces the per-epoch training time from 0.0386
+to 0.0259 seconds and from 0.0513 to 0.0259 seconds, respectively. These correspond to
+reductions of approximately 33% relative to GraphSAGE and 49% relative to GraphSAINT,
+while maintaining comparable accuracy. Compared with Standard GCN, SGCN reduces the
+per-epoch cost from 0.8472 to 0.0259 seconds, which is more than a 32-fold speedup, and
+simultaneously improves test accuracy from 0.6239 to 0.6630, yielding an absolute gain of
+0.0391.
+Overall, the Amazon Computers results indicate that SGCN provides a strong accuracy–
+efﬁciency trade-off among the compared methods. It achieves competitive test accuracy while
+attaining near-minimal per-epoch training time.
+4.4 Subsampling strategies comparison
+Having demonstrated in the previous section that SGCN achieves competitive or superior
+performance compared to several strong baselines, we next investigate the impact of different
+subsampling strategies within our framework. Since SGCN is designed to be method-
+agnostic, the choice of subsampling method can vary without altering the overall training
+pipeline. To this end, we compare four representative strategies, namely random edge, random
+node, random walk, and snowball sampling, under the same parameter aggregation scheme
+used in Section 4.3. By analyzing local model accuracy distributions, convergence curves,
+and stability on three benchmark datasets, we aim to provide a deeper understanding of how
+subsampling choices affect the trade-off between accuracy, efﬁciency, and robustness.
+Figure 3 summarizes the performance of different subsampling strategies on the Cora
+dataset. All strategies eventually converge, but they differ signiﬁcantly in convergence speed
+and ﬁnal accuracy. Random node sampling achieves both the fastest convergence and the
+highest peak validation accuracy, reaching close to 0.88 during training before stabilizing
+at the highest ﬁnal test accuracy (0.872). Random edge sampling attains a comparable peak
+accuracy, trailing random node by only 0.001, and converges to a slightly lower ﬁnal accuracy.
+123
+
+Annals of Operations Research
+Fig. 3 Validation accuracy curves of SGCN on Cora using different subsampling strategies. Random node
+sampling converges faster and achieves higher accuracy, while random edge, random walk, and snowball
+sampling show slower convergence and similar ﬁnal accuracy.
+In contrast, random walk and snowball sampling exhibit much lower peak values (around
+0.78) and converge more slowly to similar lower accuracy levels. These ﬁndings indicate that
+node-based sampling provides the best trade-off between convergence stability and predictive
+performance on Cora.
+A plausible explanation is that Cora exhibits relatively pronounced community structure
+and strong homophily. Under these conditions, topology-driven samplers can over-emphasize
+a small number of densely connected regions in early iterations, so different sampled sub-
+graphs expose distinct local label and feature neighborhoods. This increases gradient noise
+and leads to slower and less stable improvement. By contrast, random node and random
+edge sampling tend to provide broader coverage across communities and reduce inter-batch
+overlap, yielding more representative neighborhood statistics and more stable optimization.
+These observations are consistent with previous research on sampling bias and dependence
+in graph sampling and GNN training Zhang et al. (2021); Espín-Noboa et al. (2021).
+To further compare stability, Figure 4 illustrates the local model validation accuracy dis-
+tributions evaluated every 10 epochs. Random node and random edge sampling consistently
+produce compact accuracy distributions with narrow variance, indicating highly stable local
+models. In contrast, random walk and snowball sampling show substantially larger variance,
+particularly in early epochs, reﬂecting their less uniform sampling nature.
+The wider distributions under random walk and snowball sampling can be attributed to
+stronger sample dependence. Consecutively sampled subgraphs often overlap substantially
+in nodes and edges, so each local model is trained on a correlated and relatively narrow
+view of the graph. This reduces the effective diversity among local models and increases
+the variance of the aggregated updates, particularly in early training when coverage remains
+limited. Similar redundancy and dependence effects in mini-batch GNN training have been
+noted in recent system studies Sheng et al. (2024); Bajaj et al. (2024).
+We subsequently performed experiments on the Pubmed dataset, which is signiﬁcantly
+larger and structurally more complex than Cora, making stability and scalability more chal-
+lenging.Figure5showsthevalidationaccuracycurvesunderdifferentsubsamplingstrategies.
+Random node and random edge sampling again demonstrate the best performance, achieving
+the highest peak validation accuracies, with values approaching 0.87 during training, and the
+123
+
+Annals of Operations Research
+Fig.4 LocalmodelvalidationaccuracydistributionsontheCoradatasetunderdifferentsubsamplingstrategies,
+evaluated every 10 epochs. Random Node and Random Edge sampling yield stable and concentrated accuracy,
+whereas Random Walk and Snowball show larger variance.
+highest ﬁnal accuracies after convergence (0.859 and 0.856). Random walk converges more
+slowly and reaches a lower peak accuracy of about 0.85, while snowball lags behind with
+both a lower peak of around 0.82 and more noticeable ﬂuctuations throughout training.
+123
+
+Annals of Operations Research
+Fig. 5 Validation accuracy curves of SGCN on the Pubmed dataset using different subsampling strategies.
+Random Node and Random Edge sampling achieve the highest ﬁnal accuracies, while Random Walk converges
+more slowly and Snowball performs worst.
+On Pubmed, the observed performance gap is likely driven by a coverage effect induced
+by the sampling strategy. Topology-driven samplers may spend many steps exploring within
+limited regions before reaching diverse areas of the graph, so different sampled subgraphs can
+exhibit markedly different neighborhood statistics. This increases the variance of stochastic
+gradient updates and can slow convergence. By contrast, random node and random edge
+sampling typically provide broader coverage per epoch, leading to more consistent opti-
+mization trajectories and higher ﬁnal accuracy. Similar coverage–variance interactions and
+sampling-induced estimation errors in mini-batch GNN training have been empirically and
+theoretically discussed in recent work Zhou et al. (2025); Balin and Çatalyürek (2022).
+Compared with Cora, the stability differences on Pubmed follow a similar pattern: node-
+based and edge-based sampling maintain the most concentrated accuracy distributions, while
+random walk and especially snowball exhibit larger variance. For brevity, the detailed boxplot
+results for Pubmed are presented in the Appendix.
+Finally, the Amazon Computers dataset shows a very different pattern from Cora and
+Pubmed, as shown in Figure 6. The gap between subsampling strategies is much larger, and
+the best and worst choices are clearly separated.
+Random node sampling is the best on both speed and ﬁnal validation accuracy. It increases
+quickly in the ﬁrst few global epochs and then stays around 0.66–0.68 with small ﬂuctuations.
+In contrast, random edge and random walk improve much more slowly and ﬁnally stay around
+0.59–0.60. Snowball sampling performs the worst. Its validation accuracy stays near 0.37 for
+many epochs, and even near the end it is only around 0.45–0.47, with large ups and downs.
+A plausible explanation is related to the semantics of the Amazon Computers graph, which
+is constructed from co-purchase relations. An edge reﬂects frequent co-buying rather than
+label agreement, so local neighborhoods can be label-mixed and less class-consistent. Under
+such heterophilous and noisy neighborhoods, edge-expansion samplers such as random walk
+and snowball are more likely to over-focus on speciﬁc local regions, yielding subgraphs
+with biased neighborhood composition. This bias can increase training noise and lead to
+slower and less stable convergence, as discussed in studies of network sampling bias (Non-
+representative sampled networks, 2024). Snowball sampling can further exacerbate the issue
+because iterative expansion tends to introduce substantial overlap across epochs, reducing
+123
+
+Annals of Operations Research
+Fig. 6 Validation accuracy curves of SGCN on Amazon Computers using different subsampling strategies.
+Random node converges fastest and reaches the highest accuracy. Random edge and random walk converge
+slower and end lower. Snowball converges slowest and has the lowest accuracy with large ﬂuctuations.
+effective coverage and local model diversity; recent work on mini-batch GNN training also
+notes that redundancy and overlap can increase variance and hurt stability (Sheng et al.,
+2024). By contrast, random node sampling tends to distribute samples more broadly over the
+graph, improving coverage and mitigating expansion-induced bias, which is beneﬁcial for
+stable optimization on such co-purchase graphs (Yousuf et al., 2023). Random edge sampling
+typically lies between these extremes, as it remains constrained by edges but is more dispersed
+than walk- or expansion-based sampling (Zhou et al., 2025).
+Overall, the Amazon results show that when edges do not strongly match labels, random
+node sampling is a safer choice. It gives better coverage and more stable training, while
+edge-based expansion methods can be much less reliable.
+4.5 Robustness analysis of SGCN against OOD nodes
+The core advantage of SGCN lies not only in its computational efﬁciency but also in its inher-
+ent robustness to OOD nodes. To systematically evaluate this property, we design experiments
+that measure performance degradation under increasing proportions of out-of-distribution
+nodes. We compare three SGCN variants with different aggregation strategies: uniform
+averaging (SGCN-Avg), performance-aware weighting (SGCN-Weighted), and truncated
+weighted averaging (SGCN-TruncWeighted). The truncation mechanism explicitly excludes
+the lowest-performing local models, which are most likely to be contaminated by OOD nodes.
+We ﬁrst investigate the robustness of the proposed SGCN framework on the Cora
+dataset under controlled out-of-distribution perturbations. Experiments cover three sub-
+graph sampling ratios, prc ∈{0.01, 0.05, 0.10}, and seven OOD node proportions, pood ∈
+{0, 5, 10, 15, 20, 30, 40}%. To provide a coherent and non-overloaded presentation, we
+separate the roles of ﬁgures and tables: the accuracy curves in Figure 7 highlight over-
+all performance dynamics, the consolidated accuracy table (Table 4) reports all numerical
+results for every conﬁguration, and the robustness heatmap in Figure 8 visualizes the cross-
+conﬁguration accuracy gains of SGCN-TruncWeighted over Standard GCN.
+123
+
+Annals of Operations Research
+Fig. 7 Test accuracy versus OOD ratio for all sampling ratios (prc ∈{0.01, 0.05, 0.10}) on the Cora dataset.
+Each subplot corresponds to a different sampling ratio, with all four methods plotted within each panel.
+Table 4 Test accuracy of Standard GCN and three SGCN variants on the Cora dataset across different prc
+and pood values.
+pood (%)
+Method
+0
+5
+10
+15
+20
+30
+40
+prc = 0.01
+GCN (Full Graph)
+0.798
+0.785
+0.785
+0.776
+0.760
+0.748
+0.728
+SGCN–Avg
+0.735
+0.761
+0.788
+0.807
+0.818
+0.829
+0.846
+SGCN–Weighted
+0.789
+0.798
+0.809
+0.830
+0.836
+0.832
+0.840
+SGCN–TruncWeighted
+0.817
+0.842
+0.839
+0.839
+0.840
+0.845
+0.840
+prc = 0.05
+GCN (Full Graph)
+0.798
+0.795
+0.792
+0.791
+0.778
+0.758
+0.760
+SGCN–Avg
+0.735
+0.791
+0.785
+0.794
+0.792
+0.779
+0.773
+SGCN–Weighted
+0.789
+0.802
+0.817
+0.810
+0.803
+0.770
+0.756
+SGCN–TruncWeighted
+0.817
+0.821
+0.829
+0.826
+0.817
+0.802
+0.781
+prc = 0.10
+GCN (Full Graph)
+0.798
+0.791
+0.782
+0.776
+0.764
+0.741
+0.674
+SGCN–Avg
+0.735
+0.797
+0.795
+0.778
+0.762
+0.668
+0.574
+SGCN–Weighted
+0.789
+0.821
+0.807
+0.795
+0.761
+0.704
+0.686
+SGCN–TruncWeighted
+0.817
+0.826
+0.830
+0.793
+0.758
+0.716
+0.696
+Across all conﬁgurations in Table 4, Standard GCN exhibits a clear and monotonic degra-
+dation as the proportion of OOD nodes increases. When pood grows from 0% to 40%, the test
+accuracy of GCN (Full Graph) drops from around 0.80 to the range [0.67, 0.76], depending
+on prc. The degradation becomes particularly pronounced once pood ≥20%, indicating that
+full-graph message passing increasingly ampliﬁes the effect of corrupted neighborhoods as
+OOD nodes permeate the graph. This behavior provides a natural baseline for assessing the
+robustness contribution of the SGCN variants.
+In contrast, all three SGCN variants display substantially ﬂatter degradation curves in
+Figure 7, reﬂecting the stabilizing effect of subgraph-based training and aggregation. When
+the sampling ratio is smallest (prc = 0.01), SGCN–TruncWeighted remains almost invariant
+under OOD perturbations: its accuracy changes only from 0.817 at pood = 0% to 0.840
+at pood = 40%, whereas the corresponding GCN accuracy falls from 0.798 to 0.728. The
+weighted aggregation variant (SGCN–Weighted) shows a similar but slightly weaker pattern,
+123
+
+Annals of Operations Research
+e.g., reaching 0.836 at pood = 20% compared with 0.760 for GCN. Even the simple uniform
+averaging variant (SGCN–Avg) becomes consistently better than GCN once pood ≥10%.
+These trends indicate that when subgraphs are sufﬁciently ﬁne-grained and diverse, aggregat-
+ing local estimators can effectively suppress noise ampliﬁcation and maintain stable decision
+boundaries under substantial distributional shifts.
+As the sampling ratio increases to prc = 0.05, the relative ordering among the four meth-
+ods remains largely unchanged, but the performance margins narrow. SGCN–TruncWeighted
+still strictly dominates the baseline across all OOD levels: at pood = 10% and 20%,
+it improves upon GCN by 0.037 and 0.039 absolute accuracy, respectively, and even at
+pood = 40% it maintains a positive gap of 0.021. However, the differences to SGC-
+N–Weighted and SGCN–Avg are smaller than in the prc = 0.01 case, suggesting that larger
+subgraphs induce more neighborhood overlap and reduce the diversity of local estimators.
+This loss of diversity limits, but does not eliminate, the robustness gains obtainable from
+aggregation and truncation.
+A more nuanced pattern appears when prc = 0.10. In this regime, SGCN–TruncWeighted
+continues to outperform GCN under light OOD perturbations, achieving a gain of 0.048 at
+pood = 10% (from 0.782 to 0.830). However, the advantage shrinks and even reverses at
+intermediate noise levels: at pood = 20% and 30%, the differences become −0.006 and
+−0.025, respectively. Interestingly, the gain re-emerges at the highest noise level, where
+SGCN–TruncWeighted again surpasses GCN by 0.022 at pood = 40% (0.696 vs. 0.674).
+This non-monotonic behavior is consistent with an overlap-driven reduction in estimator
+independence: when subgraphs are large and heavily overlapping, the local models carry
+highly correlated errors, which weakens the beneﬁts of aggregation under moderate OOD
+intensity. Under extreme noise, however, the truncation rule becomes more effective at iso-
+lating severely corrupted subgraphs, allowing robustness gains to reappear.
+The cross-conﬁguration landscape of robustness is summarized in Figure 8, which visual-
+izes the absolute accuracy gain Acc = AccTruncWeighted −AccGCN over all combinations of
+prc and pood. A distinct plateau of high gains emerges in the region with small sampling ratio
+and strong OOD perturbation: for prc = 0.01 and pood ≥20%, the improvements range
+from +0.080 to +0.112, corresponding to roughly 10–15% relative gains over GCN. As prc
+increases to 0.05, this plateau shrinks but remains clearly positive, with average improve-
+ments of about +0.035 when pood ≥20%. At prc = 0.10, the average gain in the same
+high-noise regime becomes negligible (approximately −0.003), with small positive and neg-
+ative values cancelling out, which is consistent with the accuracy curves in Figure 7. Focusing
+the heatmap on SGCN–TruncWeighted is therefore natural: it is the variant that exhibits the
+strongest and most structured robustness pattern, and its improvements over GCN dominate
+those of the other SGCN variants.
+Overall, the Cora results indicate that the robustness of SGCN arises from the interplay
+between two mechanisms. On the one hand, ﬁne-grained subsampling generates diverse
+and complementary subgraph-level estimators; on the other hand, the truncation rule acts as
+an implicit regularizer that suppresses contributions from subgraphs most affected by OOD
+nodes. When prc is small, these mechanisms jointly produce a pronounced robustness plateau
+under heavy OOD corruption. As prc increases and overlap proliferates, diversity is reduced
+and the gains diminish, but even in these regimes SGCN–TruncWeighted typically matches
+or outperforms Standard GCN, and can recover signiﬁcant advantages under extreme noise.
+We next present the results on the substantially larger and denser Pubmed dataset,
+which serves as a stringent benchmark for evaluating the scalability and robustness of
+our SGCN under distributional shifts. We assess Standard GCN and the three SGCN vari-
+ants across subgraph sampling ratios prc ∈{0.01, 0.05, 0.10} and OOD node proportions
+123
+
+Annals of Operations Research
+Fig. 8 Absolute accuracy gain (Acc) of SGCN-TruncWeighted over Standard GCN across all combinations
+of prc and pood on the Cora dataset. Higher gains (yellow regions) appear when subgraphs are small and
+OOD intensity is high.
+Table 5 Test accuracy of Standard GCN and three SGCN variants on the Pubmed dataset across different prc
+and pood values
+pood (%)
+Method
+0
+5
+10
+15
+20
+30
+40
+prc = 0.01
+Standard GCN
+0.800
+0.794
+0.792
+0.782
+0.778
+0.761
+0.754
+SGCN–Avg
+0.815
+0.844
+0.851
+0.855
+0.850
+0.835
+0.837
+SGCN–Weighted
+0.826
+0.845
+0.856
+0.847
+0.850
+0.839
+0.847
+SGCN–TruncWeighted
+0.819
+0.845
+0.856
+0.855
+0.843
+0.838
+0.852
+prc = 0.05
+Standard GCN
+0.800
+0.792
+0.800
+0.786
+0.778
+0.753
+0.742
+SGCN–Avg
+0.815
+0.843
+0.834
+0.830
+0.823
+0.827
+0.827
+SGCN–Weighted
+0.826
+0.837
+0.841
+0.846
+0.839
+0.832
+0.831
+SGCN–TruncWeighted
+0.819
+0.840
+0.847
+0.840
+0.836
+0.818
+0.842
+prc = 0.10
+Standard GCN
+0.800
+0.793
+0.791
+0.778
+0.764
+0.744
+0.724
+SGCN–Avg
+0.815
+0.827
+0.818
+0.803
+0.803
+0.805
+0.810
+SGCN–Weighted
+0.826
+0.825
+0.821
+0.805
+0.804
+0.825
+0.817
+SGCN–TruncWeighted
+0.819
+0.824
+0.818
+0.802
+0.807
+0.802
+0.812
+pood ∈{0, 5, 10, 15, 20, 30, 40}%. The complete results are provided in Table 5, while Fig-
+ure 9 illustrates accuracy trajectories and Figure 10 summarizes robustness gains.
+At the smallest sampling ratio (prc = 0.01), Standard GCN shows a gradual and consistent
+degradation as pood increases, dropping from 0.800 under clean conditions to 0.754 at pood =
+40%. In contrast, all SGCN variants remain highly stable. SGCN–TruncWeighted increases
+slightly from 0.819 to 0.852 across the same OOD range, and both SGCN–Avg and SGCN–
+123
+
+Annals of Operations Research
+Fig. 9 Test accuracy versus out-of-distribution ratio (pood) for all sampling ratios (prc ∈{0.01, 0.05, 0.10})
+on the Pubmed dataset. Each panel corresponds to one sampling ratio and shows the four evaluated methods.
+Fig. 10 Absolute accuracy gain (Acc) of SGCN–TruncWeighted over Standard GCN across all combina-
+tions of prc and pood on the Pubmed dataset. Brighter regions correspond to larger robustness gains, which
+concentrate at small prc and large pood values.
+Weighted maintain accuracies between roughly 0.83 and 0.86 for all OOD levels. As shown
+in Figure 9, the SGCN curves remain nearly ﬂat while Standard GCN decreases steadily.
+When the sampling ratio increases to prc = 0.05, the dominance of SGCN persists
+with slightly reduced but still substantial margins. Over the full OOD range, Standard GCN
+decreases from 0.800 to 0.742, whereas SGCN–TruncWeighted stays within [0.819, 0.847]
+and reaches 0.842 at the highest noise level. Averaged across all OOD settings, SGCN–
+TruncWeighted achieves approximately 0.835 accuracy compared with 0.779 for Standard
+GCN, corresponding to a gain of about 0.056.
+A similar qualitative pattern appears at the largest sampling ratio (prc = 0.10). Standard
+GCN experiences its steepest decline, falling from 0.800 to 0.724 (a drop of 0.076). In
+contrast, SGCN–TruncWeighted remains nearly invariant, ranging only from 0.819 to 0.812
+across all OOD levels. SGCN–Weighted also remains stable and reaches a high accuracy of
+0.825 at pood = 30%, outperforming GCN by 0.081 at this noise level.
+Figure 10 provides a global view of the robustness gains. For every combination of prc and
+pood, accuracy improvements are strictly positive. Moreover, the gain magnitude increases
+with the OOD ratio: at pood = 40%, the improvement reaches 0.098 for prc = 0.01, 0.100
+for prc = 0.05, and 0.088 for prc = 0.10. A distinct high-gain region emerges at small
+123
+
+Annals of Operations Research
+Table 6 Test accuracy of Standard GCN and three SGCN variants on the Amazon Computers dataset across
+different prc and pood values.
+pood (%)
+Method
+0
+5
+10
+15
+20
+30
+40
+prc = 0.01
+Standard GCN
+0.626
+0.624
+0.620
+0.606
+0.600
+0.543
+0.463
+SGCN–Avg
+0.655
+0.662
+0.667
+0.659
+0.658
+0.659
+0.667
+SGCN–Weighted
+0.671
+0.669
+0.650
+0.662
+0.663
+0.667
+0.662
+SGCN–TruncWeighted
+0.674
+0.677
+0.689
+0.674
+0.685
+0.676
+0.679
+prc = 0.05
+Standard GCN
+0.626
+0.626
+0.605
+0.563
+0.534
+0.417
+0.375
+SGCN–Avg
+0.671
+0.666
+0.655
+0.653
+0.655
+0.652
+0.648
+SGCN–Weighted
+0.671
+0.664
+0.662
+0.651
+0.653
+0.654
+0.653
+SGCN–TruncWeighted
+0.676
+0.666
+0.673
+0.665
+0.655
+0.654
+0.666
+prc = 0.10
+Standard GCN
+0.626
+0.621
+0.586
+0.526
+0.446
+0.378
+0.374
+SGCN–Avg
+0.666
+0.655
+0.651
+0.652
+0.644
+0.650
+0.644
+SGCN–Weighted
+0.674
+0.657
+0.654
+0.649
+0.651
+0.651
+0.651
+SGCN–TruncWeighted
+0.674
+0.661
+0.655
+0.654
+0.664
+0.663
+0.655
+Fig. 11 Test accuracy versus out-of-distribution ratio (pood) for all sampling ratios (prc ∈{0.01, 0.05, 0.10})
+on the Amazon Computers dataset. Each panel corresponds to one prc value and shows the four evaluated
+methods.
+prc and large pood, reﬂecting the complementary effects of ﬁne-grained subsampling and
+truncation in suppressing unstable or corrupted neighborhood information.
+Taken together, the Pubmed results show that SGCN, and especially the TruncWeighted
+variant, achieves consistent and substantial robustness improvements over Standard GCN
+across all sampling and OOD conﬁgurations. The method delivers 0.06–0.10 absolute gains,
+maintains stable behavior across sampling ratios, and scales effectively to large, noisy graphs
+with heterogeneous data quality.
+WefurtherevaluaterobustnessontheAmazonComputersdatasetwiththesameprotocolas
+in the previous datasets. The accuracy curves are shown in Figure 11, and the robustness gains
+of SGCN–TruncWeighted over Standard GCN are summarized in Figure 12. The complete
+numerical results are reported in Table 6.
+Across all three prc settings, Standard GCN degrades rapidly as the OOD ratio increases,
+while all SGCN variants remain largely stable. This pattern is especially clear at prc = 0.10:
+123
+
+Annals of Operations Research
+Fig. 12 Absolute accuracy gain (Acc) of SGCN–TruncWeighted over Standard GCN across all combinations
+of prc and pood on Amazon Computers.
+as pood increases to 40%, Standard GCN drops from about 0.63 to around 0.37, whereas
+SGCN variants stay near 0.64–0.67 throughout. A similar trend is observed when prc = 0.05.
+Once pood exceeds 15%, the performance of Standard GCN degrades sharply, whereas
+SGCN–Avg, SGCN–Weighted, and SGCN–TruncWeighted exhibit only minor changes and
+remain comparatively stable. Even under the mildest perturbation setting, prc = 0.01, the
+SGCN variants continue to maintain robust accuracy with limited sensitivity to increasing
+pood. Standard GCN still shows clear degradation at higher OOD levels, while SGCN main-
+tains a much higher and more stable accuracy band.
+Among the three aggregation strategies, SGCN–TruncWeighted consistently provides the
+strongest robustness. It is either the top-performing method or very close to the best across
+nearly all OOD ratios and sampling ratios. In contrast, SGCN–Avg and SGCN–Weighted
+remain stable but may occasionally fall slightly below TruncWeighted under heavier pertur-
+bations. This supports the intuition that truncation helps reduce the inﬂuence of local models
+that are most affected by OOD nodes.
+The heatmap in Figure 12 shows that the robustness gains are strictly positive across
+all conﬁgurations. Moreover, the gains grow quickly as pood increases. For example, when
+pood = 40%, the improvement reaches about +0.216 at prc = 0.01, +0.292 at prc = 0.05,
+and +0.280 at prc = 0.10. These large gains indicate that full-graph message passing in
+Standard GCN is highly sensitive to neighborhood corruption in this co-purchase graph,
+while SGCN can effectively isolate and suppress the corrupted signal through subgraph
+training and aggregation.
+Overall, the Amazon results conﬁrm that SGCN provides strong robustness under severe
+distribution shifts, and TruncWeighted offers the most reliable performance among the SGCN
+variants.
+4.6 Hyperparameter sensitivity analysis
+We discuss how hyperparameters inﬂuence the empirical performance of our method by using
+the Amazon Computers dataset and the SGCN–TruncWeighted variant as a representative
+example. We focus on three key parameters: the truncation ratio ρ ∈(0, 1], which denotes
+123
+
+Annals of Operations Research
+Table 7 Sensitivity to truncation
+ratio ρ.
+ρ
+Mean Test Acc. (mean±std)
+Best Test Acc.
+0.5
+0.6590 ± 0.0063
+0.6681
+0.7
+0.6564 ± 0.0126
+0.6736
+0.8
+0.6590 ± 0.0094
+0.6797
+0.9
+0.6587 ± 0.0220
+0.7154
+1.0
+0.6569 ± 0.0144
+0.6888
+the retained fraction of local models in aggregation; the maximum subgraph size m; and
+the number of subgraphs in each global epoch R. Following common practice in sensitivity
+analysis,wevaryonefactoratatimewhilekeepingtheothersﬁxedtothedefaultconﬁguration
+used in our Amazon experiments. For each setting, we report the mean test accuracy with
+standard deviation over repeated trials, together with the best test accuracy observed.
+In regard to the truncation ratio ρ, Table 7 indicates that the mean test accuracy varies only
+marginally across ρ ∈[0.5, 1.0] (ranging from 0.6564 to 0.6590), suggesting that SGCN–
+TruncWeighted is not strongly sensitive to this parameter in terms of average performance.
+The more visible effect of ρ lies in robustness and stability. With stricter truncation (e.g.,
+ρ = 0.5), the standard deviation is relatively small (0.0063), consistent with the intuition
+that ﬁltering out lower-quality local models reduces the inﬂuence of noisy or OOD-heavy
+subsamples. As ρ increases, more local models are retained and the aggregation can occa-
+sionally beneﬁt from additional complementary information, which is reﬂected by the highest
+best-case accuracy at ρ = 0.9 (0.7154). However, this comes with increased variability (std
+0.0220), indicating that keeping near-all local models makes the ﬁnal outcome more depen-
+dent on whether a few weak local models are included in a given run. In practice, this suggests
+that overly aggressive truncation may be unnecessary for accuracy, while overly permissive
+truncation may trade stability for occasional gains; we therefore adopt ρ = 0.9 in our default
+setting to preserve the peak performance while keeping the mean accuracy comparable to
+other choices.
+In regard to the maximum subgraph size m, Table 8 shows the most pronounced effect
+among the three hyperparameters. Increasing m leads to a clear monotonic degradation in
+mean accuracy from 0.6731 (m = 200) to 0.6480 (m = 1200), while the best accuracy
+also drops from 0.7136 to 0.6620. This suggests that simply enlarging the subgraph (even if
+memory permits) is not beneﬁcial on Amazon Computers. A plausible explanation is two-
+fold. First, in a co-purchase graph, expanding to larger neighborhoods can introduce more
+heterogeneous and noisy context, which weakens the locality assumption behind subgraph
+training and makes local estimations less reliable. Second, larger subgraphs tend to overlap
+more across epochs, so different local models become more correlated and provide less com-
+plementary information for aggregation; the beneﬁt of ensembling multiple local estimations
+is then reduced. In practice, these results recommend using relatively small subgraphs on this
+dataset, and we choose m = 200 as the default since it achieves the best mean performance
+as well as the strongest best-case result.
+Inregardtothenumberofsubgraphsineachglobalepoch R,Table9indicatesthatthemean
+accuracy is similar for R ∈{10, 20, 40} (0.6571–0.6587), which suggests limited sensitivity
+in average performance. The primary effect again appears in stability: the variance is notably
+larger at R = 10 (std 0.0190) and becomes smaller at R = 20 or R = 40 (std 0.0102).
+This pattern is expected because a larger R effectively averages over more independently
+sampled subgraphs within each global epoch, reducing the randomness introduced by any
+123
+
+Annals of Operations Research
+Table 8 Sensitivity to subgraph
+size m.
+m
+Mean Test Acc. (mean±std)
+Best Test Acc.
+200
+0.6731 ± 0.0117
+0.7136
+500
+0.6600 ± 0.0064
+0.6663
+800
+0.6509 ± 0.0120
+0.6659
+1200
+0.6480 ± 0.0064
+0.6620
+Table 9 Sensitivity to global
+epoch R.
+R
+Mean Test Acc. (mean±std)
+Best Test Acc.
+10
+0.6571 ± 0.0190
+0.7072
+20
+0.6587 ± 0.0102
+0.6797
+40
+0.6582 ± 0.0102
+0.6714
+single atypical subsample. Meanwhile, increasing R also increases computation in each
+global epoch, and the best accuracy does not improve monotonically with R (e.g., 0.7072 at
+R = 10 versus 0.6797 at R = 20). This suggests diminishing returns beyond a moderate R
+and motivates a trade-off between stability and efﬁciency. We therefore use R = 20 as the
+default conﬁguration on Amazon Computers, which achieves low variance while maintaining
+competitive mean accuracy.
+Overall, the results suggest that our method is broadly robust to ρ and R in terms of mean
+accuracy, and these two parameters mainly regulate the stability–efﬁciency trade-off: smaller
+ρ and larger R generally reduce variance, while larger ρ or smaller R may yield occasional
+best-case improvements at the cost of higher variability. In contrast, m has a substantially
+larger effect and should not be increased blindly; for Amazon Computers, smaller subgraphs
+are consistently preferable. Based on the above sensitivity study, we use ρ = 0.9, m = 200,
+and R = 20 as the default hyperparameter setting for Amazon experiments unless otherwise
+speciﬁed.
+5 Conclusion
+This paper proposes the SGCN framework to address the scalability limitations and
+distribution-shift sensitivity commonly encountered by GCNs when applied to large-scale
+graph-based operating systems. Large systems, such as transportation networks, supply-
+chain structures, energy systems, and complex network-ﬂow environments, are typically
+characterized by massive graph size, structural non-stationarity, and pervasive noise. To cope
+with these challenges, SGCN introduces a multi-subgraph parallel training framework com-
+bined with performance-aware weighting for parameter aggregation. This design achieves a
+balanced trade-off among structural representation ﬁdelity, multi-source noise suppression,
+and computational efﬁciency. From a scalability perspective, SGCN decomposes the full-
+graph GCN training procedure into a sequence of size-controlled subgraph learning tasks,
+thereby avoiding global neighborhood expansion and providing a practical training route
+for ultra-large graphs in transportation, supply-chain, and power-grid systems. The com-
+positional subgraph-parallel mechanism signiﬁcantly reduces memory and computational
+cost and naturally supports multi-GPU or distributed deployment, enabling engineering-
+level applicability of GCNs in industrial scenarios of operations research. From a robustness
+123
+
+Annals of Operations Research
+perspective, SGCN automatically down-weights subgraphs affected by OOD nodes, pro-
+ducing stable global representations without relying on explicit anomaly-detection modules.
+Experimental results demonstrate that SGCN maintains substantially more stable perfor-
+mance under both mild perturbations and severe OOD corruption, allowing it to adapt to the
+structural evolution and localized distortions widely observed in real-world operating sys-
+tems. Despite these advantages, SGCN may face limitations in several challenging regimes.
+On extremely sparse graphs, subgraph sampling may cover too few informative neighbor-
+hoods, making message passing less effective and increasing reliance on node features. On
+highly dynamic graphs with frequent topology changes, subgraphs sampled at different times
+may follow rapidly shifting distributions, which can reduce training stability if the sampling
+schedule and aggregation weights are not adapted accordingly. In addition, the effectiveness
+of performance-aware weighting depends on a reliable validation signal; under severe label
+scarcity or non-stationary label distributions, weight estimation may become noisy and less
+discriminative.
+Looking forward, we aim to further investigate subgraph scheduling strategies, adap-
+tive sampling mechanisms for dynamic graphs, and extensions of SGCN to heterogeneous,
+multilayer, and temporal networks, with the goal of strengthening its applicability to
+industrial-scale systems. In particular, future work will explore sparsity-aware sampling that
+explicitly targets rare but informative regions, streaming or incremental variants of SGCN
+for continuously evolving graphs, and robustness-aware weighting rules that remain stable
+under limited or drifting validation feedback.
+Acknowledgements This research was funded by the National Natural Science Foundation of China (No.
+72301070), the Major Project of National Social Science Foundation of China (NO. 22&ZD072), and “the
+Fundamental Research Funds for the Central Universities, China” in UIBE (CXTD14-05).
+Funding Open access funding provided by Fu Jen Catholic University The Major Project of National Social
+Science Foundation of China (NO. 22&ZD072).
+Declarations
+Conﬂict of interest All authors certify that they have no afﬁliations with or involvement in any organization
+or entity with any ﬁnancial interest or non-ﬁnancial interest in the subject matter or materials discussed in this
+manuscript.
+Open Access This article is licensed under a Creative Commons Attribution-NonCommercial-NoDerivatives
+4.0 International License, which permits any non-commercial use, sharing, distribution and reproduction
+in any medium or format, as long as you give appropriate credit to the original author(s) and the source,
+provide a link to the Creative Commons licence, and indicate if you modiﬁed the licensed material. You do
+not have permission under this licence to share adapted material derived from this article or parts of it. The
+images or other third party material in this article are included in the article’s Creative Commons licence,
+unless indicated otherwise in a credit line to the material. If material is not included in the article’s Creative
+Commons licence and your intended use is not permitted by statutory regulation or exceeds the permitted use,
+you will need to obtain permission directly from the copyright holder. To view a copy of this licence, visit
+http://creativecommons.org/licenses/by-nc-nd/4.0/.
+Appendix
+To complementthe analyses presented in Section 4.4, we provide additionalsimulation results
+illustrating the stability, variance, and temporal evolution of local model performance under
+different subsampling strategies. The goal of this appendix is to offer a more comprehensive
+123
+
+Annals of Operations Research
+Fig. 13 Validation accuracy distributions of local models at epoch 49 on the Cora dataset. Random Node and
+Random Edge sampling yield the most stable local models, while Random Walk and Snowball exhibit greater
+variance.
+Fig. 14 Validation accuracy distributions of local models at epoch 49 on the Pubmed dataset. Node- and
+edge-based sampling achieve the most stable performance, whereas Snowball displays the largest variance.
+view of how subgraph construction affects the distribution of validation accuracies throughout
+the training process, thereby supporting the conclusions reported in the main text.
+Cora: Local model stability Figure 13 displays the distribution of local model validation
+accuracies at epoch 49 on the Cora dataset across four subsampling strategies. Consistent
+with the observations in Section 4.4.1, Random Node and Random Edge sampling produce
+compact and concentrated distributions, indicating highly stable subgraph models. In con-
+trast, Random Walk and Snowball strategies exhibit notably wider spreads, reﬂecting higher
+variance in local estimators and less uniform subgraph quality. These patterns conﬁrm that
+node- and edge-based sampling remain the most reliable options on small, sparse graphs
+such as Cora.
+123
+
+Annals of Operations Research
+Fig. 15 Temporal evolution of local model validation accuracy distributions on the Pubmed dataset under
+different subsampling strategies, evaluated every 10 epochs. Random Node and Random Edge sampling
+maintain the most stable performance, while Random Walk and Snowball show substantially higher variance.
+123
+
+Annals of Operations Research
+Pubmed: Local model stability Figure 14 reports analogous results on the Pubmed dataset.
+Compared with Cora, the larger scale and denser connectivity of Pubmed amplify the dif-
+ferences among subsampling methods. Node- and edge-based sampling again lead to the
+highest and most concentrated accuracy distributions, while Snowball produces the widest
+distribution and the lowest mean accuracy. These ﬁndings reinforce the conclusion that uni-
+formly exploring the neighborhood structure–rather than accumulating expansion layers as
+in Snowball–is crucial for stable local model performance on large graphs.
+Pubmed: Temporal evolution of local model variance. In addition to single-epoch statistics,
+Figure 15 visualizes the accuracy distributions evaluated every 10 epochs on Pubmed. This
+temporal view reveals two notable phenomena. First, Random Node and Random Edge sam-
+pling consistently maintain narrow interquartile ranges throughout training, demonstrating
+stable convergence dynamics. Second, Random Walk and especially Snowball exhibit large
+variance in the early epochs, with unstable outliers persisting into later training stages. This
+suggests that Snowball sampling tends to generate uneven subgraph structures, leading to
+ﬂuctuating training trajectories that require more epochs to stabilize.
+References
+Ahmed, K. R., Ansari, M. E., Ahsan, M. N., Rohan, A., Uddin, M. B., & Rivin, M. A. H. (2025). Deep learning
+framework for interpretable supply chain forecasting using som ann and shap. Scientiﬁc Reports, 15(1),
+26355.
+Antony, A., Alaka, P., & Tulasi, B. (2025). Enhancing supply chain management through graph analytics.
+IJSAT-International Journal on Science and Technology 16(2).
+Bajaj, S., Son, H., Liu, J., Guan, H., & Seraﬁni, M. (2024). Graph neural network training systems: A perfor-
+mance comparison of full-graph and mini-batch. Proc. VLDB Endow., 18(4), 1196–1209.
+Balin, M.F., & Çatalyürek, Ü.V. (2022). Layer-neighbor sampling - defusing neighborhood explosion in gnns.
+In: Neural Information Processing Systems
+Baygin, M., Tuncer, T., Dogan, S., Tan, R.-S., & Acharya, U. R. (2021). Automated arrhythmia detection with
+homeomorphically irreducible tree technique using more than 10,000 individual subject ecg records.
+Information Sciences, 575, 323–337.
+Benzidia, S., Makaoui, N., & Bentahar, O. (2021). The impact of big data analytics and artiﬁcial intelli-
+gence on green supply chain process integration and hospital environmental performance. Technological
+Forecasting and Social Change, 165, Article 120557.
+Chen, J., Ma, T., & Xiao, C. (2018). Fastgcn: Fast learning with graph convolutional networks via importance
+sampling. CoRR arXiv:abs/1801.10247
+Chen, L., Zhu, H., & Han, S. (2025). Stability-optimized graph convolutional network: A novel propagation
+rule with constraints derived from odes. Mathematics 13(5).
+Chen, H., Chen, P., Wang, B., Yu, X., Chen, X., Ma, D., & Zheng, Z. (2024). Graph neural network based
+robust anomaly detection at service level in sdn driven microservice system. Computer Networks, 239,
+Article 110135.
+Chen, H., Huang, Z., Xu, Y., Deng, Z., Huang, F., He, P., & Li, Z. (2022). Neighbor enhanced graph convo-
+lutional networks for node classiﬁcation and recommendation. Knowledge-Based Systems, 246, Article
+108594.
+Chen, C. Y. T., Sun, E. W., Chang, M.-F., & Lin, Y.-B. (2024). Enhancing travel time prediction with deep learn-
+ing on chronological and retrospective time order information of big trafﬁc data. Annals of Operations
+Research, 343(3), 1095–1128.
+Chiang, W.-L., Liu, X., Si, S., Li, Y., Bengio, S., & Hsieh, C.-J. (2019). Cluster-gcn: An efﬁcient algorithm
+for training deep and large graph convolutional networks. In: Proceedings of the 25th ACM SIGKDD
+International Conference on Knowledge Discovery & Data Mining. KDD ’19, pp. 257–266.
+Dai, D., Karlsson, H., Månsson, K., & Choi, I. (2025). Nowcasting carbon emissions in a data-rich environment:
+a comparison of dynamic factor models and machine learning algorithms. Annals of Operations Research,
+1–28
+Espín-Noboa, L., Karimi, F., Ribeiro, B., Lerman, K., & Wagner, C. (2021). Explaining classiﬁcation perfor-
+mance and bias via network structure and sampling technique. Applied Network Science, 6(1), 78.
+123
+
+Annals of Operations Research
+Hamilton, W.L., Ying, R., & Leskovec, J. (2017). Inductive representation learning on large graphs. In:
+Advances in Neural Information Processing Systems (NeurIPS 2017), pp. 1024–1034.
+Han, H.-C., & Huang, D.-C. (2025). Graph-theoretic detection of anomalies in supply chains: A por-based
+approach using laplacian ﬂow and sheaf theory. Mathematics 13(11).
+Hosny, A., & Reda, S. (2024). Automatic milp solver conﬁguration by learning problem similarities. Annals
+of Operations Research, 339(1), 909–936.
+Huang, W., Zheng, T., Wang, R., Zhu, T., Hu, B., He, S., Song, M., Wang, X., Wu, S., & Chen, C. (2025).
+Efﬁcient Distributed Graph Neural Network Training With Source Chunking and Moving Aggregation.
+IEEE Transactions on Knowledge & Data Engineering, 37(12), 7090–7104.
+Hu, J., Chu, C., Criado, R., Chen, J., Hao, S., & Wang, M. (2025). Visibility graph and graph convolution
+networks-based segmentation of carbon emission in china. Annals of Operations Research, 348(1), 609–
+630.
+Hussain, H., Duricic, T., Lex, E., Helic, D., Strohmaier, M., & Kern, R. (2021). Structack: Structure-based
+adversarial attacks on graph neural networks. In: Proceedings of the 32st ACM Conference on Hypertext
+and Social Media. HT ’21, pp. 111–120.
+Hu, Y., & Wang, W. (2024). Network-adjusted covariates for community detection. Biometrika, 111(4), 1221–
+1240.
+Hu, Y., & Wang, W. (2024). Network-adjusted covariates for community detection. Biometrika, 111, 1221–
+1240.
+Jin, W., Ma, Y., Liu, X., Tang, X., Wang, S., & Tang, J. (2020). Graph structure learning for robust graph neural
+networks. Proceedings of the 26th ACM SIGKDD International Conference on Knowledge Discovery
+& Data Mining
+Ju, W., Yi, S., Wang, Y., Xiao, Z., Mao, Z., Li, H., Gu, Y., Qin, Y., Yin, N., Wang, S., Liu, X., Luo, X., Yu,
+P.S., & Zhang, M. (2024). A survey of graph neural networks in real world: Imbalance, noise, privacy
+and ood challenges. IEEE transactions on pattern analysis and machine intelligence PP.
+Kipf, T.N., & Welling, M. (2017). Semi-supervised classiﬁcation with graph convolutional networks. In:
+International Conference on Learning Representations (ICLR)
+Lee, C.S., Hewes, V., Cerati, G., Wang, K., Aurisano, A., Agrawal, A., Choudhary, A., & Liao, W.-K. (2024).
+Addressing gpu memory limitations for graph neural networks in high-energy physics applications.
+Frontiers in High Performance Computing 2.
+Lee, S., Choi, J., & Son, Y. (2024). Efﬁcient visibility algorithm for high-frequency time-series: application
+to fault diagnosis with graph convolutional network. Annals of Operations Research, 339(1), 813–833.
+Li, F., Wang, Y., Du, X., Li, X., & Yu, G. (2024). Out-of-distribution node detection based on graph heat kernel
+diffusion. Mathematics 12(18).
+Li, H., Wang, X., Zhang, Z., & Zhu, W. (2025). Out-of-distribution generalization on graphs: A survey. IEEE
+Transactions on Pattern Analysis and Machine Intelligence, 1–20.
+Li, Z., Wu, Q., Nie, F., & Yan, J. (2022). GraphDE: A generative framework for debiased learning and out-of-
+distribution detection on graphs. In: Advances in Neural Information Processing Systems, vol. 35, pp.
+30277–30290.
+Li, Y., Liu, X., Liang, P., Wang, B., Yuan, X., & Zhang, L. (2026). Msa-gcn: A multi-modal spatiotemporal
+attention graph convolutional network for robust bearing fault diagnosis in noisy environments. Applied
+Soft Computing, 186, Article 114295.
+Lin, X., Cao, Y., Sun, N., Zou, L., Zhou, C., Zhang, P., Zhang, S., Zhang, G., & Wu, J. (2025). Conformal
+graph-level out-of-distribution detection with adaptive data augmentation. In: Proceedings of the ACM
+on Web Conference 2025. WWW ’25, pp. 4755–4765.
+Liu, Y., Wu, D., & Liang, Y. (2025). Survey on graph-based reinforcement learning for networked coordination
+and control. Automation 6(4).
+Li, H., Wang, X., Zhang, Z., & Zhu, W. (2022). Ood-gnn: Out-of-distribution generalized graph neural network.
+IEEE Transactions on Knowledge and Data Engineering, 35(7), 7328–7340.
+Li, W., Wei, W., Wang, P., Pan, L., Yang, B., & Xu, Y. (2025). Research on gnns with stable learning. Scientiﬁc
+Reports, 15(1), 29002.
+Motie, S., & Raahemi, B. (2024). Financial fraud detection using graph neural networks: A systematic review.
+Expert Systems with Applications, 240, Article 122156.
+Mu, Z., Tang, S., Zong, C., Yu, D., & Zhuang, Y. (2023). Graph neural networks meet with distributed graph
+partitioners and reconciliations. Neurocomputing, 518, 408–417.
+Non-representative sampled networks. (2024). Estimation of network structural properties by weighting. Jour-
+nal of Econometrics,240(1), Article 105689.
+Otala, J., Minard, A., Madraki, G., & Mousavian, S. (2021). Graph-based modeling in shop scheduling prob-
+lems: Review and extensions. Applied Sciences 11(11).
+123
+
+Annals of Operations Research
+R, R. (2025). Memory-efﬁcient probabilistic graph attention networks for large-scale node classiﬁcation.
+International Journal of Applied Mathematics, 38, 125–148.
+Saen, R.F., Youseﬁ, F., & Azadi, M. (2024). Artiﬁcial intelligence powered predictions: enhancing supply
+chain sustainability. Annals of Operations Research, 1–44.
+Sen, P., Namata, G., Bilgic, M., Getoor, L., Galligher, B., & Eliassi-Rad, T. (2008). Collective classiﬁcation
+in network data, 29, 93.
+Shah, N., Beutel, A., Hooi, B., Akoglu, L., Günnemann, S., Makhija, D., Kumar, M., & Faloutsos, C. (2016).
+Edgecentric: Anomaly detection in edge-attributed networks. 2016 IEEE 16th International Conference
+on Data Mining Workshops (ICDMW), 327–334.
+Shchur, O., Mumme, M., Bojchevski, A., & Günnemann, S. (2018). Pitfalls of graph neural network evaluation.
+Relational Representation Learning Workshop, NeurIPS 2018.
+Sheng, Z., Zhang, W., Tao, Y., & Cui, B. (2024). Outre: An out-of-core de-redundancy gnn training framework
+for massive graphs within a single machine. Proc. VLDB Endow., 17(11), 2960–2973.
+Song, Y., & Wang, D. (2022). Learning on graphs with out-of-distribution nodes. In: Proceedings of the 28th
+ACM SIGKDD Conference on Knowledge Discovery and Data Mining. KDD ’22, pp. 1635–1645.
+Uzunoglu, A., Gahm, C., & Tuma, A. (2024). A machine learning enhanced multi-start heuristic to efﬁciently
+solve a serial-batch scheduling problem. Annals of Operations Research, 338(1), 407–428.
+Wang, D., Zhu, J., Yin, Y., Ignatius, J., Wei, X., & Kumar, A. (2024). Dynamic travel time prediction with
+spatiotemporal features: using a gnn-based deep learning method. Annals of Operations Research, 340(1),
+571–591.
+Wan, X., Xu, K., Liao, X., Jin, Y., Chen, K., & Jin, X. (2023). Scalable and efﬁcient full-graph gnn training
+for large graphs. Proceedings of the ACM on Management of Data, 1(2), 1–23.
+Wolfe, C. R., Yang, J., Liao, F., Chowdhury, A., Dun, C., Bayer, A., Segarra, S., & Kyrillidis, A. (2024). Gist:
+Distributed training for large-scale graph convolutional networks. Journal of Applied and Computational
+Topology, 8(5), 1363–1415.
+Xiao, Y., Zhu, Y., & Huang, D. (2025). Adaptive subsampling spectral clustering based on second-order
+neighbour relationships for sparse networks. Stat 14(4).
+Xu, H., Zhu, T., Zhang, L., Zhou, W., & Yu, P.S. (2023). Machine unlearning: A survey. ACM Comput. Surv.
+56(1).
+Xu, J., Chen, J., You, S., Xiao, Z., Yang, Y., & Lu, J. (2021). Robustness of deep learning models on graphs:
+A survey. AI Open, 2, 69–78.
+Ye, X., Liu, D., Li, T., & Li, W. (2025). Heterogeneous business network based interpretable competitive ﬁrm
+identiﬁcation: a graph neural network method. Annals of Operations Research, 347(2), 1133–1161.
+Yousuf, M. I., Anwer, I., & Anwar, R. (2023). Empirical characterization of graph sampling algorithms. Social
+Network Analysis and Mining, 13(1), 66.
+Zeng, H., Zhou, H., Srivastava, A., Kannan, R., & Prasanna, V. (2020). Graphsaint: Graph sampling based
+inductive learning method. In: International Conference on Learning Representations
+Zhang, X., & Zitnik, M. (2020). Gnnguard: Defending graph neural networks against adversarial attacks. In:
+Advances in Neural Information Processing Systems, pp. 9263–9275.
+Zhang, H., An, N., & Zhu, X. (2022). Structural dynamic reliability analysis of super large-scale lattice
+domes during earthquakes using the stochastic ﬁnite element method. Soil Dynamics and Earthquake
+Engineering, 153, Article 107076.
+Zhang, Q., Wipf, D., Gan, Q., & Song, L. (2021). A biased graph neural network sampler with near-optimal
+regret. Advances in Neural Information Processing Systems, 34, 8833–8844.
+Zhang, H., Zhou, Y., Xu, H., Shi, J., Lin, X., & Gao, Y. (2025). Graph neural network approach with spatial
+structure to anomaly detection of network data. Journal of Big Data, 12(1), 105.
+Zhao, J., Dong, Z., Yao, X.,& Xi, X. (2024). Optimizing collaboration decisions in technological innova-
+tion through machine learning: identify trend and partners in collaboration-knowledge interdependent
+networks. Annals of Operations Research, 1–42.
+Zhou, J., Cui, G., Hu, S., Zhang, Z., Yang, C., Liu, Z., Wang, L., Li, C., & Sun, M. (2020). Graph neural
+networks: A review of methods and applications. AI Open, 1, 57–81.
+Zhou, Q., Shen, Y., & Chen, L. (2025). Faster convergence in mini-batch graph neural networks training with
+pseudo full neighborhood compensation. Proceedings of the VLDB Endowment, 18, 4309–4322.
+Zhu, Y., Bao, Y., Qin, L., Sun, Q., Shia, B.-C., & Chen, M.-C. (2025). Resilience analysis based on multi-layer
+network community detection of supply chain network. Annals of Operations Research, 1–25.
+Zhu, Y., Wang, R., Feng, M., Qin, L., Shia, B.-C., & Chen, M.-C. (2024). Supply chain analysis based on
+community detection of multi-layer weighted networks. Mathematics 12(22).
+Zhu, D., Zhang, Z., Cui, P., & Zhu, W. (2019). Robust graph convolutional networks against adversarial attacks.
+In: Proceedings of the 25th ACM SIGKDD International Conference on Knowledge Discovery & Data
+Mining, pp. 1399–1407.
+123
+
+Annals of Operations Research
+Zhu, R., Zhao, K., Yang, H., Lin, W., Zhou, C., Ai, B., Li, Y., & Zhou, J. (2019). Aligraph: a comprehensive
+graph neural network platform. Proceedings of the VLDB Endowment, 12(12), 2094–2105.
+Publisher’s Note Springer Nature remains neutral with regard to jurisdictional claims in published maps and
+institutional afﬁliations.
+123

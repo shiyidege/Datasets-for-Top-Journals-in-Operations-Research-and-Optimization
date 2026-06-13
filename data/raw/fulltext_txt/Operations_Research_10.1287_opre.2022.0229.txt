@@ -1,0 +1,1782 @@
+TITLE: A Surrogate-Based Asynchronous Decomposition Technique for Realistic Security-Constrained Optimal Power Flow Problems
+JOURNAL: Operations_Research
+YEAR: 2023
+DOI: https://doi.org/10.1287/opre.2022.0229
+---
+
+LLNL-JRNL-820136
+Solving realistic
+security-constrained optimal
+power flow problems
+C. G. Petra, I. Aravena Solis
+March 3, 2021
+Journal of Operations Research
+
+Disclaimer 
+ 
+This document was prepared as an account of work sponsored by an agency of the United States 
+government. Neither the United States government nor Lawrence Livermore National Security, LLC, 
+nor any of their employees makes any warranty, expressed or implied, or assumes any legal liability or 
+responsibility for the accuracy, completeness, or usefulness of any information, apparatus, product, or 
+process disclosed, or represents that its use would not infringe privately owned rights. Reference herein 
+to any specific commercial product, process, or service by trade name, trademark, manufacturer, or 
+otherwise does not necessarily constitute or imply its endorsement, recommendation, or favoring by the 
+United States government or Lawrence Livermore National Security, LLC. The views and opinions of 
+authors expressed herein do not necessarily state or reflect those of the United States government or 
+Lawrence Livermore National Security, LLC, and shall not be used for advertising or product 
+endorsement purposes. 
+ 
+
+Submitted to Operations Research
+manuscript (Please, provide the manuscript number!)
+Authors are encouraged to submit new papers to INFORMS journals by means of
+a style file template, which includes the journal title. However, use of a template
+does not certify that the paper has been accepted for publication in the named jour-
+nal. INFORMS journal templates are for the exclusive purpose of submitting to an
+INFORMS journal and should not be used to distribute the papers in print or online
+or to submit the papers to another publication.
+A surrogate-based asynchronous decomposition
+technique for realistic security-constrained optimal
+power flow problems
+Cosmin G. Petra
+Lawrence Livermore National Laboratory, petra1@llnl.gov
+Ignacio Aravena
+Lawrence Livermore National Laboratory, aravenasolis1@llnl.gov
+We present a decomposition approach for obtaining good feasible solutions for the security-constrained
+alternating-current optimal power flow (SC-AC-OPF) problem at an industrial scale and under real-world
+time and computational limits. The approach was designed while preparing and participating in ARPA-E’s
+Grid Optimization Competition (GOC) Challenge 1. The challenge focused on a near-real-time version of
+the SC-AC-OPF problem where a base operating point is optimized taking into account possible single-
+element contingencies, after which the system adapts its operating point following the response of automatic
+frequency droop controllers and voltage regulators. Our solution approach for this problem relies on state-
+of-the-art nonlinear programming algorithms and it employs nonconvex relaxations for complementarity
+constraints, a specialized two-stage decomposition technique with sparse approximations of recourse terms,
+and contingency ranking and pre-screening. The paper describes and justifies our approach, and outlines the
+features of its implementation, including functions and derivatives evaluation, warm-starting strategies and
+asynchronous parallelism. We discuss the results of the independent benchmark of our approach by ARPA-
+E’s GOC team in Challenge 1, where it was found to consistently produce high quality solutions across a
+wide range of network sizes and difficulty, and conclude by outlining future extensions of the approach.
+Key words : optimal power flow, computational optimization, nonlinear programming, large-scale
+optimization
+LLNL Release Number: LLNL-JRNL-820136
+1
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+2
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+1. Introduction
+Industry practices for power systems scheduling and operation rely upon optimization tools that
+were designed and specialized for conventional networks. In these networks, roughly speaking,
+large-scale generators inject power into the bulk transmission system, then the transmission system
+transport the power to step down substations, from which distribution grids draw power in order
+to deliver it to final consumers. Emerging technologies disrupt this conventional model at several
+levels, among them: (i) intermittent resources (wind and solar generation) make current security
+and reliability requirements inadequate, (ii) distributed generation can reverse the direction of
+power flows, and (iii) storage and demand response allow reshaping demand, moving it both in
+time (batteries) and space (electric vehicles). Existing optimization tools do not acknowledge the
+characteristics of these emerging technologies in modern power grids, leading to multiple problems
+ranging from computational performance (solution time) to incomplete pricing, with potential
+consequences that can affect from short-term security and resilience, up to long-term adequacy.
+These challenges have inspired an important stream of research over the last decades, including
+the study of convex relaxations and novel approximations for the alternating current optimal power
+flow (AC-OPF) problem (?), increasing network flexibility via topology control (?), integrating
+uncertainty explicitly (?), integrating distributed resources into scheduling (?), among others.
+These research efforts, however, have had only limited impacts in actual power systems operations,
+in great part because operational requirements are selectively included or omitted from these
+studies, and merging the proposed improvements with the full range of operational requirements
+is most often non-trivial.
+In this paper we present a scalable method for computing good feasible solutions to the AC-
+OPF problem with realistic operational requirements, in particular, considering security, limited
+computational resources, and strict execution time constraints. The OPF problem seeks to find
+optimal settings for power generation and grid control equipment so as to minimize operating
+cost. These settings need to be secure, in the sense that the system should be able to continue
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+3
+operating under any credible contingency event, without losing balance or falling towards a blackout
+(?). The optimization problem considering both the cost minimization and security aspects is
+known as the security-constrained alternating current optimal power flow (SC-AC-OPF) problem.
+Computational resources to solve the SC-AC-OPF are limited to those accessible to power system
+operators and the maximum time to produce a SC-AC-OPF feasible solution is limited by the need
+to recurrently solve the problem, that is, a few minutes in near-real-time operations and under 1
+hour for offline planning.
+The importance of SC-AC-OPF cannot be overstated; it is solved (in the sense of finding a
+feasible point) by almost every power system operator worldwide, on a daily basis, as part of tasks
+ranging from short-term planning (unit commitment, economic dispatch) up to long-term adequacy
+assessment (reliability studies, expansion planning). Solving SC-AC-OPF accurately is a critical
+function upon which depend the reliability, security and efficiency of power systems, as well as the
+correct functioning of other critical infrastructure dependent on electricity.
+The SC-AC-OPF solution method presented in this paper exploits state-of-the-art computational
+optimization and parallel computing, while observing realistic computational and execution time
+limitations. The method was designed within the scope of ARPA-E’s Grid Optimization Compe-
+tition (GOC) Challenge 1 (?), part of a wider initiative by the U.S. government agency to spur
+development of new, modern and innovative software for the modernized grid. Our method was
+independently tested during Challenge 1 using synthetic and real power grids, with sizes ranging
+from 1 000 up to 30 000 buses, that is, at the scale of current industry needs for optimization soft-
+ware (?), (?). It provided satisfactory results in all cases of Challenge 1, finding the best-known
+solution in 58% of the cases and coming very close to the best-known solution in all other cases;
+with an average gap of 0.15% for near-real-time cases and 0.21% for offline cases (?).
+The rest of this paper is organized as follows. Section ?? reviews the state-of-the-art in meth-
+ods for finding feasible solutions for realistic SC-AC-OPF problems and states our contributions.
+Section ?? summarizes the formulation used in Challenge 1 as well as our reformulation, approx-
+imations, and relaxations of the complicating aspects of the problem. Section ?? presents our
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+4
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+solution approach, based on decomposition ideas, relaxation and feasibility recovery, and sparse
+approximations for recourse functions. Section ?? outlines our computational implementation and
+reviews important considerations when solving these problems in practice. Section ?? summarizes
+our numerical experiments conducted during Challenge 1. Conclusions and directions for further
+research are presented in Section ??.
+2. State-of-the-art and contributions
+We describe the SC-AC-OPF problem, its history, the state-of-the-art, and the setup of ARPA-
+E GOC Challenge 1 in detail in an introductory paper to the subject (?). In the following we
+summarize important aspects to present our approach and contextualize its contributions.
+Solving SC-AC-OPF entails two major challenges. First, SC-AC-OPF problems, which incorpo-
+rate AC power flow as equality constraints, are nonconvex, may have multiple local optima (?),
+and are NP-hard (?), (?). Second, industrial SC-AC-OPF instances are large-scale optimization
+problems, with tens of millions of variables and constraints, and solutions are required, reliably,
+within minutes.
+Academic approaches to SC-AC-OPF, in their majority, focus on the first challenge, that is,
+developing tractable approximations and relaxations of the SC-AC-OPF problem, or subproblems
+within it, such as the AC optimal power flow (AC-OPF) (?). Relaxations have shown promise in
+computing tight bounds on AC-OPF, however, in an aspect that they share with approximations,
+recovering feasible solutions from the relaxed or approximated solutions have proven no easier than
+solving the AC-OPF problem from scratch. Among the literature that does consider the security
+aspect of SC-AC-OPF, significant effort has been dedicated to contingency screening methods,
+that is methods to select a subset of the credible contingencies such that solving SC-AC-OPF
+considering only those contingencies in the subset is equivalent to solving it with all credible con-
+tingencies (?). Proposed numerical methods to solve SC-AC-OPF, with either a subset or all cred-
+ible contingencies, exploit parallel computing at multiple scales, ranging from multi-threading to
+high-performance computing, using either optimization-based decomposition (?) or linear-algebra
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+5
+decomposition (??). Solving SC-AC-OPF continues to be an area of active research, with recent
+advances in, among others, improving the tracatability of transition constraints from base case to
+post-contingency (??) and novel—theoretically validated—machine learning techniques for solving
+SC-AC-OPF (?).
+Current industrial approaches to SC-AC-OPF, on the other hand, focus on the second chal-
+lenge, that is handling the problem size within the available time and computational resources.
+These approaches typically rely on a two-level decomposition approach resembling sequential lin-
+ear programming (?), (?), where the top level optimizes generators’ outputs and the bottom level
+updates linearizations of the power flow equations for both base (normal) and post-contingency
+(emergency) conditions, commonly in parallel (multi-threaded) and using approximate power flow
+models for contingencies. In addition to linearizations of the power flow equations, the top level
+in these decomposition approaches also includes proxy constraints containing expert knowledge of
+the system or representing physical phenomena not explicitly modeled (e.g., transients).
+As described above, and in more detail in (?), solving SC-AC-OPF remains an open problem.
+Our contributions to the vast body of literature on the subject are twofold. First, we propose an effi-
+cient decomposition approach to solve SC-AC-OPF in near-real-time for real-sized power systems,
+considering the action of frequency droop control and voltage regulators as recourse actions (?),
+elements largely absent in the academic literature. Our decomposition approach employs sparse
+approximations for recourse terms, which are updated in a block-incremental fashion, allowing for
+asynchronous execution. Our approximations only require zero-order information from the recourse
+functions and are based on intuition particular to the SC-AC-OPF problem, but can be generalized
+to other problems with (approximately) sparse non-decreasing, hockey-stick like recourse func-
+tions, i.e., of the type max{0,f(x)} where f : R →R is an increasing convex function. We utilize
+nonlinear relaxations of complementarity constraints to handle the non-smoothness of automatic
+controller actions and propose neighborhood-restricted feasibility recovery methods to obtain fea-
+sible solutions. Our method allows finding good feasible solutions for SC-AC-OPF within 1 to 5
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+6
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+outer iterations—which is as much as an operator can afford during near-real-time operations—in
+contrasts with the tens or hundreds of iterations for methods proposed in the academic literature. It
+also differs from methods currently used in industry in allowing for asynchronous execution, which
+maximizes its effectiveness in parallel, while also including the exact AC power flow constraints
+as oppossed to a linearization, making it possible to recover feasible base operating points at each
+iteration.
+Second, we detail an implementation of our approach using state-of-the-art nonlinear program-
+ming and parallel computing techniques, which permit the solution of full AC-OPF problems for
+all contingencies, as opposed to the approximations used in the literature (??), which can lead
+to misrepresentation of the effects of contingencies in the system (namely, global effects of con-
+tingencies due to automatic action of droop frequency controllers). Our methodology allows us to
+effectively compute good SC-AC-OPF solutions for systems with up to 70 000 buses and 20 000
+contingencies (?) in 15 minutes, that is, its capabilities exceed the current needs of most power
+system operators worldwide, solving the computational challenges required to bring SC-AC-OPF
+to near-real-time operations. We provide our implementation of the approach in (?), to facilitate
+benchmarking and future advances in the area.
+3. SC-AC-OPF formulation
+ARPA-E GOC Challenge 1 posed a near-real-time version of SC-AC-OPF (?): finding the lowest
+cost generator production levels that would satisfy consumer demand for a base case (where all
+power equipment is available), so that operational constraints can be satisfied even if a contingency
+(sudden loss of certain equipment) were to happen, while taking into account the actions of auto-
+matic controllers, e.g., frequency droop control and voltage regulators, in response to contingencies.
+We introduce the SC-AC-OPF problem in detail in (?, Section 2) and present only a summarized
+version of the problem in this section, followed by our reformulations of select aspects of the prob-
+lem, with particular attention to the modeling of automatic controllers. Regarding notation, unless
+indicated otherwise, we use lowercase letters for variables, boldface lowercase for vectors, uppercase
+letters for parameters, and calligraphic letters for sets.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+7
+3.1. ARPA-E GOC Challenge 1 official SC-AC-OPF formulation
+Let K be the set of credible contingencies, K0 = K ∪{0} the set power flow cases—where 0 denotes
+the base case, N the set of buses, and G the set of generators. For power flow case k ∈K0, let pg,k
+and qg,k be the active and reactive power of generator g ∈G, bn,k be the variable shunt susceptance
+at bus n ∈N, vn,k and θn,k be the voltage magnitude and angle at bus n ∈N, σe,o,k and σe,d,k be
+the overload of branch e ∈E at its origin o and destination d terminals, and σP
+n,k and σQ
+n,k be the
+active and reactive imbalance at bus n ∈N. Let δk be the frequency deviation in post-contingency
+case k ∈K. Using this notation, we model SC-AC-OPF as the following mathematical program:
+min
+p,q,b,v,θ,δ,σ
+X
+g∈G
+Cg(pg,0) +
+X
+e∈E
+(Ce(σe,o,0) + Ce(σe,d,0)) +
+X
+n∈N
+ CP
+n
+ σP
+n,0
+
++ CQ
+n
+ σQ
+n,0
+
++
+1
+|K|
+ X
+e∈E(k)
+(Ce(σe,o,k) + Ce(σe,d,k)) +
+X
+n∈N
+ CP
+n
+ σP
+n,k
+
++ CQ
+n
+ σQ
+n,k
+
+!
+(1)
+s.t.
+Base case constraints, k = 0: (p0,q0,b0,v0,θ0,σ0) ∈D(0)
+(2)
+Transition constraints, k ∈K: (p0,pk,δk,v0,vk,qk) ∈T (k)
+(3)
+Post-contingency constraints, k ∈K: (pk,qk,bk,vk,θk,σk) ∈D(k),
+(4)
+where Cg is the piecewise linear cost function of generator g ∈G; Ce is a piecewise linear convex and
+increasing penalization function for overloading branch e ∈E; CP
+n and CQ
+n are convex penalization
+functions for active and reactive power imbalance at bus n ∈N, which are piecewise linear and
+symmetric with respect to 0; D(k) is the set of feasible power flow solutions for power flow case k ∈
+K0; and T (k) is the set of feasible transitions between base case 0 and post-contingency case k ∈K.
+The sets of feasible power flow solutions D(k), k ∈K0, account for bounds on active and reactive
+power of generators, limits on variable shunts’ susceptances, voltage magnitudes, branch thermal
+limits, and power balance. The base case set D(0) considers all equipment to be online, operating
+within normal technical limits. Post-contingency sets D(k), k ∈K, consider only equipment that
+remains online after the contingency event, operating within emergency technical limits.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+8
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+The feasible sets of transitions T (k), k ∈K, model the behavior of frequency droop controllers
+and voltage regulators. We present these sets explicitly in what follows, for an intuitive explanation
+of their definition the reader is referred to (?). We define T (k) as:
+T (k) =
+ p0,pk,δk,v0,vk,qk
+
+∈R|G| × R|G| × R × R|N | × R|N | × R|G|
+
+ pg,0,pg,k,δk
+
+∈T droop(g,k) ∀g ∈G(k),pg,k = 0 ∀g ∈G \ G(k),
+
+vn,0,vn,k,
+X
+g∈G(n,k)
+qg,k
+
+∈T reg(n,k) ∀n ∈N
+
+,
+where T droop(g,k) is the feasible set of transitions for generator g’s active power, G(k) ⊆G is the
+set of online generators post-contingency k, G(n,k) ⊆G(k) is the set of online generators at bus
+n post-contingency k, and T reg(n,k) is the feasible set of transitions for the voltage magnitude of
+bus n post-contingency k. T droop(g,k) is, in turn, defined as:
+T droop(g,k) =
+ p0,pk,δk
+
+∈[P g,P g] × [P g,P g] × [∆,∆]
+∃(ρ+,ρ−) ∈R2 :
+ρ+ −ρ−= pk −(p0 + Agδk),
+0 ≤ρ−⊥P g −pk ≥0, 0 ≤ρ+ ⊥pg,k −P g ≥0
+ 
+,
+(5)
+where P g,P g are bounds on active power for generator g ∈G; ∆,∆are bounds on the frequency
+deviation (which, if not available, can always be computed via interval algebra); Ag ≥0 is the droop
+constant; and ⊥denotes the complementarity operator1. Similarly, T reg(n,k) is defined as:
+T reg(n,k) =
+ v0,vk,q
+
+∈[V n,V n] × [V E
+n ,V
+E
+n ] × [Qn,Qn]
+∃(ν+,ν−) ∈R2 :
+ν+ −ν−= vk −v0, 0 ≤ν−⊥Qn −q ≥0, 0 ≤ν+ ⊥q −Qn ≥0
+
+,
+(6)
+where V n,V n are normal voltage bounds for bus n; V E
+n ,V
+E
+n are emergency voltage bounds for
+bus n; and Qn = P
+g∈G(n,k) Qg, Qn = P
+g∈G(n,k) Qg are bounds on reactive injection at bus n post-
+contingency k.
+3.2. SC-AC-OPF (approximate) re-formulation
+Our approach to SC-AC-OPF is based on decomposing the problem (??) – (??) into base case and
+post-contingency subproblems, iterating between them until an acceptable solution is found. As
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+9
+such, our approach requires efficient methods for solving both the base case and post-contingency
+subproblems, for which we resort to interior point methods (?). This design choice imposes the lim-
+itation that we cannot include (directly) non-smooth expressions in our formulation. The model in
+the previous section includes non-smooth expressions in the thermal limit constraints for branches
+within D(k), which are of the form
+p
+p2 + q2 ≤Rv + σ,
+(7)
+where R > 0, 0 < v ∈[V ,V ], and σ > 0; and in the definition of transition sets T droop(g,k) and
+T reg(n,k) (equations (??) and (??)). At the same time, in order to achieve the computational
+performance necessary for our method to be effective, we need to simplify every aspect of the
+formulation that can be simplified without compromising solution quality. In what follows we detail
+and justify the reformulations, relaxations, and approximations to problem (??) – (??) used in our
+approach to deal with the aforementioned challenges.
+We reformulate the non-smooth thermal limits constraints (??) simply squaring both sides of
+the inequality, which yields p2 +q2 ≤(Rv +σ)2. Whereas the squared form is nonconvex, it should
+be noted that when used within a log-barrier algorithm, it will be added to the objective of each
+barrier subproblem 2 as
+log ((Rv + σ)2 −p2 −q2)
+which is a convex expression and, in fact, a
+self-concordant barrier function for the second-order cone (?).
+The non-smoothness due to complementarity relations in T droop(g,k), defined in (??), and
+T reg(n,k), defined in (??), pose a more significant challenge. Existing smooth formulations, such
+as the Fischer–Burmeister function (?) (which replaces a complementarity relation 0 ≤x ⊥y ≥0
+by ϕ(x,y) = √x2 + y2 −x −y = 0, or by its squared (smooth) version ϕ(x,y)2 = 0) were initially
+probed as an alternative but were ultimately abandoned due to frequent numerical issues when
+optimizing near (0,0). Convex relaxations of these sets were also investigated. Sketches for these
+sets are presented in Fig. ??. We note that both T droop(g,k) and T reg(n,k) present nonsmooth,
+very stiff transitions between affine domains, which makes developing tight convex approximations
+challenging. For instance, we considered approximating these sets by their convex hulls, which are
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+10
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+(a)
+(b)
+p0
+pk
+δk
+P g
+P g
+∆
+∆
+v0
+vk
+q
+V n
+V n
+V n
+V n
+V
+E
+n
+V E
+n
+Qn
+Qn
+Figure 1
+Feasible sets of coupling constraints. (a) corresponds to the feasible set T droop(g,k), defined in (??). (b)
+corresponds to the feasible set T reg(n,k), defined in (??), plotted with the origin at (v0 = 1,vk = 1,q = 0)
+for clarity.
+polyhedral and can be easily described as convex combinations of, at most, 8 extreme points. This
+approach, while numerically stable, leads to very loose relaxations, for which there is no incentive
+in the objective for the optimal to remain near a feasible point and was ultimately abandoned due
+to the impossibility of recovering good feasible solutions from it.
+Finally, we opted for relaxing complementarity relations in the set definitions (??) and (??)
+by replacing 0 ≤x ⊥y ≥0 by x ≥0,y ≥0,x · y ≤ϵXY , where ϵ ∈(0,1) is a small constant (e.g.,
+ϵ = 10−4), and X and Y are upper bounds for x and y. A depiction of this relaxation is presented in
+Fig. ??. We denote the transition sets with complementarity constraints replaced by their nonlinear
+relaxation, with constant ϵ ∈(0,1), as ˆT droop
+ϵ
+(g,k) and ˆT reg
+ϵ
+(n,k). This approach can be thought as
+the middle ground between ill-conditioned smooth equivalents and well-conditioned but loose con-
+vex approximations. The non-convex relaxation keeps numerical issues under control (in the worst
+case, one can simply increase ϵ), while providing almost-feasible solutions, suitable for approximate
+evaluations within our iterative decomposition procedure for SC-AC-OPF.
+Regarding simplifications applied to the formulation of SC-AC-OPF, we note that piecewise
+linear penalty functions Ce,CP
+n , and CQ
+n , although simple, have a detrimental performance impact,
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+11
+x
+0
+y
+Y
+X
+ϵY
+ϵX
+√ϵY
+√ϵX
+Figure 2
+Nonconvex relaxation of complementarity constraints. The original complementarity set corresponds
+to the bold (blue) segments along the x- and y-axis, and its relaxation—parametrized by ϵ ∈(0,1)—is
+presented as the shaded (green) area.
+which is due to two main factors. First, these terms are abundant (they are required multiple times
+for every bus and branch in the power grid) and each of them requires an auxiliary variable and
+handful of linear constraints to be expressed in a smooth fashion, significantly enlarging the size
+of the problem to what it would be its size otherwise (approximately by 30%). Secondly, the large
+slopes of these penalty functions towards large slacks (5 orders of magnitude larger than other
+terms in the gradient of the objective function and the Jacobian of the constraints (?)) can cause
+numerical issues whenever they are active (have a positive value). Following these observations,
+we replaced these penalty functions by quadratic approximations of the form ˜C(x) = a1|x| + a2x2,
+where a1 and a2 are computed so as to match the slope of the C functions at the origin and at the
+beginning of their second bin (corresponding to small slacks). These approximations can be placed
+directly in the objective avoiding extra variables and constraints. At the same time, our selection
+of their coefficients prevents the aforementioned numerical issues, without degradation of solution
+quality in our computational experiments.
+4. Decomposition approach
+We design our decomposition approach to SC-AC-OPF with the computational and time limita-
+tions present in real power grid operations, which were emulated in ARPA-E GOC Challenge 1: up
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+12
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+to 144 parallel processors and either 10 minutes (near-real-time operations) or 45 minutes (offline)
+maximum elapsed time. Under these restrictions, we can only afford to evaluate contingencies (in
+parallel) a couple of times (less than 10 times for most realistic systems) in order to derive preven-
+tive actions in the base case to ensure security constraints are met. These limiting factors on the
+number of iterations that we can perform, along with the non-convexity of subproblems, drove us
+away from traditional decomposition approaches such as (generalized) Benders and ADMM meth-
+ods, which typically require tens of iterations to arrive at a good solution. Instead, we develop a
+specialized approach that derives preventive actions to meet security constraints based on compu-
+tationally affordable approximations for post-contingency penalty terms (third and fourth lines in
+the objective function (??)). We emphasize that our approach is designed to provide good feasible
+solutions, which do not necessarily satisfy accurately the (local) optimality conditions for problem
+(??) – (??). In case an optimality guarantee is needed, in a different setting than that of the present
+work, solutions produced by our approach could be compared against convex relaxations of (??)
+–(??) (e.g., second-order cone relaxation of base case only).
+This section presents our decomposition approach for SC-AC-OPF in terms of the subproblems
+involved, feasibility recovery for post-contingency cases, update rules, and our contingency pre-
+screening methodology, which will become the building blocks for our SC-AC-OPF solver. The
+particular assembly of these blocks in the asynchronous parallel computing implementation of our
+SC-AC-OPF solver is discussed later in section ??.
+4.1. Subproblems’ formulation
+We decompose (??) – (??)—with the approximations described in the preceding section—by stages,
+leading to a first-stage subproblem, corresponding to the base case plus penalties coming from the
+contingencies, and many second-stage subproblems, corresponding to post-contingency cases. We
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+13
+formulate the first-stage subproblem as
+min
+p,q,b,v,θ,σ
+X
+g∈G
+Cg(pg,0) +
+X
+e∈E
+( ˜Ce(σe,o,0) + ˜Ce(σe,d,0)) +
+X
+n∈N
+  ˜CP
+n
+ σP
+n,0
+
++ ˜CQ
+n
+ σQ
+n,0
+
++ 1
+|K|
+X
+k∈K
+rk(p0,v0)
+s.t.
+(p0,q0,b0,v0,θ0,σ0) ∈D(0),
+(8)
+where rk are recourse functions corresponding to the objective contributions of second-stage sub-
+problems, i.e., penalties for not abiding with security constraints. Furthermore, the second-stage
+(post-contingency) subproblems that define the functions rk, for all k ∈K, are formulated as:
+rk(p0,v0) =
+min
+p,q,b,v,θ,δ,σ
+X
+e∈E(k)
+( ˜Ce(σe,o,k) + ˜Ce(σe,d,k)) +
+X
+n∈N
+  ˜CP
+n
+ σP
+n,k
+
++ ˜CQ
+n
+ σQ
+n,k
+
+s.t.
+(pk,qk,bk,vk,θk,σk) ∈D(k)
+ pg,0,pg,k,δk
+
+∈ˆT droop
+ϵ
+(g,k) ∀g ∈G(k)
+
+vn,0,vn,k,
+X
+g∈G(n,k)
+qg,k
+
+∈ˆT reg
+ϵ
+(n,k) ∀n ∈N.
+(9)
+We observe that the first-stage subproblem (??) and the second-stage subproblems (??) share
+their main OPF structure but are different in two key aspects: (i) subproblem (??) does not
+take production cost into consideration, and (ii) subproblem (??) is further restricted by the
+(approximate) droop frequency control and voltage regulator constraints. Despite these additional
+constraints subproblem (??) will be feasible as long as (p0,v0) is feasible for (??): to construct
+a feasible solution it suffices to take pk = p0 and vk = v0, and compute values for the remaining
+variables accordingly, using branch thermal limit and power balance slack variables σ as necessary.
+Such solution would be feasible even for ϵ = 0, satisfying constraints (??) exactly. Nevertheless this
+solution tends to be bad due to significant activation of power balance slacks which result in large
+penalties. The next subsection examines how to recover good feasible solutions for contingency
+subproblems (??) satisfying constraints (??) exactly.
+4.2. Feasibility recovery for post-contingency subproblems
+There are two situations under which we may require a fully feasible contingency solution: (i)
+a system operator would like to study how the system would respond to a certain contingency,
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+14
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+or (ii) we need a better estimate for the post-contingency penalties because the relaxation (??)
+is loose, and further decreasing ϵ is time consuming and prone to numerical issues. We handle
+these situations by, first, solving the relaxed contingency subproblem (??) with ϵ > 0 and then
+approximately projecting the relaxed solution onto the exact feasible set according to the procedure
+outlined below.
+Let (˜pk, ˜qk) be an solution to problem (??) with ϵ > 0 for certain k ∈K, and let
+min
+p,q,b,v,θ,δ,σ
+X
+e∈E(k)
+(Ce(σe,o,k) + Ce(σe,d,k)) +
+X
+n∈N
+ CP
+n
+ σP
+n,k
+
++ CQ
+n
+ σQ
+n,k
+
+s.t.
+(pk,qk,bk,vk,θk,σk) ∈D(k)
+(10)
+be a precursor (relaxation) for the restricted post-contingency subproblem, which will be restricted
+during the approximate projection procedure. Additionally, let’s define the total active power
+generation post-contingency as a function of δk, given a certain base case dispatch p0, as
+πk(δk)|p0 =
+X
+g∈G(k):Ag>0
+max{P g,min{P g,pg,0 + Agδk}}.
+Note that πk(δk)|p0 is a continuous non-decreasing function of δk. Further, P
+g∈G(k):Ag>0 P g ≤
+πk(δk)|p0 ≤P
+g∈G(k):Ag>0 P g, and let ∆k = max{δk : (πk(δk)|p0) = P
+g∈G(k):Ag>0 P g} and ∆k =
+min{δk : (πk(δk)|p0) = P
+g∈G(k):Ag>0 P g}, then πk(δk)|p0 is increasing—thus, invertible—in [∆k,∆k].
+Then, we proceed as follows. We formulate the precursor post-contingency subproblem (??).
+In order to enforce the frequency droop constraints,
+ pg,0,pg,k,δk
+
+∈T droop(g,k), for all g ∈G(k),
+we restrict subproblem (??) as indicated in Alg. ??, which is graphically depicted in Fig. ??. In
+the same fashion, in order to enforce the voltage regulation constraints, (vn,0,vn,k,P
+g∈G(n,k) qg,k) ∈
+T reg(n,k), ∀n ∈N, we further restrict subproblem (??) following Alg. ??, which is visually
+explained in Fig. ??. Finally, we solve the resulting restricted contingency subproblem, where
+transition constraints have been restricted to a linear domain around an almost-feasible solution,
+to obtain a feasible solution for post-contingency case k. This procedure can be repeated for all
+contingencies to generate a complete feasible solution to SC-AC-OPF.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+15
+Algorithm 1: Neighborhood restriction procedure for frequency droop control.
+Input: base case solution p0, approximate post-contingency solution ˜pk.
+find ˆδk ∈[∆k,∆k] such that πk(ˆδk)|p0 = P
+g∈G(k):Ag>0 ˜pg,k via line search ;
+compute ˆpg := max{min{pg,0 + Agˆδk,P g},P g} for all g ∈G(k) ;
+if ˆδk ≥0 then
+let ˇG = {g ∈G(k) | ˆpg = P and Ag > 0} and compute D = maxg∈ˇG(P g −pg,0)/Ag ;
+let ˆG = {g ∈G(k) | ˆpg < P and Ag > 0} and compute D = ming∈ˆG(P g −pg,0)/Ag ;
+with problem (??) do
+fix pg,k = P g for all g ∈ˇG ;
+set bounds D ≤δk ≤D ;
+add constraints pg,k = pg,0 + Agδk ∀g ∈ˆG ;
+end
+else
+let ˇG = {g ∈G(k) | ˆpg > P and Ag > 0} and compute D = maxg∈ˇG(P g −pg,0)/Ag ;
+let ˆG = {g ∈G(k) | ˆpg = P and Ag > 0} and compute D = ming∈ˆG(P g −pg,0)/Ag ;
+with problem (??) do
+fix pg,k = P g for all g ∈ˆG ;
+set bounds D ≤δk ≤D ;
+add constraints pg,k = pg,0 + Agδk ∀g ∈ˇG ;
+end
+end
+4.3. Recourse functions approximation and surrogate block-incremental algorithm
+The key idea of our approach for handling contingencies is to approximate the recourse functions
+rk in the base case subproblem (??) via low-dimensional surrogates that can be, both, handled
+easily by nonlinear programming solvers and updated easily after a subset of the contingencies is
+evaluated. We motivate our design for these approximations using an illustrative example.
+Consider a power system with 1 bus and 3 generators, with technical parameters presented in
+Table ??. Given that the system has a single bus, we can consider only active power, ignoring
+voltages and reactive power. The SC-AC-OPF problem for our example system can then be written
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+16
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+Algorithm 2: Neighborhood restriction procedure for voltage regulators’ constraints.
+Input: base case solution v0, approximate post-contingency solution ˜qk, tolerance ϵq.
+for n ∈N(k) do
+compute ˆη =
+ P
+g∈G(n,k) ˜gg,k
+
+/
+ P
+g∈G(n,k)(Qg −Qg)
+
+;
+with problem (??) do
+if ˆη < ϵq then
+fix qg,k = Qg for all g ∈G(n,k) ;
+set bounds vn,0 ≤vn,k ≤V
+E
+n ;
+else if ϵq ≤ˆη ≤1 −ϵq then
+fix vn,k = vn,0 ;
+else
+fix qg,k = Qg for all g ∈G(n,k) ;
+set bounds V E
+n ≤vn,k ≤vn,0 ;
+end
+end
+end
+Table 1
+Technical characteristics for 1-bus, 3-generator example SC-AC-OPF problem. Demand is set to 1pu
+and the imbalance penalty function to CP (x) = 3|x| + 10x2. The system has 1 credible contingency, corresponding
+to full outage of generator 1.
+g P g [pu] P g [pu] Cg(x) [$] Ag
+1
+0
+1
+x2
+1
+2
+0
+1
+x2
+0
+3
+0
+0.25
+x2 + 2x
+1
+as follows:
+min
+p,σ
+p2
+1,0 + p2
+2,0 + p2
+3,0 + 2p3,0 + r1(p1,0,p2,0,p3,0)
+s.t.
+0 ≤p1,0 ≤1
+0 ≤p2,0 ≤1
+0 ≤p3,0 ≤0.25
+p1,0 + p2,0 + p3,0 = 1,
+(11)
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+17
+δk
+0
+πk
+P
+g∈G(k):Ag>0 P g
+P
+g∈G(k):Ag>0 pg,0
+P
+g∈G(k):Ag>0 P g
+∆k
+∆k
+P
+g∈G(k):Ag>0 ˜pg,k
+˜δk
+ˆδk
+D
+D
+Figure 3
+Graphical depiction of Alg. ?? for enforcing frequency droop constraints. The solid (blue) curve corre-
+sponds to πk(δk)|p0, which is piece-wise linear, convex for δk ≤0 and concave for δk ≥0. The diamond
+marker (red) at (˜δk,P
+g∈G(k):Ag>0 ˜pg,k) corresponds to the approximate solution of the post-contingency
+subproblem with relaxed complementarity (??). As the extra generation required after a contingency
+is dominated by lost capacity and not electrical losses, the approximate projection procedure starts by
+computing the δk that would lead to the same power production as in the approximate solution, ˆδk,
+effectively projecting the approximate solution horizontally onto the graph of πk(δk)|p0. This projection
+is presented as a circumference marker (black) in the plot. The procedure then determines the lower
+and upper limits of the linear piece where the projected point is located, D and D. Finally, we restrict
+D ≤δk ≤D thus ensuring that upon re-evaluation of the post-contingency subproblem we will find a
+feasible solution near the relaxation solution, without the need for frequency droop complementarity
+constraints.
+and the recourse post-contingency function r1 corresponds to:
+r1(p1,0,p2,0,p3,0) = min
+p,σ,δ
+10σ2
+1 + 3σ1
+s.t.
+p1,1 = 0
+p2,1 = p2,0
+0 ≤p3,1 = p3,0 + δ1 ≤0.25
+σ1 ≥0
+p1,1 + p2,1 + p3,1 + σ1 = 1.
+(12)
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+18
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+vn,k
+vn,0
+ηn,k
+V E
+n
+V
+E
+n
+1
+0
+ϵq
+1 −ϵq
+Figure 4
+Graphical explanation depiction of Alg. ?? for voltage regulator constraints. The bold solid (blue)
+curve corresponds to the total reactive power production post-contingency at node n as a mapping of
+vn,k, given a certain base case voltage magnitude vn,0; ηn,k(vn,k)|vn,0 = 1 · Ivn,k<vn,0 + [0,1] · Ivn,k=vn,0.
+V E
+n and V
+E
+n correspond to lower and upper bounds on the post-contingency voltage magnitude, the
+gray-shaded area corresponds to the feasible set allowed by the complementarity relaxation, and the
+horizontal bold dotted (green) lines correspond to boundaries for the neighborhood restriction pro-
+cedure. Red marks correspond to possible approximate solutions of the post-contingency subproblem
+with relaxed complementarity (??), each at a certain (˜vn,k,(P
+g∈G(n,k) ˜qg,k)/(P
+g∈G(n,k)(Qg −Qg))). The
+neighborhood restriction procedure treats relaxation solutions according to their position with respect
+to the boundaries, restricting them to a single straight segment of the ηn,k(vn,k)|vn,0 mapping; the
+diamond would be restricted to the upper horizontal segment (vn,k ≤vn,0 and qg,k = Qg ∀g ∈G(n,k)),
+the circle would be restricted to the vertical segement (vn,k = vn,0), and the star would be restricted
+to the lower horizontal segment (vn,k ≥vn,0 and qg,k = Qg ∀g ∈G(n,k)). These restrictions ensure that
+upon solution of the restricted post-contingency subproblem we will find a feasible solution near the
+relaxation solution, without the need for voltage regulator complementarity constraints.
+Observe that we implicitly assume that there is no imbalance in the base case but only in the
+post-contingency case at optimum, which we observed in most problems in the ARPA-E GOC
+Challenge 1, and it is the case in all real systems (imbalanced systems are physically impossible to
+operate).
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+19
+We can analytically solve the recourse problem by eliminating variables p1,1, p2,1, δ1, and p3,1
+from (??), leading to:
+r1(p1,0,p2,0,p3,0) = min
+p,σ,δ 10σ2
+1 + 3σ1
+s.t. σ1 ≥0
+σ1 ≥1 −0.25 −p2,0
+σ1 ≤1 −p2,0
+which has optimum σ∗
+1 = max{0,0.75 −p2,0}. Observe, additionally, that p3,0 = 0 at optimum,
+because any dispatch involving only generators 1 and 2 is less expensive, and generator 3 can be
+dispatched freely in the contingency. Therefore, at optimum p2,0 = 1 −p1,0, which implies that the
+recourse function can be written as:
+r1(p1,0,p2,0,p3,0) = r1(p1,0) = 10max{0,p1,0 −0.25}2 + 3max{0,p1,0 −0.25}.
+This form of recourse function allows for an intuitive explanation: the more the resource that fails at
+the contingency is used in the base case, the more severe the post-contingency violations would be.
+In an extreme case, when the failing resource is not used at all p1,0 = 0, the post-contingency case
+becomes identical to the base case, and no penalty is incurred. Note, also, that there is a critical
+point, p1,0 = 0.25, after which we start to incur post-contingency penalties. This point is determined
+by the capability of the system to respond to the contingency event in question. This critical point
+marks a very abrupt change, that gives the recourse function its hockey-stick shape. The same
+qualitative characteristics of the recourse function have been observed in realistic networks. Figure
+?? presents a sketch for r1 along with monomial surrogates generated by matching the recourse
+function value at 0 and at certain evaluation point.
+From this example, we can draw three observations for recourse functions of generator contingen-
+cies, which have also been observed in realistic networks. First, the economic factors of SC-AC-OPF
+(generation cost) drive the base case solution towards a very limited subset of the feasible space
+(essentially, following merit order). Second, within this subset, post-contingency penalties tend to
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+20
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+0.0
+0.1
+0.2
+0.3
+0.4
+0.5
+0.6
+0.0
+0.5
+1.0
+1.5
+2.0
+p1,0
+Recourse value
+G
+G
+G
+r1(p1,0)
+r1(0.4) (p1,0/0.4)4
+r1(0.5) (p1,0/0.5)4
+r1(0.6) (p1,0/0.6)4
+r1(0.5) (p1,0/0.5)2
+Figure 5
+Recourse function r1 and its approximation with monomials. Circumferences indicate the points at
+which the recourse was evaluated to construct the approximation. It can be observe that quadratic
+approximations always overestimate the recourse below the point at which the approximation was
+generated, whereas a quartic approximation quickly change in value, emulating the shape of the true
+recourse function.
+decrease whenever the quantity injected by the failing generator is decreased (in the limit, if the
+generator injects zero MVA to the network, the contingency has no effect whatsoever on the net-
+work). Third, the recourse function drops to zero very steeply with decrease in the injection of the
+failing generator, and remains at zero below that point. Based on these observations, we propose
+the following surrogate for generator contingencies (KG ⊂K)
+˜rk
+ pg(k),0,qg(k),0
+
+= Pk ·
+ p2
+g(k),0 + q2
+g(k),0
+2 ,
+where g(k) = Gk0 \ Gk, that is, g(k) is the failing generator in contingency k ∈KG and Pk ≥0 is
+a constant to be determined. Following the prior observations, the proposed surrogate penalizes
+the fourth power of the apparent power of the failing generator, pushing the base case towards a
+more risk-averse solution with a rapidly increasing penalty. We compute Pk from one evaluation of
+rk(p0,v0) as Pk := rk
+ p0,v0
+
+/
+ p2
+g(k),0 +q2
+g(k),0
+2, so that ˜rk
+ pg(k),0,qg(k),0
+
+= rk
+ p0,v0
+
+and ˜rk
+ 0,0
+
+=
+0.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+21
+We follow a similar reasoning for branches (power lines and transformers) and penalize the
+apparent power entering the failing branch at the terminal where it is the highest, for all branch
+contingencies k ∈KE (KE ⊆K).
+Our algorithm for SC-AC-OPF, essentially, iterates between solving the base case with surrogates
+and updating the surrogates until a satisfactory solution is found, as described in Alg. ??. We
+produce fully feasible solutions for the SC-AC-OPF (??) – (??) problem by using Alg. ??, to obtain
+a good quality base case solution, followed by Alg. ?? to obtain feasible post-contingency solutions.
+Algorithm 3: Surrogate block-incremental algorithm for SC-AC-OPF.
+Input: maximum number of iterations T, recourse penalty tolerance ϵr
+set Pk := 0 for all k ∈K ;
+for t = 1 : T do
+solve base case subproblem (??) with surrogate recourse ;
+select a block of contingencies K(t) ⊆K ;
+solve contingency subproblem (??) for all k ∈K(t) ;
+for k ∈K(t) ∩KG : rk
+ p0,v0
+
+> 0 do
+update Pk := rk
+ p0,v0
+
+/
+ p2
+g(k),0 + q2
+g(k),0
+2
+end
+for k ∈K(t) ∩KE : rk
+ p0,v0
+
+> 0 do
+update Pk := rk
+ p0,v0
+
+/
+ p2
+e(k),i,0 + q2
+e(k),i,0
+2, where i = arg maxj∈{o,d} p2
+e(k),j,0 + q2
+e(k),j,0
+end
+if rk
+ p0,v0
+
+< ϵr for all k ∈K(t) then
+solve contingency subproblem (??) for all k ∈K \ K(t) ;
+if rk
+ p0,v0
+
+< ϵr for all k ∈K then
+break ;
+end
+end
+end
+return current base case solution ;
+Algorithm ?? is able to produce high-quality solutions within a few iterations, in great part
+due to the ability of our surrogates to capture the essential elements of the recourse function. In
+terms of weaknesses, we have observed small optimality gaps remaining after termination in small
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+22
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+instances, which implies that our method does not converge to global or local optima of the original
+SC-AC-OPF problem, and our surrogates can become inaccurate, requiring frequent re-evaluation
+of post-contingency cases, if the base case solution is changing significantly between iterations. The
+manifestation of these weaknesses, however, is rare in realistic instances, as they are generally large,
+allowing only for a few iterations, and the base case solution tends to be dominated by economic
+factors and only mildly modified by security constraints. The algorithm is easily parallelizable
+(evaluation of contingency subproblems), it allows for (almost) arbitrary selection of blocks of
+contingencies to evaluate at each iteration, and it allows for asynchronous updates, that is, in a
+parallel computing setting we can solve the base case continuously and update the surrogates as
+new contingency evaluations are completed.
+Algorithm 4: Post-contingency evaluation for SC-AC-OPF.
+Input: base case solution (p0,q0,b0,p0,p0)
+for k ∈K do
+solve contingency subproblem (??) for k with small ϵ > 0, generating approximate
+contingency solution (˜pk, ˜qk,˜bk, ˜pk, ˜pk) ;
+formulate restricted contingency problem k using Alg. ?? and ?? ;
+solve restricted contingency problem k, generating contingency solution
+(pk,qk,bk,pk,pk) ;
+write contingency solution ;
+end
+Algorithm ?? uses Alg. ?? and ?? to generate a fully feasible solution for each contingency,
+which become independent from each other once the base case solution is fixed. The for loop in
+Alg. ?? is, therefore, an embarrassingly parallelizable task and any practical implementation of it
+should exploit this, given the large number of contingencies in utility-scale networks.
+On the selection of contingency blocks for Alg. ??, reasonably, we would like to start evaluating
+contingencies that are likely to have a large impact on the problem. How to find these contingencies
+quickly and limit their impact early on is the topic of the next subsection.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+23
+4.4. Contingency pre-screening
+Our initial approach to ranking contingencies and selecting a subset of likely impactful contingencies
+was based on machine learning methodologies. This approach, whereas promising in general, failed
+to provide a good ranking or classification of contingencies, its main problem being the difficulty
+of generalizing machine learning models to networks that have not been seen before in the training
+datasets (?). Other methodologies from the literature required extensive calculations, which were
+not practical for near-real-time settings (??). Instead, we use intuitive selection rules, cheap to
+compute and with good generalization: we select the SG largest generator failures and SE largest
+branch failures (in terms of the elements’ capacities), with SG +SE smaller or equal to the number of
+parallel processors available for contingency evaluations. This procedure tends to produce some false
+positives (contingencies that look impactful but are not) but almost no false negative (contingencies
+that look harmless but are impactful), both situations easily remediable by exploiting parallel
+computing.
+5. Computational and implementation aspects
+We designed our software framework, gollnlp, with software re-usability in mind. To this end,
+we developed a lightweight model specification library that allows a modular composition of the
+various algebraic AC-OPF and SC-AC-OPF models instantiated by our solution approach. These
+developments and underlying high-performance computing aspects are discussed in detail in Sec-
+tion ??. Furthermore, the gollnlp framework has a solver-agnostic back-end that allows switching
+between different NLP solvers. At the moment we support Ipopt (?) and HiOp (?). We performed
+a couple of customizations specific to Ipopt for the purpose of improving robustness and reduce
+computational cost. These are further elaborated in Section ??.
+In order to obtain a good computational parallelization efficiency of the decomposition approach
+presented in Section ??, we implemented a nonblocking/asynchronous parallel evaluation engine
+for performing the computational analysis of the contingency subproblems and for building their
+recourse evaluations presented in Sections ??–??. The implementation is based on the Message
+Passing Interface (MPI) and is presented in Section ??
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+24
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+5.1. Model evaluation library
+The specification of SC-AC-OPF problem (??) – (??) is done via lightweight C++ library that
+evaluates the objective and constraints functions, and their first and second order derivatives, as
+required by the underlying NLP solvers. Both the functions and their derivatives defining the
+problem (??) – (??) are “hand-coded” in C++. The specification library is modular in the sense
+it can assemble and manipulate generic NLPs such as AC-OPF, as well as instantiate the NLPs
+in the low level format of supported NLP solvers, from existing objective and constraint C++
+classes. The objective can be formed by an arbitrary number of additive objective terms, such as
+generation cost, penalties, various recourse approximations, primal regularization terms, etc. The
+constraints of the NLP is simply a list of (sparse) constraints of blocks of constraints. The library
+supports instantiating SC-AC-OPF problems containing a base case AC-OPF block and multiple
+contingencies blocks and is aware of the underlying problem structure; however, our computa-
+tional methodology does not use this feature since our optimization-based decomposition approach
+instantiates the first-stage master and second-stage contingency blocks as separate problems (with
+the contingency subproblem being parameterized by the first-stage’s coupling variables).
+Ipopt and HiOp NLP solvers require function values and gradient values as double arrays. The
+Jacobian of the constraints and the Hessian of the Lagragian are evaluated as sparse matrices in
+triplet format. The assembly and repeated evaluation of the sparse derivatives throughout the NLP
+solver iterations may easily take a high computational cost because of the high cost associated with
+(random) lookups (i.e., locating and accessing a given entry) in a sparse matrix. These lookups
+occur every time when a objective or constraint blocks update the derivative matrix with their
+(sparse) contribution and have non-trivial complexity (meaning greater than O(1)) in general. We
+circumvent this by adding a one-time preprocessing step that for each objective or constraint block
+builds an array of pointers to the block’s nonzeros in the sparse derivative. During this preprocessing
+step, we sort the nonzeros based on their row and column indexes and remove duplicate entries.
+Consequently, the time complexity of the preprocessing step is O(ζlogζ) and the space requirements
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+25
+are ζ, where ζ is the sum of the number of nonzeros of each objective or constraint block. On the
+other hand, we achieve O(1) random access to the nonzero entries of the sparse derivative; this
+enables derivative evaluation at O(ζ) time complexity and amortizes the cost of the preprocessing
+step over over the course of NLP solver iterations. As a result, the evaluation of NLP consistently
+requires a very small fraction (< 1%) of the total computational cost.
+5.2. Parallel computations
+As mentioned in Section ??, the contingency subproblems (??) can be solved independently, in
+parallel, for a given solution of the master subproblem (??). The obvious parallelization approach,
+usually known as master–worker parallelization, is to dedicate a small subset of the computing
+units to the first-stage subproblem and the rest to the contingency subproblems. Each time all
+the contingencies are evaluated, the workers send the recourse approximations to the master unit,
+which in turn resolves the first-stage problem and dispatches the solution to the worker units,
+effectively starting a new iteration of the algorithm.
+This above simple parallel programming model suffers from a couple important drawbacks. Com-
+putational load imbalance is significant, being caused by the considerable variation across the
+wall-clock (solution) times for the contingency subproblems in the worker units. This is especially
+pervasive when end-of-iteration synchronization between master and worker units is enforced. An
+extreme, but quite frequent, consequence of this limitation manifests in a considerable number of
+worker computing units sit idle for extended amount of time waiting for a couple tardy workers
+to finish contingency evaluations. The second limitation of a simple master–worker model would
+be caused by the fact that all worker units sit idle while the master unit solves the first-stage
+subproblem. Finally, the master unit(s) performs significant bookkeeping, file operations, and com-
+munication with the workers; as a result, the master unit may use only a subset of its compute
+cycles to solve the first-stage subproblem. We remark that this results in a domino effect, as it will
+delay not only the first-stage solution but will also keep all the workers idle for longer.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+26
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+We address the above limitations by using a more involved master–solver–worker parallel pro-
+gramming model, in which, one of the compute units is solely assigned to solving the first-stage
+subproblem (hence the name solver). This allows the master unit to be dedicated to algorithm
+control loops, file input/out, and communication. We employ a distributed memory programming
+model that results in the master, solver, and workers units to run in independent processes; MPI
+is used for (inter-process) communication. Furthermore, the communication uses only nonblocking
+MPI calls, more specifically, only MPI_Isend and MPI_Irecv. While this choice complicates the
+implementation significantly because the completion of each message needs to be checked peri-
+odically, it has the important benefit of overlapping communication with computations. This is
+especially relevant to master, which otherwise will be unable to timely handle the algorithm control
+loops and the communication in the same time.
+The worker and the solver units engage in communication only with the master. The master
+decides the apportionment of contingencies subproblems to worker processes and schedules only
+one contingency at a time per worker process, which is paramount to ensure good load balancing
+across the workers. The contingency subproblems are initially prioritized based on the rankings
+found in the pre-screening of Section ??; later on, the contingencies found to have high penalties
+are rescheduled for reevaluation/re-approximation. The master–worker conversation comprises of
+predefined basic actions: (i) master asks worker to evaluate a contingency, (ii) worker provides
+contingency recourse approximation to the master, and (iii) initialization and finalization. On the
+other hand, the master–solver conversation is quite simple and it involves only solve “start” and
+“completion” actions. In general, the master instructs the solver process to reevaluate first-stage
+subproblem once it receives a few high-penalty contingency recourse approximations from the work-
+ers. We remark that the solver process solves the base case problem without forcing the master or
+worker processes to sit idle; instead, these processes can continue evaluating and approximating
+contingencies. Under a strict computational budget, this approach can increase the number of eval-
+uated contingencies by more than 250% over plain master–worker parallelization paradigms. The
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+27
+downside of our approach is that the master subproblem is updated with recourse approximations
+asynchronously and possibly is using outdated recourse approximations built around first-stage set
+points from previous iterations. The convergence of such asynchronous solver–worker scheme is
+problematic, especially for non-convex problems such as SC-AC-OPF. The use of recourse surro-
+gates based on the fourth power of the apparent power (instead of using similar quadratic surro-
+gates) has shown a considerable stabilization effect on the convergence the asynchronous algorithm
+in our extensive numerical experiments. We believe that this is likely caused by the fact that the
+steep fourth order surrogates serve as an effective proximal point term on the first-stage variables.
+Future work will be dedicated to further investigate and develop globally convergent variants of
+this asynchronous solver–worker method.
+5.3. Other implementation details
+Since a great reduction of computational cost is obtained from warm-starting, we elaborate on
+our experience with warm-starting interior-point methods when resolving the first-stage and the
+contingency subproblems. In our computational scheme, the first-stage subproblem can be warm-
+started efficiently, for 50 −80% reduction in the computational cost, by reusing the primal-dual
+solution occurring during the previous first-stage solve for a log barrier parameter around 10−5.
+For the contingency subproblems, the best overall performance is obtained when only a primal
+restart is done using the solution from the first-stage problem. For these subproblems primal-
+dual restarts tends to give less benefits, regardless of using solutions from the previously solved
+contingency subproblem or from the first-stage subproblem. This is mainly because a nontrivial
+number of contingencies converge very slowly when using primal-dual restarts. To some extent,
+this also applies when solving the feasibility recovery subproblems, described in Section ??.
+Given the large size and the considerable number of contingencies of the SC-AC-OPF problem
+solved, the number of NLP subproblems that needs to be solved can be as high as 100 000, each
+of 2 000 000 variables and constraints. In this large-scale computational regime, the possibility of
+unexpected software failures cannot be dismissed. Surprisingly, we experienced only a couple of
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+28
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+nontrivial issues because Ipopt is extremely robust. A repeated issue, among these, was an occa-
+sional solver divergence or convergence to a locally infeasible point when solving the contingency
+subproblems. The issue tends to occur when solving the feasibility recovery contingency subprob-
+lems. We could not find a sound explanation for it since the problems are provably feasible and we
+alleviate these issues by adding small quadratic regularization terms in the objective for the voltages
+and angles. By far the most troubling issue we ran into was that MPI worker processes occasionally
+seemed to hang and – on rare occasions – to crash with SIGBUS or SIGSEGV signals, depending on
+the platform and/or compilers. This issue is aggravated because a crash in one MPI process would
+cause all the MPI processes to stop execution as per the MPI standard. The apparent source of the
+hang or crash was the combination of Ipopt and the HSL MA57 linear solver, but we could not find
+the cause of the abnormal runtime behavior. We addressed this with a three-pronged approach.
+First we modified Ipopt to throw an exception when the linear solver unexpectedly requires a
+large memory reallocation; we handled this instructing Ipopt to switching to MA27 linear solver
+and resolve the problem. The second freeze and/or crash mitigation approach was to set an alarm
+(a.k.a. a timeout SIGALRM signal) before each call to the MA57 faulty function and whenever the
+alarm signal was generated (meaning that MA57 faulty function takes an unexpectedly long time),
+we modified Ipopt to throw an exception; in which case, gollnlp instructs Ipopt to use MA27 on
+resolve. Interceptions of signals associated with the runtime crash were also implemented as last
+resort, to prevent MPI processes from failing.
+6. Numerical results
+During the course of Challenge 1, the performance of gollnlp was evaluated independently by the
+organizers of the ARPA-E GOC Challenge 1 competition using synthetic and real SC-AC-OPF
+instances. In this section we focus on two aspects of the results of those experiments. First, we
+explore the qualitative differences between an AC-OPF solution and the SC-AC-OPF solution
+found by our method, for a realistic synthetic instance, and explain how such SC-AC-OPF solution
+is achieved. Second, we provide a summary of the comparative performance of gollnlp in the Final
+Event of Challenge 1.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+29
+6.1. AC-OPF vs gollnlp’s SC-AC-OPF solution
+We compare two approaches for scheduling power system operations: (i) ACOPF, that is, we solve
+the plain AC-OPF problem and then evaluate its performance including contingencies, and (ii)
+SCACOPF, i.e., solving SC-AC-OPF using gollnlp. For this comparison, we use the synthetic ver-
+sion of the Western Electricity Coordinating Council (WECC) developed by ?, which we augmented
+with frequency droop control parameters derived from Challenge 1 instances, stricter branch capac-
+ities based on simulations over 12 representative load cases, and randomly generated contingencies.
+The resulting instance has 10 000 buses, 12 707 branches, 2 485 generators, 10 000 contingencies,
+and 4 899 consumers totaling 133.1 GW of load.
+Figure ?? presents a depiction of the base case solution of ACOPF (a) and the difference on
+the base case solutions between SCACOPF and ACOPF in the areas near San Francisco (b) and
+Los Angeles (c). ACOPF schedules production minimizing base case operating cost only, thereby,
+setting the cheapest generator to operate at their capacity, which tends to concentrate power
+generation. SCACOPF, in contrasts, spreads out production—as can be seen in Fig. ??.(b) and,
+more notoriously, in Fig. ??.(c)—in order to hedge against contingencies. gollnlp achieves this
+hedging strategy starting from the ACOPF solution and progressively adding approximate recourse
+terms penalizing activity on elements that might fail. The mechanism at work can be appreciated
+in Fig. ??. The ACOPF solution evaluated for a transformer contingency shows a large imbalance
+(Fig. ??(b)) because a generator behind the transformer is dispatched at capacity in the base case
+and cannot reduce its power output post-contingency due to frequency droop control constraints.
+gollnlp adds a recourse term penalizing the flow over the failing transformer, which in turn rewards
+a reduction in the base case dispatch of the generator behind the transformer in the SCACOPF
+solution with respect to ACOPF solution (Fig. ??.(a)). As a result of this dispatch reduction, the
+imbalance in the post-contingency state of SCACOPF decreases significantly (more than 100MW)
+with respect to that of ACOPF, as can be seen in Fig. ??.(c). This example illustrates how our
+non-convex relaxation of the transition constraints along with our recourse approximation serve to
+effectively characterize and hedge against contingencies in SC-AC-OPF.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+30
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+(a)
+LA
+SF
+UT
+(b)
+(c)
+Figure 6
+Synthetic WECC network color coded with ACOPF and SCACOPF base case solutions. Part (a)
+presents the ACOPF base case solution. Vertices correspond to substations, colored green for substations
+injecting active power (generators) and orange for substations withdrawing active power, with their area
+being proportional to the injected/withdrawn active power. Edges corresponds to groups of lines between
+substations. They are colored according to remaining power margin at the solution, the darker the
+color the smaller the margin to congestion. Parts (b) and (c) present the injection/withdraw differences
+between SCACOPF and ACOPF for the areas surrounding San Francisco (SF red box in part (a)) and
+Los Angeles (LA red box in part (a)). For vertices, green indicates an increase in base case injection
+in SCACOPF with respect to the ACOPF solution, orange indicates a decrease in base case injection
+in SCACOPF with respect to the ACOPF solution, and the area of each vertex is proportional to the
+injection difference. No information encoded for edges. The UT red box delimits an area of interest
+south of Salt Lake City, Utah, depicted in detail in Fig. ??.
+6.2. Benchmarking
+Our approach was benchmarked against other competing approaches in the Final Event of Chal-
+lenge 1 (?), over 17 synthetic network models with 20 scenarios each3, 10 scenarios corresponding
+to Division 1 with a time limit of 10 minutes, and the other 10 scenarios corresponding to Division
+2 with a time limit of 45 minutes. All competing approaches ran on the same platform, consisting
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+31
+(a)
+(b)
+(c)
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+GG
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
++389MW
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G G
+G
+G
+G
+G G
+G
+G
+G
+G
+G
+G
+G
+G
+G
+G
++257MW
+Figure 7
+Differences in base case and contingency solution between ACOPF and SCACOPF for synthetic WECC
+network. Part (a) zooms in to the area marked with UT and delimited with a red box in Fig. ??.(a).
+Part (b) presents the post-contingency solution of ACOPF for the failure of a transformer at substation
+“DELTA 2” at the center of the plot. Orange vertices indicate positive active imbalances (production
+shedding) green vertices indicate negative imbalances (load shedding), with their area being proportional
+to the imbalance amount. Edges colored as in Fig. ??.(a). Part (c) presents the post-contingency solution
+of SCACOPF for the same contingency, color coded in the same fashion as part (b). Annotations in
+parts (b) and (c) indicate active power imbalance at substation “DELTA 2”.
+of 6 nodes equipped with 2 Intel Xeon E5-2670 v3 (24 cores per node) and 64 GB of RAM per
+node, intended to represent the computational resources currently in use by power system opera-
+tors. We would like to remark that gollnlp is not bound to these hardware specifications and it has
+been deployed from personal laptops up to hundreds of nodes of high-end supercomputers such as
+Summit at Oak Ridge National Laboratories.
+Figures ?? and ?? present our aggregate performance for each network in Division 1 and Division
+2, respectively, against the best 50% objective values in each division for each network, among
+those able to obtain feasible solutions. As can be observed, our approach consistently obtained the
+best or very close to the best known feasible solution across a wide range of system sizes and in
+both Division 1 and Division 2.
+7. Conclusions
+We have presented a computational approach for obtaining good feasible solutions to the SC-
+AC-OPF problem at real-world scale and under real-world time limits. Our method relies on
+state-of-the-art nonlinear programming algorithms and it uses nonconvex relaxations of comple-
+mentarity constraints, two-stage decomposition with sparse approximations of recourse terms, and
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+32
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+2000
+5000
+10000
+20000
+50000
+0
+500
+1500
+2500
+3500
+#buses + #branches
+Objective value [000 USD]
+best to median
+gollnlp
+Figure 8
+Comparative performance of gollnlp in Division 1 of Challenge 1. Plot presents ranges of geometric
+mean objective value for every synthetic network tested in the Final Event (lower is better).
+2000
+5000
+10000
+20000
+50000
+0
+500
+1500
+2500
+3500
+#buses + #branches
+Objective value [000 USD]
+best to median
+gollnlp
+Figure 9
+Comparative performance of gollnlp in Division 2 of Challenge 1. Plot presents ranges of geometric
+mean objective value for every synthetic network tested in the Final Event (lower is better).
+asynchronous parallelism, in order to compute SC-AC-OPF base case solutions that hedge against
+contingencies. The method was benchmarked independently and found to consistently produce
+high quality solutions across a wide range of network sizes and difficulty, thereby providing an
+effective complement to the extensive literature on bounding via convex relaxations.
+Future work will investigate the efficient use of emerging hardware accelerators (e.g., GPUs)
+for SC-AC-OPF problems, as well as its global solution using branch-and-bound techniques that
+integrate convex relaxations and strengthening with the present work.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+33
+Endnotes
+1Let a,b ∈R then a ⊥b ⇐⇒a × b = 0.
+2Ipopt (?) converts all inequalities to equalities adding slack variables and then adds log-barriers
+enforcing non-negativity of slacks to the objective of barrier subproblems. This approach, though
+slightly different than applying the log-barrier directly to the inequalities, can be shown to be
+equivalent to the later in terms of its central path by comparing the optimality conditions of the
+barrier problems of the two approaches.
+3The Final Event also included 3 industry network models with 4 scenarios each. We do not
+include statistics on those networks in the paper as detailed results on those networks remain
+confidential.
+Acknowledgments
+This work performed under the auspices of the U.S. Department of Energy by Lawrence Liver-
+more National Laboratory under Contract DE-AC52-07NA27344. This research was supported by
+the Exascale Computing Project (17-SC-20-SC), a collaborative effort of the U.S. Department of
+Energy Office of Science and the National Nuclear Security Administration.
+This document was prepared as an account of work sponsored by an agency of the United States government. Neither the United
+States government nor Lawrence Livermore National Security, LLC, nor any of their employees makes any warranty, expressed
+or implied, or assumes any legal liability or responsibility for the accuracy, completeness, or usefulness of any information,
+apparatus, product, or process disclosed, or represents that its use would not infringe privately owned rights. Reference herein to
+any specific commercial product, process, or service by trade name, trademark, manufacturer, or otherwise does not necessarily
+constitute or imply its endorsement, recommendation, or favoring by the United States government or Lawrence Livermore
+National Security, LLC. The views and opinions of authors expressed herein do not necessarily state or reflect those of the
+United States government or Lawrence Livermore National Security, LLC, and shall not be used for advertising or product
+endorsement purposes.
+References
+Aravena I, Molzahn DK, Zhang S, Petra CG, Curtis FE, Tu S, W¨achter A, Wei E, Wong E, Gholami A, Sun
+K, Sun XA, Elbert ST, Holzer JT, Veeramany A (2022) Recent developments in security-constrained
+ac optimal power flow: Overview of challenge 1 in the arpa-e grid optimization competition.
+Bienstock D, Verma A (2019) Strong NP-hardness of AC power flows feasibility. Operations Research Letters
+47(6):494–501.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+34
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+Birchfield AB, Xu T, Gegner KM, Shetye KS, Overbye TJ (2017a) Activsg10k: 10 000-bus syn-
+thetic grid on footprint of western united states. URL https://electricgrids.engr.tamu.edu/
+electric-grid-test-cases/activsg10k/, accessed 2021-02-25.
+Birchfield AB, Xu T, Gegner KM, Shetye KS, Overbye TJ (2017b) Activsg70k: 70 000-bus syn-
+thetic grid on footprint of eastern united states. URL https://electricgrids.engr.tamu.edu/
+electric-grid-test-cases/activsg70k/, accessed 2022-06-11.
+Boyd S, Vandenberghe L (2004) Convex Optimization (Cambridge University Press).
+Bukhsh WA, Grothey A, McKinnon KIM, Trodden PA (2013) Local solutions of the optimal power flow
+problem. IEEE Transactions on Power Systems 28(4):4780–4788.
+California ISO (2019) Busines practice manual for managing full network model.
+Capitanescu F (2016) Critical review of recent advances and further developments needed in ac optimal
+power flow. Electric Power Systems Research 136:57 – 68, ISSN 0378-7796.
+Capitanescu F, Glavic M, Ernst D, Wehenkel L (2007) Contingency filtering techniques for preventive
+security-constrained optimal power flow. IEEE Transactions on Power Systems 22(4):1690–1697.
+Chen JS, Sun D, Sun J (2008) The sc1 property of the squared norm of the soc fischer–burmeister function.
+Operations Research Letters 36(3):385 – 392, ISSN 0167-6377.
+Dvorkin Y, Henneaux P, Kirschen DS, Pandˇzi´c H (2018) Optimizing primary response in preventive security-
+constrained optimal power flow. IEEE Systems Journal 12(1):414–423.
+Fliscounakis S, Panciatici P, Capitanescu F, Wehenkel L (2013) Contingency ranking with respect to over-
+loads in very large power systems taking into account uncertainty, preventive, and corrective actions.
+IEEE Transactions on Power Systems 28(4):4909–4917.
+Giri J (2016) Managing uncertainties of the future grid. Presented at IEEE PES Dintinguished Lecturer
+Program. Available at: http://site.ieee.org/greece-pes/files/2016/05/IEEE-EMS-DLP-2016-1-of-2.pdf.
+Grid
+Optimization
+Competition
+(2019)
+Scopf
+problem
+formulation:
+Challenge
+1.
+Available
+at:
+https://gocompetition.energy.gov/challenges/challenge-1/formulation.
+Grid
+Optimization
+Competition
+(2020)
+Leaderboard
+-
+challenge
+1
+-
+final
+event.
+Available
+at:
+https://gocompetition.energy.gov/challenges/challenge-1/leaderboards-final-event.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+35
+Hansell J, Corfee K, Goetzler B, Fong V, Ander G, Tisdale M, Roche M, Halperin R (2021) Distributed
+energy resources integration research roadmap. Technical Report CEC-500-2021-010, California Energy
+Commission.
+Joint Board for PJM/MISO Region (2006) Report on security constrained economic dispatch. Technical
+Report AD05-13-000, Federal Energy Regulatory Comission.
+Karoui K, Crisciu H, Stubbe M, Szekut A (2008) Large scale security constrained optimal power flow. Power
+Systems Computation Conference, 1–7.
+Kocuk B, Dey SS, Sun XA (2017) New formulation and strong misocp relaxations for ac optimal transmission
+switching problem. IEEE Transactions on Power Systems 32(6):4161–4170, URL http://dx.doi.org/
+10.1109/TPWRS.2017.2666718.
+Lehmann K, Grastien A, Van Hentenryck P (2016) AC-Feasibility on Tree Networks is NP-Hard. IEEE
+Transactions on Power Systems 31(1):798–801.
+Liu L, Khodaei A, Yin W, Han Z (2013) A distribute parallel approach for big data scale optimal power
+flow with security constraints. 2013 IEEE International Conference on Smart Grid Communications
+(SmartGridComm), 774–778.
+Molzahn DK, Hiskens IA (2019) A Survey of Relaxations and Approximations of the Power Flow Equations.
+URL http://dx.doi.org/10.1561/3100000012.
+North America Electric Reliability Corporation (NERC) (2020) Reliability standards for the bulk electric
+systems of north america. Available at: https://www.nerc.com/pa/Stand/Pages/default.aspx.
+Petra CG (2018) A memory-distributed quasi-Newton solver for nonlinear optimization with a small number
+of constraints. J. of Parallel and Distributed Computing in print.
+Petra CG, Aravena I (2023) GOLLNLP: Improving efficiency and robustness of the U.S. electrical power
+grid using HPC. URL https://computing.llnl.gov/projects/gollnlp#data-and-code, accessed
+2023-06-02.
+Petra CG, Schenk O, Lubin M, G¨aertner K (2014) An augmented incomplete factorization approach for
+computing the schur complement in stochastic optimization. SIAM Journal on Scientific Computing
+36(2):C139–C162.
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+36
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+Platbrood L, Capitanescu F, Merckx C, Crisciu H, Wehenkel L (2014) A generic approach for solv-
+ing nonlinear-discrete security-constrained optimal power flow problems in large-scale systems. IEEE
+Transactions on Power Systems 29(3):1194–1203.
+Powell WB, Meisel S (2016) Tutorial on stochastic optimization in energy—part i: Modeling and policies.
+IEEE Transactions on Power Systems 31(2):1459–1467, URL http://dx.doi.org/10.1109/TPWRS.
+2015.2424974.
+Qiu W, Flueck AJ, Tu F (2005) A new parallel algorithm for security constrained optimal power flow with
+a nonlinear interior point method. IEEE Power Engineering Society General Meeting, 2005, 447–453
+Vol. 1.
+STFC Rutherford Appleton Laboratory (2015) HSL. A collection of fortran codes for large scale scientific
+computation. Available at: https://www.hsl.rl.ac.uk/ipopt/.
+Stott B, Alsac O (2012) Optimal power flow—basic requirements for real-life problems and their solutions.
+SEPOPE XII Symposium, 1–19 (Rio de Janeiro, Brazil).
+Velloso A, Van Hentenryck P, Johnson E (2020) An exact and scalable problem decomposition for security-
+constrained optimal power flow. Power Systems Computation Conference, 1–8.
+Venzke A, Chatzivasileiadis S (2021) Verification of neural network behaviour: Formal guarantees for power
+system applications. IEEE Transactions on Smart Grid 12(1):383–397.
+W¨atcher A, Biegler L (2006) On the implementation of an interior-point filter line-search algorithm for
+large-scale nonlinear programming. Mathematical Programming 106(1):25–57.
+Yang Z, Oren S (2019) Line selection and algorithm selection for transmission switching by machine learning
+methods. 2019 IEEE Milan PowerTech, 1–6.
+Author biographies
+Cosmin G. Petra is a computational mathematician in the Center for Applied Scientific Com-
+puting at Lawrence Livermore National Laboratory. Cosmin’s work focuses on high-performance
+computing algorithms and C/C++ solvers for mathematical optimization with emphasis on appli-
+cations in complex energy systems. Prior to joining the Center for Applied Scientific Computing,
+
+Petra and Aravena: Surrogate asynchronous decomposition for realistic SC-AC-OPF
+Article submitted to Operations Research; manuscript no. (Please, provide the manuscript number!)
+37
+Cosmin was with Argonne National Laboratory as a computational mathematician and, prior to
+that, hold software engineer/numerical analyst positions in IT industry. Cosmin obtained an M.S.
+and a Ph.D. in Applied Mathematics from the University of Maryland, Baltimore County, in 2006
+and 2009, respectively.
+Ignacio Aravena is an operations research engineer at the Computational Engineering Division of
+the Lawrence Livermore National Laboratory. His work focuses on developing optimization models
+and algorithms to improve power systems’ efficiency and resilience. Ignacio’s research interests
+include energy optimization, renewable energy integration in power systems, stochastic and robust
+programming, and distributed optimization. He has served as part-time Lecturer at the University
+of California, Berkeley and at Universidad Tecnica Federico Santa Maria Technical (UTFSM,
+Chile), and as a consultant for Enel Generacion and Powel AS. Ignacio obtained B.S. and M.S.
+degrees in Electrical Engineering from UTFSM, in 2011 and 2013, respectively, and a Ph.D. in
+Applied Mathematics from the Universite catholique de Louvain (Belgium) in 2018.

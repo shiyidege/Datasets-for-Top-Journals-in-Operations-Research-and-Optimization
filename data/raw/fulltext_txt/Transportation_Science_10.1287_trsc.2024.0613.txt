@@ -1,0 +1,6693 @@
+TITLE: Scenario Predict-then-Optimize for Data-Driven Online Inventory Routing
+JOURNAL: Transportation_Science
+YEAR: 2025
+DOI: https://doi.org/10.1287/trsc.2024.0613
+---
+
+Scenario Predict-then-Optimize for Data-Driven Online
+Inventory Routing
+Citation for published version (APA):
+Jia, M., Schrotenboer, A., & Chen, F. (2025). Scenario Predict-then-Optimize for Data-Driven Online Inventory
+Routing. Transportation Science, 59(5), 1032-1056. https://doi.org/10.1287/trsc.2024.0613
+DOI:
+10.1287/trsc.2024.0613
+Document status and date:
+Published: 01/09/2025
+Document Version:
+Accepted manuscript including changes made at the peer-review stage
+Please check the document version of this publication:
+• A submitted manuscript is the version of the article upon submission and before peer-review. There can be
+important differences between the submitted version and the official published version of record. People
+interested in the research are advised to contact the author for the final version of the publication, or visit the
+DOI to the publisher's website.
+• The final author version and the galley proof are versions of the publication after peer review.
+• The final published version features the final layout of the paper including the volume, issue and page
+numbers.
+Link to publication
+General rights
+Copyright and moral rights for the publications made accessible in the public portal are retained by the authors and/or other copyright owners
+and it is a condition of accessing publications that users recognise and abide by the legal requirements associated with these rights.
+ • Users may download and print one copy of any publication from the public portal for the purpose of private study or research.
+ • You may not further distribute the material or use it for any profit-making activity or commercial gain
+ • You may freely distribute the URL identifying the publication in the public portal.
+If the publication is distributed under the terms of Article 25fa of the Dutch Copyright Act, indicated by the “Taverne” license above, please
+follow below link for the End User Agreement:
+www.tue.nl/taverne
+Take down policy
+If you believe that this document breaches copyright please contact us at:
+openaccess@tue.nl
+providing details and we will investigate your claim.
+Download date: 13. Jun. 2026
+
+Scenario Predict-then-Optimize for Data-Driven
+Online Inventory Routing
+Menglei Jia
+Department of Management Science, Antai College of Economics and Management, Shanghai Jiao Tong University, China,
+jiamenglei@sjtu.edu.cn
+Albert H. Schrotenboer
+Operations, Planning, Accounting, and Control Group, School of Engineering, Eindhoven University of Technology, the
+Netherlands, a.h.schrotenboer@tue.nl
+Feng Chen
+Sino-US Global Logistics Institute, Antai College of Economics and Management, Shanghai Jiao Tong University, China,
+fchen@sjtu.edu.cn
+Problem definition: The real-time joint optimization of inventory replenishment and vehicle routing is
+essential for cost-efficiently operating one-warehouse, multiple-retailer systems. This is complex, as future
+demand predictions should capture (auto)correlation and lumpy retailer demand, and based upon such pre-
+dictions, inventory replenishment and vehicle routing decisions must be taken. Traditionally, such decisions
+are made by either making distributional assumptions or using machine-learning-based point forecasts. The
+former approach ignores nonstationary demand patterns, while the latter approach only provides a point
+forecast ignoring the inherent forecast error. Consequently, in practice, service levels often do not meet their
+targets, and truck fill rates fall short, harming the efficiency and sustainability of daily operations. Method-
+ology/results: We propose Scenario Predict-then-Optimize. This fully data-driven approach for online
+inventory routing consists of two subsequent steps at each real-time decision epoch. The scenario-predict
+step exploits neural networks — specifically multi-horizon quantile recurrent neural networks — to predict
+future demand quantiles, upon which we design a scenario sampling approach. The subsequent scenario-
+optimize step then solves a scenario-based two-stage stochastic programming approximation. Results show
+that our approach outperforms the classic Predict-then-Optimize paradigm, distributional approaches, and
+empirical sampling methods. We show this both on synthetic data and real-life data from our industry
+partner. Managerial implications: Our approach is appealing to practitioners. It is fast, does not rely
+on any distributional assumption, and does not face the burden of single-scenario forecasts. We show it is
+robust for various demand and cost parameters, enhancing the efficiency and sustainability of daily inventory
+replenishment and truck routing decisions. Finally, Scenario Predict-then-Optimize is general and can be
+easily extended to account for other operational constraints, making it a useful tool in practice.
+Key words : inventory routing; data-driven optimization; predict-then-optimize; machine learning;
+stochastic optimization
+1
+arXiv:2401.17787v1 [math.OC] 31 Jan 2024
+
+2
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+1.
+Introduction
+Optimal inventory replenishment and truck routing in one-warehouse, multiple-retailer systems
+is fundamental for supply chain management (Bertazzi 2008). In 2021, total operating expenses
+and end-of-year inventories of U.S. retailer businesses were $1,417,106 billion and $655.923 bil-
+lion, respectively, accounting for 21.73% and 10.06% of total sales (U.S. Census Bureau 2022).
+Traditionally, inventory replenishment and distribution via truck routing are controlled separately.
+Replenishment follows a relatively static ordering logic including base-stock and (s,S)-policies
+(Huh and Janakiraman 2008, Xu et al. 2011). Only after the replenishment quantities have been
+determined, transportation costs associated with the distribution via truck routes are minimized.
+Although simple and widely used in practice, this process exhibits two apparent drawbacks: The
+non-integration of distribution and replenishment leading to suboptimal joint replenishment and
+distribution decisions, and secondly, the inability to act upon demand shifts, trends, and disrup-
+tions due to the static ordering logic. However, this traditional perspective is subject to change.
+Widespread data availability and efficient IT systems increasingly motivate retailers to adopt a
+proactive process that provides integrated replenishment and distribution decisions based upon the
+latest demand information.
+Real-time integrated replenishment and distribution decisions aim to balance inventory hold-
+ing and transportation costs optimally. Like separate planning, integrated decisions rely on accu-
+rate predictions of future retailer demand. However, integrated approaches require merging such
+predictions with optimization tools to make real-time replenishment-quantity and truck-routing
+decisions. This is complex, and state-of-the-art approaches often rely on making distributional
+(robust) assumptions on retailer demand (see, e.g., Adelman 2004, Kleywegt et al. 2004, Cui et al.
+2023). This is counterintuitive, realizing that demand is often nonstationary and (auto)correlated
+in practice. An alternative approach does not make distributional assumptions and instead develops
+machine-learning-based point forecasts of future retailer demand (see, e.g., the prediction approach
+in Huber and Stuckenschmidt 2020). Although this circumvents the drawbacks of (static) distri-
+butional assumptions, joint replenishment and truck-routing decisions cannot be based solely on
+a single-point forecast. The resulting decisions ignore the inherent forecast error of the machine
+learning predictor, leading to overly specific decisions.
+As a solution, we introduce “Scenario Predict-then-Optimize” (ScPO), a novel data-driven pre-
+diction and optimization approach for integrated, data-driven inventory replenishment and truck-
+routing decisions. Our ScPO approach neither relies on making distributional assumptions nor on
+a single point forecast. It consists of a distribution-free scenario-predict step, which generates data-
+driven future demand scenarios for individual retailers, and a scenario-optimize step that leverages
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+3
+powerful stochastic programming approaches. For the prediction step, we propose using Multi-
+Horizon Quantile Recurrent Neural Networks (MQRNN), which predicts future demand quantiles
+for a given number of periods based on past retailer demand observations (Wen et al. 2017). We
+use these predicted quantiles to sample the scenarios needed for the scenario-optimize step. The
+scenario-optimize step then solves a multiperiod stochastic inventory routing problem based on the
+data-driven scenarios from the scenario-predict step. It determines joint inventory-replenishment
+and truck-routing decisions for a given number of future periods, of which we only execute the
+decisions until the next decision epoch. In this way, we do not suffer from the inherent risk of work-
+ing with single-scenario forecasts. Using stochastic programming, we automatically find a solution
+with the lowest expected cost that hedges the forecast error. Moreover, we can leverage a suite
+of efficient solution approaches for such models, including scenario-decomposition methods such
+as progressive hedging. It is worth noting that ScPO is generic and applies to any setting that
+combines demand forecasting and combinatorial optimization.
+Our ScPO approach is an alternative to so-called Predict-then-Optimize approaches — also
+called end-to-end learning from a prediction perspective — for solving complex online combinato-
+rial optimization problems. Instead of solely focusing on minimizing a prediction error, Predict-
+then-Optimize approaches aim to minimize the expected cost of the resulting decisions (see, e.g.,
+Elmachtoub and Grigas 2022). For several reasons, such methods cannot be applied to our setting.
+A first stream of methods relies on the differentiability of the objective of the optimization problem;
+however, many cases, including ours, have uncertainty in their constraints which invalidates such
+approaches (Kotary et al. 2021). A second stream develops so-called surrogate optimization models
+with appealing computational properties (see, e.g., Sahay and Ierapetritou 2016, Ye and You 2016)
+– which are effective in many contexts but ignore the vast stream of literature and knowledge on
+combining inventory replenishment and truck routing – called data-driven online inventory routing
+(Coelho et al. 2014b).
+Our ScPO approach is taking a different perspective on end-to-end learning. Effectively, we do
+not learn the optimization performance but rely on stochastic programming to automatically hedge
+against forecast errors while considering data-driven future demand scenarios. Therefore, the pre-
+diction step can be performed independently of the optimization step, which is computationally
+appealing. We exploit stochastic programming to obtain a solution that minimizes the expected
+costs among the predicted scenarios. In our approach, the prediction step does not require evaluat-
+ing optimization methods. Moreover, as our approach is derivative-free, we also eradicate the need
+to develop surrogate models with favorable properties. To the best of the authors’ knowledge, this
+is the first integrated prediction and optimization approach in the context of joint replenishment
+
+4
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+and truck routing in one-warehouse, multiple-retailer systems – or, equivalently, in data-driven
+online inventory routing.
+We propose several variations of ScPO to test and assess its different components structurally.
+First, besides considering MQRNNs, we also consider Long Short-Term Memory Neural Networks
+in our scenario-predict step and provide an associated scenario-sampling strategy. For the scenario-
+optimize step, we consider two distinct stochastic programming formulations. The first formulation
+assumes that the replenishment and truck-routing decisions are made in the first stage, while the
+second stage only evaluates the proposed solutions over the scenarios. The second formulation
+allows for different replenishment and truck-routing decisions in all future periods. Both formula-
+tions employ a tailored matheuristic inspired by Solyalı and S¨ural (2022) to solve the stochastic
+optimization problems. For the second formulation, we also employ progressive hedging (Rockafellar
+and Wets 1991) to enhance its computational tractability further.
+We compare our ScPO approach (and its variations) to i) a maximum likelihood approach that
+fits the best distribution and subsequently uses the two-stage stochastic programming formulations,
+ii) empirical sampling approaches, and iii) the standard Predict-then-Optimize approach utilizing
+point forecasts. First, we assess all the methods on synthetic data to control the degree of demand
+nonstationarity. Afterward, we utilize real-life data regarding the aftersales of spare parts from
+our industry partner, SAIC Volkswagen Automotive Co., Ltd., in China in 2020. Our results show
+that ScPO using MQRNN combined with the first stochastic programming formulation performs
+robustly over all our instances and significantly outperforms all other methods. Our best ScPO
+approach reduces the gap between an oracle solver with perfect demand knowledge and the expected
+value solution by 63.00% on average, whereas the best ‘classic’ paradigm only reduces this gap by
+26.33% on average.
+The main contributions are summarized as follows:
+• We introduce Scenario Predict-then-Optimize for joint distribution and replenishment in
+one-warehouse-multiple-retailer systems, also known as data-driven online inventory routing. It
+combines prediction and optimization, provides better operational decisions, and can be easily
+implemented in practice. It consists of a scenario-predict step, which provides distribution-free
+data-driven scenarios, which are then exploited by the scenario-optimize step. Here, stochastic
+programming is employed to make joint replenishment and distribution decisions.
+• In the context of data-driven online inventory routing, this is the first fully integrated predic-
+tion and optimization approach that does not make distributional assumptions on the input data
+nor works with single-point forecasts.
+• We detail how to employ Multi-Horizon Quantile Recurrent Neural Networks as part of our
+scenario-predict step, and we provide two distinct two-stage stochastic programming formulations
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+5
+for the scenario-optimize step. For the latter part, we provide tailored matheuristic algorithms and
+utilize progressive hedging to further enhance the computational performance of ScPO.
+• Both on synthetic data and real-life data from SAIC Volkswagen Automotive Co., Ltd., we
+show that ScPO outperforms a range of benchmark approaches, including single-scenario Predict-
+then-Optimize and empirical sampling techniques.
+The rest of the paper is organized as follows. In Section 2, we review the related literature. The
+problem description and associated Markov decision process formulation can be found in Section 3.
+Subsequently, Section 4 details our ScPO approach, and Section 5 provides several algorithms for
+enhancing the efficiency of the scenario-optimize step. Computational experiments on synthetic
+and real-life data are provided in Section 6. We conclude our work and discuss future research
+avenues in Section 7.
+2.
+Literature Review
+The real-time joint distribution and replenishment of inventory in one-warehouse-multiple-retailer
+systems is often referred to as the Stochastic and Dynamic Inventory Routing Problem. In this work,
+we consider a new variant of this problem, which we call the Data-driven Online Inventory Routing
+Problem, which does not consider any distributional assumptions on retailer demands. Furthermore,
+we use the phrases ‘warehouse’ and ‘retailer’ in our paper, but this can also be interpreted as
+‘depot’ and ‘customer’, which are more commonly used in the vehicle routing literature.
+The classic, deterministic inventory routing problem (IRP) integrates vehicle routing and inven-
+tory management. It is motivated by vendor-managed inventory settings and has a wide range of
+real-life applications, from retailer replenishment to aftersales logistics of spare parts (Andersson
+et al. 2010). The Stochastic Inventory Routing Problem (SIRP) refers to the problem with stochas-
+tic demand (see, e.g., Sonntag et al. 2023, Hasturk et al. 2024), and the Stochastic and Dynamic
+Inventory Routing Problem (SDIRP) refers to the problem in which information is revealed dynam-
+ically and decisions are made online. In our review, we focus solely on the SDIRP. For a more
+general, routing-oriented review, we refer the reader to the excellent review by Coelho et al. (2014b).
+SDIRP has been extensively studied. However, most studies solve the problem through distri-
+butional assumptions. Jaillet et al. (2002) concern the SDIRP in which a commodity has to be
+distributed to retailers repeatedly over a long time horizon, which they solve using incremental
+cost approximations. Kleywegt et al. (2002) formulate the inventory routing problem with direct
+deliveries as a Markov decision process and use dynamic programming techniques to approximate
+a decomposed value function. That has been extended by Kleywegt et al. (2004), in which multiple
+customers are considered in a single-vehicle route. Adelman (2004) also formulate the SDIRP as
+a Markov decision process and solve it by approximating the future costs of current actions using
+
+6
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+optimal dual prices of a linear program. Coelho et al. (2014a) are the first considering SDIRP with-
+out distributional assumptions, where two different policies, proactive and reactive, are proposed
+to deal with dynamic demand. In the proactive policy, they make decisions based on an oracle
+forecast, solving a deterministic equivalent formulation. Under the reactive policy, they generate
+decisions based on the (s, S) policy, where s is calculated according to the demand distribution
+and can be updated at the beginning of each period to deal with dynamic demand. Achamrah
+et al. (2022) adopt a similar approach to the reactive policy where they consider transshipment
+and substitution to mitigate shortages. Crama et al. (2018) similarly consider different demand
+distributions over time and develop different solution methods for SDIRP for perishable prod-
+ucts. Except for the proactive policy of Coelho et al. (2014a), all other works, despite considering
+dynamic demand, still rely on distributional assumptions and solve the dynamic problem by con-
+sidering newly fitted distribution on a rolling basis. The most recent work is by Cui et al. (2023),
+which employs a distributional robust optimization approach with a moment-based ambiguity set.
+However, although they no longer specify the distribution, corresponding moment information still
+needs specification. Moreover, by exploring (distributionally) robust optimization, they minimize
+the worst-case outcome and not, as in our ScPO, the expected performance.
+Slightly different works are Hvattum and Løkketangen (2009) and Hvattum et al. (2009). They
+approximate the infinite horizon Markov decision process by solving a finite scenario tree problem
+on a rolling basis. However, scenario tree generation still requires a distributional assumption —
+they are generated by random sampling from a distribution. Different distribution assumptions
+for different periods can formulate dynamic demand. However, determining the underlying dis-
+tributions for each future period is a fundamental yet tricky issue. Current work either specifies
+the same distribution for each period or randomly generates distribution parameters, neglecting
+the sequential relationship among the demand in different periods, and still fails to cope with the
+complex reality. Our ScPO approach overcomes this issue by leveraging a data-driven approach
+that first captures future information based on historical demand through a scenario-predict step
+without any distributional assumption and then gives an approximate solution through ascenario-
+optimize step to hedge against the prediction error by minimizing the expected finite horizon cost
+using stochastic programming.
+Effective solution approaches for real-life stochastic problems involve prediction and optimiza-
+tion components. However, most studies treat prediction and optimization independently. In recent
+years, an emerging topic has been end-to-end training of prediction models based on optimization
+models, known as Smart Predict-then-Optimize (SPO). This stream of research focuses on design-
+ing and approximating loss functions to enhance the prediction so that the optimization models
+perform best – and therefore does not necessarily lead to the best point forecasts from a prediction
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+7
+perspective. Nevertheless, such studies are limited to linear programming problems with uncertain
+parameters in the objective function, such as Wilder et al. (2019), Mandi and Guns (2020), and
+Elmachtoub and Grigas (2022). Liu and Grigas (2022) extend the work of Elmachtoub and Grigas
+(2022) to consider the online contextual decision-making with resource constraints. They transfer
+the constrained problem into a penalized version of the objective by introducing dual variables
+and using primal-dual methods. However, their work is still limited by convex constraints, and the
+end-to-end prediction model still utilizes the linear objective function structure of the underlying
+optimization problem. Vlastelica et al. (2019), Ferber et al. (2020), and Mandi et al. (2020) have
+extended research into combinatorial optimization, but the optimization problems targeted are still
+limited to problems with uncertain parameters in the objective function. We refer the interested
+reader to Kotary et al. (2021) for more research on this topic. To the best of the author’s knowl-
+edge, combinatorial optimization problems with uncertain parameters in the constraints, such as
+the data-driven online inventory routing problem in our study, cannot directly apply the SPO
+paradigm and are restricted to a traditional two-step approach. Our ScPO approach proposes a
+different perspective; it utilizes data-driven quantile forecasting from which we can generate future
+demand scenarios without distributional assumptions, and we utilize stochastic programming to
+hedge against the forecast error instead of relying on point forecasts.
+The scenario-predict step of ScPO is related to research on time-series forecasting. Traditional
+time-series forecasting methods such as exponential smoothing or the use of autoregressive models
+such as ARMA and its variants are widespread. In the last decade, deep learning-based forecasting
+has shown great promise compared to the more traditional approaches. For example, Cai et al.
+(2019) compare two classical deep neural network models with the seasonal ARIMAX model in day-
+ahead multi-step load forecasting in commercial buildings, and the best-performing deep learning
+model improves the forecasting accuracy by 22.6% compared to that of the seasonal ARIMAX. In
+the following, we introduce the main elements of deep learning relevant for ScPO, and refer the
+reader to Chatfield (2000), De Gooijer and Hyndman (2006), and Lim and Zohren (2021) for more
+information on time-series forecasting.
+Recurrent Neural Networks (RNNs) are recursive neural networks that take sequences as input. It
+has advantages in learning the nonlinear characteristics of sequences and is widely applied in various
+time-series forecasting. Long-Short Term Memory Networks (LSTM) (Hochreiter and Schmidhuber
+1997) and Gate Recurrent Unit Networks (GRU) (Cho et al. 2014) are two popular variants of RNN.
+They addressed the issue of RNNs that can only look back in time for limited timesteps due to the
+fed-back signal either vanishing or exploding (Staudemeyer and Morris 2019). Both LSTMs and
+GRUs provide point forecasts, however, and by the nature of being a prediction, they are surrounded
+by a prediction error. In addition, most deep learning forecasting can only predict a one-step-ahead
+
+8
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+estimate and then iteratively feed this estimate back as the ground truth to forecast longer time
+horizons (Wen et al. 2017). Such a process leads to prediction error accumulation - and is clearly
+not reliable enough to base decisions on. Wen et al. (2017) exploit the expressiveness and temporal
+nature of Sequence-to-Sequence (Seq2Seq) Neural Networks, the nonparametric nature of Quantile
+Regression, and the efficiency of Direct Multi-Horizon. They propose a Multi-Horizon Quantile
+RNN (MQRNN) forecaster: a Seq2Seq framework that generates Multi-Horizon Quantile forecasts,
+which does not make distributional assumptions, produces accurate probabilistic forecasts with
+sharp prediction intervals, and can directly predict multi-horizon with less bias, more stability, and
+more robustness. Therefore, we use MQRNN in our ScPO approach to make probabilistic forecasts
+based on a large amount of historical data to obtain more robust results in the optimization phase.
+In our computational campaign, we also compare the usefulness of LSTM in the scenario-predict
+step of our ScPO approach.
+After the scenario-predict step, our ScPO approach moves to the scenario-optimize step. For
+this, we employ two-stage stochastic programming. The Progressive Hedging Algorithm (PHA)
+is a horizontal decomposition method for large-scale problems proposed by Rockafellar and Wets
+(1991), which has theoretical convergence properties when all decision variables are continuous. It
+can be effectively used as a heuristic when applied to problems with discrete decision variables,
+as in this study’s case of data-driven online inventory routing. Whereas the PHA has applications
+in many supply chain management problems (Hvattum and Løkketangen 2009, Dong et al. 2015,
+Kim et al. 2015, Hu et al. 2019, Jalilvand et al. 2021, Dong et al. 2022), Hvattum and Løkketangen
+(2009) is the only work that has explored the PHA in the context of the stochastic inventory
+routing. We employ the PHA for one of the two-stage stochastic programming formulations within
+the scenario-optimize step of ScPO.
+3.
+Problem Description
+This section introduces the data-driven online inventory routing problem as a Markov decision
+process. We first introduce the main system components. We consider an infinite discrete time
+horizon K, where each k ∈K is called a period. We consider retailers N = {1,2,...,N} who each
+face stochastic demand, and a single warehouse {0} with unlimited stock. We denote the retailers
+and the warehouse by the set N +. In each period k ∈K, we denote the inventory at each retailer
+by Ik = {I1
+k,...,IN
+k }, where Ii
+k ∈{−∞,...,Imax}. Here, Imax is the inventory capacity at each
+retailer, and negative inventory implies backorders. Each retailer incurs per-unit holding costs h for
+inventory that carries over between periods, and per-unit backorder costs e for backlogged demand
+per period. To replenish inventory from the warehouse to the retailers, we use a homogeneous set of
+vehicles V = {1,...,V }, where each vehicle v ∈V has maximum capacity Q. Vehicles make, at most,
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+9
+a single replenishment route per period. Each replenishment route incurs variable transportation
+costs depending on the geographical location of the retailers.
+The sequence of events in each period k is as follows. First, we observe inventory levels at the
+retailers, then we make a vehicle routing and replenishment decision that happens instantaneously,
+and afterward, the demand of period k occurs at each retailer.
+The goal is to find a policy that, given past demand observations and current inventory levels at
+the retailers, determines how much inventory to replenish to each retailer with the available fleet
+of vehicles that minimizes the sum of expected holding, backorder, and transportation costs per
+period. In the following, we formally present the formulation of the Markov decision process.
+In any period k, we let ˜Y:k = { ˜Y 1
+:k,..., ˜Y N
+:k } denote the last L demand observations at the retail-
+ers. Here, ˜Y i
+:k = {˜yi
+k−1, ˜yi
+k−2,..., ˜yi
+k−L}, where ˜yi
+k denotes the realization of the random demand
+yi
+k at retailer i in period k. We assume the random variable yi
+k has nonnegative discrete sup-
+port Y := {0,1,...,O}. The system state Sk is then denoted as Sk = (Ik, ˜Y:k), Sk ∈S :=
+{×i∈N{−∞,...,Imax}} × {×i∈N ×t∈{k−1,k−2,...,k−L} Y }.
+After observing the system state Sk, the decision maker can dispatch vehicles and replenish
+retailers with inventory. Every decision xk ∈X(Sk) consists of a routing plan Rk = {R1
+k,...,RV
+k },
+where we omit dependency on xk,Sk in our notation. Each Rv
+k consists of a set of retailers visited
+by vehicle v ∈V, or equals ∅. We visit each retailer at most once per period.
+Associated with the routing plan, we consider the replenishment plan Uk = {U 1
+k,...,U N
+k },
+denoting the amount of inventory being replenished for each retailer. We ensure that the
+maximum inventory capacity is respected (Ii
+k + U i
+k ≤Imax) and that the vehicle capacity is
+respected (P
+i∈Rv
+k U i
+k ≤Q). We finally impose that U i
+k = 0 ∀i ∈N\Rk, as a retailer can only be
+replenished if it is visited. Formally, the decision space can thus be formulated as:
+X(Sk) :=
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(Rk,Uk)
+
+Rk partitions a subset of N
+Ii
+k + U i
+k ≤Imax ∀i ∈N
+X
+i∈Rv
+k
+U i
+k ≤Q
+∀v ∈V
+U i
+k = 0
+∀i ∈N\Rk
+U i
+k ≥0
+∀i ∈N
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(1)
+The exogenous information arriving after decision epoch k is generally denoted by Wk+1 but
+is independent of both the observed state Sk and the action xk in our setting. It consists of the
+demand observations in period k denoted by ˜yi
+k for each retailer i.
+We transition to a new state Sk+1 via a two-step transition encapsulated by the transition
+function SM(Sk,xk,Wk+1). First, we apply the replenishment plan of action xk. The direct cost of
+decision xk is the transportation cost T(Sk,xk) := P
+v∈V α·d(Rv
+k), where α is a nonnegative scaling
+
+10
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+parameter and d(Rv
+k) denotes the distance of the shortest vehicle route among the retailers in Rv
+k.
+The post-decision inventory levels at each retailer equal Ii
+k + U i
+k for all i ∈N. After this, we incur
+the retailer demand ˜yi
+k at each retailer i, and incur the inventory costs
+I(Sk,xk) :=
+X
+i∈N
+ hmax{0,Ii
+k + U i
+k −˜yi
+k} −emin{Ii
+k + U i
+k −˜yi
+k,0}
+
+,
+(2)
+where h is the per unit holding cost, and e is the per unit backorder cost. We define C(Sk,xk) :=
+T(Sk,xk) + I(Sk,xk). Then Ii
+k+1 = Ii
+k + U i
+k −˜yi
+k and ˜Y i
+:k+1 = ( ˜Y i
+:k\{˜yi
+k−L}) ∪{˜yi
+k} for each retailer i,
+so that Sk+1 = (Ik+1, ˜Y:k+1)
+The goal of the data-driven online inventory routing problem is to find a policy π ∈Π and a
+decision rule Xπ : S →X(Sk) to minimize its total expected future discounted cost:
+min
+π∈Π E
+"X
+k∈K
+C(Sk,Xπ(Sk)) | S0
+#
+,
+(3)
+where S0 is the initial system state and Sk+1 = SM(Sk,Xπ(Sk),Wk+1).
+4.
+Scenario Predict-then-Optimize
+The difficulty of solving Equation (3) is due to the three curses of dimensionality in states, decisions,
+and transitions. Optimal decisions can only be obtained if each decision’s future expected cost
+is known, commonly known to be computationally intractable. However, if a reliable description
+of future retailer demand can be obtained, and can be translated into a set of future demand
+scenarios, stochastic programming can help to determine an approximate decision that minimizes
+the expected cost over a smaller, finite future horizon.
+In this section, we detail our Scenario Predict-then-Optimize (ScOP) approach that leverages
+stochastic programming in combination with data-driven future demand scenarios. We first provide
+a high-level overview of the approach, after which we detail the scenario-predict step and the
+scenario-optimize step.
+4.1.
+General Overview of ScPO
+A graphical overview of ScPO is given in Figure 1. The inventory state transition in our data-driven
+online inventory routing problem equals Ii
+k+1 = Ii
+k + U i
+k −˜yi
+k. The (infinite) support of all future
+demand realizations equals {×i∈N{0,...,O}}
+∞. ScOP considers a narrowed set of future demand
+realizations at each decision epoch k for each retailer i denoted by Ωk. Here, ωk ∈Ωk describes
+the ℓfuture demand realization predictions ˆY iωk
+k:
+= {ˆyiωk
+k,k , ˆyiωk
+k,k+1,..., ˆyiωk
+k,k+ℓ−1} for each retailer i,
+with a probability of occurring of p(ωk). The scenario-predict step creates a finite set Ωk at each
+epoch k via a machine-learning-based prediction G with as input the past demand data ˜Y:k, that
+is G( ˜Y:k) = < Ωk,Pk >, where Pk is a probability measure mapping predictions ωk to p(ωk). The
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+11
+Figure 1
+Graphical overview of ScOP.
+scenario-predict step thus entails finding a suitable machine learning predictor G on past demand
+observations ˜Y:k.
+Assuming the scenario-predict step of ScPO returns a set of future demand realizations as
+described by < Ωk,Pk >, these predictions must be translated into inventory replenishment and
+vehicle routing decisions. It is important to realize that, in comparison to classic multi-stage infer-
+ence where information and decisions are revealed iteratively over the decision stages, our ScPO
+approach considers stage aggregation (Powell 2014), where the demand realizations in all future
+periods are revealed after making the decision in epoch k. This is illustrated in Figure 2.
+The scenario-optimize step then exploits two-stage stochastic programming. This two-stage
+stochastic program is effectively an ℓ-period stochastic inventory routing problem. That is, it deter-
+mines for the upcoming ℓperiods replenishment and routing decisions that minimize the expected
+cost over the scenarios Ωk obtained via predictor G. If ℓis selected sufficiently large, the future
+impact of a decision in epoch k can be accurately inferred if the scenarios are a valid representation
+(a) Classic multistage (stochastic
+programming) inference
+(b) ScPO inference
+Figure 2
+The classic and ScPO stage and decision structure
+
+12
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+of the underlying uncertainty (Hvattum et al. 2009). We then execute the decisions for epoch k
+and transition to state Sk+1, after which ScPO restarts.
+In summary, ScPO provides a generic way to deal with MDPs for which the exogenous informa-
+tion exhibits nonstationarity and for which the decision space is of a combinatorial nature, as in the
+data-driven online inventory routing problem. We refer to the decisions of ScPO as xScPO
+k
+∈X(Sk).
+In the following, we will discuss the details of the scenario-predict and the scenario-optimize step.
+4.2.
+Scenario-Predict Step
+The goal is to obtain a data-driven generator of future demand scenarios G. Traditional frameworks
+for data-driven prediction and optimization often work with point forecasts or, equivalently, mean
+value prediction. If the optimization is solely based upon a point forecast, it ignores the inherent
+forecast error of the point forecast. This only works if the point forecast is extremely accurate.
+However, data-driven online inventory routing and various other applications often have to deal
+with nonstationary demand patterns subject to exogenous disturbances, which makes it hard to
+provide reliable and accurate point forecasts.
+The scenario-predict step of ScPO, therefore, does not provide a single-point forecast of future
+retailer demands. Also, we do not rely on distributional assumptions to generate scenarios. Instead,
+the scenario-predict step characterizes the shape of future demand realizations by predicting future
+demand quantiles. From these demand quantiles, we can then sample uniform demand realizations
+to effectively characterize future retailer demand scenarios without the need for distributional
+assumptions.
+In this section, we first show the deep learning model we adopt to predict future demand quan-
+tiles, the so-called Multi-Horizon Quantile Recurrent Neural Networks (MQRNN). Afterward, we
+discuss how we transform this into a scenario generation method based on the predicted quantiles
+by the MQRNN. An example of the performance of the MQRNN as eventually employed in our
+results can be found in Figure 3. Here, the different shades reflect the quantile forecast of future
+demand.
+We are interested in predicting retailer demand at each of the upcoming ℓperiods. We can
+only base our prediction on the observation of the last L demand observations ˜Y:k = { ˜Y 1
+:k,..., ˜Y N
+:k },
+where ˜Y i
+:k = {˜yi
+k−t | t ∈{1,2,...,L}} are the last L periods demands of retailer i. Besides the last
+demand observations, we consider the periods associated with the demands as features, which can
+be interpreted as calendar dates or weekdays because demands often correlate with holidays or
+weekdays. We denote Al
+k = {al
+k−t | t ∈{1,2,...,L}} as the dates of history periods and Af
+k = {af
+k+t |
+t ∈{0,1,...,ℓ−1}} as future dates. Using this input, the MQRNN will provide a so-called quantile
+forecast that gives the conditional quantiles of the target distribution, i.e., the forecasting result
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+13
+Figure 3
+Demand forecast for three example retailers by the MQRNN. The different shades of gray represent
+the predicted quantiles.
+of a quantile b ∈B and period k for retailer i, Y ′ib
+k: , means P(Y i
+k: ≤Y ′ib
+k: | ˜Y i
+:k,Al
+k,Af
+k) = b. Then we
+have {Y′b
+k: | b ∈B} = M( ˜Y:k,Al
+k,Af
+k), where Y′b
+k: = {Y ′ib
+k: | i ∈N} and M(·) is the MQRNN predictor.
+From this, we can then determine < Ωk,Pk >.
+We now detail the MQRNN network structure, which we adopt because of its demonstrated
+performance in demand forecasting (Wen et al. 2017, Qi et al. 2023). MQRNN exploits the expres-
+siveness and temporal nature of Sequence-to-Sequence (Seq2Seq) Neural Networks (Sutskever et al.
+2014), mainly including an encoder and decoder part, see Figure 4. MQRNN utilizes the same
+encoder structure as the classic Seq2Seq framework. The decoder uses a multi-horizon forecast
+and thus can directly train a model with a multivariate target. There are two kinds of Multi-
+Layer Perceptron (MLP). They are called a global MLP mG(·) and a local MLP mL(·). The global
+MLP, (ci
+k,k,ci
+k,k+1,...,ci
+k,k+ℓ−1,ci
+k,a) = mG(hi
+k,k−1,Af
+k), summarizes the encoder output (hi
+k,k−1) plus
+all future inputs (Af
+k) into two contexts: a series of horizon-specific contexts ci
+k,k+t, where t ∈
+{0,1,...,ℓ−1}, for each of the ℓfuture horizons, and a horizon-agnostic context ci
+k,a, which cap-
+tures common information. The local MLP applies to each specific horizon, which combines the
+corresponding future input and the two contexts from the global MLP, then outputs all the required
+quantiles for that specific future horizon: (y′ib1
+k,k+t,y′ib2
+k,k+t,...,y′ibB
+k,k+t) = mL(ci
+k,k+t,ci
+k,a,af
+k+t), where
+{b1,b2,...,bB} := B. We feed multiple input-target pairs, i.e., ground truth demand realizations
+{˜yi
+κ−1, ˜yi
+κ−2 ..., ˜yi
+κ−L}−{˜yi
+κ, ˜yi
+κ+1 ..., ˜yi
+κ+ℓ−1} for multiple κ and i, to train the encoder-decoder struc-
+ture. For each input-target pair, the loss function is P
+b∈B
+Pℓ−1
+t=0(b(˜yi
+κ+t −y′ib
+κ,κ+t)+ +(1−b)(y′ib
+κ,κ+t −
+˜yi
+κ+t)+). The model parameters are trained to minimize the total loss of all input-target pairs. The
+readers are referred to (Wen et al. 2017) for more details.
+Recall that we define a forecasted future demand realization of retailer i in period k as ˆY iωk
+k:
+=
+{ˆyiωk
+k,k , ˆyiωk
+k,k+1,..., ˆyiωk
+k,k+ℓ−1}. Here we further define a scenario as ωk = ˆYωk
+k: = { ˆY iωk
+k:
+| i ∈N}. As for the
+scenario generation, we first include all forecasted quantiles into our scenario set, i.e., Ωk = {Y′b
+k: |
+b ∈B}. Then, each time we want to generate a new scenario, we first randomly sample a quantile
+
+14
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Figure 4
+Visualization of the Neural Net Architecture for MQRNN for a single retailer. The dashed boxes flatten
+nodes into a vector, and dashed lines imply replication. The dashed arrow is the loss, which links
+network outputs and targets.
+bβ ∈B\{bB}, then we construct a set of uniform distributions {U i
+k,k+t | i ∈N,t ∈{0,1,...,ℓ−1}},
+where U i
+k,k+t is bounded by y
+′ibβ
+k,k+t and y
+′ibβ+1
+k,k+t . Then we generate ˆyiωk
+k,k+t through randomly sampling
+from distribution U i
+k,k+t. After we generated all scenarios, we can easily normalize their probabilities
+to obtain Pk.
+4.3.
+Scenario-Optimize Step
+The scenario-predict step searches for a decision xScPO
+k
+(Sk) = xScPO
+k
+(Ik,G( ˜Y:k)). It takes as input
+G( ˜Y:k), and converts this to inventory-replenishment and vehicle-routing decisions by solving an
+ℓ-period stochastic inventory routing problem.
+Recall that N is the retailer set, and N + is the set of retailers and the warehouse. Then we
+define the ℓ-period stochastic inventory routing problem on an undirected graph (N +,E), where
+E = {(i,j) : i,j ∈N +,i ̸= j} is the set of edges. Here, cij denotes the cost of edge (i,j). We let ξ+(i)
+and ξ−(i) be the subsets of edges starting from i and ending at i, respectively.
+We introduce two formulations of the ℓ-period stochastic inventory routing problem called SS
+and TS. The SS formulation makes the ℓ-period decisions in a single stage, i.e., makes the ℓ-period
+decisions in epoch k considering different scenarios of demand realizations. Formulation TS is in a
+two-stage fashion: only the decisions in period k are the here-and-now decisions, and the decisions
+for periods k +1,k +1,...,k +ℓ−1 are wait-and-see decisions, which can be different according to
+different scenarios realization. That is illustrated in Figure 5.
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+15
+We first introduce formulation SS. We index the decision variables by k to reflect that the system
+is currently in epoch k. Let binary variable zijv
+k,k+t ∈{0,1} equal to 1 if vehicle v drives along edge
+(i, j) at period k + t for t ∈{0,...,ℓ−1}, and 0 otherwise. Let uiv
+k,k+t denote the delivery quantity
+to retailer i by vehicle v in period k +t. Note that for integer demand, the delivery quantity will be
+integer too. Let T = {0,1,...,ℓ−1}, and let ˆIiωk
+k,k+t denote the inventory at period k + t in scenario
+ωk ∈Ωk. The formulation SS is then given by:
+(a) SS illustration
+(b) TS illustration
+Figure 5
+Illustrations for formulations SS and TS.
+(SS) min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈V
+cijzijv
+k,k+t +
+X
+ωk∈Ωk
+p(ωk)
+X
+t∈T
+X
+i∈N
+(h(ˆIiωk
+k,k+t+1)+ + e(ˆIiωk
+k,k+t+1)−)
+(4)
+s.t.
+X
+(i,j)∈ξ+(0)
+zijv
+k,k+t =
+X
+(i,j)∈ξ−(0)
+zijv
+k,k+t = 1
+∀v ∈V,t ∈T ,
+(5)
+X
+(i,j)∈ξ+(i)
+zijv
+k,k+t =
+X
+(j,i)∈ξ−(i)
+zjiv
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,
+(6)
+X
+v∈V
+X
+(i,j)∈ξ+(i)
+zijv
+k,k+t ≤1
+∀i ∈N,t ∈T ,
+(7)
+uiv
+k,k+t ≤M
+X
+(i,j)∈ξ+(i)
+zijv
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,
+(8)
+X
+i∈N
+uiv
+k,k+t ≤Q
+∀v ∈V,t ∈T ,
+(9)
+uiv
+k,k+t ≤Imax −ˆIiωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,ωk ∈Ωk,
+(10)
+ˆIiωk
+k,k+t+1 = ˆIiωk
+k,k+t +
+X
+v∈V
+uiv
+k,k+t −ˆyiωk
+k,k+t
+∀i ∈N,t ∈T ,ωk ∈Ωk,
+(11)
+X
+i∈S
+X
+j∈S,j̸=i
+zijv
+k,k+t ≤|S| −1
+∀v ∈V,t ∈T ,S ⊂N,2 ≤|S| ≤N,
+(12)
+zijv
+k,k+t ∈{0,1}
+∀(i,j) ∈E,v ∈V,t ∈T ,
+(13)
+uiv
+k,k+t ≥0
+∀i ∈N,v ∈V,t ∈T .
+(14)
+
+16
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+The Objective Function (4) minimizes the transportation cost and the expected ℓ-period holding
+and backorder costs under different scenarios. Constraints (5) ensure vehicles start from and end
+at the warehouse, while Constraints (6) ensure flow conservation. Constraints (7) ensure that
+each retailer can be visited at most once. Constraints (8) model that a vehicle can only make
+deliveries to a retailer when it visits the retailer. Constraints (9) and (10) are vehicle capacity and
+maximum inventory restrictions, respectively. Constraints (11) enforce the inventory flow balance,
+and Constraints (12) are subtour elimination constraints. Constraints (13) and (14) indicate the
+variables’ domain.
+Compared to formulation SS, formulation TS can make different routing and replenishment
+decisions for each scenario ωk ∈Ωk. For this formulation, we therefore index the variables u and z
+with a scenario index ωk.
+(TS) min
+X
+ωk∈Ωk
+p(ωk)(
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈V
+cijzijvωk
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIiωk
+k,k+t+1)+ + e(ˆIiωk
+k,k+t+1)−)),
+(15)
+s.t.
+X
+(i,j)∈ξ+(0)
+zijvωk
+k,k+t =
+X
+(i,j)∈ξ−(0)
+zijvωk
+k,k+t = 1
+∀v ∈V,t ∈T ,ωk ∈Ωk,
+(16)
+X
+(i,j)∈ξ+(i)
+zijvωk
+k,k+t =
+X
+(j,i)∈ξ−(i)
+zjivωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,ωk ∈Ωk,
+(17)
+X
+v∈V
+X
+(i,j)∈ξ+(i)
+zijvωk
+k,k+t ≤1
+∀i ∈N,t ∈T ,ωk ∈Ωk,
+(18)
+uivωk
+k,k+t ≤M
+X
+(i,j)∈ξ+(i)
+zijvωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,ωk ∈Ωk,
+(19)
+X
+i∈N
+uivωk
+k,k+t ≤Q
+∀v ∈V,t ∈T ,ωk ∈Ωk,
+(20)
+uivωk
+k,k+t ≤Imax −ˆIiωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,ωk ∈Ωk,
+(21)
+ˆIiωk
+k,k+t+1 = ˆIiωk
+k,k+t +
+X
+v∈V
+uivωk
+k,k+t −ˆyiωk
+k,k+t
+∀i ∈N,t ∈T ,ωk ∈Ωk,
+(22)
+X
+i∈S
+X
+j∈S,j̸=i
+zijvωk
+k,k+t ≤|S| −1
+∀v ∈V,t ∈T ,ωk ∈Ωk,S ⊂N,2 ≤|S| ≤N, (23)
+uivωk
+k,k = ¯uiv
+k,k
+∀i ∈N,v ∈V,ωk ∈Ωk,
+(24)
+zijvωk
+k,k
+= ¯zijv
+k,k
+∀(i,j) ∈E,v ∈V,ωk ∈Ωk,
+(25)
+zijvωk
+k,k+t ∈{0,1}
+∀(i,j) ∈E,v ∈V,t ∈T ,ωk ∈Ωk,
+(26)
+uivωk
+k,k+t ≥0
+∀i ∈N,v ∈V,t ∈T ,ωk ∈Ωk.
+(27)
+The Objective Function (15) of TS minimizes the expected ℓ-period transportation, holding, and
+backorder costs. Compared to SS, there are two more sets of constraints (24) and (25), which are
+nonanticipativity constraints to ensure the consistency of decisions among the scenarios in period
+k.
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+17
+The optimal solution of SS is a feasible solution of TS. Formulation SS is relatively conserva-
+tive as we search for a single solution that performs well in all scenarios and do not employ a
+state-dependent evaluation of decisions in future periods. In contrast, formulation TS is relatively
+optimistic as it allows for state-dependent evaluation of decisions in future periods. However, our
+state aggregation bases these state-dependent decisions on information that, in practice, is not
+yet known. Therefore, and because we employ both formulations in a rolling horizon framework,
+it is unclear which will perform better in practical situations. Among others, we evaluate these
+differences in Section 6.
+After solving either formulation SS or TS, we let the routing plan Rv
+k = {i ∈N | P
+j∈N + zijv
+k,k = 1},
+and the replenishment plan Uk = {P
+v∈V uiv
+k,k | i ∈N}. Then the decision for epoch k can be denoted
+as xScPO
+k
+(Sk) = (Rk,Uk).
+5.
+Algorithms for the Scenario-Optimize Step
+Formulation TS has second-stage binary variables, making it much more complex to solve than
+SS. Also, TS requires the decision in the first period to meet nonanticipativity constraints for
+all upcoming periods in the aggregated stage. Such formulations clearly cannot be solved by off-
+the-shelf commercial MIP solvers. Therefore we propose using a Progressive Hedging Algorithm
+(PHA), which we will outline in Section 5.1. Following that, we present the matheuristic algorithm
+proposed by Solyalı and S¨ural (2022) in Section 5.2, which we adopt to solve the SS formulation
+and the subproblems arising in the PHA for the TS formulation.
+5.1.
+Progressive Hedging Algorithm (PHA)
+The PHA decomposes a multiple-scenario formulation into multiple single-scenario formulations
+by relaxing the nonanticipativity constraints and then iteratively solving penalized single-scenario
+formulations, known as subproblems, to reach consensus amongst the first-stage decision variables.
+Here, consensus means that they converge to the same value, which is forced via iteratively updating
+the penalization. Before we detail this, we introduce the one-scenario formulation of TS under
+scenario ωk, called OS(ωk), as follows:
+OS(ωk) min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈V
+cijzijvωk
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIiωk
+k,k+t+1)+ + e(ˆIiωk
+k,k+t+1)−),
+(28)
+s.t.
+X
+(i,j)∈ξ+(0)
+zijvωk
+k,k+t =
+X
+(i,j)∈ξ−(0)
+zijvωk
+k,k+t = 1
+∀v ∈V,t ∈T ,
+(29)
+X
+(i,j)∈ξ+(i)
+zijvωk
+k,k+t =
+X
+(j,i)∈ξ−(i)
+zjivωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,
+(30)
+X
+v∈V
+X
+(i,j)∈ξ+(i)
+zijvωk
+k,k+t ≤1
+∀i ∈N,t ∈T ,
+(31)
+
+18
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+uivωk
+k,k+t ≤M
+X
+(i,j)∈ξ+(i)
+zijvωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,
+(32)
+X
+i∈N
+uivωk
+k,k+t ≤Q
+∀v ∈V,t ∈T ,
+(33)
+uivωk
+k,k+t ≤Imax −ˆIiωk
+k,k+t
+∀i ∈N,v ∈V,t ∈T ,
+(34)
+ˆIiωk
+k,k+t+1 = ˆIiωk
+k,k+t +
+X
+v∈V
+uivωk
+k,k+t −ˆyiωk
+k,k+t
+∀i ∈N,t ∈T ,
+(35)
+X
+i∈S
+X
+j∈S,j̸=i
+zijvωk
+k,k+t ≤|S| −1
+∀v ∈V,t ∈T ,S ⊂N,2 ≤|S| ≤N,
+(36)
+zijvωk
+k,k+t ∈{0,1}
+∀(i,j) ∈E,v ∈V,t ∈T ,
+(37)
+uivωk
+k,k+t ≥0
+∀i ∈N,v ∈V,t ∈T .
+(38)
+Clearly, we cannot just solve each subproblem independently, as it will violate the nonanticipa-
+tivity constraints. To force nonanticipativity, we can add these constraints with consensus variables
+to each of the subproblems. Then, we use an augmented Lagrangian relaxation to relax these con-
+straints and add a penalty term in the objective function. Thus, we consider individual scenario
+subproblems where the objective function can be rewritten as Equation (39), where λivωk
+k
+denotes
+Lagrangian multipliers and ρk the penalty parameters.
+f(ωk) = min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈V
+cijzijvωk
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIiωk
+k,k+t+1)+ + e(ˆIiωk
+k,k+t+1)−)+
+X
+i∈N
+X
+v∈V
+λivωk
+k
+(uivωk
+k,k −¯uiv
+k,k) + 1
+2ρk
+X
+i∈N
+X
+v∈V
+(uivωk
+k,k −¯uiv
+k,k)2,
+(39)
+The above objective is nonlinear, but we can linearize that following the method by Hu et al.
+(2019) to linearize the quadratic penalty components. The linearized objective function is as Equa-
+tion (40). Then, Equations (42) and (43) are introduced to linearize the absolute form in Equation
+(40), and the objective function is rewritten as Equation (41).
+f(ωk) = min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈V
+cijzijvωk
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIiωk
+k,k+t+1)+ + e(ˆIiωk
+k,k+t+1)−)+
+X
+i∈N
+X
+v∈V
+λivωk
+k
+|uivωk
+k,k −¯uiv
+k,k|
+(40)
+f(ωk) = min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈V
+cijzijvωk
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIiωk
+k,k+t+1)+ + e(ˆIiωk
+k,k+t+1)−)+
+X
+i∈N
+X
+v∈V
+λivωk
+k
+(µiv
+k,k + νiv
+k,k)
+(41)
+s.t. µiv
+k,k −νiv
+k,k = uivωk
+k,k −¯uiv
+k,k
+∀i ∈N,v ∈V
+(42)
+µiv
+k,k,νiv
+k,k ≥0
+∀i ∈N,v ∈V
+(43)
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+19
+There are two types of variables, the routing variables z and the replenishment variables u.
+Regarding the consistency of the variables, we have the following result.
+Proposition 1 (Consistency). The consistency of u among all scenarios is sufficient for the
+consistency of z.
+Proof. The only difference among scenarios is the demands faced by retailers. Thus, there is no
+difference among scenarios once the delivery variable of u is consistent, which means the optimal
+solution of z is consistent.
+□
+Note that consistency of z only implies that the maximum total delivery quantity to retailers
+visited by the same vehicle is consistent. Individual retailer deliveries can differ, so the optimal
+solution of u can be inconsistent, given that z is consistent. According to Proposition 1, once u is
+consistent, the optimal solution of z is consistent. For that reason, we will only enforce nonantici-
+pativity on the u variables. Furthermore, we observe that small changes in u will probably not lead
+to drastic changes to the optimal solution, whereas small changes in z might lead to drastically
+different solutions. This observation motivates us to use a myopic policy in our PHA:
+Myopic Policy. During the iterations of PHA, once z is consistent between two subsequent
+iterations, we fix z in all future iterations of PHA.
+As for the consensus variables calculation, parameter updating, and termination criteria, we
+adopt a similar approach as Hu et al. (2019). The consensus variables are calculated as Equation
+(44). Equations (45)-(49) show the update of PHA’s parameters, where we use superscript (r),
+r ≥0, to represent the parameters under different iterations of PHA and (0) representing the start
+of the algorithm. After determining the optimal routing decision of z, we set the parameters update
+more aggressively, as in Equation (47), where β0 = 1 if z is inconsistent, and β0 > 1 otherwise. The
+termination criteria are given by Equation (50).
+¯uiv
+k,k =
+X
+ωk∈Ωk
+p(ωk)uivωk
+k,k
+∀i ∈N,v ∈V,
+(44)
+θP (r)
+k
+=
+X
+i∈N
+X
+v∈V
+(¯uiv(r)
+k,k −¯uiv(r−1)
+k,k
+)2,
+(45)
+θD(r)
+k
+=
+X
+i∈N
+X
+v∈V
+X
+ωk∈Ωk
+(uivωk(r)
+k,k
+−¯uiv(r)
+k,k )2,
+(46)
+ρ(r)
+k =
+
+
+
+
+
+
+
+
+
+β0βDρ(r−1)
+k
+, if θD(r−1)
+k
+−θD(r−2)
+k
+> 0
+1
+β0βP ρ(r−1)
+k
+, elseif θP (r−1)
+k
+−θP (r−2)
+k
+> 0
+ρ(r−1)
+k
+, else
+(47)
+λivωk(0)
+k
+= ρ(0)
+k |uivωk(0)
+k,k
+−¯uiv(0)
+k,k |
+∀i ∈N,v ∈V,ωk ∈Ωk,
+(48)
+
+20
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+λivωk(r)
+k
+= ρ(r−1)
+k
+|uivωk(r)
+k,k
+−¯uiv(r−1)
+k,k
+| + λivωk(r−1)
+k
+∀i ∈N,v ∈V,ωk ∈Ωk,
+(49)
+X
+ωk∈Ωk
+p(ωk)(
+X
+i∈N
+X
+v∈V
+|uivωk
+k,k −¯uiv
+k,k|) ≤ϵ.
+(50)
+The PHA flow is summarized in Algorithm 1. It iteratively solves penalized sub-problems and
+updates penalty parameters, leading the sub-problems under different scenarios to convergence. At
+the end of every iteration, it will check whether the termination criteria are satisfied. If so, the
+algorithm will stop, and we can obtain a consensus solution among all scenarios. Note that we also
+apply the Myopic Policy. Thus, if the routing decision of z reached consensus during the iterations,
+we will fix the corresponding routing decisions.
+Algorithm 1: The algorithm flow of PHA.
+1 Initialize: r ←0,ρ(0)
+k .
+2 Solve sub-problems OS(ωk).
+3 Calculate consensus variables ¯uiv
+k,k and parameter λivωk(0)
+k
+.
+4 while not terminate do
+5
+r ←r + 1.
+6
+Solve sub-problems with Objective Function (41).
+7
+if z is consistent then
+8
+Determine the current routing decision as optimal. // Myopic Policy
+9
+Update consensus variables ¯uiv
+k,k, and parameters ρ(r)
+k
+and λivωk(r)
+k
+.
+10 return ¯uiv
+k,k
+5.2.
+Matheuristic Algorithm
+We adopt the matheuristic algorithm proposed by Solyalı and S¨ural (2022) to solve OS(ω) and SS.
+It is a heuristic algorithm designed for the deterministic inventory routing problem (DIRP), mainly
+based on the problem formulation. The DIRP is first formulated as a mixed integer linear program
+(MILP), and then three different MILPs of a restricted version of the formulation are constructed.
+The matheuristic algorithm relies on a sequential solution of the three MILPs, each continuously
+optimizing the visiting and delivery plan based on the visiting routes constructed through bench-
+mark algorithms for either the traveling salesman problem (TSP) or the capacitated vehicle routing
+problem (CVRP). The main idea of this algorithm is avoiding the subtour elimination constraints,
+which leads to the main solving difficulty. The specific formulations and implementation within
+PHA are introduced in the online appendix. We refer the reader to Solyalı and S¨ural (2022) for
+more details.
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+21
+6.
+Computational Experiments
+In this section, we first introduce the configuration of our computational experiments. We create
+synthetic data, which allows us to control the ‘degree of nonstationarity’, i.e., meaning that we can
+manually impose trends and exogenous disturbances in the data. We conduct numerical experi-
+ments to show the performance of our ScPO, and perform a sensitivity analysis on the main cost
+components. We end this section by showing the performance of ScPO on two real-life case studies
+at our industry partner.
+6.1.
+Experimental Configuration
+Our ScPO is implemented in Python, and the MILPs of the matheuristic algorithm are solved using
+CPLEX version 22.1.1.0. In several parts, for both the ScPO and benchmark policies introduced
+later, we employ a Python TSP Solver to solve TSP (@FrickTobias 2024) and a Python wrapper for
+the Hybrid Genetic Search algorithm proposed by Vidal et al. (2012) to solve capacitated vehicle
+routing problems (@chkwon 2024). The experiments are run on a computer cluster with 2.4 GHz
+AMD Genoa 9654 (2x) CPU sockets with 2 GB RAM per core.
+6.1.1.
+Synthetic Data. We create synthetic instances based on three data patterns: Trend,
+Random, and Both. For each data pattern, we generate 600 one-year sequences mimicking the
+demand sequences of 600 retailers, where each sequence is generated as follows. The Trend pattern
+considers a trend and a cycle. We adopt an AR(1) process vk = φvk−1, where for each sequence, φ
+is randomly sampled from a uniform distribution U(0.995,1.01) and v0 is randomly sampled from
+the uniform distribution U(5,7). For the cycle factor, we generate value as wk = sin(2π/(ˆay
+k/366))+
+sin(2π/(ˆaw
+k /7)), where ˆay
+k and ˆaw
+k refer to the day of year and day of week, respectively. The final
+sequence is generated as vk + wk. The values of the Random pattern are randomly sampled from
+a normal distribution N(µ,σ2), where for each sequence, µ is sampled from U(9,11) and σ2 from
+U(2,4). The values of the Both pattern are the sum of values generated by the Trend and Random.
+We divide the 600 retailers into a training set and a test set in a ratio of 7:3. The 420 sequences
+in the training set are fed into prediction models for training, and the test set is for constructing
+instances. For the remaining 180 retailers in the test set, we use k-means clustering to cluster
+retailers into 10 different groups based on their locations, generated within the latitude of 50.7-
+53.4 and longitude 3.5-7.1. Finally, we adjust the groups so that each has 18 retailers. Each group
+corresponds to an instance. Thus, we have 10 instances of each data pattern, each with 18 retailers.
+6.1.2.
+Prediction Benchmarks. We use an LSTM neural network and Maximum Likeli-
+hood Estimation (MLE) as benchmarks for the prediction models. We train the LSTM network to
+obtain the point forecast of future demands as the base value, Y′LST M
+k:
+. Then, we sample errors of
+Eωk
+k: from a fitted error distribution, which is normal. Demand scenarios are constructed by adding
+
+22
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+sampled errors to the base value, where different sampled Eωk
+k:
+construct different scenarios. For
+the MLE prediction model, we perform a Chi-square goodness of fit test for normal distribution,
+exponential distribution, log-normal distribution, Pearson type III distribution, and Weibull min-
+imum distribution on demand sequences to determine the optimal demand distribution and then
+fit the parameters of the optimal distribution by MLE estimation. At last, the fitted distribution
+is randomly sampled to generate scenarios. The demand scenarios generated by three different
+models are illustrated in Figure 6.
+(a) MQRNN
+(b) LSTM
+(c) MLE
+Figure 6
+Demand Scenarios generated via different prediction models on the synthetic data of Both data pattern.
+6.1.3.
+Benchmarks. We consider six different algorithms to solve the data-driven online
+inventory routing problem. First, we consider a perfect information (PI) solution, which solves
+at each epoch k an ℓ-period single-scenario inventory routing problem, where the single scenario
+resembles the true future demands. This serves as a benchmark against which to compare the
+other methods. Second, we consider the expected value (EV) solution, where we also solve at each
+epoch an ℓ-period single-scenario inventory routing problem, but we let the demands of the single
+scenario be equal to the mean demand at each retailer amongst the last L periods. Third, we
+consider an empirical sampling (EMP) solution, in which we randomly sample data of the last L
+periods to create at each epoch a single-scenario inventory routing problem. Fourth, we consider
+a classic Predict-then-Optimize paradigm, where we predict a single future demand scenario using
+MQRNN, LSTM, and sampling from the fitted distributions via MLE. The single scenario pre-
+dicted by MQRNN is set as Y′0.5
+k: , and that predicted by LSTM is set as Y′LST M
+k:
+. Fifth, we employ
+our Scenario Predict-then-Optimize paradigm with our SS stochastic programming formulation
+(ScPO-SS), again evaluating using the same three prediction methods MQRNN, LSTM, and MLE.
+Finally, we consider our ScPO using the TS stochastic programming formulation (ScPO-TS), again
+considering MQRNN, LSTM, and MLE.
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+23
+6.1.4.
+Parameters Values. The per unit holding cost h and per unit backorder cost e are
+0.3 and 3, respectively. The scaling parameter α of transportation cost is 0.05 for the synthetic
+data and 0.01 for the real-life case studies. We use 20 scenarios in our ScPO variants. The history
+demand observation of L is set to 14. The look-ahead parameter ℓis set as 5, 7, and 10, respectively.
+Since the MQRNN directly outputs the ℓperiod prediction, we need to train separately for the
+different values of ℓ. Thus, we train three MQRNN networks for ℓ= 5, ℓ= 7, and ℓ= 10. LSTM
+adopts a recursive strategy to generate multi-horizon forecasts, i.e., we train one model to predict
+a one-step-ahead estimate, then iteratively feed this estimate back as the ground truth to forecast
+longer periods.
+We consider a finite time horizon of 30 periods (or epochs) to evaluate the performance of all
+the methods. The quantiles forecasted by MQRNN are set as B = {0.1,0.2,...,0.9}. The PHA
+parameters are set as βD = 1.05,βP = 1.05,ρ(0) = 0.001, and ϵ = 0.1. We set a time limit of 900
+seconds for solving the MILPs of the PI, EV, EMP, and Predict-then-Optimize approaches. For
+the ScPO-SS formulation, we consider a time limit per solved MILP of 1800 seconds, considering
+the complexity of the formulation. For the ScPO-TS approach, we set a small time limit of 60
+seconds for each MILP in each iteration because we employ PHA to solve it, which requires much
+more MILP evaluations. We also adopt aggressive PHA convergence parameters to obtain fair
+comparisons between ScPO-SS and ScPO-TS computationally. All approaches run on the server
+with a single core, except ScPO-TS, which runs on 10 cores so that we can solve the subproblems in
+parallel using the threading module (Python Module 2024). We set the number of threads invoked
+by CPLEX equal to one.
+6.2.
+Performance of ScPO
+We now present the results of our synthetic data. We present average performances over five
+instances, and we vary the number of retailers, the look-ahead parameter ℓ, and the data patterns.
+We show the results of the instance with ten retailers and the look-ahead ℓ= 10 in Table 1 for
+each of the three data patterns. Full retailers and look ahead parameter combinations results are
+provided in Tables A3 - Table A5 in the online appendix, and visually in Figure 8.
+The row “Cost” refers to the total cost over the 30 periods of each approach. The row “∆Cost”
+is the extra cost compared to the PI approach, and “Saving” means the percentage of the gap
+between the EV and PI approach being closed. The row “MSE” is the mean-square error of the
+used prediction. The row “Service” indicates a service level, calculated as the number of directly
+satisfied demands among all retailers and periods divided by the total demand among all retailers.
+Finally, the row “Time (s)” is the average solving time for each period in seconds.
+Several observations stand out. First, among the three prediction models, MQRNN performs
+best, and MLE performs worst. The MLE prediction has the lowest saving, with a -15.67% saving
+
+24
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Table 1
+Detailed numerical results of ScPO and the proposed benchmarks for a 10-retailer system
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+Random
+Cost
+1287
+2339
+2502
+2646
+2360
+2356
+1871
+1852
+1853
+2223
+2289
+2254
+∆Cost
+0
+1053
+1216
+1360
+1073
+1069
+585
+566
+567
+937
+1003
+967
+Saving
+100%
+0%
+-15%
+-29%
+-2%
+-2%
+44%
+46%
+46%
+11%
+5%
+8%
+MSE
+0
+275
+570
+622
+290
+284
+Service
+100%
+70%
+72%
+70%
+68%
+68%
+90%
+89%
+88%
+74%
+68%
+72%
+Time (s)
+805
+813
+810
+161
+825
+814
+1961
+1965
+1741
+6482
+6382
+5666
+Trend
+Cost
+1174
+2087
+2071
+2126
+1579
+1579
+1673
+1628
+1339
+1765
+1705
+1513
+∆Cost
+0
+914
+897
+952
+405
+405
+499
+454
+166
+591
+531
+339
+Saving
+100%
+0%
+2%
+-4%
+56%
+56%
+45%
+50%
+82%
+35%
+42%
+63%
+MSE
+0
+168
+377
+466
+19
+20
+Service
+100%
+70%
+77%
+78%
+66%
+65%
+95%
+62%
+84%
+84%
+65%
+70%
+Time (s)
+741
+762
+784
+158
+762
+756
+1925
+1945
+1689
+6085
+4214
+3822
+Both
+Cost
+1396
+2606
+2689
+2778
+2298
+2350
+2036
+1918
+1873
+2240
+2245
+2164
+∆Cost
+0
+1210
+1293
+1382
+902
+954
+640
+522
+477
+844
+849
+768
+Saving
+100%
+0%
+-7%
+-14%
+25%
+21%
+47%
+57%
+61%
+30%
+30%
+37%
+MSE
+0
+319
+738
+815
+177
+194
+Service
+100%
+67%
+74%
+73%
+70%
+67%
+94%
+87%
+88%
+83%
+70%
+74%
+Time (s)
+834
+926
+863
+170
+856
+858
+2072
+2059
+1879
+6104
+5901
+5295
+on average in Predict-then-Optimize (implying a worse performance than the EV solution), 45.33%
+in ScPO-SS, and 25.33% in ScPO-TS. The reason is that this model follows the assumption that
+the distribution is the same in each period and does not consider the trend and cycle changes in
+demand. That reveals the shortcomings of straightforward distributional assumptions. The LSTM
+and MQRNN predictions perform similarly in the Predict-then-Optimize approach, with average
+savings of 26.33% and 25.00%, respectively. In ScPO-SS, due to the difference in the scenario
+generation methods, the MQRNN prediction outperforms the LSTM prediction with a 63.00%
+saving, while the average saving of LSTM is 51.00%. In ScPO-TS, the average savings of MQRNN
+and LSTM are 36.00% and 25.67%, respectively. The relatively good performance of MQRNN lies
+in generating scenarios through forecasted quantiles, which is more robust, while LSTM generates
+scenarios through base values and error distributions.
+The second main observation is that ScPO-SS outperforms all other benchmarks, including
+ScPO-TS, with an average saving of 63.00%. Since MQRNN performs best, we only consider this
+prediction model in the following analysis. Compared to the EV benchmark, EMP has an average
+saving of -6.67%. The saving of ScPO-SS is 63.00% on average. In contrast, the average sav-
+ing of Predict-then-Optimize, which represents the traditional Predict-then-Optimize data-driven
+approach, is only 25.00%. This shows that ScPO is a robust alternative that efficiently handles
+nonstationary data. Relatively surprising, ScPO-TS does not outperform ScPO-SS. We will analyze
+this in more detail later.
+Thirdly, ScPO has the largest improvement under the Trend pattern and lowest under the Ran-
+dom pattern. This is directly explained by the fact that the Trend pattern is the most straightfor-
+ward to predict. What is also interesting is that the prediction models perform relatively differently
+among the different data patterns. Focussing on the ScPO-SS approach, we observe that in the
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+25
+Trend pattern, MQRNN outperforms LSTM, having an 82% saving, and LSTM outperforms MLE
+with a 50% saving compared to a 45% saving. In the Both pattern, a similar performance is visible,
+where the savings of MQRNN, LSTM, and MLE are 61%, 57%, and 47%, respectively. However,
+the gaps are slightly reduced compared to the Trend pattern. In the Random pattern, the perfor-
+mance of all models reduces to be similar, with savings of 44%, 46%, and 46% for MLE, LSTM,
+and MQRNN, respectively. Finally, we noticed that ScPO-TS does not perform well. One possible
+Figure 7
+The cost comparison of ScPO-SS and ScPO-TS over different look-ahead.
+reason is the complexity of the model and the need to use PHA; without that, the models are com-
+putationally impossible to solve. Because we need many iterations, we set a one-minute time limit
+and more aggressive convergence parameters to compress the solution time. To further investigate
+this, we employ a simple experiment considering the ScPO-TS and ScPO-SS approaches for a sin-
+gle retailer setting and vary the value of ℓ. We set a time limit of 1800s. The experiments are on
+three instances, and the resulting cost over 30 periods within a rolling horizon setting, for varying
+levels of ℓ, is given in Figure 7. ScPO-TS needs a large value of ℓ, which is computationally very
+difficult to solve for multiple retailer settings, to outperform ScPO-SS. However, future research
+might want to focus on even more tailored heuristic approaches to solve the ℓ-period stochastic
+inventory routing problems to see if the ScPO-TS approach can outperform the ScPO-SS approach.
+We also make a graphical visualization of all the instances, of which details are provided in
+the appendix, in Figure 8. Here, we present solely the savings of all methods and arrange all the
+instances horizontally. They are numbered as follows. Instances 1-9 correspond to the Random
+data pattern, and instances 10-18 are Trend, followed by instances 19-27 of Both data pattern. The
+remaining are real-life instances Inst-1 and Inst-2, of which we provide a detailed performance later.
+In each data pattern, the instances are numbered as the increase of the number of retailers and
+ℓ. For example, instance 1, instance 2, and instance 3 consider five retailers and ℓ= 5, ℓ= 7, and
+ℓ= 10, respectively. Then instance 4, instance 5, and instance 6 consider seven retailers with ℓ= 5,
+ℓ= 7, and ℓ= 10, etc. Through the figure, we consistently observe that ScPO-SS using MQRNNs
+outperforms all methods.
+
+26
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Figure 8
+The graphical visualization of all experimental results.
+Table 2
+Cost savings for various holding and backorder cost values.
+h
+e
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+0.15
+1.5
+100%
+0%
+-13%
+-29%
+24%
+19%
+35%
+45%
+50%
+-14%
+-8%
+2%
+0.3
+1.5
+100%
+0%
+-7%
+-13%
+23%
+23%
+19%
+41%
+45%
+10%
+23%
+26%
+0.3
+3
+100%
+0%
+2%
+-6%
+15%
+14%
+34%
+52%
+56%
+30%
+20%
+33%
+0.3
+6
+100%
+0%
+5%
+9%
+20%
+15%
+54%
+66%
+65%
+46%
+28%
+31%
+0.6
+6
+100%
+0%
+2%
+-14%
+22%
+23%
+49%
+59%
+65%
+47%
+30%
+38%
+Average
+100%
+0%
+-2.20%
+-10.60%
+20.80%
+18.80%
+38.20%
+52.60%
+56.20%
+23.80%
+18.60%
+26.00%
+6.3.
+Sensitivity Analysis
+We continue by analyzing the effects of cost coefficients on our methods. In Section 6.2, we conduct
+numerical experiments where transportation, holding, and backorder costs are balanced. Now, we
+explore more coefficient combinations on data pattern Both with five retailers and ℓ= 5 to study
+the effect of the cost coefficients on operational decisions. The results are in Table A6 in the online
+appendix and are summarized in Table 2. The results show that MQRNN in combination with
+ScPO-SS is a robust choice with an average saving of 56.20% among all instances.
+6.4.
+Real-life Data Experiments
+In this subsection, we apply our approaches to real-data concerning spare parts demand data from
+SAIC Volkswagen Automotive Co., Ltd. in China in 2020. Similar to in Gaur and Fisher (2004), we
+aggregate the demands of multiple spare parts into one according to volume. We divide Shanghai
+Volkswagen’s 1,000 retailers nationwide into a training set and a testing set according to a 70%-30%
+principle and construct two instances for experiments using a subset of geographically relatively
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+27
+Table 3
+Real-data experiments for an instance with 10 retailers and ℓ= 10
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+Inst-1
+Cost
+585
+7697
+8917
+9296
+5027
+6846
+7006
+7971
+3097
+9571
+10188
+7579
+∆Cost
+0
+7111
+8332
+8711
+4441
+6261
+6420
+7386
+2511
+8985
+9602
+6993
+Saving
+100%
+0%
+-17%
+-22%
+38%
+12%
+10%
+-4%
+65%
+-26%
+-35%
+2%
+MSE
+0
+137
+239
+376
+50
+58
+Service
+98%
+69%
+68%
+82%
+78%
+69%
+91%
+100%
+93%
+78%
+82%
+63%
+Time (s)
+87
+88
+32
+19
+109
+60
+50
+13
+30
+5363
+5201
+3086
+Inst-2
+Cost
+6411
+15103
+15285
+16140
+12130
+13320
+12915
+13981
+10395
+15337
+18126
+15936
+∆Cost
+0
+8692
+8874
+9729
+5719
+6908
+6504
+7570
+3984
+8926
+11715
+9525
+Saving
+100%
+0%
+-2%
+-12%
+34%
+21%
+25%
+13%
+54%
+-3%
+-35%
+-10%
+MSE
+0
+201
+359
+410
+97
+102
+Service
+99%
+68%
+74%
+74%
+77%
+72%
+89%
+99%
+89%
+79%
+79%
+66%
+Time (s)
+1194
+1345
+633
+233
+1348
+1265
+912
+23
+774
+10487
+8931
+9936
+close retailers in the testing set. The results of these two instances are in Table 3, which consists
+of 10 retailers with ℓ= 10. Complete results over multiple combinations of number of retailers and
+value of ℓcan be found in Tables A7 and A8 in the online appendix.
+The different benchmarks perform in the real-life case studies similarly to the synthetic data.
+MQRNN remains the best under the ScPO-SS approach, and the average savings of MLE, LSTM,
+and MQRNN are 17.50%, 4.50%, and 59.50%, respectively. Under the Predict-then-Optimize
+approach, the average savings are -17.00%, 36.00%, and 16.50%, with LSTM performing better
+than MQRNN. ScPO-SS (with MQRNN) still outperforms all other benchmarks with an average
+savings of 59.50%, while Predict-then-Optimize (with LSTM) has an average saving of 36.00%, and
+EMP has an average saving of -9.50%. We note that the performance of LSTM behaves differently.
+Under ScPO-SS, the average saving is 4.50%, which is worse than MLE (with an average saving
+of 17.50%), and the saving is also much lower than LSTM under Predict-then-Optimize (with an
+average saving of 36%). The reason lies in the structure of the real-life industry data: fewer patterns
+can be captured, and thus, more difficult to predict. That can be evidenced by the gaps of “Cost”
+between different benchmarks and PI. The gaps of ScPO-SS with MQRNN are 43.98%, 35.28%,
+and 40.56% for Random, Trend, and Both data patterns, respectively, whereas in real-life industry
+data, the gaps of these two instances are 429.23% and 62.14%, respectively. As a result, the error
+distributions fluctuate significantly, leading to poor quality of the scenarios generated by LSTM.
+That further illustrates the importance of our MQRNN-based scenario generation method, which
+is robust enough on different datasets. It also reveals the difficulty of predicting real-life data by
+point prediction alone. A more powerful multi-scenario approach with robust scenario generation
+is essential. This is what ScPO provides.
+7.
+Conclusions
+This paper proposes a novel integrated prediction and optimization approach for real-time joint
+replenishment and distribution via vehicle routing in one-warehouse, multiple-retailer systems,
+
+28
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+also known as data-driven online inventory routing. Our approach, Scenario Predict-then-Optimize
+(ScPO), relies neither on making distributional assumptions for retailer demand nor on single-point
+forecasts. This contrasts the state-of-the-art that makes such assumptions or works with point
+forecasts. ScPO consists of a scenario-predict step, utilizing Multi-Horizon Quantile Recurrent
+Neural Networks that forecast future retailer demand quantiles from which we sample scenarios.
+The sampled scenarios are input for the scenario-optimize step of ScPO, which exploits two-stage
+stochastic programming to find a solution that minimizes the future expected cost of replenishment
+and distribution decisions.
+In this way, ScPO can capture (auto)correlation and lumpy retailer demand patterns that typi-
+cally occur in one warehouse and multiple retailer systems. We show our ScPO’s efficiency based
+on synthetic data and real-life data from SAIC Volkswagen Automotive Co., Ltd. We compare
+ScPO to empirical sampling techniques and various classical Predict-then-Optimize approaches.
+The results show that ScPO outperforms these approaches significantly. It closes 63.00% of the gap
+between the expected value solution and an oracle solver, whereas the best alternative approach
+only closes 26.33% on average.
+Our ScPO is general because it leverages neural network-based quantile prediction and stochastic
+programming. It can easily be tailored to other applications than online inventory routing in
+which nonstationary demand patterns and online combinatorial optimization are combined. Future
+research is needed to investigate how to best align the scenario-predict and scenario-optimize steps
+in other application areas.
+Another promising avenue for further research is to enrich ScPO for other variations of the online
+inventory routing problems. For example, one might investigate cyclic delivery patterns to enhance
+the alignment with other planning processes, consider limited supply availability at the central
+warehouse, or consider more complex supply chains arising in, for instance, modern city logistics
+landscapes due to environmental bans of heavy-duty vehicles.
+References
+Achamrah FE, Riane F, Limbourg S (2022) Solving inventory routing with transshipment and substitution under dynamic and
+stochastic demands using genetic algorithm and deep reinforcement learning. International Journal of Production Research
+60(20):6187–6204.
+Adelman D (2004) A price-directed approach to stochastic inventory/routing. Operations Research 52(4):499–514.
+Andersson H, Hoff A, Christiansen M, Hasle G, Løkketangen A (2010) Industrial aspects and literature survey: Combined
+inventory management and routing. Computers & Operations Research 37(9):1515–1536.
+Bertazzi L (2008) Analysis of direct shipping policies in an inventory-routing problem with discrete shipping times. Management
+Science 54(4):748–762.
+Cai M, Pipattanasomporn M, Rahman S (2019) Day-ahead building-level load forecasts using deep learning vs. traditional
+time-series techniques. Applied Energy 236:1078–1088.
+Chatfield C (2000) Time-Series Forecasting (CRC press).
+@chkwon (2024) Pyhygese. URL https://github.com/chkwon/PyHygese.
+Cho K, Van Merri¨enboer B, Gulcehre C, Bahdanau D, Bougares F, Schwenk H, Bengio Y (2014) Learning phrase representations
+using rnn encoder-decoder for statistical machine translation. arXiv preprint arXiv:1406.1078 .
+Coelho LC, Cordeau JF, Laporte G (2014a) Heuristics for dynamic and stochastic inventory-routing. Computers & Operations
+Research 52:55–67.
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+29
+Coelho LC, Cordeau JF, Laporte G (2014b) Thirty years of inventory routing. Transportation Science 48(1):1–19.
+Crama Y, Rezaei M, Savelsbergh M, Woensel TV (2018) Stochastic inventory routing for perishable products. Transportation
+Science 52(3):526–546.
+Cui Z, Long DZ, Qi J, Zhang L (2023) The inventory routing problem under uncertainty. Operations Research 71(1):378–395.
+De Gooijer JG, Hyndman RJ (2006) 25 years of time series forecasting. International Journal of Forecasting 22(3):443–473.
+Dong JX, Lee CY, Song DP (2015) Joint service capacity planning and dynamic container routing in shipping network with
+uncertain demands. Transportation Research Part B: Methodological 78:404–421.
+Dong ZS, Xie C, Dai R, Hu S (2022) Resilient route design for collection of material from suppliers with split deliveries and
+stochastic demands. Computers & Operations Research 146:105902.
+Elmachtoub AN, Grigas P (2022) Smart “predict, then optimize”. Management Science 68(1):9–26.
+Ferber A, Wilder B, Dilkina B, Tambe M (2020) Mipaal: Mixed integer program as a layer. Proceedings of the AAAI Conference
+on Artificial Intelligence, volume 34, 1504–1511.
+@FrickTobias (2024) Python tsp solver. URL https://github.com/fillipe-gsm/python-tsp#python-tsp-solver.
+Gaur V, Fisher ML (2004) A periodic inventory routing problem at a supermarket chain. Operations Research 52(6):813–822.
+Hasturk U, Schrotenboer AH, Ursavas E, Roodbergen KJ (2024) Stochastic cyclic inventory routing with supply uncertainty:
+A case in green-hydrogen logistics. Transportation Science .
+Hochreiter S, Schmidhuber J (1997) Long short-term memory. Neural Computation 9(8):1735–1780.
+Hu S, Han C, Dong ZS, Meng L (2019) A multi-stage stochastic programming model for relief distribution considering the state
+of road network. Transportation Research Part B: Methodological 123:64–87.
+Huber J, Stuckenschmidt H (2020) Daily retail demand forecasting using machine learning with emphasis on calendric special
+days. International Journal of Forecasting 36(4):1420–1438.
+Huh WT, Janakiraman G (2008) (s, S) optimality in joint inventory-pricing control: An alternate approach. Operations Research
+56(3):783–790.
+Hvattum LM, Løkketangen A (2009) Using scenario trees and progressive hedging for stochastic inventory routing problems.
+Journal of Heuristics 15:527–557.
+Hvattum LM, Løkketangen A, Laporte G (2009) Scenario tree-based heuristics for stochastic inventory-routing problems.
+INFORMS Journal on Computing 21(2):268–285.
+Jaillet P, Bard JF, Huang L, Dror M (2002) Delivery cost approximations for inventory routing problems in a rolling horizon
+framework. Transportation Science 36(3):292–300.
+Jalilvand M, Bashiri M, Nikzad E (2021) An effective progressive hedging algorithm for the two-layers time window assignment
+vehicle routing problem in a stochastic environment. Expert Systems with Applications 165:113877.
+Kim G, Wu K, Huang E (2015) Optimal inventory control in a multi-period newsvendor problem with non-stationary demand.
+Advanced Engineering Informatics 29(1):139–145.
+Kleywegt AJ, Nori VS, Savelsbergh MW (2002) The stochastic inventory routing problem with direct deliveries. Transportation
+Science 36(1):94–118.
+Kleywegt AJ, Nori VS, Savelsbergh MW (2004) Dynamic programming approximations for a stochastic inventory routing
+problem. Transportation Science 38(1):42–70.
+Kotary J, Fioretto F, Van Hentenryck P, Wilder B (2021) End-to-end constrained optimization learning: A survey. arXiv
+preprint arXiv:2103.16378 .
+Lim B, Zohren S (2021) Time-series forecasting with deep learning: a survey. Philosophical Transactions of the Royal Society
+A 379(2194):20200209.
+Liu H, Grigas P (2022) Online contextual decision-making with a smart predict-then-optimize method. arXiv preprint
+arXiv:2206.07316 .
+Mandi J, Guns T (2020) Interior point solving for lp-based prediction+ optimisation. Advances in Neural Information Processing
+Systems 33:7272–7282.
+Mandi J, Stuckey PJ, Guns T, et al. (2020) Smart predict-and-optimize for hard combinatorial optimization problems. Pro-
+ceedings of the AAAI Conference on Artificial Intelligence, volume 34, 1603–1610.
+Powell WB (2014) Clearing the jungle of stochastic optimization. Bridging Data and Decisions, 109–137 (Informs).
+Python Module (2024) Threading: Thread-based parallelism. URL https://docs.python.org/3/library/threading.html.
+Qi M, Shi Y, Qi Y, Ma C, Yuan R, Wu D, Shen ZJ (2023) A practical end-to-end inventory management model with deep
+learning. Management Science 69(2):759–773.
+Rockafellar RT, Wets RJB (1991) Scenarios and policy aggregation in optimization under uncertainty. Mathematics of Opera-
+tions Research 16(1):119–147.
+Sahay N, Ierapetritou M (2016) Multienterprise supply chain: Simulation and optimization. AIChE Journal 62(9):3392–3403.
+Solyalı O, S¨ural H (2022) An effective matheuristic for the multivehicle inventory routing problem. Transportation Science
+56(4):1044–1057.
+Sonntag DR, Schrotenboer AH, Kiesm¨uller GP (2023) Stochastic inventory routing with time-based shipment consolidation.
+European Journal of Operational Research 306(3):1186–1201.
+Staudemeyer RC, Morris ER (2019) Understanding lstm–a tutorial into long short-term memory recurrent neural networks.
+arXiv preprint arXiv:1909.09586 .
+Sutskever I, Vinyals O, Le QV (2014) Sequence to sequence learning with neural networks. Advances in Neural Information
+Processing Systems 27.
+US Census Bureau (2022) The annual retail trade survey. URL https://www.census.gov/programs-surveys/arts.html.
+Vidal T, Crainic TG, Gendreau M, Lahrichi N, Rei W (2012) A hybrid genetic algorithm for multidepot and periodic vehicle
+routing problems. Operations Research 60(3):611–624.
+Vlastelica M, Paulus A, Musil V, Martius G, Rol´ınek M (2019) Differentiation of blackbox combinatorial solvers. arXiv preprint
+arXiv:1912.02175 .
+
+30
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Wen R, Torkkola K, Narayanaswamy B, Madeka D (2017) A multi-horizon quantile recurrent forecaster. arXiv preprint
+arXiv:1711.11053 .
+Wilder B, Dilkina B, Tambe M (2019) Melding the data-decisions pipeline: Decision-focused learning for combinatorial opti-
+mization. Proceedings of the AAAI Conference on Artificial Intelligence, volume 33, 1658–1665.
+Xu Y, Bisi A, Dada M (2011) A periodic-review base-stock inventory system with sales rejection. Operations Research 59(3):742–
+753.
+Ye W, You F (2016) A computationally efficient simulation-based optimization method with region-wise surrogate modeling for
+stochastic inventory management of supply chains with general network structures. Computers & Chemical Engineering
+87:164–179.
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+31
+Appendix A:
+Matheuristic Algorithm
+The algorithm follows the following steps:
+Step 1. Solve a TSP over all retailers,
+Step 2. Solve MILP1,
+Step 3. Solve a TSP if only one vehicle is enabled or a CVRP else for each t ∈T ,
+Step 4. Solve MILP2,
+Step 5. Solve a TSP for each route in each t ∈T ,
+Step 6. Solve MILP3,
+Step 7. Solve a TSP for each vehicle in each t ∈T .
+Next, we will introduce the MILPs and the penalized objective functions implemented in the PHA. Here, we
+omit the notation of ωk.
+Based on the TSP solution, we define αk(i) and βk(i) as the retailer sets visited after and before retailer
+i. When i = 0 or j = 0, zij
+k,k+t is an integer variable indicating the visit times to the warehouse. Otherwise,
+zij
+k,k+t is a binary variable indicating whether the corresponding edge is visited. Then, we can formulate the
+MILP1 formulation. Compared to OS(ωk), we ignore the vehicle index v in the MILP1 formulation and
+construct the vehicle route based on the TSP solution. Thus, the sub-tour elimination constraints are no
+longer required.
+(MILP1)min
+X
+t∈T
+X
+(i,j)∈E
+cijzij
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIi
+k,k+t+1)++ e(ˆIi
+k,k+t+1)−),
+(A1)
+s.t.
+X
+(i,j)∈ξ+(0)
+zij
+k,k+t =
+X
+(i,j)∈ξ−(0)
+zij
+k,k+t = V
+∀t ∈T ,
+(A2)
+X
+j∈α(i)
+zij
+k,k+t =
+X
+j∈β(i)
+zij
+k,k+t
+∀i ∈N,t ∈T ,
+(A3)
+X
+j∈α(i)
+zij
+k,k+t ≤1
+∀i ∈N,t ∈T ,
+(A4)
+ui
+k,k+t ≤M
+X
+j∈α(i)
+zij
+k,k+t
+∀i ∈N,t ∈T ,
+(A5)
+X
+i∈N
+ui
+k,k+t ≤Q
+X
+j∈N
+z0j
+k,k+t
+∀t ∈T ,
+(A6)
+ui
+k,k+t ≤Imax −ˆIi
+k,k+t
+∀i ∈N,t ∈T ,
+(A7)
+ˆIi
+k,k+t+1 = ˆIi
+k,k+t + ui
+k,k+t −ˆyi
+k,k+t
+∀i ∈N,t ∈T ,
+(A8)
+zij
+k,k+t ∈{0,1}
+∀(i,j) ∈E,t ∈T ,
+(A9)
+ui
+k,k+t ≥0
+∀i ∈N,t ∈T .
+(A10)
+When implemented in PHA, the penalized objective will be modified as Equation (A11), while constraints
+(A12) and (A13) are added. The aggregated PHA parameter λi
+k is calculated as Equation (A14) and (A15).
+min
+X
+t∈T
+X
+(i,j)∈E
+cijzij
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIi
+k,k+t+1)+ + e(ˆIi
+k,k+t+1)−) +
+X
+i∈N
+λi
+k(µi
+k,k + νi
+k,k),
+(A11)
+
+32
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+s.t. µi
+k,k −νi
+k,k = ui
+k,k −
+X
+v∈V
+¯uiv
+k,k
+∀i ∈N,t ∈T ,
+(A12)
+µi
+k,k,νi
+k,k ≥0
+∀i ∈N,t ∈T .
+(A13)
+λ
+i(0)
+k
+= ρ(0)
+k |
+X
+v∈V
+u
+iv(0)
+k,k
+−
+X
+v∈V
+¯u
+iv(0)
+k,k |
+∀i ∈N,
+(A14)
+λ
+i(r)
+k
+= ρ(r−1)
+k
+|
+X
+v∈V
+u
+iv(r)
+k,k
+−
+X
+v∈V
+¯u
+iv(r−1)
+k,k
+| + λ
+i(r−1)
+k
+∀i ∈N.
+(A15)
+Since MILP1 only considers the aggregated vehicle capacity constraints, the solution obtained may be
+unfeasible. Therefore, MILP2 is constructed to make the solution feasible or to improve it by exchanging
+retailers among routes. The notations needed are defined as follows.
+Table A1
+Additional notations for MILP2.
+Parameters
+Γ iv
+k,k+t
+driving cost of inserting retailer i to route v in k + t
+∆iv
+k,k+t
+driving cost saving of removing retailer i from route v in k + t
+aiv
+k,k+t
+indicator parameter of whether retailer i is visited by route v in k + t in the solution
+Decision Variables
+siv
+k,k+t
+binary variable indicating whether retailer i is inserted to route v in k + t
+riv
+k,k+t
+binary variable indicating whether retailer i is removed from route v in k + t
+(MILP2)min
+X
+t∈T
+X
+i∈N
+(h(ˆIi
+k,k+t+1)+ + e(ˆIi
+k,k+t+1)−) +
+X
+t∈T
+X
+i∈N
+X
+v∈V
+((1 −aiv
+k,k+t)Γ iv
+k,k+tsiv
+k,k+t −aiv
+k,k+t∆iv
+k,k+triv
+k,k+t),
+(A16)
+s.t.
+X
+v∈V
+(aiv
+k,k+t −aiv
+k,k+triv
+k,k+t + (1 −aiv
+k,k+t)siv
+k,k+t) ≤1
+∀i ∈N,t ∈T ,
+(A17)
+uiv
+k,k+t ≤M(aiv
+k,k+t −aiv
+k,k+triv
+k,k+t + (1 −aiv
+k,k+t)siv
+k,k+t)
+∀i ∈N,t ∈T ,v ∈V,
+(A18)
+X
+i∈N
+uiv
+k,k+t ≤Q
+∀t ∈T ,v ∈V,
+(A19)
+uiv
+k,k+t ≤Imax −ˆIi
+k,k+t
+∀i ∈N,t ∈T ,v ∈V,
+(A20)
+ˆIi
+k,k+t+1 = ˆIi
+k,k+t +
+X
+v∈V
+uiv
+k,k+t −ˆyi
+k,k+t
+∀i ∈N,t ∈T ,
+(A21)
+riv
+k,k+t ∈{0,1}
+∀i ∈N,t ∈T ,v ∈V,
+(A22)
+siv
+k,k+t ∈{0,1}
+∀i ∈N,t ∈T ,v ∈V,
+(A23)
+uiv
+k,k+t ≥0
+∀i ∈N,t ∈T ,v ∈V.
+(A24)
+The objective of MILP2 in PHA is modified to Equation (A25), with Constraints (A26) and (A27).
+min
+X
+t∈T
+X
+i∈N
+(h(ˆIi
+k,k+t+1)+ + e(ˆIi
+k,k+t+1)−) +
+X
+t∈T
+X
+i∈N
+X
+v∈V
+((1 −aiv
+k,k+t)Γ iv
+k,k+tsiv
+k,k+t −aiv
+k,k+t∆iv
+k,k+triv
+k,k+t)+
+X
+i∈N
+X
+v∈V
+λiv
+k (µiv
+k,k + νiv
+k,k),
+(A25)
+s.t. µiv
+k,k −νiv
+k,k = uiv
+k,k+t −¯uiv
+k,k+t
+∀i ∈N,v ∈V,
+(A26)
+µiv
+k,k,νiv
+k,k ≥0
+∀i ∈N,v ∈V.
+(A27)
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+33
+Then, formulation MILP3 is further formulated to enhance the solution with the following notations.
+Table A2
+Additional notations for MILP3.
+Sets
+Vk,k+t
+set of vehicles used in k + t in the solution of the last step, Vk,k+t = {1,2,...,Vk,k+t}
+Parameters
+αv
+k,k+t(i) the retailer set visited after retailer i in k + t by route v
+βv
+k,k+t(i)
+the retailer set visited before retailer i in k + t by route v
+(MILP3)min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈Vk,k+t
+cijzijv
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIi
+k,k+t+1)+ + e(ˆIi
+k,k+t+1)−),
+(A28)
+s.t.
+X
+(i,j)∈ξ+(0)
+zijv
+k,k+t =
+X
+(i,j)∈ξ−(0)
+zijv
+k,k+t = 1
+∀t ∈T ,v ∈Vk,k+t,
+(A29)
+X
+j∈αv
+k,k+t(i)
+zijv
+k,k+t =
+X
+j∈βv
+k,k+t(i)
+zijv
+k,k+t
+∀i ∈N,t ∈T ,v ∈Vk,k+t,
+(A30)
+X
+v∈Vk,k+t
+X
+j∈αv
+k,k+t(i)
+zijv
+k,k+t ≤1
+∀i ∈N,t ∈T ,
+(A31)
+uiv
+k,k+t ≤M
+X
+j∈αv
+k,k+t(i)
+zijv
+k,k+t
+∀i ∈N,t ∈T ,v ∈Vk,k+t,
+(A32)
+X
+i∈N
+uiv
+k,k+t ≤Q
+∀t ∈T ,v ∈Vk,k+t,
+(A33)
+uiv
+k,k+t ≤Imax −ˆIi
+k,k+t
+∀i ∈N,t ∈T ,v ∈Vk,k+t,
+(A34)
+ˆIi
+k,k+t+1 = ˆIi
+k,k+t +
+X
+v∈Vk,k+t
+uiv
+k,k+t −ˆyi
+k,k+t
+∀i ∈N,t ∈T ,
+(A35)
+zijv
+k,k+t ∈{0,1}
+∀t ∈T ,v ∈Vk,k+t,(i,j) ∈E,
+(A36)
+uiv
+k,k+t ≥0
+∀i ∈N,t ∈T ,v ∈Vk,k+t.
+(A37)
+The penalized objective function is Equation (A38) with Constraints (A39) and (A40).
+min
+X
+t∈T
+X
+(i,j)∈E
+X
+v∈Vk,k+t
+cijzijv
+k,k+t +
+X
+t∈T
+X
+i∈N
+(h(ˆIi
+k,k+t+1)+ + e(ˆIi
+k,k+t+1)−) +
+X
+i∈N
+X
+v∈V
+λiv
+k (µiv
+k,k + νiv
+k,k),
+(A38)
+s.t. µiv
+k,k −νiv
+k,k = uiv
+k,k+t −¯uiv
+k,k+t
+∀i ∈N,v ∈V,
+(A39)
+µiv
+k,k,νiv
+k,k ≥0
+∀i ∈N,v ∈V.
+(A40)
+
+34
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Appendix B:
+Complete Experimental Results
+Table A3
+Numerical experimental results of #Retailer=5 under different look-ahead.
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+5
+Random
+Cost
+718
+1183
+1207
+1284
+1166
+1152
+1013
+998
+992
+1149
+1169
+1150
+∆Cost
+0
+465
+489
+566
+448
+434
+295
+280
+274
+431
+451
+432
+Saving
+100%
+0%
+-5%
+-22%
+4%
+6%
+36%
+40%
+41%
+7%
+3%
+7%
+MSE
+0
+289
+638
+628
+302
+299
+Service
+100%
+79%
+84%
+77%
+79%
+80%
+90%
+89%
+89%
+80%
+77%
+79%
+Time (s)
+5
+6
+5
+1
+6
+6
+9
+8
+8
+1109
+1095
+768
+Trend
+Cost
+691
+1047
+1042
+1099
+886
+873
+938
+915
+774
+966
+987
+906
+∆Cost
+0
+356
+351
+408
+195
+182
+247
+224
+83
+275
+296
+215
+Saving
+100%
+0%
+2%
+-14%
+45%
+49%
+31%
+37%
+77%
+23%
+17%
+40%
+MSE
+0
+171
+394
+476
+20
+19
+Service
+100%
+82%
+86%
+84%
+67%
+68%
+95%
+65%
+83%
+86%
+65%
+65%
+Time (s)
+3
+4
+5
+1
+5
+5
+8
+7
+6
+1155
+658
+579
+Both
+Cost
+782
+1260
+1250
+1291
+1188
+1194
+1098
+1011
+992
+1114
+1164
+1102
+∆Cost
+0
+478
+468
+509
+406
+412
+316
+229
+210
+333
+382
+320
+Saving
+100%
+0%
+2%
+-6%
+15%
+14%
+34%
+52%
+56%
+30%
+20%
+33%
+MSE
+0
+298
+726
+782
+170
+181
+Service
+100%
+75%
+86%
+83%
+76%
+78%
+96%
+88%
+90%
+87%
+76%
+82%
+Time (s)
+5
+7
+6
+1
+7
+7
+10
+10
+9
+1007
+1086
+808
+7
+Random
+Cost
+708
+1180
+1228
+1247
+1166
+1188
+987
+1017
+992
+1116
+1140
+1165
+∆Cost
+0
+472
+520
+539
+458
+481
+279
+309
+284
+408
+432
+457
+Saving
+100%
+0%
+-10%
+-14%
+3%
+-2%
+41%
+35%
+40%
+14%
+9%
+3%
+MSE
+0
+289
+628
+616
+302
+300
+Service
+100%
+79%
+81%
+81%
+79%
+78%
+94%
+89%
+89%
+82%
+78%
+80%
+Time (s)
+9
+12
+10
+2
+12
+12
+33
+26
+24
+1209
+1225
+926
+Trend
+Cost
+674
+1024
+1104
+1136
+881
+878
+946
+912
+755
+987
+989
+866
+∆Cost
+0
+350
+429
+461
+206
+203
+272
+237
+81
+312
+315
+192
+Saving
+100%
+0%
+-23%
+-32%
+41%
+42%
+22%
+32%
+77%
+11%
+10%
+45%
+MSE
+0
+173
+382
+505
+19
+19
+Service
+100%
+83%
+84%
+83%
+67%
+67%
+91%
+63%
+84%
+83%
+59%
+67%
+Time (s)
+8
+9
+10
+2
+8
+8
+30
+19
+14
+1183
+754
+577
+Both
+Cost
+769
+1261
+1281
+1305
+1177
+1184
+1088
+1018
+986
+1144
+1106
+1123
+∆Cost
+0
+493
+512
+536
+408
+415
+320
+249
+218
+375
+338
+355
+Saving
+100%
+0%
+-4%
+-9%
+17%
+16%
+35%
+49%
+56%
+24%
+31%
+28%
+MSE
+0
+297
+700
+765
+169
+183
+Service
+100%
+74%
+84%
+82%
+77%
+77%
+96%
+90%
+91%
+87%
+79%
+80%
+Time (s)
+10
+13
+10
+2
+12
+12
+45
+36
+26
+1187
+1138
+909
+10
+Random
+Cost
+703
+1147
+1221
+1258
+1164
+1146
+1025
+1009
+1018
+1139
+1122
+1128
+∆Cost
+0
+444
+517
+555
+461
+443
+321
+306
+315
+435
+419
+425
+Saving
+100%
+0%
+-17%
+-25%
+-4%
+0%
+28%
+31%
+29%
+2%
+6%
+4%
+MSE
+0
+290
+614
+631
+302
+297
+Service
+100%
+79%
+81%
+81%
+77%
+80%
+90%
+88%
+88%
+79%
+79%
+79%
+Time (s)
+19
+40
+21
+4
+42
+40
+443
+376
+94
+2177
+2380
+2560
+Trend
+Cost
+670
+1046
+1078
+1157
+875
+875
+933
+900
+776
+976
+966
+902
+∆Cost
+0
+376
+408
+487
+206
+206
+263
+230
+107
+307
+296
+232
+Saving
+100%
+0%
+-9%
+-29%
+45%
+45%
+30%
+39%
+72%
+18%
+21%
+38%
+MSE
+0
+173
+394
+465
+19
+19
+Service
+100%
+82%
+85%
+81%
+66%
+66%
+93%
+66%
+80%
+84%
+63%
+65%
+Time (s)
+18
+18
+25
+4
+20
+19
+447
+139
+91
+2142
+1031
+938
+Both
+Cost
+766
+1280
+1265
+1308
+1186
+1181
+1082
+1029
+997
+1138
+1154
+1090
+∆Cost
+0
+513
+499
+542
+420
+415
+315
+262
+230
+371
+387
+323
+Saving
+100%
+0%
+3%
+-5%
+18%
+19%
+39%
+49%
+55%
+28%
+25%
+37%
+MSE
+0
+294
+721
+764
+167
+183
+Service
+100%
+73%
+85%
+83%
+75%
+77%
+96%
+88%
+91%
+87%
+77%
+81%
+Time (s)
+28
+49
+42
+8
+32
+34
+564
+472
+273
+3249
+2521
+2773
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+35
+Table A4
+Numerical experimental results of #Retailer=7 under different look-ahead.
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+5
+Random
+Cost
+977
+1634
+1746
+1749
+1639
+1654
+1362
+1400
+1368
+1576
+1597
+1570
+∆Cost
+0
+657
+769
+772
+662
+677
+385
+424
+391
+599
+620
+593
+Saving
+100%
+0%
+-17%
+-18%
+-1%
+-3%
+41%
+36%
+40%
+9%
+6%
+10%
+MSE
+0
+292
+612
+627
+309
+306
+Service
+100%
+77%
+79%
+77%
+78%
+76%
+91%
+89%
+89%
+78%
+76%
+78%
+Time (s)
+14
+16
+14
+3
+15
+15
+35
+31
+30
+1479
+1466
+1298
+Trend
+Cost
+902
+1418
+1417
+1470
+1174
+1165
+1231
+1208
+1022
+1311
+1332
+1150
+∆Cost
+0
+516
+515
+568
+272
+263
+329
+306
+121
+409
+430
+248
+Saving
+100%
+0%
+0%
+-10%
+47%
+49%
+36%
+41%
+77%
+21%
+17%
+52%
+MSE
+0
+163
+386
+486
+20
+19
+Service
+100%
+80%
+86%
+86%
+66%
+66%
+94%
+64%
+83%
+86%
+64%
+68%
+Time (s)
+12
+12
+12
+3
+11
+11
+29
+17
+16
+1412
+987
+798
+Both
+Cost
+1061
+1750
+1774
+1833
+1633
+1621
+1500
+1412
+1385
+1552
+1581
+1550
+∆Cost
+0
+690
+713
+773
+572
+560
+439
+352
+325
+491
+520
+489
+Saving
+100%
+0%
+-3%
+-12%
+17%
+19%
+36%
+49%
+53%
+29%
+25%
+29%
+MSE
+0
+315
+729
+809
+180
+192
+Service
+100%
+74%
+82%
+80%
+75%
+76%
+95%
+87%
+88%
+87%
+76%
+79%
+Time (s)
+19
+19
+20
+4
+22
+17
+84
+51
+46
+1773
+1462
+1360
+7
+Random
+Cost
+964
+1609
+1713
+1803
+1610
+1655
+1373
+1379
+1368
+1560
+1582
+1599
+∆Cost
+0
+646
+749
+840
+647
+692
+410
+416
+404
+597
+619
+635
+Saving
+100%
+0%
+-16%
+-30%
+0%
+-7%
+37%
+36%
+37%
+8%
+4%
+2%
+MSE
+0
+293
+615
+637
+310
+308
+Service
+100%
+78%
+80%
+75%
+77%
+75%
+90%
+88%
+89%
+78%
+75%
+78%
+Time (s)
+52
+105
+56
+7
+92
+95
+456
+414
+515
+3496
+3181
+3335
+Trend
+Cost
+892
+1408
+1463
+1456
+1176
+1179
+1238
+1199
+1012
+1280
+1320
+1160
+∆Cost
+0
+516
+571
+564
+284
+286
+346
+307
+119
+388
+428
+267
+Saving
+100%
+0%
+-11%
+-9%
+45%
+44%
+33%
+40%
+77%
+25%
+17%
+48%
+MSE
+0
+166
+363
+463
+20
+20
+Service
+100%
+80%
+85%
+86%
+66%
+65%
+95%
+64%
+83%
+86%
+64%
+67%
+Time (s)
+27
+26
+47
+6
+25
+25
+373
+120
+79
+3120
+1411
+1204
+Both
+Cost
+1051
+1758
+1792
+1816
+1603
+1648
+1510
+1401
+1373
+1554
+1566
+1543
+∆Cost
+0
+707
+741
+765
+552
+597
+459
+350
+322
+503
+515
+492
+Saving
+100%
+0%
+-5%
+-8%
+22%
+16%
+35%
+51%
+54%
+29%
+27%
+30%
+MSE
+0
+316
+733
+772
+179
+195
+Service
+100%
+75%
+82%
+80%
+76%
+74%
+96%
+87%
+89%
+86%
+76%
+79%
+Time (s)
+102
+196
+172
+29
+104
+126
+973
+702
+688
+3958
+3238
+2888
+10
+Random
+Cost
+956
+1630
+1715
+1738
+1640
+1660
+1386
+1356
+1389
+1540
+1537
+1552
+∆Cost
+0
+674
+759
+782
+683
+704
+430
+400
+432
+583
+581
+596
+Saving
+100%
+0%
+-13%
+-16%
+-1%
+-4%
+36%
+41%
+36%
+13%
+14%
+12%
+MSE
+0
+294
+609
+637
+311
+305
+Service
+100%
+74%
+79%
+78%
+76%
+74%
+90%
+89%
+89%
+79%
+78%
+79%
+Time (s)
+354
+459
+384
+65
+485
+463
+1522
+1512
+1391
+4344
+4228
+3845
+Trend
+Cost
+883
+1410
+1442
+1485
+1172
+1169
+1240
+1192
+1032
+1318
+1276
+1151
+∆Cost
+0
+527
+559
+602
+288
+286
+357
+309
+148
+435
+393
+268
+Saving
+100%
+0%
+-6%
+-14%
+45%
+46%
+32%
+41%
+72%
+17%
+25%
+49%
+MSE
+0
+165
+363
+474
+20
+20
+Service
+100%
+79%
+84%
+84%
+67%
+68%
+95%
+67%
+79%
+86%
+68%
+69%
+Time (s)
+269
+233
+322
+55
+200
+191
+1513
+1088
+1039
+4027
+2373
+2196
+Both
+Cost
+1041
+1835
+1865
+1806
+1620
+1637
+1485
+1404
+1366
+1573
+1545
+1516
+∆Cost
+0
+795
+824
+765
+579
+596
+444
+363
+325
+532
+504
+475
+Saving
+100%
+0%
+-4%
+4%
+27%
+25%
+44%
+54%
+59%
+33%
+37%
+40%
+MSE
+0
+314
+722
+768
+177
+195
+Service
+100%
+70%
+79%
+83%
+75%
+74%
+94%
+87%
+89%
+87%
+76%
+80%
+Time (s)
+604
+645
+649
+126
+617
+609
+1567
+1555
+1484
+4426
+4241
+3798
+
+36
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Table A5
+Numerical experimental results of #Retailer=10 under different look-ahead.
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+5
+Random
+Cost
+1290
+2302
+2454
+2662
+2325
+2358
+1844
+1877
+1849
+2152
+2226
+2143
+∆Cost
+0
+1012
+1164
+1372
+1035
+1068
+553
+587
+559
+862
+936
+853
+Saving
+100%
+0%
+-15%
+-36%
+-2%
+-6%
+45%
+42%
+45%
+15%
+8%
+16%
+MSE
+0
+277
+570
+613
+294
+290
+Service
+100%
+70%
+75%
+69%
+70%
+68%
+91%
+89%
+88%
+73%
+72%
+76%
+Time (s)
+103
+110
+88
+16
+97
+115
+690
+542
+615
+4587
+3977
+3833
+Trend
+Cost
+1182
+2001
+2036
+2113
+1597
+1566
+1667
+1608
+1341
+1741
+1784
+1525
+∆Cost
+0
+819
+854
+931
+414
+383
+485
+426
+159
+559
+602
+343
+Saving
+100%
+0%
+-4%
+-14%
+49%
+53%
+41%
+48%
+81%
+32%
+26%
+58%
+MSE
+0
+167
+363
+467
+20
+19
+Service
+100%
+76%
+82%
+80%
+66%
+67%
+96%
+63%
+84%
+84%
+65%
+69%
+Time (s)
+60
+39
+62
+14
+56
+58
+475
+150
+115
+3242
+2224
+2177
+Both
+Cost
+1400
+2567
+2597
+2746
+2305
+2342
+1999
+1887
+1872
+2247
+2297
+2201
+∆Cost
+0
+1166
+1197
+1345
+904
+942
+599
+487
+472
+846
+897
+800
+Saving
+100%
+0%
+-3%
+-15%
+22%
+19%
+49%
+58%
+60%
+27%
+23%
+31%
+MSE
+0
+322
+724
+802
+183
+194
+Service
+100%
+68%
+77%
+72%
+69%
+69%
+96%
+87%
+88%
+82%
+69%
+74%
+Time (s)
+306
+243
+457
+74
+302
+309
+1329
+945
+976
+5184
+4356
+3800
+7
+Random
+Cost
+1287
+2321
+2481
+2656
+2378
+2381
+1839
+1871
+1851
+2171
+2296
+2175
+∆Cost
+0
+1034
+1194
+1369
+1091
+1094
+552
+584
+564
+884
+1009
+888
+Saving
+100%
+0%
+-15%
+-32%
+-5%
+-6%
+47%
+44%
+45%
+15%
+2%
+14%
+MSE
+0
+277
+583
+613
+293
+289
+Service
+100%
+70%
+73%
+69%
+68%
+68%
+92%
+88%
+89%
+74%
+70%
+74%
+Time (s)
+562
+632
+599
+103
+697
+676
+1569
+1578
+1570
+5571
+5306
+3976
+Trend
+Cost
+1173
+1995
+2089
+2078
+1592
+1569
+1671
+1611
+1335
+1792
+1739
+1522
+∆Cost
+0
+822
+916
+905
+419
+396
+498
+438
+162
+619
+566
+349
+Saving
+100%
+0%
+-11%
+-10%
+49%
+52%
+39%
+47%
+80%
+25%
+31%
+58%
+MSE
+0
+169
+372
+469
+20
+20
+Service
+100%
+76%
+81%
+80%
+66%
+67%
+95%
+63%
+84%
+83%
+65%
+70%
+Time (s)
+357
+364
+475
+83
+393
+373
+1537
+1202
+1090
+4963
+3667
+2966
+Both
+Cost
+1396
+2549
+2649
+2745
+2324
+2332
+2045
+1912
+1868
+2214
+2258
+2177
+∆Cost
+0
+1153
+1253
+1349
+928
+936
+649
+515
+472
+818
+862
+780
+Saving
+100%
+0%
+-9%
+-17%
+19%
+19%
+44%
+55%
+59%
+29%
+25%
+32%
+MSE
+0
+322
+745
+793
+181
+196
+Service
+100%
+68%
+75%
+73%
+69%
+68%
+94%
+86%
+87%
+83%
+69%
+73%
+Time (s)
+780
+765
+808
+161
+767
+785
+1621
+1594
+1610
+4772
+4951
+4000
+10
+Random
+Cost
+1287
+2339
+2502
+2646
+2360
+2356
+1871
+1852
+1853
+2223
+2289
+2254
+∆Cost
+0
+1053
+1216
+1360
+1073
+1069
+585
+566
+567
+937
+1003
+967
+Saving
+100%
+0%
+-15%
+-29%
+-2%
+-2%
+44%
+46%
+46%
+11%
+5%
+8%
+MSE
+0
+275
+570
+622
+290
+284
+Service
+100%
+70%
+72%
+70%
+68%
+68%
+90%
+89%
+88%
+74%
+68%
+72%
+Time (s)
+805
+813
+810
+161
+825
+814
+1961
+1965
+1741
+6482
+6382
+5666
+Trend
+Cost
+1174
+2087
+2071
+2126
+1579
+1579
+1673
+1628
+1339
+1765
+1705
+1513
+∆Cost
+0
+914
+897
+952
+405
+405
+499
+454
+166
+591
+531
+339
+Saving
+100%
+0%
+2%
+-4%
+56%
+56%
+45%
+50%
+82%
+35%
+42%
+63%
+MSE
+0
+168
+377
+466
+19
+20
+Service
+100%
+70%
+77%
+78%
+66%
+65%
+95%
+62%
+84%
+84%
+65%
+70%
+Time (s)
+741
+762
+784
+158
+762
+756
+1925
+1945
+1689
+6085
+4214
+3822
+Both
+Cost
+1396
+2606
+2689
+2778
+2298
+2350
+2036
+1918
+1873
+2240
+2245
+2164
+∆Cost
+0
+1210
+1293
+1382
+902
+954
+640
+522
+477
+844
+849
+768
+Saving
+100%
+0%
+-7%
+-14%
+25%
+21%
+47%
+57%
+61%
+30%
+30%
+37%
+MSE
+0
+319
+738
+815
+177
+194
+Service
+100%
+67%
+74%
+73%
+70%
+67%
+94%
+87%
+88%
+83%
+70%
+74%
+Time (s)
+834
+926
+863
+170
+856
+858
+2072
+2059
+1879
+6104
+5901
+5295
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+37
+Table A6
+Results for various holding and backorder cost values.
+h
+e
+Item
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+0.15
+1.5
+Transportation cost/Cost
+75%
+61%
+64%
+61%
+66%
+66%
+58%
+63%
+62%
+73%
+70%
+72%
+Holding cost/Cost
+25%
+25%
+29%
+26%
+25%
+23%
+38%
+28%
+31%
+18%
+14%
+15%
+Backorder cost/Cost
+0%
+14%
+7%
+13%
+9%
+11%
+4%
+9%
+6%
+9%
+16%
+13%
+Cost
+684
+866
+890
+920
+822
+831
+802
+783
+775
+891
+880
+863
+∆Cost
+0
+182
+206
+236
+138
+147
+118
+99
+91
+207
+196
+179
+Saving
+100%
+0%
+-13%
+-29%
+24%
+19%
+35%
+45%
+50%
+-14%
+-8%
+2%
+MSE
+0
+298
+726
+782
+170
+181
+Service
+100%
+83%
+91%
+88%
+87%
+84%
+95%
+89%
+92%
+87%
+79%
+83%
+Time (s)
+3
+4
+4
+1
+3
+3
+6
+6
+5
+220
+209
+173
+0.3
+1.5
+Transportation cost/Cost
+79%
+59%
+59%
+57%
+64%
+63%
+55%
+61%
+61%
+66%
+67%
+67%
+Holding cost/Cost
+20%
+21%
+30%
+27%
+20%
+20%
+38%
+26%
+28%
+20%
+15%
+17%
+Backorder cost/Cost
+1%
+20%
+11%
+16%
+17%
+17%
+7%
+13%
+12%
+14%
+18%
+16%
+Cost
+776
+1087
+1108
+1128
+1016
+1016
+1027
+958
+946
+1055
+1016
+1005
+∆Cost
+0
+312
+332
+353
+241
+240
+251
+182
+170
+280
+240
+229
+Saving
+100%
+0%
+-7%
+-13%
+23%
+23%
+19%
+41%
+45%
+10%
+23%
+26%
+MSE
+0
+298
+726
+782
+170
+181
+Service
+99%
+71%
+84%
+80%
+74%
+73%
+90%
+79%
+83%
+82%
+72%
+76%
+Time (s)
+5
+6
+6
+1
+6
+6
+10
+10
+9
+303
+316
+233
+0.3
+3
+Transportation cost/Cost
+79%
+54%
+56%
+52%
+57%
+59%
+54%
+60%
+61%
+65%
+61%
+65%
+Holding cost/Cost
+21%
+19%
+27%
+25%
+18%
+19%
+41%
+27%
+29%
+23%
+14%
+17%
+Backorder cost/Cost
+0%
+27%
+17%
+22%
+25%
+23%
+5%
+12%
+10%
+12%
+25%
+18%
+Cost
+782
+1260
+1250
+1291
+1188
+1194
+1098
+1011
+992
+1114
+1164
+1102
+∆Cost
+0
+478
+468
+509
+406
+412
+316
+229
+210
+333
+382
+320
+Saving
+100%
+0%
+2%
+-6%
+15%
+14%
+34%
+52%
+56%
+30%
+20%
+33%
+MSE
+0
+298
+726
+782
+170
+181
+Service
+100%
+75%
+86%
+83%
+76%
+78%
+96%
+88%
+90%
+87%
+76%
+82%
+Time (s)
+5
+7
+6
+1
+7
+7
+10
+10
+9
+1007
+1086
+808
+0.3
+6
+Transportation cost/Cost
+78%
+45%
+46%
+46%
+50%
+50%
+53%
+59%
+57%
+62%
+54%
+56%
+Holding cost/Cost
+20%
+15%
+22%
+23%
+17%
+15%
+43%
+31%
+34%
+21%
+13%
+14%
+Backorder cost/Cost
+2%
+40%
+32%
+32%
+33%
+35%
+4%
+11%
+9%
+17%
+32%
+30%
+Cost
+795
+1581
+1538
+1508
+1421
+1463
+1159
+1058
+1067
+1217
+1358
+1340
+∆Cost
+0
+786
+744
+714
+626
+668
+364
+264
+273
+422
+564
+546
+Saving
+100%
+0%
+5%
+9%
+20%
+15%
+54%
+66%
+65%
+46%
+28%
+31%
+MSE
+0
+298
+726
+782
+170
+181
+Service
+100%
+76%
+85%
+86%
+80%
+78%
+98%
+93%
+95%
+90%
+78%
+83%
+Time (s)
+5
+7
+6
+1
+6
+7
+9
+9
+8
+384
+396
+282
+0.6
+6
+Transportation cost/Cost
+84%
+39%
+40%
+36%
+43%
+45%
+50%
+53%
+59%
+55%
+48%
+52%
+Holding cost/Cost
+15%
+11%
+19%
+16%
+12%
+12%
+46%
+27%
+29%
+24%
+11%
+12%
+Backorder cost/Cost
+1%
+50%
+42%
+48%
+45%
+43%
+4%
+19%
+12%
+21%
+41%
+36%
+Cost
+870
+2093
+2064
+2265
+1825
+1815
+1496
+1372
+1302
+1516
+1722
+1630
+∆Cost
+0
+1223
+1193
+1395
+955
+945
+626
+501
+432
+646
+852
+759
+Saving
+100%
+0%
+2%
+-14%
+22%
+23%
+49%
+59%
+65%
+47%
+30%
+38%
+MSE
+0
+298
+726
+782
+170
+181
+Service
+100%
+62%
+75%
+69%
+65%
+65%
+97%
+85%
+90%
+85%
+68%
+73%
+Time (s)
+8
+8
+9
+2
+7
+7
+12
+10
+12
+575
+467
+361
+
+38
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+Table A7
+Real-data experiments on Instance 1.
+#Retailer
+ℓ
+Item
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+5
+5
+Cost
+413
+2198
+2390
+2513
+1519
+1788
+3011
+4445
+1464
+2278
+3407
+2241
+∆Cost
+0
+1784
+1977
+2100
+1106
+1375
+2598
+4032
+1051
+1865
+2993
+1827
+Saving
+100%
+0%
+-11%
+-18%
+38%
+23%
+-46%
+-126%
+41%
+-5%
+-68%
+-2%
+MSE
+0
+58
+112
+282
+33
+39
+Service
+97%
+77%
+74%
+92%
+85%
+75%
+99%
+100%
+95%
+91%
+94%
+74%
+Time (s)
+2
+0
+0
+0
+1
+1
+2
+1
+3
+792
+778
+653
+7
+Cost
+349
+2097
+2365
+2634
+1550
+1803
+3075
+4634
+1377
+2164
+3515
+1869
+∆Cost
+0
+1748
+2016
+2285
+1200
+1454
+2725
+4284
+1028
+1815
+3166
+1520
+Saving
+100%
+0%
+-15%
+-31%
+31%
+17%
+-56%
+-145%
+41%
+-4%
+-81%
+13%
+MSE
+0
+54
+116
+315
+29
+35
+Service
+100%
+77%
+70%
+94%
+83%
+72%
+99%
+100%
+96%
+91%
+91%
+75%
+Time (s)
+4
+1
+0
+0
+4
+1
+3
+1
+4
+940
+864
+723
+10
+Cost
+351
+2116
+2504
+2866
+1542
+1807
+3102
+4673
+1285
+2385
+3140
+1881
+∆Cost
+0
+1764
+2153
+2515
+1191
+1456
+2751
+4322
+933
+2034
+2789
+1529
+Saving
+100%
+0%
+-22%
+-43%
+33%
+17%
+-56%
+-145%
+47%
+-15%
+-58%
+13%
+MSE
+0
+49
+113
+320
+25
+28
+Service
+100%
+77%
+69%
+90%
+85%
+76%
+99%
+100%
+95%
+93%
+88%
+75%
+Time (s)
+6
+2
+1
+0
+6
+4
+3
+1
+4
+1050
+961
+712
+7
+5
+Cost
+481
+4363
+4604
+5708
+2735
+3384
+4831
+5936
+2014
+5470
+6737
+4226
+∆Cost
+0
+3882
+4123
+5227
+2254
+2903
+4350
+5455
+1533
+4989
+6256
+3745
+Saving
+100%
+0%
+-6%
+-35%
+42%
+25%
+-12%
+-41%
+61%
+-29%
+-61%
+4%
+MSE
+0
+98
+176
+332
+37
+40
+Service
+98%
+72%
+74%
+86%
+80%
+70%
+95%
+100%
+95%
+83%
+84%
+66%
+Time (s)
+10
+6
+2
+1
+16
+9
+8
+4
+13
+1376
+1093
+1201
+7
+Cost
+416
+4250
+5375
+5926
+2812
+3411
+5163
+6008
+1892
+5234
+7081
+3716
+∆Cost
+0
+3834
+4959
+5510
+2396
+2996
+4747
+5592
+1476
+4818
+6666
+3300
+Saving
+100%
+0%
+-29%
+-44%
+38%
+22%
+-24%
+-46%
+62%
+-26%
+-74%
+14%
+MSE
+0
+98
+185
+324
+33
+37
+Service
+100%
+72%
+66%
+87%
+80%
+69%
+92%
+100%
+96%
+86%
+83%
+69%
+Time (s)
+15
+8
+4
+2
+23
+11
+11
+4
+13
+1494
+1195
+1217
+10
+Cost
+417
+4295
+4580
+5802
+2794
+3398
+4654
+6119
+1747
+5584
+6886
+3604
+∆Cost
+0
+3877
+4163
+5385
+2377
+2981
+4237
+5701
+1330
+5167
+6468
+3187
+Saving
+100%
+0%
+-7%
+-39%
+39%
+23%
+-9%
+-47%
+66%
+-33%
+-67%
+18%
+MSE
+0
+98
+177
+322
+30
+35
+Service
+100%
+72%
+65%
+84%
+80%
+72%
+95%
+99%
+94%
+84%
+87%
+68%
+Time (s)
+21
+12
+5
+4
+35
+14
+15
+5
+14
+1565
+1889
+1234
+10
+5
+Cost
+570
+7785
+8937
+9537
+5006
+6243
+6888
+7979
+3516
+9516
+11195
+8627
+∆Cost
+0
+7215
+8367
+8968
+4436
+5674
+6318
+7409
+2947
+8946
+10625
+8057
+Saving
+100%
+0%
+-16%
+-24%
+39%
+21%
+12%
+-3%
+59%
+-24%
+-47%
+-12%
+MSE
+0
+137
+260
+368
+59
+64
+Service
+99%
+69%
+66%
+79%
+78%
+70%
+93%
+100%
+92%
+77%
+75%
+61%
+Time (s)
+27
+35
+18
+6
+30
+28
+20
+8
+25
+2133
+2823
+2165
+7
+Cost
+501
+7693
+7864
+9401
+5038
+6154
+7274
+7946
+3182
+9020
+10427
+7479
+∆Cost
+0
+7192
+7362
+8900
+4537
+5653
+6773
+7445
+2681
+8519
+9926
+6977
+Saving
+100%
+0%
+-2%
+-24%
+37%
+21%
+6%
+-4%
+63%
+-18%
+-38%
+3%
+MSE
+0
+136
+251
+364
+55
+61
+Service
+100%
+69%
+70%
+80%
+78%
+67%
+91%
+100%
+94%
+77%
+78%
+67%
+Time (s)
+41
+53
+18
+8
+45
+41
+29
+9
+30
+3764
+3664
+2854
+10
+Cost
+585
+7697
+8917
+9296
+5027
+6846
+7006
+7971
+3097
+9571
+10188
+7579
+∆Cost
+0
+7111
+8332
+8711
+4441
+6261
+6420
+7386
+2511
+8985
+9602
+6993
+Saving
+100%
+0%
+-17%
+-22%
+38%
+12%
+10%
+-4%
+65%
+-26%
+-35%
+2%
+MSE
+0
+137
+239
+376
+50
+58
+Service
+98%
+69%
+68%
+82%
+78%
+69%
+91%
+100%
+93%
+78%
+82%
+63%
+Time (s)
+87
+88
+32
+19
+109
+60
+50
+13
+30
+5363
+5201
+3086
+
+Jia et al.: ScPO for Data-Driven Online Inventory Routing
+39
+Table A8
+Real-data experiments on Instance 2.
+#Retailer
+ℓ
+Item
+PI
+EV
+EMP
+Predict-then-Optimize
+ScPO-SS
+ScPO-TS
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+MLE
+LSTM
+MQRNN
+5
+5
+Cost
+3980
+8554
+9320
+10345
+7257
+8209
+7514
+7955
+6436
+9897
+11410
+9521
+∆Cost
+0
+4574
+5340
+6365
+3277
+4229
+3534
+3976
+2456
+5917
+7430
+5542
+Saving
+100%
+0%
+-17%
+-39%
+28%
+8%
+23%
+13%
+46%
+-29%
+-62%
+-21%
+MSE
+0
+300
+514
+465
+179
+175
+Service
+98%
+71%
+71%
+69%
+79%
+67%
+85%
+96%
+88%
+67%
+65%
+60%
+Time (s)
+7
+4
+1
+0
+6
+6
+5
+2
+5
+1262
+927
+1066
+7
+Cost
+3970
+8416
+10176
+8705
+7507
+7808
+7497
+7700
+6125
+9354
+8579
+7958
+∆Cost
+0
+4447
+6206
+4735
+3537
+3838
+3528
+3730
+2155
+5384
+4609
+3988
+Saving
+100%
+0%
+-40%
+-6%
+20%
+14%
+21%
+16%
+52%
+-21%
+-4%
+10%
+MSE
+0
+285
+438
+473
+158
+156
+Service
+99%
+72%
+69%
+69%
+79%
+71%
+85%
+97%
+85%
+65%
+71%
+65%
+Time (s)
+18
+9
+3
+0
+13
+10
+6
+3
+7
+1598
+1173
+2771
+10
+Cost
+4013
+8559
+9976
+9563
+7445
+7807
+6940
+8297
+6415
+9399
+9900
+8413
+∆Cost
+0
+4546
+5963
+5550
+3432
+3794
+2928
+4284
+2402
+5386
+5888
+4400
+Saving
+100%
+0%
+-31%
+-22%
+25%
+17%
+36%
+6%
+47%
+-18%
+-30%
+3%
+MSE
+0
+267
+427
+473
+133
+130
+Service
+99%
+68%
+65%
+67%
+78%
+73%
+87%
+95%
+87%
+61%
+65%
+65%
+Time (s)
+60
+30
+4
+1
+64
+17
+6
+4
+7
+3193
+1152
+3465
+7
+5
+Cost
+4874
+10794
+10924
+11758
+9241
+9287
+9155
+10040
+7831
+11876
+14236
+11784
+∆Cost
+0
+5920
+6051
+6884
+4367
+4414
+4281
+5166
+2957
+7003
+9363
+6911
+Saving
+100%
+0%
+-2%
+-16%
+26%
+25%
+28%
+13%
+50%
+-18%
+-58%
+-17%
+MSE
+0
+267
+421
+460
+164
+169
+Service
+99%
+68%
+75%
+75%
+79%
+75%
+89%
+99%
+88%
+74%
+66%
+65%
+Time (s)
+24
+27
+5
+2
+27
+14
+16
+5
+11
+2391
+3628
+2421
+7
+Cost
+4836
+10535
+11767
+11297
+9485
+9620
+9345
+10605
+7948
+11756
+12798
+11075
+∆Cost
+0
+5699
+6931
+6461
+4649
+4784
+4509
+5769
+3112
+6920
+7962
+6239
+Saving
+100%
+0%
+-22%
+-13%
+18%
+16%
+21%
+-1%
+45%
+-21%
+-40%
+-9%
+MSE
+0
+249
+386
+414
+143
+147
+Service
+99%
+72%
+70%
+81%
+76%
+74%
+88%
+97%
+85%
+77%
+77%
+69%
+Time (s)
+151
+108
+10
+8
+134
+40
+19
+5
+19
+4743
+4867
+4756
+10
+Cost
+4826
+10797
+11954
+11604
+9126
+9693
+9398
+10402
+8005
+11614
+13831
+10451
+∆Cost
+0
+5971
+7128
+6779
+4300
+4867
+4572
+5576
+3179
+6789
+9005
+5625
+Saving
+100%
+0%
+-19%
+-14%
+28%
+18%
+23%
+7%
+47%
+-14%
+-51%
+6%
+MSE
+0
+232
+355
+422
+120
+124
+Service
+99%
+70%
+67%
+77%
+78%
+74%
+87%
+98%
+87%
+73%
+75%
+70%
+Time (s)
+440
+433
+28
+44
+415
+337
+34
+6
+39
+6866
+5637
+6658
+10
+5
+Cost
+6417
+14953
+15874
+15825
+12435
+13543
+12508
+14101
+10183
+16047
+18480
+17328
+∆Cost
+0
+8535
+9457
+9408
+6017
+7126
+6090
+7683
+3765
+9630
+12063
+10910
+Saving
+100%
+0%
+-11%
+-10%
+30%
+17%
+29%
+10%
+56%
+-13%
+-41%
+-28%
+MSE
+0
+225
+363
+420
+128
+135
+Service
+100%
+68%
+68%
+78%
+77%
+70%
+90%
+98%
+89%
+75%
+71%
+62%
+Time (s)
+434
+336
+48
+34
+516
+215
+244
+9
+250
+7472
+7166
+8594
+7
+Cost
+6574
+15122
+15824
+16201
+12380
+13179
+12724
+13985
+10255
+15986
+19548
+15029
+∆Cost
+0
+8548
+9249
+9627
+5806
+6605
+6150
+7411
+3681
+9412
+12974
+8455
+Saving
+100%
+0%
+-8%
+-13%
+32%
+23%
+28%
+13%
+57%
+-10%
+-52%
+1%
+MSE
+0
+212
+379
+407
+113
+118
+Service
+97%
+67%
+70%
+80%
+77%
+70%
+89%
+100%
+87%
+74%
+74%
+66%
+Time (s)
+937
+866
+263
+136
+1208
+832
+347
+11
+511
+8431
+8788
+9257
+10
+Cost
+6411
+15103
+15285
+16140
+12130
+13320
+12915
+13981
+10395
+15337
+18126
+15936
+∆Cost
+0
+8692
+8874
+9729
+5719
+6908
+6504
+7570
+3984
+8926
+11715
+9525
+Saving
+100%
+0%
+-2%
+-12%
+34%
+21%
+25%
+13%
+54%
+-3%
+-35%
+-10%
+MSE
+0
+201
+359
+410
+97
+102
+Service
+99%
+68%
+74%
+74%
+77%
+72%
+89%
+99%
+89%
+79%
+79%
+66%
+Time (s)
+1194
+1345
+633
+233
+1348
+1265
+912
+23
+774
+10487
+8931
+9936
